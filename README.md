@@ -6,9 +6,14 @@
 > **このプロジェクトは日本国政府とは無関係です。** 日本国政府が公開するデータを第三者が構造化したものであり、**政府による公式なデータセットではありません。** 一次データの出典は各名前付きグラフに機械可読な形で保持しています。判断の根拠には必ず一次資料をご確認ください。
 
 > [!NOTE]
-> **現在の状態: Phase 0(データレイヤー基盤)完了。テスト115件。**
-> オントロジー(LinkML → OWL/SHACL)、出典付きスナップショット、名前付きグラフでの出力、SHACL検証ゲート、成果物ビルド、CQ(適格性質問)テストとCIが動きます。
-> **公開エンドポイントはまだありません。** 識別子の名前空間は `https://jgkg.norr-tech.com/` に確定しましたが、解決(dereference)はまだ実装していません。
+> **現在の状態: Phase 0(データレイヤー基盤)の完了条件 9件のうち 5件。テスト115件。**
+> オントロジー(LinkML → OWL/SHACL)、出典付きスナップショット、名前付きグラフでの出力、SHACL検証ゲート、CQ(適格性質問)テストとCIは動きます。
+>
+> **一方で、実行系を一度も動かしていません。** 成果物ビルド(`build.sh`)と Fuseki での提供、実データでのパイプライン実行は未実施で、TDB2の実サイズ・府省の突合率・実行時間という**実測すべき3つの数字がありません**。コードとテストはありますが「動くと思っているが確かめていない」状態です。
+>
+> **公開エンドポイントはありません。** 識別子の名前空間は `https://jgkg.norr-tech.com/` に確定しましたが、解決(dereference)は未実装です。
+>
+> 詳細は **[進捗状況](docs/status.md)** に、できていないことも同じ精度で書いてあります。
 
 ## なぜ作るのか
 
@@ -93,7 +98,7 @@
 
 **Not affiliated with the Government of Japan.** This is a third-party structuring of data published by the Japanese government; it is **not** an official government dataset. Provenance for every source is retained in machine-readable form in named graphs.
 
-**Status: Phase 0 (data layer foundation) complete — 115 tests passing.** The ontology (LinkML to OWL/SHACL), provenance-bearing snapshots, named-graph emission, a SHACL validation gate, artifact builds, and competency-question tests with CI all work. **No public endpoint yet.** The identifier namespace is fixed at `https://jgkg.norr-tech.com/`, but dereferencing is not yet implemented. Design documents and research reports are in Japanese.
+**Status: 5 of 9 Phase 0 completion criteria met — 115 tests passing.** The ontology (LinkML to OWL/SHACL), provenance-bearing snapshots, named-graph emission, a SHACL validation gate, and competency-question tests with CI all work. **However, the runtime path has never been executed:** artifact builds, Fuseki serving, and pipeline runs on real data are all untried, and the three required measurements (TDB2 index size, ministry match rate, run time) do not exist. **No public endpoint.** The identifier namespace is fixed at `https://jgkg.norr-tech.com/`, but dereferencing is not implemented. See [docs/status.md](docs/status.md) for what is and is not done. Design documents and research reports are in Japanese.
 
 The core premise: the Japanese government publishes authoritative *join keys* (law IDs, corporate numbers, address registry IDs) and many individual APIs, but no cross-source joined graph exists. Questions like "which corporations received expenditures under a given law, from which ministry's budget line" cannot be answered with any combination of existing government offerings.
 
