@@ -41,18 +41,18 @@ jgkgcore:Event a owl:Class ;
             owl:onProperty jgkgcore:involves_agent ],
         [ a owl:Restriction ;
             owl:minCardinality 0 ;
-            owl:onProperty jgkgcore:occurred_on ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty jgkgcore:occurred_on ],
+            owl:onProperty jgkgcore:involves_agent ],
         [ a owl:Restriction ;
             owl:minCardinality 0 ;
-            owl:onProperty jgkgcore:involves_agent ],
+            owl:onProperty jgkgcore:occurred_on ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:date ;
+            owl:onProperty jgkgcore:occurred_on ],
         [ a owl:Restriction ;
             owl:maxCardinality 1 ;
             owl:onProperty jgkgcore:involves_agent ],
         [ a owl:Restriction ;
-            owl:allValuesFrom xsd:date ;
+            owl:maxCardinality 1 ;
             owl:onProperty jgkgcore:occurred_on ],
         jgkgcore:Entity ;
     skos:closeMatch prov:Activity ;
@@ -65,10 +65,10 @@ jgkgcore:MonetaryItem a owl:Class ;
             owl:allValuesFrom xsd:integer ;
             owl:onProperty jgkgcore:amount_jpy ],
         [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
+            owl:minCardinality 0 ;
             owl:onProperty jgkgcore:amount_jpy ],
         [ a owl:Restriction ;
-            owl:minCardinality 0 ;
+            owl:maxCardinality 1 ;
             owl:onProperty jgkgcore:amount_jpy ],
         jgkgcore:Entity ;
     skos:definition "「いくらで」の軸。予算科目・支出の上位"@ja ;
@@ -84,32 +84,32 @@ jgkgcore:Place a owl:Class ;
 jgkgcore:UnresolvedReference a owl:Class ;
     rdfs:label "UnresolvedReference" ;
     rdfs:subClassOf [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty jgkgcore:unresolved_key ],
-        [ a owl:Restriction ;
             owl:allValuesFrom xsd:string ;
-            owl:onProperty jgkgcore:unresolved_key ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty jgkgcore:unresolved_reason ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty jgkgcore:unresolved_reason ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
             owl:onProperty jgkgcore:unresolved_key ],
         [ a owl:Restriction ;
             owl:minCardinality 0 ;
             owl:onProperty jgkgcore:unresolved_text ],
         [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty jgkgcore:unresolved_reason ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty jgkgcore:unresolved_key ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty jgkgcore:unresolved_key ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty jgkgcore:unresolved_text ],
+        [ a owl:Restriction ;
             owl:allValuesFrom xsd:string ;
             owl:onProperty jgkgcore:unresolved_text ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty jgkgcore:unresolved_reason ],
         [ a owl:Restriction ;
             owl:allValuesFrom jgkgcore:UnresolvedReasonEnum ;
             owl:onProperty jgkgcore:unresolved_reason ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty jgkgcore:unresolved_text ],
         jgkgcore:Entity ;
     skos:definition "正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず KGに残して計測できるようにするためのクラス"@ja ;
     skos:inScheme <http://localhost:8080/kg/def/core> .
@@ -200,24 +200,24 @@ jgkgcore:UnresolvedReasonEnum a owl:Class ;
 jgkgcore:Entity a owl:Class ;
     rdfs:label "Entity" ;
     rdfs:subClassOf [ a owl:Restriction ;
-            owl:minCardinality 0 ;
+            owl:maxCardinality 1 ;
+            owl:onProperty jgkgcore:id ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty skos:prefLabel ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:string ;
             owl:onProperty skos:prefLabel ],
         [ a owl:Restriction ;
             owl:allValuesFrom xsd:anyURI ;
             owl:onProperty jgkgcore:id ],
         [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty skos:prefLabel ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty jgkgcore:id ],
-        [ a owl:Restriction ;
             owl:minCardinality 1 ;
             owl:onProperty jgkgcore:id ],
-        [ owl:unionOf ( jgkgcore:Agent jgkgcore:Concept jgkgcore:Event jgkgcore:MonetaryItem jgkgcore:Place jgkgcore:UnresolvedReference jgkgcore:Work ) ],
         [ a owl:Restriction ;
-            owl:allValuesFrom xsd:string ;
-            owl:onProperty skos:prefLabel ] ;
+            owl:minCardinality 0 ;
+            owl:onProperty skos:prefLabel ],
+        [ owl:unionOf ( jgkgcore:Agent jgkgcore:Concept jgkgcore:Event jgkgcore:MonetaryItem jgkgcore:Place jgkgcore:UnresolvedReference jgkgcore:Work ) ] ;
     skos:definition "本KGが扱うすべての事物の基底"@ja ;
     skos:inScheme <http://localhost:8080/kg/def/core> .
 

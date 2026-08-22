@@ -193,3 +193,27 @@ def test_overlay_declares_all_axis_disjointness_pairs():
             missing.append(f"{a}-{b}")
 
     assert not missing, f"disjointの宣言が無いペアがある({len(missing)}件): {missing}"
+
+
+def test_enum_has_a_single_iri_across_generated_owl():
+    """同一の enum が複数のIRIで宣言されていないこと。
+
+    import された enum が import 側の名前空間で再鋳造されると、公開する
+    オントロジーの中で同一概念が複数のIRIを持つ。識別子の一貫性を中核に置く
+    設計と衝突するため、ここで固定する。
+    """
+    from collections import defaultdict
+
+    by_local_name: dict[str, set[str]] = defaultdict(set)
+    for path in sorted(GENERATED.glob("*.owl.ttl")):
+        g = _load(path)
+        for s in g.subjects(RDF.type, OWL.Class):
+            iri = str(s)
+            if "#" not in iri:
+                continue
+            local = iri.rsplit("#", 1)[1]
+            if local.endswith("Enum"):
+                by_local_name[local].add(iri)
+
+    conflicts = {name: sorted(iris) for name, iris in by_local_name.items() if len(iris) > 1}
+    assert not conflicts, f"同一の enum が複数のIRIで宣言されている: {conflicts}"

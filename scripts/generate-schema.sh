@@ -12,7 +12,7 @@ export PYTHONUTF8=1
 OUT=schema/generated
 mkdir -p "$OUT"
 
-for module in core org; do
+for module in core org all; do
   src="schema/${module}.yaml"
   [ -f "$src" ] || continue
   echo "generating from ${src}"

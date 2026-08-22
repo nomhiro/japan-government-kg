@@ -1,0 +1,20 @@
+id: http://localhost:8080/kg/def/all
+name: jgkg-all
+title: 日本政府ナレッジグラフ 全モジュール統合(検証用)
+description: >-
+  SHACL検証のために全モジュールを1つに束ねるだけのスキーマ。ここから生成した
+  all.shacl.ttl を検証の唯一の入力にする。モジュール別に生成すると、import された
+  上位モジュールのシェイプが各ファイルに重複して現れ、閉じたシェイプが同一クラスに
+  複数適用されて偽の違反になるため。
+  新しいドメインモジュールを追加したら、必ずここの imports にも追加する。
+license: https://creativecommons.org/licenses/by/4.0/
+
+prefixes:
+  jgkgall: http://localhost:8080/kg/def/all#
+  linkml: https://w3id.org/linkml/
+default_prefix: jgkgall
+default_range: string
+imports:
+  - linkml:types
+  - core
+  - org
