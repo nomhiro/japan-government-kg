@@ -1,0 +1,9 @@
+# CQ P0-4: このリリースは各ソースについていつ時点のデータを含むか
+PREFIX prov:    <http://www.w3.org/ns/prov#>
+PREFIX dcterms: <http://purl.org/dc/terms/>
+
+SELECT ?sourceName ?fetchedOn WHERE {
+  ?graph prov:generatedAtTime ?fetchedOn ;
+         dcterms:source ?sourceName .
+}
+ORDER BY ?sourceName

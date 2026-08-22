@@ -1,0 +1,11 @@
+# CQ P0-2: 府省の一覧と、それぞれの法人番号・府省コードは何か
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX org:  <http://localhost:8080/kg/def/org#>
+
+SELECT ?ministry ?name ?houjinBangou ?ministryCode WHERE {
+  ?ministry a org:Ministry ;
+            org:ministryCode ?ministryCode ;
+            org:houjinBangou ?houjinBangou ;
+            skos:prefLabel ?name .
+}
+ORDER BY ?ministryCode

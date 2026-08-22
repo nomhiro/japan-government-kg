@@ -1,0 +1,8 @@
+# CQ P0-5: 正準IDに解決できなかった参照はどれだけあるか
+PREFIX core: <http://localhost:8080/kg/def/core#>
+
+SELECT ?reason (COUNT(?s) AS ?count) WHERE {
+  ?s a core:UnresolvedReference ;
+     core:unresolved_reason ?reason .
+}
+GROUP BY ?reason

@@ -1,0 +1,11 @@
+# CQ P0-6: 法人番号を持たないOrganizationは存在するか(0件であるべき)
+# SHACLの required では担保できない制約をここで見る。グラフをソース別に
+# 分けているため、グラフ単位のSHACL検証ではグラフを跨いだ必須制約を
+# 検証できない。その代償措置。
+PREFIX org: <http://localhost:8080/kg/def/org#>
+
+SELECT ?s WHERE {
+  ?s a ?type .
+  VALUES ?type { org:Organization org:GovernmentOrgan org:Ministry }
+  FILTER NOT EXISTS { ?s org:houjinBangou ?bangou }
+}
