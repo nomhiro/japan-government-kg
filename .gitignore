@@ -13,8 +13,10 @@ data/generated/
 *.nt
 *.ttl.gz
 
-# LinkML の生成物(CIでビルドする。設計書§5.1)
-schema/generated/
+# LinkML の生成物は「あえてコミットする」(設計書§5.1)
+# 生成物をコミットすることが LinkML 採用を可逆にする唯一の措置であり、
+# 差分レビューで生成器の回帰も検出できる。ここで除外してはならない。
+# schema/generated/  ← 意図的に無視しない
 
 # Python
 __pycache__/

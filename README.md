@@ -55,6 +55,7 @@
 - [政府API/MCP提供状況](docs/research/2026-08-22-government-api-mcp-landscape.md) — デジタル庁公式MCP・ベース・レジストリ・ガバメントAI「源内」の現状と差別化分析
 - [オントロジー/KG技術動向 2024-2026](docs/research/2026-08-22-kg-technology-trends.md) — LLM支援KG構築、GraphRAG、RDF vs プロパティグラフ、可視化
 - [政府KG先行事例と教訓](docs/research/2026-08-22-government-kg-precedents.md) — 国内外の事例が生き残った/死んだ理由
+- [スキーマ単一ソース技術選定の比較](docs/research/2026-08-22-schema-tooling-comparison.md) — LinkML vs 手書きOWL/SHACL vs SHACL単一ソース等5案の比較、公共部門の実際の慣行
 
 ## 技術スタック(設計上の選定)
 
