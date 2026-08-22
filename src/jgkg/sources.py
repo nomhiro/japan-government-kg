@@ -18,6 +18,7 @@ class Source:
     license_url: str
     frequency: str  # daily / monthly / annual / ondemand
     access: str     # api / bulk / scrape
+    encoding: str = "utf-8"
     note: str = ""
 
 
@@ -30,7 +31,9 @@ SOURCES: dict[str, Source] = {
         license_url=GOV_STANDARD_TERMS_URL,
         frequency="monthly",
         access="bulk",
-        note="全件データは月次(前月末時点)。差分は日次。商用・再配布可",
+        encoding="utf-8",
+        note="全件データは月次(前月末時点)。差分は日次。商用・再配布可。"
+             "Shift_JIS版とUnicode版の両方が配布されているため、Unicode(UTF-8)版を取得すること",
     ),
     "ministry-codes": Source(
         id="ministry-codes",

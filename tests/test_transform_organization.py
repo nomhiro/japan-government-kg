@@ -62,3 +62,29 @@ def test_parse_file_does_not_read_whole_file_into_memory(tmp_path):
     assert first.houjin_bangou == "8000012070001"
     # ジェネレータを閉じる(残りを読まない)。全件読み込みでは到達しない
     gen.close()
+
+
+def test_wrong_encoding_raises_instead_of_silently_mangling(tmp_path):
+    """エンコーディングが違えば例外になること。置換して進まないこと。
+
+    法人番号の全件データはShift_JIS版とUnicode版の両方が配布されている。
+    errors="replace" だと Shift_JIS版をUTF-8として読んだときに全法人名が
+    置換文字に化け、500万行が静かに壊れる。系統的な誤りは止めるのが正しい。
+    """
+    sjis = tmp_path / "sjis.csv"
+    line = "1,8000012070001,1,2015-10-05,2015-10-05,101,厚生労働省,,,,1,1,東京都,千代田区,x\n"
+    sjis.write_bytes(line.encode("cp932"))
+
+    with pytest.raises(UnicodeDecodeError):
+        list(parse_file(sjis))  # 既定のutf-8で読む
+
+
+def test_explicit_encoding_reads_shift_jis_correctly(tmp_path):
+    """エンコーディングを明示すればShift_JIS版も正しく読めること。"""
+    sjis = tmp_path / "sjis.csv"
+    line = "1,8000012070001,1,2015-10-05,2015-10-05,101,厚生労働省,,,,1,1,東京都,千代田区,x\n"
+    sjis.write_bytes(line.encode("cp932"))
+
+    orgs = list(parse_file(sjis, encoding="cp932"))
+    assert len(orgs) == 1
+    assert orgs[0].name == "厚生労働省"
