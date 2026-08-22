@@ -1298,9 +1298,38 @@ git commit -m "feat: 法人番号コネクタを追加
 **Interfaces:**
 - Consumes: Task 5 のスナップショット、Task 1 の `jgkg.uris.org_uri`
 - Produces:
+  - `jgkg.lake.path_of(source_id: str, fetched_on: datetime.date, filename: str) -> Path` — Step 0 で追加
   - `jgkg.transform.organization.Organization` — pydantic BaseModel。フィールド `uri: str`, `houjin_bangou: str`, `name: str`, `prefecture: str`, `city: str`, `street: str`, `kind_code: str`, `is_government_organ: bool`
-  - `jgkg.transform.organization.parse_rows(content: bytes) -> Iterator[Organization]`
+  - `jgkg.transform.organization.parse_file(path: Path, encoding: str = "utf-8") -> Iterator[Organization]` — **実データ用。ファイル全体をメモリに載せない**
+  - `jgkg.transform.organization.parse_text(text: str) -> Iterator[Organization]` — 小さなテスト入力用
   - `jgkg.transform.organization.COL` — 列位置の定数(dict)
+
+> **なぜ `bytes` を受けないのか**: 法人番号の全件データは約500万行(約1GB)。`bytes` で読んで `decode()` すると、日本語を含む str はCPythonでUCS-2(2バイト/文字)になるため約2GB、さらに `StringIO` のコピーでピーク5GB近くに達する。Phase 1の想定構成(2vCPU/8GiB)で破綻し、設計書§11.1の「誰の環境でも同じKGが再構築できる」を満たせない。**小さなfixtureでは差が出ないため、テストが通っても実データで壊れる種類の欠陥である。**
+
+- [ ] **Step 0: `jgkg.lake` にパス取得関数を追加する**
+
+解析側がファイルを直接開けるようにする。レイクのディレクトリ構成の知識を `lake.py` の中に留めるため、パスの組み立ては呼び出し側でなくここに置く。
+
+`src/jgkg/lake.py` に追加(既存の関数は変更しない):
+
+```python
+def path_of(source_id: str, fetched_on: datetime.date, filename: str) -> Path:
+    """スナップショットのファイルパスを返す。
+
+    大きなファイルを bytes で読まずにストリームで処理したい呼び出し側のために、
+    パスだけを渡す。存在確認はしない(呼び出し側が open で判断する)。
+    """
+    return _dir(source_id, fetched_on) / filename
+```
+
+`tests/test_lake.py` の末尾に追記:
+
+```python
+def test_path_of_matches_saved_location():
+    day = datetime.date(2026, 8, 1)
+    snap = lake.save("houjin-bangou", day, "sample.csv", b"x")
+    assert lake.path_of("houjin-bangou", day, "sample.csv") == snap.path
+```
 
 **設計上の注意**: 法人番号全件CSVはヘッダなしで列位置が仕様で決まっている。列位置を定数として1箇所に集め、仕様変更時の修正点を限定する。**決定的パーサのみでLLMは使わない**(設計書§8.1)。
 
@@ -1313,7 +1342,9 @@ from pathlib import Path
 
 import pytest
 
-from jgkg.transform.organization import Organization, parse_rows
+from jgkg.transform.organization import Organization, parse_file, parse_text
+
+FIXTURE = Path("tests/fixtures/houjin_bangou_sample.csv")
 
 
 @pytest.fixture(autouse=True)
@@ -1325,18 +1356,13 @@ def fixed_base(monkeypatch):
     get_settings.cache_clear()
 
 
-@pytest.fixture
-def sample():
-    return Path("tests/fixtures/houjin_bangou_sample.csv").read_bytes()
-
-
-def test_parses_all_rows(sample):
-    orgs = list(parse_rows(sample))
+def test_parses_all_rows():
+    orgs = list(parse_file(FIXTURE))
     assert len(orgs) == 4
 
 
-def test_maps_fields_and_builds_uri(sample):
-    orgs = {o.houjin_bangou: o for o in parse_rows(sample)}
+def test_maps_fields_and_builds_uri():
+    orgs = {o.houjin_bangou: o for o in parse_file(FIXTURE)}
     kourou = orgs["8000012070001"]
     assert kourou.name == "厚生労働省"
     assert kourou.uri == "http://localhost:8080/kg/id/org/8000012070001"
@@ -1344,20 +1370,38 @@ def test_maps_fields_and_builds_uri(sample):
     assert kourou.city == "千代田区"
 
 
-def test_flags_government_organs(sample):
-    orgs = {o.houjin_bangou: o for o in parse_rows(sample)}
+def test_flags_government_organs():
+    orgs = {o.houjin_bangou: o for o in parse_file(FIXTURE)}
     assert orgs["8000012070001"].is_government_organ is True   # 種別 101 = 国の機関
     assert orgs["3010001008683"].is_government_organ is False  # 種別 301 = 株式会社
 
 
 def test_skips_rows_with_invalid_houjin_bangou():
-    bad = b"1,NOTANUMBER,1,2015-10-05,2015-10-05,101,壊れた行,,,,100,0001,東京都,千代田区,x\n"
-    assert list(parse_rows(bad)) == []
+    bad = "1,NOTANUMBER,1,2015-10-05,2015-10-05,101,壊れた行,,,,100,0001,東京都,千代田区,x\n"
+    assert list(parse_text(bad)) == []
 
 
 def test_skips_blank_lines():
-    content = b"\n\n1,8000012070001,1,2015-10-05,2015-10-05,101,厚生労働省,,,,1,1,東京都,千代田区,x\n\n"
-    assert len(list(parse_rows(content))) == 1
+    content = "\n\n1,8000012070001,1,2015-10-05,2015-10-05,101,厚生労働省,,,,1,1,東京都,千代田区,x\n\n"
+    assert len(list(parse_text(content))) == 1
+
+
+def test_parse_file_does_not_read_whole_file_into_memory(tmp_path):
+    """ファイル全体をメモリに載せないこと。
+
+    実データ(約1GB)で decode + StringIO を経由するとピーク5GB近くに達し、
+    Phase 1の想定構成(2vCPU/8GiB)で破綻する。小さなfixtureでは差が出ないため、
+    「1行だけ消費した時点でファイル全体が読まれていない」ことで代替検証する。
+    """
+    big = tmp_path / "many.csv"
+    line = "1,8000012070001,1,2015-10-05,2015-10-05,101,厚生労働省,,,,1,1,東京都,千代田区,x\n"
+    big.write_text(line * 5000, encoding="utf-8")
+
+    gen = parse_file(big)
+    first = next(gen)          # 1件だけ取り出す
+    assert first.houjin_bangou == "8000012070001"
+    # ジェネレータを閉じる(残りを読まない)。全件読み込みでは到達しない
+    gen.close()
 ```
 
 - [ ] **Step 2: テストが失敗することを確認する**
@@ -1385,6 +1429,7 @@ uv run pytest tests/test_transform_organization.py -v
 import csv
 import io
 from collections.abc import Iterator
+from pathlib import Path
 
 from pydantic import BaseModel
 
@@ -1420,14 +1465,32 @@ def _cell(row: list[str], key: str) -> str:
     return row[idx].strip() if idx < len(row) else ""
 
 
-def parse_rows(content: bytes) -> Iterator[Organization]:
-    """CSVを1行ずつ Organization にする。不正な行は黙って捨てず、単に生成しない。
+def parse_file(path: Path, encoding: str = "utf-8") -> Iterator[Organization]:
+    """CSVファイルを1行ずつ Organization にする。
 
-    法人番号が13桁でない行は取り込まない。ここで例外にしないのは、全件データの
-    末尾に集計行などが混じっても処理を止めないため。
+    **ファイル全体をメモリに載せない。** 法人番号の全件データは約500万行(約1GB)で、
+    bytes で読んで `decode()` すると、日本語を含む str はCPythonでUCS-2(2バイト/文字)
+    になるため約2GB、さらに StringIO のコピーでピーク5GB近くに達する。Phase 1の
+    想定構成(2vCPU/8GiB)で破綻し、設計書§11.1の「誰の環境でも同じKGが再構築できる」
+    を満たせない。ファイルハンドルを csv.reader に直接渡して1行ずつ流す。
+
+    不正な行は黙って捨てず、単に生成しない。法人番号が13桁でない行は取り込まない。
+    ここで例外にしないのは、全件データの末尾に集計行などが混じっても処理を
+    止めないため。
     """
-    text = content.decode("utf-8", errors="replace")
-    reader = csv.reader(io.StringIO(text))
+    with path.open("r", encoding=encoding, errors="replace", newline="") as f:
+        yield from _parse_reader(csv.reader(f))
+
+
+def parse_text(text: str) -> Iterator[Organization]:
+    """文字列からパースする。小さなテスト入力用。
+
+    実データには使わない(メモリに全載せするため)。実データは parse_file を使う。
+    """
+    yield from _parse_reader(csv.reader(io.StringIO(text)))
+
+
+def _parse_reader(reader: Iterator[list[str]]) -> Iterator[Organization]:
     for row in reader:
         if not row or not any(c.strip() for c in row):
             continue
@@ -2719,8 +2782,14 @@ def _merge(target: Dataset, source: Dataset) -> None:
 def run(fetched_on: datetime.date, out_dir: Path) -> PipelineReport:
     settings = get_settings()
 
-    raw = lake.load("houjin-bangou", fetched_on, houjin_bangou.FILENAME)
-    orgs = list(org_mod.parse_rows(raw))
+    # ファイルパスを渡してストリームで解析する。bytes で読むと実データ(約1GB)で
+    # メモリが破綻する(§Task 6 の説明を参照)
+    snapshot_path = lake.path_of("houjin-bangou", fetched_on, houjin_bangou.FILENAME)
+    if not snapshot_path.exists():
+        raise FileNotFoundError(
+            f"スナップショットが無い: {snapshot_path}。先にコネクタで取得する"
+        )
+    orgs = list(org_mod.parse_file(snapshot_path))
 
     reference = ministry_mod.load_reference(MINISTRY_REFERENCE)
     ministries, unmatched = ministry_mod.build(orgs, reference)
