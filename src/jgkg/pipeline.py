@@ -142,6 +142,23 @@ def run(fetched_on: Mapping[str, datetime.date], out_dir: Path) -> PipelineRepor
         if o.is_government_organ:
             orgs.append(o)
 
+    # **0件を正常終了として返さない。** 列位置が違えば `_cell` は空文字を返し、
+    # 法人番号が13桁でない行は黙って捨てられるため、以前は organizations=0 /
+    # government_organs=0 で「成功」を報告し、空のKGが exit 0 で出荷された。
+    # 列レイアウト自体の検査は org_mod._parse_reader が行う(この手前で例外になる)
+    if total_organizations == 0:
+        raise ValueError(
+            f"スナップショットから1件も解析できなかった: {snapshot_path}。"
+            " ファイルが空か、列レイアウトが想定と違う"
+        )
+    if not orgs:
+        raise ValueError(
+            f"国の機関(法人種別 {org_mod.GOVERNMENT_ORGAN_KIND})が1件も無い"
+            f"(解析した全件数 {total_organizations})。"
+            " 法人種別の列位置がずれている疑いがある。Phase 0 の対象は国の機関なので、"
+            " 0件のKGを成功として出荷してはならない"
+        )
+
     reference = ministry_mod.load_reference(MINISTRY_REFERENCE)
     ministries, unmatched = ministry_mod.build(orgs, reference)
     # **実際に読んだファイルのハッシュ**を出典に入れる。参照表にはレイクの

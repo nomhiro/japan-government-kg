@@ -176,6 +176,33 @@ def test_run_is_idempotent(seeded_lake, tmp_path):
     assert (out / "kg.nq").exists()
 
 
+def test_run_fails_on_an_empty_snapshot(tmp_path):
+    """0件を正常終了として返さないこと。
+
+    列位置がずれていると `_cell` は空文字を返し、法人番号が13桁でない行は
+    黙って捨てられるため、以前は `organizations=0` で「成功」を報告し、
+    空のKGが build.sh から exit 0 で出荷された。
+    """
+    lake.save("houjin-bangou", DAY, houjin_bangou.FILENAME, b"")
+    with pytest.raises(ValueError, match="1件も解析できなかった"):
+        pipeline.run(FETCHED, tmp_path / "out")
+
+
+def test_run_fails_when_no_government_organ_is_found(tmp_path):
+    """国の機関が0件なら失敗すること。
+
+    法人種別の列がずれると `is_government_organ` が全行 False になる。
+    その場合でも法人番号と種別コードの形は妥当なままなので、パース段では
+    検出できない。**Phase 0 の対象は国の機関なので、0件のKGは成功ではない。**
+
+    **何があれば落ちるか**: この下限チェックを外したら落ちる。
+    """
+    row = "1,3010001008683,1,2015-10-05,2015-10-05,301,株式会社サンプル,,,,1,1,東京都,千代田区,x\n"
+    lake.save("houjin-bangou", DAY, houjin_bangou.FILENAME, (row * 3).encode("utf-8"))
+    with pytest.raises(ValueError, match="国の機関"):
+        pipeline.run(FETCHED, tmp_path / "out")
+
+
 def test_run_fails_when_snapshot_missing(tmp_path):
     with pytest.raises(FileNotFoundError):
         pipeline.run(FETCHED, tmp_path / "out")

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from jgkg.transform.organization import parse_file, parse_text
+from jgkg.transform.organization import ColumnLayoutError, parse_file, parse_text
 
 FIXTURE = Path("tests/fixtures/houjin_bangou_sample.csv")
 
@@ -37,8 +37,65 @@ def test_flags_government_organs():
 
 
 def test_skips_rows_with_invalid_houjin_bangou():
-    bad = "1,NOTANUMBER,1,2015-10-05,2015-10-05,101,壊れた行,,,,100,0001,東京都,千代田区,x\n"
-    assert list(parse_text(bad)) == []
+    """行単位のノイズは捨てて処理を続けること(全件データ末尾の集計行など)。
+
+    以前はこのテストが「不正な1行だけ」を入力にしていたため、
+    「全行が棄却される = 列レイアウトの誤り」と区別できなかった。良い行を
+    多数含めることで、**行単位の棄却**と**レイアウトの誤り**を分けて検査する
+    (後者は test_wrong_column_layout_raises_instead_of_yielding_nothing)。
+    """
+    good = "1,8000012070001,1,2015-10-05,2015-10-05,101,厚生労働省,,,,1,1,東京都,千代田区,x\n"
+    bad = "2,NOTANUMBER,1,2015-10-05,2015-10-05,101,壊れた行,,,,100,0001,東京都,千代田区,x\n"
+
+    orgs = list(parse_text(good * 3 + bad))
+    assert [o.houjin_bangou for o in orgs] == ["8000012070001"] * 3
+
+
+def test_wrong_column_layout_raises_instead_of_yielding_nothing():
+    """列位置がずれていたら「0件」ではなく例外になること。
+
+    COL の列位置は一次資料と照合されていない(モジュール冒頭の未了項目)。
+    照合できるまでの安全装置として、**ずれていれば失敗する**ことを固定する。
+    以前は `_cell` が空文字を返して全行が黙って捨てられ、`organizations=0` の
+    まま「成功」を報告していた。
+
+    **何があれば落ちるか**: `_assert_layout_plausible` の呼び出しを外したら
+    落ちる(例外が出なくなる)。
+    """
+    # 先頭に1列挿入して、全列を1つずつずらす
+    shifted = (
+        "x,1,8000012070001,1,2015-10-05,2015-10-05,101,厚生労働省,,,,1,1,東京都,千代田区,y\n"
+    )
+    with pytest.raises(ColumnLayoutError, match="1行も取り込めなかった"):
+        list(parse_text(shifted * 5))
+
+
+def test_shifted_kind_code_column_raises():
+    """法人種別の列だけがずれた場合も検出すること。
+
+    法人番号は13桁のまま読めるので取り込みは進むが、法人種別コードが3桁でなく
+    なる。この状態を放置すると `is_government_organ` が全行 False になり、
+    **国の機関が0件のKGが検証を通って出荷される。**
+    """
+    # 法人種別の位置(索引5)に日付が来るように、その手前に1列足す
+    row = "1,8000012070001,1,extra,2015-10-05,2015-10-05,101,厚生労働省,,,,1,1,東京都,千代田区,x\n"
+    with pytest.raises(ColumnLayoutError, match="法人種別コード"):
+        list(parse_text(row * 5))
+
+
+def test_rows_too_short_for_the_required_columns_raise():
+    """必要な列数に足りない行が支配的なら例外になること。
+
+    住所列が読めていない状態(空文字が入る)を「成功」にしない。
+    """
+    row = "1,8000012070001,1,2015-10-05,2015-10-05,101,厚生労働省\n"  # 7列
+    with pytest.raises(ColumnLayoutError, match="列数が足りない行"):
+        list(parse_text(row * 5))
+
+
+def test_empty_input_is_not_a_layout_error():
+    """空のファイルはレイアウトの誤りと区別すること(件数の下限は pipeline 側で見る)。"""
+    assert list(parse_text("")) == []
 
 
 def test_skips_blank_lines():

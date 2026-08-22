@@ -5,12 +5,36 @@
 """
 import csv
 import io
+import re
 from collections.abc import Iterator
 from pathlib import Path
 
 from pydantic import BaseModel
 
 from jgkg.uris import HOUJIN_BANGOU_RE, org_uri
+
+# =============================================================================
+# **未了: 下の COL は一次資料と照合されていない。実データ投入前の必須手順。**
+#
+# リポジトリのどこにも国税庁の資源定義書(全件データのレイアウト仕様)への参照も
+# 引用も無い。唯一の検証手段である `tests/fixtures/houjin_bangou_sample.csv` は
+# COL に合わせて書かれているため、**テストは構造上 COL の誤りに反対できない**
+# (円環の内側を検証している)。全件データの実際の列数は15列より多い。
+#
+# 実データを投入する前に、次を人が確認して結果をここに書くこと:
+#
+#   1. 国税庁 法人番号公表サイトの「資源定義書」を取得し、そのURL・版・公開日を
+#      このコメントに追記する
+#   2. 総列数を確認して EXPECTED_COLUMNS に書く(今は必要な列の下限しか見ていない)
+#   3. 各列の索引を照合する: 法人番号 / 法人種別 / 商号又は名称 /
+#      本店所在地(都道府県・市区町村・丁目番地等)
+#   4. 実データの先頭1行を docs/ に引用し、列番号との対応を残す
+#   5. fixture を実データの列数に合わせて作り直す。列数が一致していれば COL の
+#      誤りを fixture 側から独立に検出できるようになる
+#
+# それまでの間の安全装置として、**列レイアウトが想定と違えば「0件」ではなく例外に
+# する**(`_parse_reader` の収量チェック)。0件を正常終了として返してはならない。
+# =============================================================================
 
 # 全件CSVの列位置(0起点)。仕様変更時はここだけを直す。
 COL = {
@@ -22,8 +46,32 @@ COL = {
     "street": 14,
 }
 
+# COL が要求する最小の列数。一次資料で総列数を確定したら
+# EXPECTED_COLUMNS として厳密な等値検査に格上げする(上の1〜5を参照)
+MIN_COLUMNS = max(COL.values()) + 1
+
+# 法人種別コードは3桁(101 国の機関 / 201 地方公共団体 / 301 株式会社 など)。
+# 列がずれると日付や名称がここに入るので、形の検査が索引のずれを検出する
+KIND_CODE_RE = re.compile(r"^\d{3}$")
+
 # 法人種別コード 101 = 国の機関
 GOVERNMENT_ORGAN_KIND = "101"
+
+# 収量チェックの下限。行単位のノイズ(全件データ末尾の集計行など)は許容しつつ、
+# **列レイアウトの誤りは必ず捕まえる**ための境界。索引がずれれば棄却率は
+# ほぼ100%になるので、半分という緩い境界でも検出できる。逆に、この値を
+# 厳しくすると実データの想定外のノイズで止まる
+MIN_ACCEPT_RATIO = 0.5
+
+
+class ColumnLayoutError(ValueError):
+    """CSVの列レイアウトが COL の想定と合っていない。
+
+    **0件を正常終了として返さないために存在する。** 索引がずれていると
+    `_cell` は空文字を返し、法人番号が13桁でない行は黙って捨てられるため、
+    以前は `organizations=0` / `government_organs=0` で「成功」を報告し、
+    空のKGがそのまま出荷された。
+    """
 
 
 class Organization(BaseModel):
@@ -72,13 +120,33 @@ def parse_text(text: str) -> Iterator[Organization]:
 
 
 def _parse_reader(reader: Iterator[list[str]]) -> Iterator[Organization]:
+    """1行ずつ Organization にしつつ、**列レイアウトの誤りを最後に例外にする。**
+
+    行単位の棄却は続ける(末尾の集計行などで処理を止めないため)が、棄却が
+    支配的なら索引がずれているので例外にする。**ここが無いと、列位置が違う
+    ときに0件を返して「成功」になる。**
+
+    検査は列挙を最後まで消費したときに走る。途中で `close()` する呼び出し側
+    (ストリーム性の確認など)には適用されない。
+    """
+    seen = 0        # 空行以外の行数
+    accepted = 0    # Organization にした行数
+    short = 0       # COL が要求する列数に足りない行数
+    valid_kind = 0  # 法人種別コードが3桁だった行数(accepted のうち)
+
     for row in reader:
         if not row or not any(c.strip() for c in row):
             continue
+        seen += 1
+        if len(row) < MIN_COLUMNS:
+            short += 1
         bangou = _cell(row, "houjin_bangou")
         if not HOUJIN_BANGOU_RE.match(bangou):
             continue
         kind = _cell(row, "kind_code")
+        accepted += 1
+        if KIND_CODE_RE.match(kind):
+            valid_kind += 1
         yield Organization(
             uri=org_uri(bangou),
             houjin_bangou=bangou,
@@ -88,4 +156,42 @@ def _parse_reader(reader: Iterator[list[str]]) -> Iterator[Organization]:
             city=_cell(row, "city"),
             street=_cell(row, "street"),
             is_government_organ=(kind == GOVERNMENT_ORGAN_KIND),
+        )
+
+    _assert_layout_plausible(seen=seen, accepted=accepted, short=short, valid_kind=valid_kind)
+
+
+def _assert_layout_plausible(*, seen: int, accepted: int, short: int, valid_kind: int) -> None:
+    """棄却の分布から列レイアウトの妥当性を判定する。"""
+    if seen == 0:
+        # 空のファイルは「レイアウトの誤り」とは区別する。件数の下限は
+        # pipeline.run 側で見る(そこでソースごとの意味を持たせられる)
+        return
+
+    counts = (
+        f"(非空行={seen} 取り込み={accepted} 列数不足={short}"
+        f" 法人種別3桁={valid_kind} 必要列数={MIN_COLUMNS})"
+    )
+    hint = (
+        " COL の列位置が一次資料と合っているかを確認する"
+        "(transform/organization.py 冒頭の未了項目)"
+    )
+
+    if accepted == 0:
+        raise ColumnLayoutError(
+            f"1行も取り込めなかった。法人番号の列({COL['houjin_bangou']})が"
+            f"13桁の数字になっていない。{counts}{hint}"
+        )
+    if accepted < seen * MIN_ACCEPT_RATIO:
+        raise ColumnLayoutError(
+            f"棄却された行が多すぎる。{counts}{hint}"
+        )
+    if short > seen * MIN_ACCEPT_RATIO:
+        raise ColumnLayoutError(
+            f"列数が足りない行が多すぎる。住所などの列が読めていない。{counts}{hint}"
+        )
+    if valid_kind < accepted * MIN_ACCEPT_RATIO:
+        raise ColumnLayoutError(
+            f"法人種別コードが3桁でない行が多すぎる。法人種別の列"
+            f"({COL['kind_code']})がずれている疑いがある。{counts}{hint}"
         )
