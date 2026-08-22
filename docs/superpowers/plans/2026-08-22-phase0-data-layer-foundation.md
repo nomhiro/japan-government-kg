@@ -2745,17 +2745,31 @@ def write_manifest(m: Manifest, path: Path) -> None:
     )
 
 
-def verify_manifest(manifest_path: Path, tarball: Path) -> None:
-    """成果物のsha256がmanifestと一致することを確かめる。
+def verify_manifest(
+    manifest_path: Path,
+    tarball: Path,
+    expected_jena_version: str | None = None,
+) -> None:
+    """成果物のsha256と、任意でJenaバージョンが一致することを確かめる。
 
     実行側が起動時にこれを呼ぶことで、Neptuneのsegment自動修復に相当する
     「壊れたデータを検出する」能力をチェックサムで安価に得る。
+
+    `expected_jena_version` を渡すと、実行側のJenaバージョンが成果物を作った
+    ものと一致するかも確かめる。**TDB2のオンディスク形式はJenaのバージョンに
+    紐づく**ため、記録しただけで照合しなければ意味がない(照合されない
+    バージョン記録は記録の演技にすぎない)。
     """
     m = Manifest(**json.loads(manifest_path.read_text(encoding="utf-8")))
     actual = _sha256(tarball)
     if actual != m.sha256:
         raise ValueError(
             f"成果物のsha256が一致しない。manifest={m.sha256} actual={actual}"
+        )
+    if expected_jena_version is not None and expected_jena_version != m.jena_version:
+        raise ValueError(
+            "Jenaバージョンが一致しない。TDB2のオンディスク形式はバージョンに紐づくため"
+            f"読めない可能性がある。manifest={m.jena_version} runtime={expected_jena_version}"
         )
 ```
 
@@ -2897,10 +2911,15 @@ def test_run_produces_nquads_and_report(seeded_lake, tmp_path):
 
 
 def test_run_reports_unmatched_ministries(seeded_lake, tmp_path):
-    """参照表にあってデータに無い府省を件数として報告する(設計書§8.2)。"""
+    """参照表にあってデータに無い府省を件数として報告する(設計書§8.2)。
+
+    fixtureの参照表3府省はすべてfixture CSVに国の機関として存在するので、
+    正常系では突合率100%になる。ここを厳密に固定することで、突合が壊れた
+    ときに検出できる(`>= 0` のような常に真のassertでは検出できない)。
+    """
     report = pipeline.run(DAY, tmp_path / "out")
-    assert report.unmatched_ministries >= 0
-    assert report.ministries + report.unmatched_ministries >= 3
+    assert report.ministries == 3, "参照表の3府省すべてが突合されるべき"
+    assert report.unmatched_ministries == 0, "正常系で未突合が出てはならない"
 
 
 def test_run_is_idempotent(seeded_lake, tmp_path):
@@ -3001,7 +3020,9 @@ def run(fetched_on: datetime.date, out_dir: Path) -> PipelineReport:
     reference = ministry_mod.load_reference(MINISTRY_REFERENCE)
     ministries, unmatched = ministry_mod.build(orgs, reference)
 
-    ds = Dataset()
+    # default_union=True を忘れないこと。rdflibの既定はFalseで、名前付きグラフを
+    # 跨いだ参照が空になる。この欠落は本計画で既に3度発生している
+    ds = Dataset(default_union=True)
     _merge(ds, emit.emit_organizations(orgs, "houjin-bangou", fetched_on))
     _merge(ds, emit.emit_ministries(ministries, unmatched, "ministry-codes", fetched_on))
 
@@ -3066,7 +3087,10 @@ uv run pytest tests/test_pipeline.py -v
 # 成果物(TDB2インデックス)は data/artifact/tdb2 に展開しておく。
 services:
   fuseki:
-    image: apache/jena-fuseki:latest
+    # **タグを固定する。** TDB2のオンディスク形式はJenaのバージョンに紐づくため、
+    # `:latest` だとイメージ更新で成果物が読めなくなる恐れがある。インデックスを
+    # 作る jena-tools 側と同じバージョンに揃える
+    image: apache/jena-fuseki:${JENA_VERSION:?JENA_VERSION を .env に設定する}
     ports:
       - "3030:3030"
     command: ["/jena-fuseki/fuseki-server", "--config=/fuseki/config/kg.ttl"]
