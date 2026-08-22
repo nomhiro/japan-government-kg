@@ -123,6 +123,26 @@ def validate_dataset(ds: Dataset, shapes_dir: Path) -> list[ValidationResult]:
     return results
 
 
+# ファイル名に使えない文字。**Windowsでは `:` が致命的で、`名前:ストリーム名` は
+# NTFSの代替データストリーム(ADS)の構文になる。** 既定のベースURIは
+# `http://localhost:8080/kg` でポート番号のコロンを含むため、置換しないと
+# 隔離した内容が `ls` にも `git status` にも tar にも現れない(`Path.exists()` と
+# `stat()` だけは成功するので、返り値を見るテストでは検出できない)。
+# Linuxのコロンは合法なので、この差はCIには永久に出ない。
+_UNSAFE_IN_FILENAME = '<>:"/\\|?*'
+
+
+def _safe_stem(graph_uri: str) -> str:
+    """グラフURIをどのOSでも実ファイルになる名前に変換する。"""
+    stem = graph_uri.rstrip("/").replace("://", "_")
+    for ch in _UNSAFE_IN_FILENAME:
+        stem = stem.replace(ch, "_")
+    # 制御文字も除く(グラフURIに入ることは無いが、名前生成の前提を明示する)
+    stem = "".join(c if c.isprintable() else "_" for c in stem)
+    # Windowsは末尾のドットと空白を落とすため、名前が変わってしまう
+    return stem.rstrip(". ") or "graph"
+
+
 def quarantine(ds: Dataset, results: list[ValidationResult], out_dir: Path) -> list[Path]:
     """不合格グラフとその違反内容を隔離ディレクトリに書き出す。"""
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -131,7 +151,7 @@ def quarantine(ds: Dataset, results: list[ValidationResult], out_dir: Path) -> l
     for r in results:
         if r.conforms:
             continue
-        stem = r.graph_uri.rstrip("/").replace("://", "_").replace("/", "_")
+        stem = _safe_stem(r.graph_uri)
         nq = out_dir / f"{stem}.nq"
         txt = out_dir / f"{stem}.report.txt"
 

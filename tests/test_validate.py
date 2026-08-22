@@ -73,6 +73,37 @@ def test_quarantine_writes_failing_graphs(tmp_path):
     assert written, "隔離ファイルが書かれていない"
     assert any(p.suffix == ".txt" for p in written), "違反内容の報告が書かれていない"
 
+    # **返り値の Path を見るだけでは足りない。** Windowsでは名前にコロンが残ると
+    # NTFSの代替データストリームになり、`exists()` も `stat()` も成功するのに
+    # ディレクトリを列挙すると 0 バイトのファイル1個しか見えない。
+    # ディレクトリの実際の中身とサイズで確認する
+    on_disk = sorted(p.name for p in tmp_path.iterdir())
+    assert on_disk == sorted(p.name for p in written), (
+        f"返り値と実際のディレクトリの中身が違う: written={sorted(p.name for p in written)}"
+        f" iterdir={on_disk}"
+    )
+    for p in tmp_path.iterdir():
+        assert p.is_file(), f"{p} が通常ファイルでない"
+        assert p.stat().st_size > 0, f"{p} が空である(内容がADSに消えている疑い)"
+
+    # ADSはWindows固有なので、Linuxでも再発を検出できるように名前そのものを見る。
+    # 既定のベースURIはポート番号のコロンを含むので、置換されていなければ落ちる
+    for p in written:
+        illegal = set(p.name) & set('<>:"|?*\\')
+        assert not illegal, f"ファイル名に使えない文字が残っている: {p.name} ({illegal})"
+
+
+def test_safe_stem_replaces_every_windows_reserved_character():
+    """名前生成が予約文字を残さないこと。
+
+    **何があれば落ちるか**: `_UNSAFE_IN_FILENAME` からどれか1文字を外したら落ちる。
+    """
+    stem = validate._safe_stem(
+        'http://localhost:8080/kg/graph/a<b>c"d|e?f*g/2026-08-01'
+    )
+    assert not set(stem) & set('<>:"/|?*\\'), stem
+    assert stem.endswith("2026-08-01")
+
 
 def test_namespace_drift_raises_instead_of_passing_with_zero_targets(monkeypatch):
     """ベースURIがずれたら例外になること(「対象0件で合格」に退化しないこと)。
