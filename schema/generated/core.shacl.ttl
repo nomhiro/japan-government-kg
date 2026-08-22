@@ -1,74 +1,73 @@
-@prefix jgkgcore: <http://localhost:8080/kg/def/core#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-jgkgcore:Concept a sh:NodeShape ;
+<http://localhost:8080/kg/def/core#Concept> a sh:NodeShape ;
     rdfs:comment "「何について」の軸。主題・指標・制度手続きの上位" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
-    sh:property [ sh:description "このリソースのURI"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:IRI ;
-            sh:order 0 ;
-            sh:path jgkgcore:id ],
-        [ sh:datatype rdf:langString ;
+    sh:property [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 1 ;
-            sh:path skos:prefLabel ] ;
-    sh:targetClass jgkgcore:Concept .
+            sh:path skos:prefLabel ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 0 ;
+            sh:path <http://localhost:8080/kg/def/core#id> ] ;
+    sh:targetClass <http://localhost:8080/kg/def/core#Concept> .
 
-jgkgcore:Entity a sh:NodeShape ;
+<http://localhost:8080/kg/def/core#Entity> a sh:NodeShape ;
     rdfs:comment "本KGが扱うすべての事物の基底" ;
     sh:closed false ;
-    sh:ignoredProperties ( jgkgcore:amount_jpy jgkgcore:unresolved_key jgkgcore:involves_agent jgkgcore:occurred_on jgkgcore:unresolved_text rdf:type jgkgcore:unresolved_reason ) ;
-    sh:property [ sh:description "このリソースのURI"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:IRI ;
-            sh:order 0 ;
-            sh:path jgkgcore:id ],
-        [ sh:datatype rdf:langString ;
+    sh:ignoredProperties ( <http://localhost:8080/kg/def/core#amount_jpy> <http://localhost:8080/kg/def/core#involves_agent> <http://localhost:8080/kg/def/core#occurred_on> <http://localhost:8080/kg/def/core#unresolved_key> <http://localhost:8080/kg/def/core#unresolved_reason> <http://localhost:8080/kg/def/core#unresolved_text> rdf:type ) ;
+    sh:property [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 1 ;
-            sh:path skos:prefLabel ] ;
-    sh:targetClass jgkgcore:Entity .
+            sh:path skos:prefLabel ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 0 ;
+            sh:path <http://localhost:8080/kg/def/core#id> ] ;
+    sh:targetClass <http://localhost:8080/kg/def/core#Entity> .
 
-jgkgcore:Event a sh:NodeShape ;
+<http://localhost:8080/kg/def/core#Event> a sh:NodeShape ;
     rdfs:comment "「いつ」の軸。時点を持つ出来事。関係を実体化するための中心クラス。 「AがBに影響した」を直接のエッジにせず、原則としてこのクラスを介す" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
-    sh:property [ sh:class jgkgcore:Agent ;
-            sh:description "この出来事に関与した主体"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:IRI ;
-            sh:order 1 ;
-            sh:path jgkgcore:involves_agent ],
-        [ sh:datatype rdf:langString ;
+    sh:property [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 3 ;
             sh:path skos:prefLabel ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 2 ;
+            sh:path <http://localhost:8080/kg/def/core#id> ],
         [ sh:datatype xsd:date ;
             sh:description "この出来事が起きた日"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
-            sh:path jgkgcore:occurred_on ],
-        [ sh:description "このリソースのURI"@ja ;
+            sh:path <http://localhost:8080/kg/def/core#occurred_on> ],
+        [ sh:class <http://localhost:8080/kg/def/core#Agent> ;
+            sh:description "この出来事に関与した主体"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
-            sh:order 2 ;
-            sh:path jgkgcore:id ] ;
-    sh:targetClass jgkgcore:Event .
+            sh:order 1 ;
+            sh:path <http://localhost:8080/kg/def/core#involves_agent> ] ;
+    sh:targetClass <http://localhost:8080/kg/def/core#Event> .
 
-jgkgcore:MonetaryItem a sh:NodeShape ;
+<http://localhost:8080/kg/def/core#MonetaryItem> a sh:NodeShape ;
     rdfs:comment "「いくらで」の軸。予算科目・支出の上位" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
@@ -77,102 +76,102 @@ jgkgcore:MonetaryItem a sh:NodeShape ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
-            sh:path jgkgcore:amount_jpy ],
+            sh:path <http://localhost:8080/kg/def/core#amount_jpy> ],
         [ sh:description "このリソースのURI"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
             sh:order 1 ;
-            sh:path jgkgcore:id ],
+            sh:path <http://localhost:8080/kg/def/core#id> ],
         [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 2 ;
             sh:path skos:prefLabel ] ;
-    sh:targetClass jgkgcore:MonetaryItem .
+    sh:targetClass <http://localhost:8080/kg/def/core#MonetaryItem> .
 
-jgkgcore:Place a sh:NodeShape ;
+<http://localhost:8080/kg/def/core#Place> a sh:NodeShape ;
     rdfs:comment "「どこで」の軸。行政区域・住所・地物の上位" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
-    sh:property [ sh:description "このリソースのURI"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:IRI ;
-            sh:order 0 ;
-            sh:path jgkgcore:id ],
-        [ sh:datatype rdf:langString ;
+    sh:property [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 1 ;
-            sh:path skos:prefLabel ] ;
-    sh:targetClass jgkgcore:Place .
+            sh:path skos:prefLabel ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 0 ;
+            sh:path <http://localhost:8080/kg/def/core#id> ] ;
+    sh:targetClass <http://localhost:8080/kg/def/core#Place> .
 
-jgkgcore:UnresolvedReference a sh:NodeShape ;
+<http://localhost:8080/kg/def/core#UnresolvedReference> a sh:NodeShape ;
     rdfs:comment "正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず KGに残して計測できるようにするためのクラス" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
-    sh:property [ sh:datatype rdf:langString ;
+    sh:property [ sh:description "解決できなかった理由"@ja ;
+            sh:in ( "AMBIGUOUS" "NO_CANDIDATE" "OBSOLETE_ORGANIZATION" ) ;
+            sh:maxCount 1 ;
+            sh:order 1 ;
+            sh:path <http://localhost:8080/kg/def/core#unresolved_reason> ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 3 ;
+            sh:path <http://localhost:8080/kg/def/core#id> ],
+        [ sh:datatype rdf:langString ;
             sh:description "正準IDに解決できなかった元の参照文字列"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
-            sh:path jgkgcore:unresolved_text ],
+            sh:path <http://localhost:8080/kg/def/core#unresolved_text> ],
         [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 4 ;
             sh:path skos:prefLabel ],
-        [ sh:description "このリソースのURI"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:IRI ;
-            sh:order 3 ;
-            sh:path jgkgcore:id ],
         [ sh:datatype xsd:string ;
             sh:description "解決できなかった参照の、ソース側のキー(府省コード等)。ドメイン固有の プロパティを UnresolvedReference に足すと閉じたSHACLシェイプに違反するため、 汎用のキーとしてここで受ける"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 2 ;
-            sh:path jgkgcore:unresolved_key ],
-        [ sh:description "解決できなかった理由"@ja ;
-            sh:in ( "NO_CANDIDATE" "AMBIGUOUS" "OBSOLETE_ORGANIZATION" ) ;
-            sh:maxCount 1 ;
-            sh:order 1 ;
-            sh:path jgkgcore:unresolved_reason ] ;
-    sh:targetClass jgkgcore:UnresolvedReference .
+            sh:path <http://localhost:8080/kg/def/core#unresolved_key> ] ;
+    sh:targetClass <http://localhost:8080/kg/def/core#UnresolvedReference> .
 
-jgkgcore:Work a sh:NodeShape ;
+<http://localhost:8080/kg/def/core#Work> a sh:NodeShape ;
     rdfs:comment "「何を」の軸。法令・政策・事業・文書・司法判断の上位" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
-    sh:property [ sh:description "このリソースのURI"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:IRI ;
-            sh:order 0 ;
-            sh:path jgkgcore:id ],
-        [ sh:datatype rdf:langString ;
+    sh:property [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 1 ;
-            sh:path skos:prefLabel ] ;
-    sh:targetClass jgkgcore:Work .
+            sh:path skos:prefLabel ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 0 ;
+            sh:path <http://localhost:8080/kg/def/core#id> ] ;
+    sh:targetClass <http://localhost:8080/kg/def/core#Work> .
 
-jgkgcore:Agent a sh:NodeShape ;
+<http://localhost:8080/kg/def/core#Agent> a sh:NodeShape ;
     rdfs:comment "「誰が」の軸。行為の主体。組織と人の上位" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
-    sh:property [ sh:description "このリソースのURI"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:IRI ;
-            sh:order 0 ;
-            sh:path jgkgcore:id ],
-        [ sh:datatype rdf:langString ;
+    sh:property [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 1 ;
-            sh:path skos:prefLabel ] ;
-    sh:targetClass jgkgcore:Agent .
+            sh:path skos:prefLabel ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 0 ;
+            sh:path <http://localhost:8080/kg/def/core#id> ] ;
+    sh:targetClass <http://localhost:8080/kg/def/core#Agent> .
 

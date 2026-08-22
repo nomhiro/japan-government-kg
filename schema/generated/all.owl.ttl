@@ -1,5 +1,5 @@
 @prefix dcterms: <http://purl.org/dc/terms/> .
-@prefix linkml: <https://w3id.org/linkml/> .
+@prefix ns1: <https://w3id.org/linkml/> .
 @prefix owl: <http://www.w3.org/2002/07/owl#> .
 @prefix prov: <http://www.w3.org/ns/prov#> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
@@ -28,10 +28,10 @@
 <http://localhost:8080/kg/def/org#Ministry> a owl:Class ;
     rdfs:label "Ministry" ;
     rdfs:subClassOf [ a owl:Restriction ;
-            owl:allValuesFrom xsd:string ;
+            owl:minCardinality 0 ;
             owl:onProperty <http://localhost:8080/kg/def/org#ministryCode> ],
         [ a owl:Restriction ;
-            owl:minCardinality 0 ;
+            owl:allValuesFrom xsd:string ;
             owl:onProperty <http://localhost:8080/kg/def/org#ministryCode> ],
         [ a owl:Restriction ;
             owl:maxCardinality 1 ;
@@ -50,23 +50,23 @@
 <http://localhost:8080/kg/def/core#Event> a owl:Class ;
     rdfs:label "Event" ;
     rdfs:subClassOf [ a owl:Restriction ;
+            owl:allValuesFrom xsd:date ;
+            owl:onProperty <http://localhost:8080/kg/def/core#occurred_on> ],
+        [ a owl:Restriction ;
             owl:minCardinality 0 ;
+            owl:onProperty <http://localhost:8080/kg/def/core#occurred_on> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <http://localhost:8080/kg/def/core#occurred_on> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <http://localhost:8080/kg/def/core#involves_agent> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
             owl:onProperty <http://localhost:8080/kg/def/core#involves_agent> ],
         [ a owl:Restriction ;
             owl:allValuesFrom <http://localhost:8080/kg/def/core#Agent> ;
             owl:onProperty <http://localhost:8080/kg/def/core#involves_agent> ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <http://localhost:8080/kg/def/core#occurred_on> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <http://localhost:8080/kg/def/core#involves_agent> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom xsd:date ;
-            owl:onProperty <http://localhost:8080/kg/def/core#occurred_on> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <http://localhost:8080/kg/def/core#occurred_on> ],
         <http://localhost:8080/kg/def/core#Entity> ;
     skos:closeMatch prov:Activity ;
     skos:definition "「いつ」の軸。時点を持つ出来事。関係を実体化するための中心クラス。 「AがBに影響した」を直接のエッジにせず、原則としてこのクラスを介す"@ja ;
@@ -78,10 +78,10 @@
             owl:minCardinality 0 ;
             owl:onProperty <http://localhost:8080/kg/def/core#amount_jpy> ],
         [ a owl:Restriction ;
-            owl:allValuesFrom xsd:integer ;
+            owl:maxCardinality 1 ;
             owl:onProperty <http://localhost:8080/kg/def/core#amount_jpy> ],
         [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
+            owl:allValuesFrom xsd:integer ;
             owl:onProperty <http://localhost:8080/kg/def/core#amount_jpy> ],
         <http://localhost:8080/kg/def/core#Entity> ;
     skos:definition "「いくらで」の軸。予算科目・支出の上位"@ja ;
@@ -98,31 +98,31 @@
     rdfs:label "UnresolvedReference" ;
     rdfs:subClassOf [ a owl:Restriction ;
             owl:minCardinality 0 ;
-            owl:onProperty <http://localhost:8080/kg/def/core#unresolved_text> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom <http://localhost:8080/kg/def/core#UnresolvedReasonEnum> ;
-            owl:onProperty <http://localhost:8080/kg/def/core#unresolved_reason> ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <http://localhost:8080/kg/def/core#unresolved_reason> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
             owl:onProperty <http://localhost:8080/kg/def/core#unresolved_key> ],
         [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
+            owl:allValuesFrom xsd:string ;
+            owl:onProperty <http://localhost:8080/kg/def/core#unresolved_key> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
             owl:onProperty <http://localhost:8080/kg/def/core#unresolved_text> ],
         [ a owl:Restriction ;
             owl:maxCardinality 1 ;
-            owl:onProperty <http://localhost:8080/kg/def/core#unresolved_reason> ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
             owl:onProperty <http://localhost:8080/kg/def/core#unresolved_key> ],
         [ a owl:Restriction ;
             owl:allValuesFrom rdf:langString ;
             owl:onProperty <http://localhost:8080/kg/def/core#unresolved_text> ],
         [ a owl:Restriction ;
-            owl:allValuesFrom xsd:string ;
-            owl:onProperty <http://localhost:8080/kg/def/core#unresolved_key> ],
+            owl:maxCardinality 1 ;
+            owl:onProperty <http://localhost:8080/kg/def/core#unresolved_text> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <http://localhost:8080/kg/def/core#unresolved_reason> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <http://localhost:8080/kg/def/core#unresolved_reason> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom <http://localhost:8080/kg/def/core#UnresolvedReasonEnum> ;
+            owl:onProperty <http://localhost:8080/kg/def/core#unresolved_reason> ],
         <http://localhost:8080/kg/def/core#Entity> ;
     skos:definition "正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず KGに残して計測できるようにするためのクラス"@ja ;
     skos:inScheme <http://localhost:8080/kg/def/core> .
@@ -144,30 +144,21 @@
     rdfs:label "Organization" ;
     rdfs:subClassOf [ a owl:Restriction ;
             owl:minCardinality 0 ;
+            owl:onProperty <http://localhost:8080/kg/def/org#prefectureName> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
             owl:onProperty <http://localhost:8080/kg/def/org#organizationKindCode> ],
         [ a owl:Restriction ;
             owl:allValuesFrom rdf:langString ;
-            owl:onProperty <http://localhost:8080/kg/def/org#cityName> ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <http://localhost:8080/kg/def/org#prefectureName> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom rdf:langString ;
             owl:onProperty <http://localhost:8080/kg/def/org#prefectureName> ],
         [ a owl:Restriction ;
             owl:maxCardinality 1 ;
-            owl:onProperty <http://localhost:8080/kg/def/org#organizationKindCode> ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <http://localhost:8080/kg/def/org#houjinBangou> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
             owl:onProperty <http://localhost:8080/kg/def/org#prefectureName> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <http://localhost:8080/kg/def/org#houjinBangou> ],
         [ a owl:Restriction ;
             owl:allValuesFrom xsd:string ;
+            owl:onProperty <http://localhost:8080/kg/def/org#organizationKindCode> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
             owl:onProperty <http://localhost:8080/kg/def/org#organizationKindCode> ],
         [ a owl:Restriction ;
             owl:minCardinality 0 ;
@@ -178,8 +169,17 @@
                     owl:withRestrictions ( [ xsd:pattern "^\\d{13}$" ] ) ] ;
             owl:onProperty <http://localhost:8080/kg/def/org#houjinBangou> ],
         [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <http://localhost:8080/kg/def/org#houjinBangou> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom rdf:langString ;
+            owl:onProperty <http://localhost:8080/kg/def/org#cityName> ],
+        [ a owl:Restriction ;
             owl:maxCardinality 1 ;
             owl:onProperty <http://localhost:8080/kg/def/org#cityName> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <http://localhost:8080/kg/def/org#houjinBangou> ],
         <http://localhost:8080/kg/def/core#Agent> ;
     skos:closeMatch <http://schema.org/Organization> ;
     skos:definition "法人番号を持つ組織"@ja ;
@@ -286,34 +286,34 @@ skos:prefLabel a owl:DatatypeProperty ;
 
 <http://localhost:8080/kg/def/core#UnresolvedReasonEnum> a owl:Class ;
     rdfs:label "UnresolvedReasonEnum" ;
-    owl:unionOf ( <http://localhost:8080/kg/def/core#UnresolvedReasonEnum#NO_CANDIDATE> <http://localhost:8080/kg/def/core#UnresolvedReasonEnum#AMBIGUOUS> <http://localhost:8080/kg/def/core#UnresolvedReasonEnum#OBSOLETE_ORGANIZATION> ) ;
+    owl:unionOf ( <http://localhost:8080/kg/def/core#UnresolvedReasonEnum#AMBIGUOUS> <http://localhost:8080/kg/def/core#UnresolvedReasonEnum#NO_CANDIDATE> <http://localhost:8080/kg/def/core#UnresolvedReasonEnum#OBSOLETE_ORGANIZATION> ) ;
     skos:definition "参照が未解決である理由の分類"@ja ;
     skos:inScheme <http://localhost:8080/kg/def/core> ;
-    linkml:permissible_values <http://localhost:8080/kg/def/core#UnresolvedReasonEnum#AMBIGUOUS>,
+    ns1:permissible_values <http://localhost:8080/kg/def/core#UnresolvedReasonEnum#AMBIGUOUS>,
         <http://localhost:8080/kg/def/core#UnresolvedReasonEnum#NO_CANDIDATE>,
         <http://localhost:8080/kg/def/core#UnresolvedReasonEnum#OBSOLETE_ORGANIZATION> .
 
 <http://localhost:8080/kg/def/core#Entity> a owl:Class ;
     rdfs:label "Entity" ;
-    rdfs:subClassOf [ owl:unionOf ( <http://localhost:8080/kg/def/core#Agent> <http://localhost:8080/kg/def/core#Concept> <http://localhost:8080/kg/def/core#Event> <http://localhost:8080/kg/def/core#MonetaryItem> <http://localhost:8080/kg/def/core#Place> <http://localhost:8080/kg/def/core#UnresolvedReference> <http://localhost:8080/kg/def/core#Work> ) ],
-        [ a owl:Restriction ;
+    rdfs:subClassOf [ a owl:Restriction ;
             owl:minCardinality 0 ;
-            owl:onProperty skos:prefLabel ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
             owl:onProperty skos:prefLabel ],
         [ a owl:Restriction ;
             owl:allValuesFrom rdf:langString ;
             owl:onProperty skos:prefLabel ],
         [ a owl:Restriction ;
             owl:maxCardinality 1 ;
+            owl:onProperty skos:prefLabel ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <http://localhost:8080/kg/def/core#id> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:anyURI ;
             owl:onProperty <http://localhost:8080/kg/def/core#id> ],
         [ a owl:Restriction ;
             owl:minCardinality 1 ;
             owl:onProperty <http://localhost:8080/kg/def/core#id> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom xsd:anyURI ;
-            owl:onProperty <http://localhost:8080/kg/def/core#id> ] ;
+        [ owl:unionOf ( <http://localhost:8080/kg/def/core#Agent> <http://localhost:8080/kg/def/core#Concept> <http://localhost:8080/kg/def/core#Event> <http://localhost:8080/kg/def/core#MonetaryItem> <http://localhost:8080/kg/def/core#Place> <http://localhost:8080/kg/def/core#UnresolvedReference> <http://localhost:8080/kg/def/core#Work> ) ] ;
     skos:definition "本KGが扱うすべての事物の基底"@ja ;
     skos:inScheme <http://localhost:8080/kg/def/core> .
 
