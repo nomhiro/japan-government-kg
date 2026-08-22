@@ -1,0 +1,318 @@
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix jgkgcore: <http://localhost:8080/kg/def/core#> .
+@prefix jgkgorg: <http://localhost:8080/kg/def/org#> .
+@prefix linkml: <https://w3id.org/linkml/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix schema1: <http://schema.org/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+jgkgcore:valid_from a owl:DatatypeProperty ;
+    rdfs:label "valid_from" ;
+    rdfs:range xsd:date ;
+    skos:definition "この記述が真である期間の始まり"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/core> .
+
+jgkgcore:valid_until a owl:DatatypeProperty ;
+    rdfs:label "valid_until" ;
+    rdfs:range xsd:date ;
+    skos:definition "この記述が真である期間の終わり"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/core> .
+
+jgkgorg:Ministry a owl:Class ;
+    rdfs:label "Ministry" ;
+    rdfs:subClassOf [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty jgkgorg:ministryCode ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty jgkgorg:ministryCode ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:string ;
+            owl:onProperty jgkgorg:ministryCode ],
+        jgkgorg:GovernmentOrgan ;
+    skos:definition "府省。府省コードで識別できる国の機関"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/org> .
+
+<http://localhost:8080/kg/def/org.owl.ttl> a owl:Ontology ;
+    rdfs:label "jgkg-org" ;
+    dcterms:license "https://creativecommons.org/licenses/by/4.0/" ;
+    dcterms:title "日本政府ナレッジグラフ 組織モジュール" ;
+    skos:definition "組織(府省・法人)を表すクラスとプロパティ。正準IDは法人番号。"@ja .
+
+jgkgcore:Concept a owl:Class ;
+    rdfs:label "Concept" ;
+    rdfs:subClassOf jgkgcore:Entity ;
+    skos:definition "「何について」の軸。主題・指標・制度手続きの上位"@ja ;
+    skos:exactMatch skos:Concept ;
+    skos:inScheme <http://localhost:8080/kg/def/core> .
+
+jgkgcore:Event a owl:Class ;
+    rdfs:label "Event" ;
+    rdfs:subClassOf [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty jgkgcore:involves_agent ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom jgkgcore:Agent ;
+            owl:onProperty jgkgcore:involves_agent ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty jgkgcore:occurred_on ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty jgkgcore:involves_agent ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty jgkgcore:occurred_on ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:date ;
+            owl:onProperty jgkgcore:occurred_on ],
+        jgkgcore:Entity ;
+    skos:closeMatch prov:Activity ;
+    skos:definition "「いつ」の軸。時点を持つ出来事。関係を実体化するための中心クラス。 「AがBに影響した」を直接のエッジにせず、原則としてこのクラスを介す"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/core> .
+
+jgkgcore:MonetaryItem a owl:Class ;
+    rdfs:label "MonetaryItem" ;
+    rdfs:subClassOf [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty jgkgcore:amount_jpy ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:integer ;
+            owl:onProperty jgkgcore:amount_jpy ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty jgkgcore:amount_jpy ],
+        jgkgcore:Entity ;
+    skos:definition "「いくらで」の軸。予算科目・支出の上位"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/core> .
+
+jgkgcore:Place a owl:Class ;
+    rdfs:label "Place" ;
+    rdfs:subClassOf jgkgcore:Entity ;
+    skos:closeMatch schema1:Place ;
+    skos:definition "「どこで」の軸。行政区域・住所・地物の上位"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/core> .
+
+jgkgcore:UnresolvedReference a owl:Class ;
+    rdfs:label "UnresolvedReference" ;
+    rdfs:subClassOf [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty jgkgcore:unresolved_key ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty jgkgcore:unresolved_text ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom jgkgorg:UnresolvedReasonEnum ;
+            owl:onProperty jgkgcore:unresolved_reason ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty jgkgcore:unresolved_reason ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:string ;
+            owl:onProperty jgkgcore:unresolved_text ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty jgkgcore:unresolved_text ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty jgkgcore:unresolved_key ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:string ;
+            owl:onProperty jgkgcore:unresolved_key ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty jgkgcore:unresolved_reason ],
+        jgkgcore:Entity ;
+    skos:definition "正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず KGに残して計測できるようにするためのクラス"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/core> .
+
+jgkgcore:Work a owl:Class ;
+    rdfs:label "Work" ;
+    rdfs:subClassOf jgkgcore:Entity ;
+    skos:closeMatch schema1:CreativeWork ;
+    skos:definition "「何を」の軸。法令・政策・事業・文書・司法判断の上位"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/core> .
+
+jgkgorg:GovernmentOrgan a owl:Class ;
+    rdfs:label "GovernmentOrgan" ;
+    rdfs:subClassOf jgkgorg:Organization ;
+    skos:definition "法人種別が国の機関である組織"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/org> .
+
+jgkgorg:Organization a owl:Class ;
+    rdfs:label "Organization" ;
+    rdfs:subClassOf [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty jgkgorg:houjinBangou ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty jgkgorg:houjinBangou ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:string ;
+            owl:onProperty jgkgorg:organizationKindCode ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty jgkgorg:prefectureName ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty jgkgorg:organizationKindCode ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty jgkgorg:cityName ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty jgkgorg:organizationKindCode ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:string ;
+            owl:onProperty jgkgorg:prefectureName ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:string ;
+            owl:onProperty jgkgorg:cityName ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty jgkgorg:cityName ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom [ a rdfs:Datatype ;
+                    owl:onDatatype xsd:string ;
+                    owl:withRestrictions ( [ xsd:pattern "^\\d{13}$" ] ) ] ;
+            owl:onProperty jgkgorg:houjinBangou ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty jgkgorg:prefectureName ],
+        jgkgcore:Agent ;
+    skos:closeMatch schema1:Organization ;
+    skos:definition "法人番号を持つ組織"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/org> .
+
+<http://localhost:8080/kg/def/org#UnresolvedReasonEnum#AMBIGUOUS> a owl:Class ;
+    rdfs:label "AMBIGUOUS" ;
+    rdfs:subClassOf jgkgorg:UnresolvedReasonEnum ;
+    skos:definition "候補が複数あり一意に決められなかった"@ja .
+
+<http://localhost:8080/kg/def/org#UnresolvedReasonEnum#NO_CANDIDATE> a owl:Class ;
+    rdfs:label "NO_CANDIDATE" ;
+    rdfs:subClassOf jgkgorg:UnresolvedReasonEnum ;
+    skos:definition "候補が見つからなかった"@ja .
+
+<http://localhost:8080/kg/def/org#UnresolvedReasonEnum#OBSOLETE_ORGANIZATION> a owl:Class ;
+    rdfs:label "OBSOLETE_ORGANIZATION" ;
+    rdfs:subClassOf jgkgorg:UnresolvedReasonEnum ;
+    skos:definition "旧省庁名など、現存しない組織を指している"@ja .
+
+jgkgcore:amount_jpy a owl:DatatypeProperty ;
+    rdfs:label "amount_jpy" ;
+    rdfs:range xsd:integer ;
+    skos:definition "金額(円)"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/core> .
+
+jgkgcore:id a owl:DatatypeProperty ;
+    rdfs:label "id" ;
+    rdfs:range xsd:anyURI ;
+    skos:definition "このリソースのURI"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/core> .
+
+jgkgcore:involves_agent a owl:ObjectProperty ;
+    rdfs:label "involves_agent" ;
+    rdfs:range jgkgcore:Agent ;
+    skos:definition "この出来事に関与した主体"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/core> .
+
+jgkgcore:occurred_on a owl:DatatypeProperty ;
+    rdfs:label "occurred_on" ;
+    rdfs:range xsd:date ;
+    skos:definition "この出来事が起きた日"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/core> .
+
+jgkgcore:unresolved_key a owl:DatatypeProperty ;
+    rdfs:label "unresolved_key" ;
+    skos:definition "解決できなかった参照の、ソース側のキー(府省コード等)。ドメイン固有の プロパティを UnresolvedReference に足すと閉じたSHACLシェイプに違反するため、 汎用のキーとしてここで受ける"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/core> .
+
+jgkgcore:unresolved_reason a owl:ObjectProperty ;
+    rdfs:label "unresolved_reason" ;
+    rdfs:range jgkgorg:UnresolvedReasonEnum ;
+    skos:definition "解決できなかった理由"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/core> .
+
+jgkgcore:unresolved_text a owl:DatatypeProperty ;
+    rdfs:label "unresolved_text" ;
+    skos:definition "正準IDに解決できなかった元の参照文字列"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/core> .
+
+jgkgorg:cityName a owl:DatatypeProperty ;
+    rdfs:label "cityName" ;
+    skos:definition "所在地の市区町村名"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/org> .
+
+jgkgorg:houjinBangou a owl:DatatypeProperty ;
+    rdfs:label "houjinBangou" ;
+    rdfs:range [ a rdfs:Datatype ;
+            owl:onDatatype xsd:string ;
+            owl:withRestrictions ( [ xsd:pattern "^\\d{13}$" ] ) ] ;
+    skos:definition "国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/org> .
+
+jgkgorg:ministryCode a owl:DatatypeProperty ;
+    rdfs:label "ministryCode" ;
+    skos:definition "GIFコードリストの府省コード"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/org> .
+
+jgkgorg:organizationKindCode a owl:DatatypeProperty ;
+    rdfs:label "organizationKindCode" ;
+    skos:definition "法人番号公表サイトの法人種別コード"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/org> .
+
+jgkgorg:prefectureName a owl:DatatypeProperty ;
+    rdfs:label "prefectureName" ;
+    skos:definition "所在地の都道府県名"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/org> .
+
+skos:prefLabel a owl:DatatypeProperty ;
+    rdfs:label "label" ;
+    skos:definition "人間が読む名称"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/core> .
+
+jgkgcore:Agent a owl:Class ;
+    rdfs:label "Agent" ;
+    rdfs:subClassOf jgkgcore:Entity ;
+    skos:definition "「誰が」の軸。行為の主体。組織と人の上位"@ja ;
+    skos:exactMatch prov:Agent ;
+    skos:inScheme <http://localhost:8080/kg/def/core> .
+
+jgkgorg:UnresolvedReasonEnum a owl:Class ;
+    rdfs:label "UnresolvedReasonEnum" ;
+    owl:unionOf ( <http://localhost:8080/kg/def/org#UnresolvedReasonEnum#NO_CANDIDATE> <http://localhost:8080/kg/def/org#UnresolvedReasonEnum#AMBIGUOUS> <http://localhost:8080/kg/def/org#UnresolvedReasonEnum#OBSOLETE_ORGANIZATION> ) ;
+    skos:definition "参照が未解決である理由の分類"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/core> ;
+    linkml:permissible_values <http://localhost:8080/kg/def/org#UnresolvedReasonEnum#AMBIGUOUS>,
+        <http://localhost:8080/kg/def/org#UnresolvedReasonEnum#NO_CANDIDATE>,
+        <http://localhost:8080/kg/def/org#UnresolvedReasonEnum#OBSOLETE_ORGANIZATION> .
+
+jgkgcore:Entity a owl:Class ;
+    rdfs:label "Entity" ;
+    rdfs:subClassOf [ a owl:Restriction ;
+            owl:minCardinality 1 ;
+            owl:onProperty jgkgcore:id ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty skos:prefLabel ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty skos:prefLabel ],
+        [ owl:unionOf ( jgkgcore:Agent jgkgcore:Concept jgkgcore:Event jgkgcore:MonetaryItem jgkgcore:Place jgkgcore:UnresolvedReference jgkgcore:Work ) ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:anyURI ;
+            owl:onProperty jgkgcore:id ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:string ;
+            owl:onProperty skos:prefLabel ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty jgkgcore:id ] ;
+    skos:definition "本KGが扱うすべての事物の基底"@ja ;
+    skos:inScheme <http://localhost:8080/kg/def/core> .
+

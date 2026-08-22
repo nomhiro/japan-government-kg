@@ -6,7 +6,7 @@ from rdflib import Graph, OWL, RDF, RDFS, URIRef
 from rdflib.namespace import SH, SKOS
 
 GENERATED = Path("schema/generated")
-MODULES = ["core"]
+MODULES = ["core", "org"]
 
 
 def _load(path: Path) -> Graph:

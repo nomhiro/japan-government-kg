@@ -1,0 +1,51 @@
+id: http://localhost:8080/kg/def/org
+name: jgkg-org
+title: 日本政府ナレッジグラフ 組織モジュール
+description: 組織(府省・法人)を表すクラスとプロパティ。正準IDは法人番号。
+license: https://creativecommons.org/licenses/by/4.0/
+
+prefixes:
+  jgkgorg: http://localhost:8080/kg/def/org#
+  jgkgcore: http://localhost:8080/kg/def/core#
+  linkml: https://w3id.org/linkml/
+  skos: http://www.w3.org/2004/02/skos/core#
+  schema: http://schema.org/
+default_prefix: jgkgorg
+default_range: string
+imports:
+  - linkml:types
+  - core
+
+slots:
+  houjinBangou:
+    description: >-
+      国税庁が付与する13桁の法人番号。組織の正準ID。
+      required にしないのは、出典管理のためグラフをソース別に分けており、
+      1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位
+      (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。
+      「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する
+    pattern: "^\\d{13}$"
+  organizationKindCode:
+    description: 法人番号公表サイトの法人種別コード
+  ministryCode:
+    description: GIFコードリストの府省コード
+  prefectureName:
+    description: 所在地の都道府県名
+  cityName:
+    description: 所在地の市区町村名
+
+classes:
+  Organization:
+    is_a: Agent
+    description: 法人番号を持つ組織
+    slots: [houjinBangou, organizationKindCode, prefectureName, cityName]
+    close_mappings: [schema:Organization]
+
+  GovernmentOrgan:
+    is_a: Organization
+    description: 法人種別が国の機関である組織
+
+  Ministry:
+    is_a: GovernmentOrgan
+    description: 府省。府省コードで識別できる国の機関
+    slots: [ministryCode]
