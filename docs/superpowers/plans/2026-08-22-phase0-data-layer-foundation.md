@@ -2691,24 +2691,26 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def _scan_nquads(path: Path) -> tuple[int, list[str]]:
-    """N-Quadsを1行ずつ数え、登場するグラフURIを集める。
+def _count_triples(path: Path) -> int:
+    """N-Quadsの行数を数える。
 
-    全体をメモリに載せないのは、全件データで数千万行になるため。
+    全体をメモリに載せない(実データでは数千万行になる)。
+
+    **グラフURIはここで推測しない。** リテラルには空白も `>` も含まれうるため、
+    テキストからグラフ項を判別するには本物の字句解析が必要で、素朴な文字列操作では
+    3項トリプル行のオブジェクトIRIをグラフURIと誤認する(実測で確認済み:
+    `<http://a/s> <http://a/p> <http://a/o> .` から `http://a/o` が混入した)。
+    manifestはリリースの記録なので、偽のグラフURIの混入は記録の汚染になる。
+    グラフ一覧は Dataset を持つ呼び出し側から受け取る。
     """
     count = 0
-    graphs: set[str] = set()
     with path.open(encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
             count += 1
-            if line.endswith("."):
-                parts = line[:-1].strip().rsplit("<", 1)
-                if len(parts) == 2 and parts[1].endswith(">"):
-                    graphs.add(parts[1][:-1])
-    return count, sorted(graphs)
+    return count
 
 
 def build_manifest(
@@ -2717,21 +2719,21 @@ def build_manifest(
     jena_version: str,
     release: str,
     sources: dict[str, str],
+    graphs: list[str],
 ) -> Manifest:
     if not jena_version:
         raise ValueError(
             "Jenaバージョンが空である。TDB2のオンディスク形式はJenaのバージョンに"
             "紐づくため、記録を省略できない(設計書§6.3)"
         )
-    triple_count, graphs = _scan_nquads(nquads)
     return Manifest(
         release=release,
         created_on=release,
         jena_version=jena_version,
         sha256=_sha256(tarball),
         byte_size=tarball.stat().st_size,
-        triple_count=triple_count,
-        graphs=graphs,
+        triple_count=_count_triples(nquads),
+        graphs=sorted(graphs),
         sources=sources,
     )
 
@@ -2789,8 +2791,65 @@ content-addressed(sha256)にして破損を検出し、Jenaバージョンをman
 **Interfaces:**
 - Consumes: Task 5〜10 のすべて
 - Produces:
-  - `jgkg.pipeline.PipelineReport` — pydantic BaseModel。`release: str`, `organizations: int`, `ministries: int`, `unmatched_ministries: int`, `graphs_validated: int`, `graphs_quarantined: int`
+  - `jgkg._io.atomic_write(path: Path, data: bytes) -> None` — Step 0 で切り出す共有ヘルパー
+  - `jgkg.pipeline.PipelineReport` — pydantic BaseModel。`release: str`, `organizations: int`, `ministries: int`, `unmatched_ministries: int`, `graphs_validated: int`, `graphs_quarantined: int`, `graphs: list[str]`
   - `jgkg.pipeline.run(fetched_on: datetime.date, out_dir: Path) -> PipelineReport`
+
+- [ ] **Step 0: 積み残しの2件を直す**
+
+前タスクのレビューで挙がった、複数タスクに跨るため統合タスクで扱うことにした2件を先に片付ける。
+
+**(a) `_atomic_write` の重複を共有ヘルパーに切り出す**
+
+`src/jgkg/lake.py` と `src/jgkg/build.py` に**1バイトも違わない同一の `_atomic_write`** がある。片方だけ直すと壊れる典型的な重複なので、共有する。
+
+`src/jgkg/_io.py` を新規作成:
+
+```python
+"""ファイル入出力の共通処理。
+
+アトミック書き込みは lake(スナップショット)と build(manifest)の両方で必要で、
+同一のロジックが重複していたため切り出した。片方だけ直すと壊れる類の重複だった。
+"""
+import os
+from pathlib import Path
+
+
+def atomic_write(path: Path, data: bytes) -> None:
+    """同一ディレクトリの一時ファイルに書いてから rename する。
+
+    os.replace は同一ファイルシステム上でアトミックで、Windowsでも既存ファイルを
+    置き換えられる。一時ファイル名を隠しファイルにしているのは、スナップショットの
+    メタデータを glob で探す処理に拾われないようにするため。
+    """
+    tmp = path.with_name(f".{path.name}.tmp")
+    try:
+        tmp.write_bytes(data)
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+```
+
+`src/jgkg/lake.py` と `src/jgkg/build.py` から `_atomic_write` の定義を削除し、`from jgkg._io import atomic_write` に置き換える(呼び出し箇所の名前も `atomic_write` に変える)。**それ以外のロジックは変更しない。**
+
+**(b) `passing_dataset` の `default_union` を補う**
+
+`src/jgkg/validate.py` の `passing_dataset` が `Dataset()` を `default_union=True` なしで生成している。現状は `contexts()` 走査のみなので実害はないが、**この欠落はこのプロジェクトで既に2件の実害を出しており**(CQテストのfixture、emitのテスト)、将来このDatasetをSPARQLや `.objects()` で問い合わせた瞬間に3件目が起きる。
+
+```python
+    clean = Dataset(default_union=True)
+```
+
+に変更する。**それ以外は変更しない。**
+
+変更後、既存テストが通ることを確認する:
+
+```bash
+uv run pytest tests/ -v
+```
+
+期待: 60件PASS(件数は変わらない)。
 
 **設計上の注意**: 各段の処理件数・失敗件数・解決率をパイプラインの出力として記録する(設計書§11.1 観測性)。**府省の突合率は計測して報告するが、Phase 0 の完了条件にしない**(目標値は最初の実測後に設定し、推測値を先に置かない。設計書§8.2)。
 
@@ -2895,6 +2954,10 @@ class PipelineReport(BaseModel):
     unmatched_ministries: int
     graphs_validated: int
     graphs_quarantined: int
+    # 検証を通ったグラフのURI一覧。manifest に渡すため正確な値をここで持つ
+    # (N-Quadsのテキストから推測すると、リテラルに含まれる `>` や3項行の
+    #  オブジェクトIRIを誤認する。実測で確認済み)
+    graphs: list[str]
 
 
 def _merge(target: Dataset, source: Dataset) -> None:
@@ -2946,6 +3009,8 @@ def run(fetched_on: datetime.date, out_dir: Path) -> PipelineReport:
         unmatched_ministries=len(unmatched),
         graphs_validated=len(results),
         graphs_quarantined=len(quarantined),
+        # Dataset から正確なグラフURIを取る。テキストから推測してはならない
+        graphs=sorted(str(c.identifier) for c in clean.contexts() if len(c) > 0),
     )
 ```
 
@@ -3061,6 +3126,7 @@ m = build.build_manifest(
     jena_version='${JENA_VERSION}',
     release='${FETCHED_ON}',
     sources={'houjin-bangou': '${FETCHED_ON}'},
+    graphs=report['graphs'],
 )
 build.write_manifest(m, out / 'manifest.json')
 print(m.model_dump_json(indent=2))

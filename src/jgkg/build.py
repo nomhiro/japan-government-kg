@@ -31,24 +31,23 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def _scan_nquads(path: Path) -> tuple[int, list[str]]:
-    """N-Quadsを1行ずつ数え、登場するグラフURIを集める。
+def _count_triples(path: Path) -> int:
+    """N-Quadsの行数を数える。
 
-    全体をメモリに載せないのは、全件データで数千万行になるため。
+    全体をメモリに載せない(実データでは数千万行になる)。
+    **グラフURIはここで推測しない。** リテラルには空白も `>` も含まれうるため、
+    テキストからグラフ項を判別するには本物の字句解析が必要で、素朴な文字列操作では
+    3項トリプル行のオブジェクトIRIをグラフURIと誤認する。グラフ一覧は Dataset を
+    持つ呼び出し側から受け取る。
     """
     count = 0
-    graphs: set[str] = set()
     with path.open(encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
             count += 1
-            if line.endswith("."):
-                parts = line[:-1].strip().rsplit("<", 1)
-                if len(parts) == 2 and parts[1].endswith(">"):
-                    graphs.add(parts[1][:-1])
-    return count, sorted(graphs)
+    return count
 
 
 def build_manifest(
@@ -57,21 +56,21 @@ def build_manifest(
     jena_version: str,
     release: str,
     sources: dict[str, str],
+    graphs: list[str],
 ) -> Manifest:
     if not jena_version:
         raise ValueError(
             "Jenaバージョンが空である。TDB2のオンディスク形式はJenaのバージョンに"
             "紐づくため、記録を省略できない(設計書§6.3)"
         )
-    triple_count, graphs = _scan_nquads(nquads)
     return Manifest(
         release=release,
         created_on=release,
         jena_version=jena_version,
         sha256=_sha256(tarball),
         byte_size=tarball.stat().st_size,
-        triple_count=triple_count,
-        graphs=graphs,
+        triple_count=_count_triples(nquads),
+        graphs=sorted(graphs),
         sources=sources,
     )
 

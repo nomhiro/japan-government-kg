@@ -21,6 +21,7 @@ def test_build_manifest_records_checksum_and_jena_version(tmp_path):
         jena_version="5.0.0",
         release="2026-08-01",
         sources={"houjin-bangou": "2026-08-01"},
+        graphs=["http://a/g"],
     )
 
     assert m.jena_version == "5.0.0"
@@ -40,7 +41,7 @@ def test_build_manifest_rejects_empty_jena_version(tmp_path):
 
     with pytest.raises(ValueError, match="Jena"):
         build.build_manifest(nquads=nq, tarball=tarball, jena_version="",
-                             release="r", sources={})
+                             release="r", sources={}, graphs=[])
 
 
 def test_verify_manifest_detects_corruption(tmp_path):
@@ -50,7 +51,7 @@ def test_verify_manifest_detects_corruption(tmp_path):
     nq.write_text("", encoding="utf-8")
 
     m = build.build_manifest(nquads=nq, tarball=tarball, jena_version="5.0.0",
-                             release="r", sources={})
+                             release="r", sources={}, graphs=[])
     manifest_path = tmp_path / "manifest.json"
     build.write_manifest(m, manifest_path)
 
@@ -67,10 +68,38 @@ def test_write_manifest_is_readable_json(tmp_path):
     tarball = tmp_path / "kg.tar.gz"
     tarball.write_bytes(b"x")
     m = build.build_manifest(nquads=nq, tarball=tarball, jena_version="5.0.0",
-                             release="2026-08-01", sources={})
+                             release="2026-08-01", sources={}, graphs=[])
     path = tmp_path / "manifest.json"
     build.write_manifest(m, path)
 
     data = json.loads(path.read_text(encoding="utf-8"))
     assert data["release"] == "2026-08-01"
     assert data["jena_version"] == "5.0.0"
+
+
+def test_triple_count_handles_tricky_literals(tmp_path):
+    """空白・`<`・`>`・改行を含むリテラルやデータ型IRIがあっても行数を正しく数える。
+
+    以前はここからグラフURIを推測しており、3項トリプル行のオブジェクトIRIを
+    グラフURIと誤認する欠陥があった。推測をやめたので、数えるだけが正しい。
+    """
+    nq = tmp_path / "tricky.nq"
+    nq.write_text(
+        '<http://a/s> <http://a/p> "空白 と <山括弧> を含む"@ja <http://a/g> .\n'
+        '<http://a/s> <http://a/p> "42"^^<http://www.w3.org/2001/XMLSchema#integer> <http://a/g> .\n'
+        '<http://a/s> <http://a/p> <http://a/o> .\n'   # グラフ項なしの3項行
+        '\n'
+        '# コメント行\n',
+        encoding="utf-8",
+    )
+    tarball = tmp_path / "kg.tar.gz"
+    tarball.write_bytes(b"x")
+
+    m = build.build_manifest(
+        nquads=nq, tarball=tarball, jena_version="5.0.0",
+        release="r", sources={}, graphs=["http://a/g"],
+    )
+    assert m.triple_count == 3, "空行とコメント行を除いた3行を数えるべき"
+    # 3項行のオブジェクトIRIがグラフとして混入していないこと
+    assert m.graphs == ["http://a/g"]
+    assert "http://a/o" not in m.graphs
