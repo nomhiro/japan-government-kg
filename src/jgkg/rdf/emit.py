@@ -7,7 +7,7 @@ import datetime
 from collections.abc import Iterable
 from pathlib import Path
 
-from rdflib import Dataset, Graph, Literal, Namespace, RDF, URIRef
+from rdflib import RDF, Dataset, Graph, Literal, Namespace, URIRef
 from rdflib.namespace import SKOS
 
 from jgkg.config import get_settings

@@ -1,7 +1,7 @@
 """生成OWLと手書きオーバーレイのマージ。公開オントロジーはこの結果である。"""
 from pathlib import Path
 
-from rdflib import BNode, Graph, Literal, URIRef
+from rdflib import Graph, URIRef
 
 
 def merge_ontology(generated: list[Path], overlay: list[Path]) -> Graph:

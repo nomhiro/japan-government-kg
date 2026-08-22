@@ -2,7 +2,7 @@
 from pathlib import Path
 
 import pytest
-from rdflib import Graph, OWL, RDF, RDFS, URIRef
+from rdflib import OWL, RDF, Graph, URIRef
 from rdflib.namespace import SH, SKOS
 
 GENERATED = Path("schema/generated")

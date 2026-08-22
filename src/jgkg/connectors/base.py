@@ -4,8 +4,8 @@
 パースの失敗と取得の失敗を分離するため。
 """
 import datetime
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from jgkg import lake
 from jgkg.lake import Snapshot

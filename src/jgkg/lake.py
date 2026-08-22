@@ -6,7 +6,7 @@
 import datetime
 import hashlib
 import json
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from jgkg._io import atomic_write

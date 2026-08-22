@@ -1,8 +1,9 @@
 import datetime
+
 import pytest
+
 from jgkg import uris
 from jgkg.config import Settings
-
 
 # 既定値と異なるベースURIを使い、設定が実際に読まれていることを証明する。
 # .invalid は予約TLDなので、誤って本物のホストを指すことがない。

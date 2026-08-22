@@ -2,7 +2,7 @@ import datetime
 from pathlib import Path
 
 import pytest
-from rdflib import Dataset, Literal, RDF, URIRef
+from rdflib import RDF, Dataset, Literal, URIRef
 
 from jgkg import validate
 from jgkg.rdf import emit

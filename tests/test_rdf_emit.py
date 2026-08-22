@@ -1,7 +1,7 @@
 import datetime
 
 import pytest
-from rdflib import RDF, Dataset, Literal, URIRef
+from rdflib import RDF, Dataset, URIRef
 from rdflib.namespace import PROV, SKOS
 
 from jgkg.rdf import emit

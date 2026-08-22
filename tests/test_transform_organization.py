@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from jgkg.transform.organization import Organization, parse_file, parse_text
+from jgkg.transform.organization import parse_file, parse_text
 
 FIXTURE = Path("tests/fixtures/houjin_bangou_sample.csv")
 

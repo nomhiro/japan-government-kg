@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from jgkg.transform.ministry import Ministry, build, load_reference
+from jgkg.transform.ministry import build, load_reference
 from jgkg.transform.organization import Organization
 
 

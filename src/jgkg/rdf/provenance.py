@@ -5,7 +5,7 @@
 """
 import datetime
 
-from rdflib import Graph, Literal, URIRef, XSD
+from rdflib import XSD, Graph, Literal, URIRef
 from rdflib.namespace import DCTERMS, PROV
 
 from jgkg.sources import get_source
