@@ -908,6 +908,9 @@ class Source:
     license_url: str
     frequency: str  # daily / monthly / annual / ondemand
     access: str     # api / bulk / scrape
+    # 期待する文字エンコーディング。同じデータが複数のエンコーディングで配布される
+    # ことがあるため、どれを前提にするかを機械可読に記録する(誤ると全行が静かに壊れる)
+    encoding: str = "utf-8"
     note: str = ""
 
 
@@ -920,7 +923,9 @@ SOURCES: dict[str, Source] = {
         license_url=GOV_STANDARD_TERMS_URL,
         frequency="monthly",
         access="bulk",
-        note="全件データは月次(前月末時点)。差分は日次。商用・再配布可",
+        encoding="utf-8",
+        note="全件データは月次(前月末時点)。差分は日次。商用・再配布可。"
+             "Shift_JIS版とUnicode版の両方が配布されているため、Unicode(UTF-8)版を取得すること",
     ),
     "ministry-codes": Source(
         id="ministry-codes",
@@ -1477,8 +1482,14 @@ def parse_file(path: Path, encoding: str = "utf-8") -> Iterator[Organization]:
     不正な行は黙って捨てず、単に生成しない。法人番号が13桁でない行は取り込まない。
     ここで例外にしないのは、全件データの末尾に集計行などが混じっても処理を
     止めないため。
+
+    一方、エンコーディングの誤りは行単位のノイズではなく全行に及ぶ系統的な誤りなので、
+    `errors="strict"` にして `UnicodeDecodeError` で止める。法人番号の全件データは
+    Shift_JIS版とUnicode版の両方が配布されており、置換して進むと500万行の法人名
+    すべてが静かに壊れる(設計書の「沈黙させない」原則に反する)。期待する配布版は
+    ソースレジストリの `Source.encoding` に記録する。
     """
-    with path.open("r", encoding=encoding, errors="replace", newline="") as f:
+    with path.open("r", encoding=encoding, errors="strict", newline="") as f:
         yield from _parse_reader(csv.reader(f))
 
 
