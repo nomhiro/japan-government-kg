@@ -6,6 +6,7 @@
 import datetime
 import hashlib
 import json
+import os
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
@@ -28,16 +29,22 @@ def _dir(source_id: str, fetched_on: datetime.date) -> Path:
 
 
 def save(source_id: str, fetched_on: datetime.date, filename: str, content: bytes) -> Snapshot:
-    """スナップショットを保存する。既に存在する場合は上書きせず例外を投げる。"""
+    """スナップショットを保存する。
+
+    メタデータファイルの存在を「コミット済み」の印として使う。データ本体だけが
+    残った中途半端な状態は未コミットとみなし、再保存を許す。これにより
+    「一度の失敗が恒久的な再取得不能を生む」ことを避ける(設計書§11.1の冪等性)。
+    """
     get_source(source_id)  # 未登録のソースを弾く
     d = _dir(source_id, fetched_on)
     d.mkdir(parents=True, exist_ok=True)
     target = d / filename
-    if target.exists():
+    meta_path = d / f"{filename}.meta.json"
+
+    if meta_path.exists():
         raise FileExistsError(
-            f"スナップショットは不変である。既に存在する: {target}"
+            f"スナップショットは不変である。既にコミット済み: {target}"
         )
-    target.write_bytes(content)
 
     snap = Snapshot(
         source_id=source_id,
@@ -46,16 +53,33 @@ def save(source_id: str, fetched_on: datetime.date, filename: str, content: byte
         sha256=hashlib.sha256(content).hexdigest(),
         byte_size=len(content),
     )
-    meta = d / f"{filename}.meta.json"
-    meta.write_text(
-        json.dumps(
-            {**asdict(snap), "path": str(snap.path), "fetched_on": fetched_on.isoformat()},
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
+    meta_json = json.dumps(
+        {**asdict(snap), "path": str(snap.path), "fetched_on": fetched_on.isoformat()},
+        ensure_ascii=False,
+        indent=2,
     )
+
+    # データ本体 → メタデータ の順に、それぞれアトミックに置く。
+    # 途中で落ちてもメタデータが無いので未コミットと判定され、再実行できる
+    _atomic_write(target, content)
+    _atomic_write(meta_path, meta_json.encode("utf-8"))
     return snap
+
+
+def _atomic_write(path: Path, data: bytes) -> None:
+    """同一ディレクトリの一時ファイルに書いてから rename する。
+
+    os.replace は同一ファイルシステム上でアトミックで、Windowsでも既存ファイルを
+    置き換えられる。一時ファイル名を隠しファイルにしているのは、list_snapshots の
+    glob に拾われないようにするため。
+    """
+    tmp = path.with_name(f".{path.name}.tmp")
+    try:
+        tmp.write_bytes(data)
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
 
 
 def load(source_id: str, fetched_on: datetime.date, filename: str) -> bytes:
