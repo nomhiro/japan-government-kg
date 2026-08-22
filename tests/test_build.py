@@ -9,7 +9,7 @@ from jgkg import build
 def test_build_manifest_records_checksum_and_jena_version(tmp_path):
     nq = tmp_path / "kg.nq"
     nq.write_text(
-        '<http://a/s> <http://a/p> <http://a/o> <http://a/g> .\n', encoding="utf-8"
+        '<http://example.test/s> <http://example.test/p> <http://example.test/o> <http://example.test/g> .\n', encoding="utf-8"
     )
     tarball = tmp_path / "kg.tar.gz"
     tarball.write_bytes(b"fake tarball content")
@@ -20,14 +20,14 @@ def test_build_manifest_records_checksum_and_jena_version(tmp_path):
         jena_version="5.0.0",
         release="2026-08-01",
         sources={"houjin-bangou": "2026-08-01"},
-        graphs=["http://a/g"],
+        graphs=["http://example.test/g"],
     )
 
     assert m.jena_version == "5.0.0"
     assert m.sha256 == hashlib.sha256(b"fake tarball content").hexdigest()
     assert m.byte_size == len(b"fake tarball content")
     assert m.triple_count == 1
-    assert m.graphs == ["http://a/g"]
+    assert m.graphs == ["http://example.test/g"]
     assert m.sources == {"houjin-bangou": "2026-08-01"}
 
 
@@ -111,9 +111,9 @@ def test_triple_count_handles_tricky_literals(tmp_path):
     """
     nq = tmp_path / "tricky.nq"
     nq.write_text(
-        '<http://a/s> <http://a/p> "空白 と <山括弧> を含む"@ja <http://a/g> .\n'
-        '<http://a/s> <http://a/p> "42"^^<http://www.w3.org/2001/XMLSchema#integer> <http://a/g> .\n'
-        '<http://a/s> <http://a/p> <http://a/o> .\n'   # グラフ項なしの3項行
+        '<http://example.test/s> <http://example.test/p> "空白 と <山括弧> を含む"@ja <http://example.test/g> .\n'
+        '<http://example.test/s> <http://example.test/p> "42"^^<http://www.w3.org/2001/XMLSchema#integer> <http://example.test/g> .\n'
+        '<http://example.test/s> <http://example.test/p> <http://example.test/o> .\n'   # グラフ項なしの3項行
         '\n'
         '# コメント行\n',
         encoding="utf-8",
@@ -123,9 +123,9 @@ def test_triple_count_handles_tricky_literals(tmp_path):
 
     m = build.build_manifest(
         nquads=nq, tarball=tarball, jena_version="5.0.0",
-        release="r", sources={}, graphs=["http://a/g"],
+        release="r", sources={}, graphs=["http://example.test/g"],
     )
     assert m.triple_count == 3, "空行とコメント行を除いた3行を数えるべき"
     # 3項行のオブジェクトIRIがグラフとして混入していないこと
-    assert m.graphs == ["http://a/g"]
-    assert "http://a/o" not in m.graphs
+    assert m.graphs == ["http://example.test/g"]
+    assert "http://example.test/o" not in m.graphs

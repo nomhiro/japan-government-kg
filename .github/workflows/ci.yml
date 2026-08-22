@@ -26,18 +26,22 @@ jobs:
       - name: Regenerate schema and fail if it differs from the committed output
         run: |
           ./scripts/generate-schema.sh
-          git diff --exit-code schema/generated/ || {
-            echo "::error::生成物がコミットされたものと異なる。scripts/generate-schema.sh を実行してコミットする"
-            exit 1
-          }
-
-      - name: Assert the base URI appears only in config
-        run: |
-          # ドメイン文字列を config.py 以外に書かないことを固定する(設計書§4.2)
-          if grep -rn --include="*.py" "localhost:8080/kg" src/ | grep -v "src/jgkg/config.py"; then
-            echo "::error::ベースURIが config.py 以外に書かれている(設計書§4.2)"
+          # `git diff` は未追跡ファイルを見ないので、新モジュールを足したときに
+          # 生成物が未追跡のまま生えても緑になる。--porcelain で未追跡も見る
+          if [ -n "$(git status --porcelain schema/generated/)" ]; then
+            git status --porcelain schema/generated/
+            git diff -- schema/generated/ || true
+            echo "::error::生成物がコミットされたものと異なる(未追跡ファイルを含む)。scripts/generate-schema.sh を実行してコミットする"
             exit 1
           fi
+
+      - name: Assert the base URI is consistent everywhere it is baked in
+        run: |
+          # 旧版はドメイン文字列を src/**.py から grep するだけで、実際に
+          # ドメインが焼き込まれている schema/*.yaml・schema/overlay/*.ttl・
+          # queries/cq/*.rq・schema/generated/** を一切見ていなかった。
+          # 検査を本物にする(設計書§4.2 / レビューC1)
+          uv run python -m jgkg.base_uri --check
 
       - name: Test
         run: uv run pytest tests/ -v

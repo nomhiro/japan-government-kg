@@ -7,7 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pyshacl import validate as shacl_validate
-from rdflib import Dataset, Graph, URIRef
+from rdflib import RDF, Dataset, Graph, URIRef
+from rdflib.namespace import SH
+
+from jgkg.config import get_settings
 
 
 @dataclass(frozen=True)
@@ -39,9 +42,56 @@ def _load_shapes(shapes_dir: Path) -> Graph:
     return shapes
 
 
+def _shape_target_classes(shapes: Graph) -> set[URIRef]:
+    """シェイプが対象にしているクラスIRIの集合。
+
+    LinkML の gen-shacl が出すのは `sh:targetClass` だけなので、それだけを見る。
+    将来 `sh:targetSubjectsOf` 等を手書きで足したら、ここも足す必要がある。
+    """
+    return {o for o in shapes.objects(None, SH.targetClass) if isinstance(o, URIRef)}
+
+
+def _own_declared_classes(graph: Graph, term_prefix: str) -> set[URIRef]:
+    """このグラフが `rdf:type` で名指しした、自オントロジーのクラスIRI。"""
+    return {
+        o
+        for o in graph.objects(None, RDF.type)
+        if isinstance(o, URIRef) and str(o).startswith(term_prefix)
+    }
+
+
+def _assert_shapes_cover(graph_uri: str, declared: set[URIRef], targets: set[URIRef]) -> None:
+    """自オントロジーのクラスを名指ししているのにシェイプが無い、を例外にする。
+
+    **これが無いと、名前空間がずれた瞬間に検証ゲートが「対象0件で合格」に静かに
+    退化する。** 起こりうる原因は3つあり、どれも今までは沈黙していた:
+
+    1. `.env` の `JGKG_BASE_URI` を変えたが生成物を作り直していない
+       (`jgkg.base_uri` の差し替え+再生成が必要)
+    2. 新しいモジュールを追加して `schema/all.yaml` の `imports` に足し忘れた
+       → そのクラスのシェイプが `all.shacl.ttl` に無い
+    3. 生成物が古い
+
+    出典グラフのように `rdf:type` を1つも持たないグラフは対象外(`declared` が空)。
+    """
+    missing = declared - targets
+    if not missing:
+        return
+    raise ValueError(
+        f"グラフ {graph_uri} は自オントロジーのクラスを名指ししているのに、"
+        f"対応するSHACLシェイプが1つも無い: {sorted(str(m) for m in missing)}。"
+        " このまま検証すると対象0件で合格し、検証ゲートが素通しになる。"
+        " (a) ベースURIを差し替えたなら"
+        " `uv run python -m jgkg.base_uri --check` と `./scripts/generate-schema.sh`、"
+        " (b) モジュールを追加したなら `schema/all.yaml` の imports を確認する"
+    )
+
+
 def validate_dataset(ds: Dataset, shapes_dir: Path) -> list[ValidationResult]:
     """名前付きグラフごとに検証する。グラフが置換の単位なので検証も同じ単位で行う。"""
     shapes = _load_shapes(shapes_dir)
+    targets = _shape_target_classes(shapes)
+    term_prefix = f"{get_settings().base_uri}/def/"
     results: list[ValidationResult] = []
 
     for ctx in ds.contexts():
@@ -50,6 +100,12 @@ def validate_dataset(ds: Dataset, shapes_dir: Path) -> list[ValidationResult]:
         target = Graph()
         for triple in ctx:
             target.add(triple)
+
+        _assert_shapes_cover(
+            str(ctx.identifier),
+            _own_declared_classes(target, term_prefix),
+            targets,
+        )
 
         conforms, _report_graph, report_text = shacl_validate(
             data_graph=target,
