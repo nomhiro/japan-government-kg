@@ -56,7 +56,7 @@ GraphDB EE / Stardog / AllegroGraph はいずれもエンタープライズ向�
 | **Cosmos DB for Gremlin** | **✕**(プロパティグラフ) | **✕** | フルマネージド | RU/s課金 | **✕ 設計非互換。**名前付きグラフ無し、30秒timeout、32ホップ上限 |
 | **Microsoft Fabric Graph** | **✕**(RDF明示的に非サポート) | ✕ | フルマネージド | Fabric capacity必要 | **✕ 設計非互換+高コスト** |
 | **Marketplace: GraphDB EE / AllegroGraph** | ○ | ○ | VM+managed disk(自前) | VM代+**ライセンス非公開** | **✕ 予算外** |
-| **AWS Neptune(比較対象)** | **○ 本物のマネージドRDF** | **○** | フルマネージド | db.t4g.medium **$67.89**(us-east-1)/**$103.95**(Tokyo)+storage。Serverlessは1 NCU下限で**$117.38/月、scale-to-zeroしない** | **AWSの明確な優位。**ただし最安でもAzure VM自前運用の**2〜3倍**。SHACL/推論は無し |
+| **AWS Neptune(比較対象)** | **○ 本物のマネージドRDF** | **○** | フルマネージド(cluster volume、10GBセグメント、3AZレプリケーション) | db.t4g.medium **$67.89**(us-east-1)/**$103.95**(Tokyo)+storage。Serverlessは1 NCU下限で**$117.38/月、scale-to-zeroしない** | **AWSの明確な優位。**ただし最安でもAzure VM自前運用の**2〜3倍**。SHACL/推論は無し。**`xsd:dateTime` がUTCに正規化されタイムゾーンが破棄される**(JSTを扱う本件では情報損失) |
 | **Blobでダンプ配布のみ + Static Web Apps** | ✕(クエリ不可) | — | Blob | Blob hot $0.0208/GB/月(50GBで$1.04)+egress 100GB/月無料、以降$0.087/GB(East US)/$0.12/GB(Japan East)。SWAは**Free $0** | **◎ 最安の第一歩。**クエリ可能な構成との差は実質**VM代$35〜70/月** |
 | **Hetzner / Fly.io(比較)** | ○ | ○ | ローカルNVMe / Fly Volumes | Hetzner CPX32(4vCPU/8GB/160GB NVMe)≈**$41.99**。Fly shared-cpu-2x 8GB ≈**$47.32**+volume | Hetznerは2026年4-6月に値上げ(CPX/CCX系で100-200%超)。**かつての圧倒的な安さは薄れた**。Flyのegressは$0.02/GBでAzureの1/4〜1/6 |
 
