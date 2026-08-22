@@ -53,11 +53,11 @@
 
 ## 4. データソース(要約)
 
-詳細は `docs/research/2026-08-22-government-data-sources.md`(34ソース、URL検証済み)。
+詳細は `docs/research/2026-08-22-government-data-sources.md`(全35エントリ = データソース34件 + 語彙・設計基盤1件(GIF/IMI)、URL検証済み)。主たるアクセス方式で3層に分類:
 
-- **①API層(16ソース)**: e-Gov法令API v2、e-Stat API、統計LOD(SPARQL)、国会会議録API、EDINET API v2、gBizINFO REST、法人番号Web-API、官公需API、ジャパンサーチSPARQL、NDLサーチ等
-- **②バルク/スクレイピング層(10ソース)**: 予算書XML、RSシステムCSV、法人番号全件CSV、国土数値情報、衆参議員一覧、閣議決定、パブコメ等
-- **③PDF非構造層(6ソース)**: 官報、白書、審議会資料、裁判例、政治資金収支報告書、幹部名簿
+- **①API層(16件)**: e-Gov法令API v2、e-Stat API、統計LOD(SPARQL)、国会会議録API、EDINET API v2、gBizINFO REST、法人番号Web-API(全件バルクCSVも提供)、官公需API、ジャパンサーチSPARQL、NDLサーチ等
+- **②バルク/スクレイピング層(12件)**: 予算書XML、RSシステムCSV、国土数値情報、衆参議員一覧、閣議決定、パブコメ、調達ポータル、日本法令索引、RESAS等
+- **③PDF非構造層(6件)**: 官報、白書、審議会資料、裁判例、政治資金収支報告書、幹部名簿
 
 ライセンス上の要注意: 国土数値情報の非商用条件データ、官報の90日無料期間、政治資金収支報告書の掲載期間、裁判例サイトのスクレイピングポリシー、地理院タイルの測量法承認。
 
