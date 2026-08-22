@@ -62,6 +62,12 @@ ALLOWED_EXTERNAL_HOSTS: frozenset[str] = frozenset({
     "www.digital.go.jp",
     "www.houjin-bangou.nta.go.jp",
     "github.com",
+    # `wrangler pages dev` のローカル再現サーバ。**ポート込みで限定する。**
+    # ここをポート無しの "localhost" と書くと、移行前の開発用ベースURI
+    # (別ポートの localhost)が再び紛れ込んでも検出できなくなる。
+    # **この検査はコメント内のURLも拾う。** コメントのURLはコードに写されるため、
+    # 区別しないのが正しい(この行を書いたときに実際に検出された)。
+    "localhost:8788",
     # 生成物のコメントに現れる
     "pydantic-docs.helpmanual.io",
     # テスト専用のダミー(RFC 2606 / RFC 6761 の予約名)

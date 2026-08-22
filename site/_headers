@@ -7,13 +7,16 @@
 # **CORS を開ける理由**: LODはブラウザ内のクライアントからも参照される。
 # 公開語彙で Access-Control-Allow-Origin を絞る理由が無い(公共財として公開している)。
 
+# **注意**: この規則は本文の内容に関係なく Content-Type を被せる。
+# Cloudflare Pages は存在しないパスに index.html を 200 で返すため、
+# **配信物が欠落しても「200 + text/turtle」になる**(実測 2026-08-23)。
+# 欠落を捕まえるには本文をパースする必要がある(scripts/verify-site.py)。
 /def/*
   Content-Type: text/turtle; charset=utf-8
   Access-Control-Allow-Origin: *
   # 語彙は頻繁には変わらないが、変えたときに古いものを掴まれ続けるのも困る。
   # 1時間 + 再検証で妥協する。
   Cache-Control: public, max-age=3600, must-revalidate
-  X-Content-Type-Options: nosniff
 
 /*
   X-Content-Type-Options: nosniff

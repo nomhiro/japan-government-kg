@@ -58,3 +58,6 @@ Thumbs.db
 # 静的配信物。正は schema/generated/ なので同じものを2箇所にコミットしない
 site/def/
 site/sitemap.txt
+
+# wrangler のローカル実行が作る一時ファイル
+.wrangler/
