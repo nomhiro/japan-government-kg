@@ -1,0 +1,111 @@
+id: http://localhost:8080/kg/def/core
+name: jgkg-core
+title: 日本政府ナレッジグラフ コアスキーマ
+description: >-
+  6軸(誰が/何を/どこで/いつ/いくらで/何について)の基底クラスと、
+  出典を表す用語を定義する。ドメイン固有のクラスは各ドメインモジュールで
+  このモジュールを import して継承する。
+license: https://creativecommons.org/licenses/by/4.0/
+
+prefixes:
+  jgkgcore: http://localhost:8080/kg/def/core#
+  linkml: https://w3id.org/linkml/
+  prov: http://www.w3.org/ns/prov#
+  skos: http://www.w3.org/2004/02/skos/core#
+  dcterms: http://purl.org/dc/terms/
+  schema: http://schema.org/
+default_prefix: jgkgcore
+default_range: string
+imports:
+  - linkml:types
+
+slots:
+  id:
+    identifier: true
+    description: このリソースのURI
+    range: uriorcurie
+  label:
+    description: 人間が読む名称
+    slot_uri: skos:prefLabel
+  occurred_on:
+    description: この出来事が起きた日
+    range: date
+  valid_from:
+    description: この記述が真である期間の始まり
+    range: date
+  valid_until:
+    description: この記述が真である期間の終わり
+    range: date
+  involves_agent:
+    description: この出来事に関与した主体
+    range: Agent
+  amount_jpy:
+    description: 金額(円)
+    range: integer
+  unresolved_text:
+    description: 正準IDに解決できなかった元の参照文字列
+  unresolved_reason:
+    description: 解決できなかった理由
+    range: UnresolvedReasonEnum
+  unresolved_key:
+    description: >-
+      解決できなかった参照の、ソース側のキー(府省コード等)。ドメイン固有の
+      プロパティを UnresolvedReference に足すと閉じたSHACLシェイプに違反するため、
+      汎用のキーとしてここで受ける
+
+enums:
+  UnresolvedReasonEnum:
+    description: 参照が未解決である理由の分類
+    permissible_values:
+      NO_CANDIDATE:
+        description: 候補が見つからなかった
+      AMBIGUOUS:
+        description: 候補が複数あり一意に決められなかった
+      OBSOLETE_ORGANIZATION:
+        description: 旧省庁名など、現存しない組織を指している
+
+classes:
+  Entity:
+    abstract: true
+    description: 本KGが扱うすべての事物の基底
+    slots: [id, label]
+
+  Agent:
+    is_a: Entity
+    description: 「誰が」の軸。行為の主体。組織と人の上位
+    exact_mappings: [prov:Agent]
+
+  Work:
+    is_a: Entity
+    description: 「何を」の軸。法令・政策・事業・文書・司法判断の上位
+    close_mappings: [schema:CreativeWork]
+
+  Place:
+    is_a: Entity
+    description: 「どこで」の軸。行政区域・住所・地物の上位
+    close_mappings: [schema:Place]
+
+  Event:
+    is_a: Entity
+    description: >-
+      「いつ」の軸。時点を持つ出来事。関係を実体化するための中心クラス。
+      「AがBに影響した」を直接のエッジにせず、原則としてこのクラスを介す
+    slots: [occurred_on, involves_agent]
+    close_mappings: [prov:Activity]
+
+  MonetaryItem:
+    is_a: Entity
+    description: 「いくらで」の軸。予算科目・支出の上位
+    slots: [amount_jpy]
+
+  Concept:
+    is_a: Entity
+    description: 「何について」の軸。主題・指標・制度手続きの上位
+    exact_mappings: [skos:Concept]
+
+  UnresolvedReference:
+    is_a: Entity
+    description: >-
+      正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず
+      KGに残して計測できるようにするためのクラス
+    slots: [unresolved_text, unresolved_reason, unresolved_key]
