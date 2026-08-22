@@ -16,6 +16,14 @@ import urllib.request
 
 from rdflib import Graph, URIRef
 
+# **出力を環境非依存にする。** Windowsでこのスクリプトの出力をパイプすると、
+# Pythonがロケールのコードページ(cp932)で書くため日本語が文字化けする。
+# 実際に利用者の手元で読めない出力が出た(2026-08-23)。設計書§5.7が
+# 生成物について定めた「生成は環境非依存にする」を、出力にも適用する。
+# 呼び出し側に PYTHONUTF8=1 を要求せず、スクリプト側で閉じる。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 DEFAULT_ORIGIN = "http://localhost:8788"
 # 配信物が名乗る名前空間。Content-Type や CORS と違い、これは**中身**の検査である。
 NAMESPACE = "https://jgkg.norr-tech.com"
