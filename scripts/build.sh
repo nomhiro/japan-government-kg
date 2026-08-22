@@ -29,7 +29,14 @@ echo "== パイプライン実行(検証を含む) =="
 uv run python -c "
 import datetime, json, pathlib
 from jgkg import pipeline
-report = pipeline.run(datetime.date.fromisoformat('${FETCHED_ON}'), pathlib.Path('${OUT}'))
+# **取得して来るソースの日付だけを渡す。** リポジトリにコミットした参照表
+# (ministry-codes)の日付は sources.py の recorded_on から取られる。
+# 以前は法人番号の取得日を参照表にも流用しており、CQ P0-4 が根拠のない日付を
+# 答えていた(レビューI2)
+report = pipeline.run(
+    {'houjin-bangou': datetime.date.fromisoformat('${FETCHED_ON}')},
+    pathlib.Path('${OUT}'),
+)
 pathlib.Path('${OUT}/pipeline-report.json').write_text(
     report.model_dump_json(indent=2), encoding='utf-8')
 print(report.model_dump_json(indent=2))
@@ -52,7 +59,9 @@ m = build.build_manifest(
     tarball=out / 'tdb2.tar.gz',
     jena_version='${JENA_VERSION}',
     release='${FETCHED_ON}',
-    sources={'houjin-bangou': '${FETCHED_ON}'},
+    # **手書きしない。** 以前は {'houjin-bangou': FETCHED_ON} と決め打ちで、
+    # KGに入っている ministry-codes グラフが manifest に現れなかった
+    sources=report['sources'],
     graphs=report['graphs'],
 )
 build.write_manifest(m, out / 'manifest.json')

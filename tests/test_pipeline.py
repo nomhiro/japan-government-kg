@@ -7,6 +7,9 @@ from jgkg import lake, pipeline
 from jgkg.connectors import houjin_bangou
 
 DAY = datetime.date(2026, 8, 1)
+# 取得して来るソースの日付だけを渡す。参照表(ministry-codes)の日付は
+# sources.py の recorded_on から取られる
+FETCHED = {"houjin-bangou": DAY}
 
 
 @pytest.fixture(autouse=True)
@@ -28,7 +31,7 @@ def seeded_lake():
 
 def test_run_produces_nquads_and_report(seeded_lake, tmp_path):
     out = tmp_path / "out"
-    report = pipeline.run(DAY, out)
+    report = pipeline.run(FETCHED, out)
 
     assert report.organizations == 4       # 入力の全件数
     assert report.government_organs == 3   # KGに入れた件数(株式会社1件を除外)
@@ -52,7 +55,7 @@ def test_run_reports_unmatched_ministries(seeded_lake, tmp_path):
     正常系では突合率100%になる。ここを厳密に固定することで、突合が壊れた
     ときに検出できる。
     """
-    report = pipeline.run(DAY, tmp_path / "out")
+    report = pipeline.run(FETCHED, tmp_path / "out")
     assert report.ministries == 3, "参照表の3府省すべてが突合されるべき"
     assert report.unmatched_ministries == 0, "正常系で未突合が出てはならない"
 
@@ -85,7 +88,7 @@ def test_quarantine_stops_the_release(lake_with_duplicate_label, tmp_path):
     以前は `build.sh` が `graphs_quarantined` を一切見ずに `exit 0` していたため、
     **中身が無いのに出典だけが残ったKGがそのまま出荷される**経路があった。
     """
-    report = pipeline.run(DAY, tmp_path / "out")
+    report = pipeline.run(FETCHED, tmp_path / "out")
     assert report.graphs_quarantined == 1, (
         f"重複ラベルで隔離が起きるという前提が崩れている: {report.model_dump()}"
     )
@@ -105,19 +108,74 @@ def test_quarantine_stops_the_release(lake_with_duplicate_label, tmp_path):
 
 def test_release_gate_allows_a_clean_run(seeded_lake, tmp_path):
     """正常系ではゲートが通ること(常に例外を投げる実装になっていないこと)。"""
-    report = pipeline.run(DAY, tmp_path / "out")
+    report = pipeline.run(FETCHED, tmp_path / "out")
     assert report.graphs_quarantined == 0
     pipeline.enforce_release_gate(report)
 
 
+def test_run_records_a_date_per_source(seeded_lake, tmp_path):
+    """ソースごとに「いつ時点か」を記録すること。
+
+    以前は法人番号スナップショットの取得日を府省参照表の
+    `prov:generatedAtTime` に流用しており、CQ P0-4 が2ソースのうち1つについて
+    根拠のない日付を答えていた。参照表には取得日が存在しないので、
+    リポジトリに記録した日(`sources.py` の `recorded_on`)を使う。
+
+    **何があれば落ちるか**: `run` が単一日付を全ソースに流用する実装に戻ったら
+    落ちる(2つの値が同じ日付になる)。
+    """
+    from jgkg.sources import get_source
+
+    report = pipeline.run(FETCHED, tmp_path / "out")
+    recorded_on = get_source("ministry-codes").recorded_on
+    assert recorded_on is not None, "参照表の recorded_on が記録されていない"
+    assert report.sources == {
+        "houjin-bangou": DAY.isoformat(),
+        "ministry-codes": recorded_on.isoformat(),
+    }
+    assert report.sources["houjin-bangou"] != report.sources["ministry-codes"], (
+        "参照表の日付が法人番号の取得日と同じになっている(流用の再発)"
+    )
+    # リリース名は呼び出し側が渡した取得日から決まる(recorded_on を混ぜない)
+    assert report.release == DAY.isoformat()
+
+
+def test_run_refuses_to_guess_a_missing_fetch_date(seeded_lake, tmp_path):
+    """取得日が渡されていないソースについて日付を捏造しないこと。"""
+    with pytest.raises(ValueError, match="取得日が1件も渡されていない"):
+        pipeline.run({}, tmp_path / "out")
+
+    with pytest.raises(KeyError, match="houjin-bangou"):
+        pipeline.run({"ministry-codes": DAY}, tmp_path / "out")
+
+
+def test_reference_table_digest_matches_the_registry():
+    """コミット済み参照表の内容が `sources.py` の記録と一致すること。
+
+    参照表はレイクにスナップショットが無いので、内容ハッシュが「どの版を
+    使ったか」の唯一の証拠になる。**何があれば落ちるか**: `ministry-codes.csv`
+    を編集して `sources.py` の `sha256` / `recorded_on` を更新しなければ落ちる。
+    """
+    from jgkg.sources import content_digest, get_source
+
+    src = get_source("ministry-codes")
+    assert src.local_path, "参照表のパスが記録されていない"
+    actual = content_digest(Path(src.local_path).read_bytes())
+    assert actual == src.sha256, (
+        f"参照表の内容が sources.py の記録と一致しない。"
+        f" 実ファイル={actual} 記録={src.sha256}。"
+        " 参照表を更新したなら sources.py の sha256 と recorded_on も更新する"
+    )
+
+
 def test_run_is_idempotent(seeded_lake, tmp_path):
     out = tmp_path / "out"
-    first = pipeline.run(DAY, out)
-    second = pipeline.run(DAY, out)
+    first = pipeline.run(FETCHED, out)
+    second = pipeline.run(FETCHED, out)
     assert first.organizations == second.organizations
     assert (out / "kg.nq").exists()
 
 
 def test_run_fails_when_snapshot_missing(tmp_path):
     with pytest.raises(FileNotFoundError):
-        pipeline.run(DAY, tmp_path / "out")
+        pipeline.run(FETCHED, tmp_path / "out")

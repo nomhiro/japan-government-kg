@@ -6,3 +6,7 @@
 # 環境非依存にする」に従い、設定に関係なく作業ツリーの形をLFに固定する
 # (生成スクリプトで PYTHONUTF8=1 を設定して文字コードを固定したのと同じ趣旨)。
 schema/generated/** text eol=lf
+
+# 参照表の改行もLFに固定する。内容ハッシュ(sources.py の sha256)を
+# Gitの改行設定に依存させないため
+data/reference/*.csv text eol=lf

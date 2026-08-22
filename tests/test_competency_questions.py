@@ -12,6 +12,9 @@ from jgkg import lake, pipeline
 from jgkg.connectors import houjin_bangou
 
 DAY = datetime.date(2026, 8, 1)
+# 取得して来るソースの日付だけを渡す。参照表(ministry-codes)の日付は
+# sources.py の recorded_on から取られる
+FETCHED = {"houjin-bangou": DAY}
 CQ_DIR = Path("queries/cq")
 
 
@@ -31,7 +34,7 @@ def kg(tmp_path):
     content = Path("tests/fixtures/houjin_bangou_sample.csv").read_bytes()
     lake.save("houjin-bangou", DAY, houjin_bangou.FILENAME, content)
     out = tmp_path / "out"
-    pipeline.run(DAY, out)
+    pipeline.run(FETCHED, out)
 
     # default_union=True が必須。既定(False)では既定グラフが空のため、
     # GRAPH句を使わないCQクエリがすべて0件になる。本番のFusekiでも
@@ -62,7 +65,7 @@ def kg_with_unresolved(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline, "MINISTRY_REFERENCE", reference_path)
 
     out = tmp_path / "out"
-    report = pipeline.run(DAY, out)
+    report = pipeline.run(FETCHED, out)
     # 未解決が実際に1件作られていること、かつSHACL検証で隔離されていないことを
     # ここで確認する。これが崩れていると、下のCQテストは「未解決を計測できて
     # いない」のか「未解決グラフがそもそも隔離された」のか区別できず誤診断になる
@@ -92,18 +95,42 @@ def test_cq_p0_02_ministry_list(kg):
 
 
 def test_cq_p0_03_provenance_of_edge(kg):
-    """出典を辿れることはCQの一つ。ここが通らなければ原則7が守れていない。"""
+    """出典を辿れることはCQの一つ。ここが通らなければ原則7が守れていない。
+
+    クエリに ORDER BY が無いので `rows[0]` を当てにしない。法人番号を持つ
+    グラフは法人番号グラフだけなので、全行がその取得日を答えるべきである。
+    """
     rows = _query(kg, "p0-03-provenance-of-edge.rq")
     assert rows, "CQ P0-3 に答えられない(グラフの出典が辿れない)"
-    _graph, _source, fetched_on, license_ = rows[0]
-    assert "2026-08-01" in str(fetched_on)
-    assert str(license_)
+    for graph, _source, fetched_on, license_ in rows:
+        assert "graph/houjin-bangou/" in str(graph), graph
+        assert str(fetched_on).startswith("2026-08-01"), (graph, fetched_on)
+        assert str(license_)
 
 
 def test_cq_p0_04_release_freshness(kg):
+    """各ソースについて「いつ時点か」を答えられること。
+
+    **ソースごとに違う日付が返ることまで見る。** 以前は法人番号の取得日を
+    府省参照表にも流用していたため、このCQは2ソースのうち1つについて根拠の
+    無い日付を答えていた(レビューI2)。参照表には取得日が存在しないので、
+    リポジトリに記録した日を答える。
+
+    **何があれば落ちるか**: 参照表の日付が法人番号の取得日に戻ったら落ちる。
+    ソースが1つでも欠けたら落ちる。
+    """
+    from jgkg.sources import get_source
+
     rows = _query(kg, "p0-04-release-freshness.rq")
     assert rows, "CQ P0-4 に答えられない(鮮度が問えない)"
-    assert any("2026-08-01" in str(r[1]) for r in rows)
+
+    by_source = {str(name): str(date) for name, date in rows}
+    houjin = get_source("houjin-bangou")
+    ministry = get_source("ministry-codes")
+    assert by_source == {
+        houjin.name: "2026-08-01",
+        ministry.name: ministry.recorded_on.isoformat(),
+    }, by_source
 
 
 def test_cq_p0_05_unresolved_count(kg):

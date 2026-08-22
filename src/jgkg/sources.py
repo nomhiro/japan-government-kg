@@ -3,10 +3,22 @@
 ライセンスが未記録のソースを登録してはならない。アプリはこのメタデータを
 使って出典と規約を自動表示する。
 """
+import datetime
+import hashlib
 from dataclasses import dataclass
 
 GOV_STANDARD_TERMS = "政府標準利用規約(第2.0版)"
 GOV_STANDARD_TERMS_URL = "https://www.digital.go.jp/resources/terms_of_use"
+
+
+def content_digest(data: bytes) -> str:
+    """参照表の内容ハッシュ。改行をLFに正規化してから取る。
+
+    Gitの `core.autocrlf` で作業ツリーの改行が変わっても同じ値になるようにする。
+    スナップショット(`lake.save`)は取得したバイト列そのものが同一性なので、
+    そちらは正規化しない。
+    """
+    return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -20,6 +32,15 @@ class Source:
     access: str     # api / bulk / scrape
     encoding: str = "utf-8"
     note: str = ""
+    # --- リポジトリにコミットして管理する参照表だけが持つ事実 ---
+    # これらのソースには「取得日」が存在しない(レイクにスナップショットが無く、
+    # 上流から取得した日付も記録されていない)。**分からない日付を書く代わりに、
+    # 分かっている事実だけを書く。**
+    local_path: str | None = None
+    # このリポジトリに記録した日(git log で確認できる事実)
+    recorded_on: datetime.date | None = None
+    # 記録した内容の content_digest。実ファイルとの一致をテストが照合する
+    sha256: str | None = None
 
 
 SOURCES: dict[str, Source] = {
@@ -43,7 +64,13 @@ SOURCES: dict[str, Source] = {
         license_url="https://creativecommons.org/licenses/by/4.0/",
         frequency="ondemand",
         access="bulk",
-        note="小規模で安定した参照表のため data/reference/ にコミットして管理する",
+        note="小規模で安定した参照表のため data/reference/ にコミットして管理する。"
+             "上流から取得した日付は記録されていないため、prov:generatedAtTime には"
+             "『このリポジトリに記録した日』を入れる(取得日ではない)",
+        local_path="data/reference/ministry-codes.csv",
+        # git log --diff-filter=A で確認した、このファイルがリポジトリに入った日
+        recorded_on=datetime.date(2026, 8, 22),
+        sha256="d0c46d408bf3578a9b3fab221de1101540d1fdc4454e972869e9796d0ca5e094",
     ),
 }
 

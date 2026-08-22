@@ -3,12 +3,13 @@
 各段の件数を PipelineReport として返す。観測性は設計書§11.1の要件。
 """
 import datetime
+from collections.abc import Mapping
 from pathlib import Path
 
 from pydantic import BaseModel
 from rdflib import Dataset
 
-from jgkg import lake, validate
+from jgkg import lake, sources, validate
 from jgkg.config import get_settings
 from jgkg.connectors import houjin_bangou
 from jgkg.rdf import emit
@@ -35,6 +36,10 @@ class PipelineReport(BaseModel):
     # (N-Quadsのテキストから推測すると、リテラルに含まれる `>` や3項行の
     #  オブジェクトIRIを誤認する。実測で確認済み)
     graphs: list[str]
+    # ソースIDごとの「いつ時点か」。**単一の取得日でリリース全体を語らない。**
+    # 設計書§6.4の更新頻度表は monthly/annual/ondemand とソースごとに異なる。
+    # manifest はこれをそのまま使う(build.sh で手書きしない)
+    sources: dict[str, str]
 
 
 class QuarantineNotEmptyError(RuntimeError):
@@ -80,12 +85,46 @@ def _merge(target: Dataset, source: Dataset) -> None:
             g.add(triple)
 
 
-def run(fetched_on: datetime.date, out_dir: Path) -> PipelineReport:
+def _source_date(
+    source_id: str, fetched_on: Mapping[str, datetime.date]
+) -> datetime.date:
+    """そのソースが「いつ時点」かを決める。
+
+    呼び出し側が渡した取得日が最優先。渡されていない場合、リポジトリにコミット
+    された参照表なら「記録した日」を使う(それが分かっている唯一の事実)。
+    どちらも無ければ**推測せずに失敗する**。以前は法人番号スナップショットの
+    取得日を府省参照表に流用しており、CQ P0-4 が根拠のない日付を答えていた。
+    """
+    if source_id in fetched_on:
+        return fetched_on[source_id]
+    src = sources.get_source(source_id)
+    if src.recorded_on is not None:
+        return src.recorded_on
+    raise KeyError(
+        f"ソース {source_id!r} の取得日が渡されていない。"
+        " 取得して来るソースは呼び出し側が日付を渡す(pipeline.run の fetched_on)。"
+        " リポジトリにコミットする参照表なら sources.py に recorded_on を記録する"
+    )
+
+
+def run(fetched_on: Mapping[str, datetime.date], out_dir: Path) -> PipelineReport:
+    """ソースIDごとの「いつ時点か」を受け取ってKGを1本作る。
+
+    **単一の取得日を全ソースに仮定しない。** 設計書§6.4の更新頻度表は
+    monthly/annual/ondemand とソースごとに異なるため、単一日付の仮定は
+    Phase 1(e-Gov 月次 / 予算 年次)で必ず破綻する。
+    """
     settings = get_settings()
+    if not fetched_on:
+        raise ValueError(
+            "取得日が1件も渡されていない。例: {'houjin-bangou': date(2026, 8, 1)}"
+        )
+    houjin_date = _source_date("houjin-bangou", fetched_on)
+    ministry_date = _source_date("ministry-codes", fetched_on)
 
     # ファイルパスを渡してストリームで解析する。bytes で読むと実データ(約1GB)で
     # メモリが破綻する(§Task 6 の説明を参照)
-    snapshot_path = lake.path_of("houjin-bangou", fetched_on, houjin_bangou.FILENAME)
+    snapshot_path = lake.path_of("houjin-bangou", houjin_date, houjin_bangou.FILENAME)
     if not snapshot_path.exists():
         raise FileNotFoundError(
             f"スナップショットが無い: {snapshot_path}。先にコネクタで取得する"
@@ -105,10 +144,19 @@ def run(fetched_on: datetime.date, out_dir: Path) -> PipelineReport:
 
     reference = ministry_mod.load_reference(MINISTRY_REFERENCE)
     ministries, unmatched = ministry_mod.build(orgs, reference)
+    # **実際に読んだファイルのハッシュ**を出典に入れる。参照表にはレイクの
+    # スナップショットが無いので、内容ハッシュが「どの版を使ったか」の唯一の証拠
+    reference_digest = sources.content_digest(MINISTRY_REFERENCE.read_bytes())
 
     ds = Dataset(default_union=True)
-    _merge(ds, emit.emit_organizations(orgs, "houjin-bangou", fetched_on))
-    _merge(ds, emit.emit_ministries(ministries, unmatched, "ministry-codes", fetched_on))
+    # 法人番号スナップショットの sha256 は未記録(レビューI1。本修正の範囲外)
+    _merge(ds, emit.emit_organizations(orgs, "houjin-bangou", houjin_date))
+    _merge(
+        ds,
+        emit.emit_ministries(
+            ministries, unmatched, "ministry-codes", ministry_date, sha256=reference_digest
+        ),
+    )
 
     results = validate.validate_dataset(ds, SHAPES_DIR)
     quarantined = [r for r in results if not r.conforms]
@@ -120,7 +168,10 @@ def run(fetched_on: datetime.date, out_dir: Path) -> PipelineReport:
     emit.write_nquads(clean, out_dir / "kg.nq")
 
     return PipelineReport(
-        release=fetched_on.isoformat(),
+        # リリース名は**呼び出し側が渡した取得日**のうち最も新しいもの。
+        # 参照表の recorded_on を混ぜないのは、成果物ディレクトリ名や manifest の
+        # release と食い違わせないため
+        release=max(fetched_on.values()).isoformat(),
         organizations=total_organizations,
         government_organs=len(orgs),
         ministries=len(ministries),
@@ -129,4 +180,8 @@ def run(fetched_on: datetime.date, out_dir: Path) -> PipelineReport:
         graphs_quarantined=len(quarantined),
         # Dataset から正確なグラフURIを取る。テキストから推測してはならない
         graphs=sorted(str(c.identifier) for c in clean.contexts() if len(c) > 0),
+        sources={
+            "houjin-bangou": houjin_date.isoformat(),
+            "ministry-codes": ministry_date.isoformat(),
+        },
     )
