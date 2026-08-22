@@ -39,9 +39,10 @@ def test_definitions_carry_japanese_language_tag(module):
     untagged = [d for d in definitions if getattr(d, "language", None) != "ja"]
     assert not untagged, f"@ja が付いていない定義文がある: {untagged[:3]}"
 
-    # SHACL側も後処理の対象。sh:description が出力されている場合はすべてタグ付き
+    # SHACL側も後処理の対象。sh:description は必ず出力され、すべてタグ付きであること
     shapes = _load(GENERATED / f"{module}.shacl.ttl")
     descriptions = list(shapes.objects(None, SH.description))
+    assert descriptions, "sh:description が出力されていない"
     untagged_shapes = [d for d in descriptions if getattr(d, "language", None) != "ja"]
     assert not untagged_shapes, f"SHACLに@jaが付いていない説明文がある: {untagged_shapes[:3]}"
 
