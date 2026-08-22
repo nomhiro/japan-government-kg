@@ -2,7 +2,7 @@
 # 成果物(TDB2インデックス)は data/artifact/tdb2 に展開しておく。
 services:
   fuseki:
-    image: apache/jena-fuseki:latest
+    image: apache/jena-fuseki:${JENA_VERSION:?JENA_VERSION を .env に設定する}
     ports:
       - "3030:3030"
     command: ["/jena-fuseki/fuseki-server", "--config=/fuseki/config/kg.ttl"]

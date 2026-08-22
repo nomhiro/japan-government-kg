@@ -62,6 +62,33 @@ def test_verify_manifest_detects_corruption(tmp_path):
         build.verify_manifest(manifest_path, tarball)
 
 
+def test_verify_manifest_detects_jena_version_mismatch(tmp_path):
+    """実行側のJenaバージョンが成果物と違えば例外になること。
+
+    TDB2のオンディスク形式はJenaのバージョンに紐づく。記録しただけで
+    照合しなければ、その記録は意味を持たない。
+    """
+    tarball = tmp_path / "kg.tar.gz"
+    tarball.write_bytes(b"content")
+    nq = tmp_path / "kg.nq"
+    nq.write_text("", encoding="utf-8")
+
+    m = build.build_manifest(
+        nquads=nq, tarball=tarball, jena_version="6.2.0",
+        release="r", sources={}, graphs=[],
+    )
+    manifest_path = tmp_path / "manifest.json"
+    build.write_manifest(m, manifest_path)
+
+    # 一致するなら例外なし
+    build.verify_manifest(manifest_path, tarball, expected_jena_version="6.2.0")
+    # 省略した場合も従来通り例外なし
+    build.verify_manifest(manifest_path, tarball)
+    # 違えば例外
+    with pytest.raises(ValueError, match="Jenaバージョン"):
+        build.verify_manifest(manifest_path, tarball, expected_jena_version="6.1.0")
+
+
 def test_write_manifest_is_readable_json(tmp_path):
     nq = tmp_path / "kg.nq"
     nq.write_text("", encoding="utf-8")

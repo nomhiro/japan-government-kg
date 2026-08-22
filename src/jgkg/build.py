@@ -82,15 +82,28 @@ def write_manifest(m: Manifest, path: Path) -> None:
     atomic_write(path, data)
 
 
-def verify_manifest(manifest_path: Path, tarball: Path) -> None:
-    """成果物のsha256がmanifestと一致することを確かめる。
+def verify_manifest(
+    manifest_path: Path,
+    tarball: Path,
+    expected_jena_version: str | None = None,
+) -> None:
+    """成果物のsha256と、任意でJenaバージョンが一致することを確かめる。
 
     実行側が起動時にこれを呼ぶことで、Neptuneのsegment自動修復に相当する
     「壊れたデータを検出する」能力をチェックサムで安価に得る。
+
+    `expected_jena_version` を渡すと、実行側のJenaバージョンが成果物を作った
+    ものと一致するかも確かめる。**TDB2のオンディスク形式はJenaのバージョンに
+    紐づく**ため、記録しただけで照合しなければ意味がない。
     """
     m = Manifest(**json.loads(manifest_path.read_text(encoding="utf-8")))
     actual = _sha256(tarball)
     if actual != m.sha256:
         raise ValueError(
             f"成果物のsha256が一致しない。manifest={m.sha256} actual={actual}"
+        )
+    if expected_jena_version is not None and expected_jena_version != m.jena_version:
+        raise ValueError(
+            "Jenaバージョンが一致しない。TDB2のオンディスク形式はバージョンに紐づくため"
+            f"読めない可能性がある。manifest={m.jena_version} runtime={expected_jena_version}"
         )

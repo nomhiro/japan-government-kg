@@ -72,7 +72,7 @@ def run(fetched_on: datetime.date, out_dir: Path) -> PipelineReport:
     reference = ministry_mod.load_reference(MINISTRY_REFERENCE)
     ministries, unmatched = ministry_mod.build(orgs, reference)
 
-    ds = Dataset()
+    ds = Dataset(default_union=True)
     _merge(ds, emit.emit_organizations(orgs, "houjin-bangou", fetched_on))
     _merge(ds, emit.emit_ministries(ministries, unmatched, "ministry-codes", fetched_on))
 
