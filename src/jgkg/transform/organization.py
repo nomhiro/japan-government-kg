@@ -6,6 +6,7 @@
 import csv
 import io
 import re
+import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,41 +16,42 @@ from pydantic import BaseModel
 from jgkg.uris import HOUJIN_BANGOU_RE, org_uri
 
 # =============================================================================
-# **未了: 下の COL は一次資料と照合されていない。実データ投入前の必須手順。**
+# **照合記録(2026-08-23): COL は一次資料と照合済み。**
 #
-# リポジトリのどこにも国税庁の資源定義書(全件データのレイアウト仕様)への参照も
-# 引用も無い。唯一の検証手段である `tests/fixtures/houjin_bangou_sample.csv` は
-# COL に合わせて書かれているため、**テストは構造上 COL の誤りに反対できない**
-# (円環の内側を検証している)。全件データの実際の列数は15列より多い。
+# 一次資料: 国税庁 法人番号公表サイト 全件データ(Unicode版CSV)
+#   配布物 = zip(中身: `00_zenkoku_all_20260731.csv` 1,261,904,024 bytes + 同名 .asc 署名)
+#   取得元 = https://www.houjin-bangou.nta.go.jp/download/zenken/ のダウンロード
+#   (`?event=download&selDlFileNo=<番号>` のGET。番号は月次で変わる)
 #
-# 実データを投入する前に、次を人が確認して結果をここに書くこと:
+# 実データの先頭1行(引用。総列数 = 30):
+#   1,1000012160153,01,1,2018-04-02,2015-10-05,"釧路検察審査会",,101,
+#   "北海道","釧路市","柏木町4-7",,01,206,0850824,...(以降空欄・英語名等)
 #
-#   1. 国税庁 法人番号公表サイトの「資源定義書」を取得し、そのURL・版・公開日を
-#      このコメントに追記する
-#   2. 総列数を確認して EXPECTED_COLUMNS に書く(今は必要な列の下限しか見ていない)
-#   3. 各列の索引を照合する: 法人番号 / 法人種別 / 商号又は名称 /
-#      本店所在地(都道府県・市区町村・丁目番地等)
-#   4. 実データの先頭1行を docs/ に引用し、列番号との対応を残す
-#   5. fixture を実データの列数に合わせて作り直す。列数が一致していれば COL の
-#      誤りを fixture 側から独立に検出できるようになる
+# 列対応(0起点): [0]連番 [1]法人番号 [2]処理区分 [3]訂正区分 [4]更新年月日
+#   [5]変更年月日 [6]商号又は名称 [7]名称イメージID [8]法人種別 [9]都道府県
+#   [10]市区町村 [11]丁目番地等 [12]所在地イメージID [13]都道府県コード
+#   [14]市区町村コード [15]郵便番号 ... [28]フリガナ [29]検索対象除外
 #
-# それまでの間の安全装置として、**列レイアウトが想定と違えば「0件」ではなく例外に
-# する**(`_parse_reader` の収量チェック)。0件を正常終了として返してはならない。
+# **照合前の COL は kind_code=5, prefecture=12 で誤っていた**([5]は変更年月日)。
+# fixture が COL から逆算されていたためテストは反対できず(円環)、検出したのは
+# 実データに対する収量チェックである(ColumnLayoutError が列名まで名指しした)。
 # =============================================================================
 
 # 全件CSVの列位置(0起点)。仕様変更時はここだけを直す。
 COL = {
     "houjin_bangou": 1,
-    "kind_code": 5,
     "name": 6,
-    "prefecture": 12,
-    "city": 13,
-    "street": 14,
+    "kind_code": 8,
+    "prefecture": 9,
+    "city": 10,
+    "street": 11,
 }
 
-# COL が要求する最小の列数。一次資料で総列数を確定したら
-# EXPECTED_COLUMNS として厳密な等値検査に格上げする(上の1〜5を参照)
-MIN_COLUMNS = max(COL.values()) + 1
+# 一次資料で確定した総列数(上の照合記録)。**等値で検査する。**
+# 列が増減した = 配布仕様が変わったということなので、静かに読み続けず止まって
+# 照合記録を更新する
+EXPECTED_COLUMNS = 30
+MIN_COLUMNS = EXPECTED_COLUMNS
 
 # 法人種別コードは3桁(101 国の機関 / 201 地方公共団体 / 301 株式会社 など)。
 # 列がずれると日付や名称がここに入るので、形の検査が索引のずれを検出する
@@ -135,6 +137,42 @@ def parse_file(
     """
     with path.open("r", encoding=encoding, errors="strict", newline="") as f:
         yield from _parse_reader(csv.reader(f), stats)
+
+
+def parse_source(
+    path: Path, encoding: str = "utf-8", stats: ParseStats | None = None
+) -> Iterator[Organization]:
+    """レイクの実体から読み出す。**配布形態(zip)と生CSVの両方を受ける。**
+
+    全件データの配布物はzip(中身: CSV + PGP署名 .asc)である(2026-08-23 実測)。
+    レイクには**取得したバイト列をそのまま**入れる(sha256が配布物と一致し、
+    出典として追跡できる)ので、読む側が配布形態を解く。
+    """
+    if path.suffix == ".zip":
+        yield from parse_zip(path, encoding=encoding, stats=stats)
+    else:
+        yield from parse_file(path, encoding=encoding, stats=stats)
+
+
+def parse_zip(
+    path: Path, encoding: str = "utf-8", stats: ParseStats | None = None
+) -> Iterator[Organization]:
+    """zipの中のCSVを、**展開せずストリーミングで**読む。
+
+    実データは展開すると1.26GBある。ディスクに二重に置かず、zipのまま
+    1行ずつ流す(§11.1のメモリ・ディスク要件)。CSVメンバーが1つで
+    なければ配布仕様が変わったということなので、黙って選ばず止まる。
+    """
+    with zipfile.ZipFile(path) as z:
+        members = [i for i in z.infolist() if i.filename.lower().endswith(".csv")]
+        if len(members) != 1:
+            raise ValueError(
+                f"zip内のCSVが1つではない({[i.filename for i in z.infolist()]})。"
+                " 配布仕様が変わった可能性がある。照合記録(このモジュール冒頭)を更新すること"
+            )
+        with z.open(members[0]) as f:
+            text = io.TextIOWrapper(f, encoding=encoding, errors="strict", newline="")
+            yield from _parse_reader(csv.reader(text), stats)
 
 
 def parse_text(text: str, stats: ParseStats | None = None) -> Iterator[Organization]:

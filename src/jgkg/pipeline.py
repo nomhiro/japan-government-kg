@@ -153,7 +153,7 @@ def run(fetched_on: Mapping[str, datetime.date], out_dir: Path) -> PipelineRepor
     total_organizations = 0
     orgs: list[org_mod.Organization] = []
     stats = org_mod.ParseStats()
-    for o in org_mod.parse_file(snapshot_path, stats=stats):
+    for o in org_mod.parse_source(snapshot_path, stats=stats):
         total_organizations += 1
         if o.is_government_organ:
             orgs.append(o)

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from rdflib import Dataset
+from zenken_rows import zipped
 
 from jgkg import lake, pipeline
 from jgkg.connectors import houjin_bangou
@@ -31,8 +32,8 @@ def tmp_env(tmp_path, monkeypatch):
 
 @pytest.fixture
 def kg(tmp_path):
-    content = Path("tests/fixtures/houjin_bangou_sample.csv").read_bytes()
-    lake.save("houjin-bangou", DAY, houjin_bangou.FILENAME, content)
+    content = Path("tests/fixtures/houjin_bangou_sample.csv").read_text(encoding="utf-8")
+    lake.save("houjin-bangou", DAY, houjin_bangou.FILENAME, zipped(content))
     out = tmp_path / "out"
     pipeline.run(FETCHED, out)
 
@@ -54,8 +55,8 @@ def kg_with_unresolved(tmp_path, monkeypatch):
     府省コードを1件追加し、`pipeline.run` を通した実際のパイプライン出力に
     対してクエリを流し、件数が正しく返ることを確認する。
     """
-    content = Path("tests/fixtures/houjin_bangou_sample.csv").read_bytes()
-    lake.save("houjin-bangou", DAY, houjin_bangou.FILENAME, content)
+    content = Path("tests/fixtures/houjin_bangou_sample.csv").read_text(encoding="utf-8")
+    lake.save("houjin-bangou", DAY, houjin_bangou.FILENAME, zipped(content))
 
     reference_path = tmp_path / "ministry-codes-with-unresolved.csv"
     reference_path.write_text(

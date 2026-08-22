@@ -10,7 +10,9 @@ import httpx
 from jgkg.connectors.base import FetchResult, fetch_to_lake
 
 SOURCE_ID = "houjin-bangou"
-FILENAME = "zenken.csv"
+# 配布物はzip(中身: CSV + PGP署名 .asc)。**取得したバイト列をそのまま保存する**
+# (sha256 が配布物と一致し、出典として追跡できる)。読む側は parse_source が解く
+FILENAME = "zenken.zip"
 TIMEOUT = httpx.Timeout(60.0, read=600.0)  # 全件データは大きいので読み取りを長く取る
 
 

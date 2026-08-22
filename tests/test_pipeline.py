@@ -2,6 +2,7 @@ import datetime
 from pathlib import Path
 
 import pytest
+from zenken_rows import zenken_row, zipped
 
 from jgkg import lake, pipeline
 from jgkg.connectors import houjin_bangou
@@ -25,8 +26,8 @@ def tmp_env(tmp_path, monkeypatch):
 
 @pytest.fixture
 def seeded_lake():
-    content = Path("tests/fixtures/houjin_bangou_sample.csv").read_bytes()
-    lake.save("houjin-bangou", DAY, houjin_bangou.FILENAME, content)
+    content = Path("tests/fixtures/houjin_bangou_sample.csv").read_text(encoding="utf-8")
+    lake.save("houjin-bangou", DAY, houjin_bangou.FILENAME, zipped(content))
 
 
 def test_run_produces_nquads_and_report(seeded_lake, tmp_path):
@@ -68,16 +69,15 @@ def lake_with_duplicate_label():
     法人番号ごとに `skos:prefLabel` を2つ出すので、生成SHACLの `sh:maxCount 1`
     に違反し、**その1件のためにそのソースのグラフ全体が隔離される。**
     """
-    content = Path("tests/fixtures/houjin_bangou_sample.csv").read_bytes()
+    content = Path("tests/fixtures/houjin_bangou_sample.csv").read_text(encoding="utf-8")
     extra = (
-        "5,8000012070001,1,2015-10-05,2015-10-05,101,厚生労働省(旧称)"
-        ",,,,100,8916,東京都,千代田区,霞が関1-2-2\n"
+        zenken_row(name="厚生労働省(旧称)", seq="5")
     )
     lake.save(
         "houjin-bangou",
         DAY,
         houjin_bangou.FILENAME,
-        content.rstrip(b"\r\n") + b"\n" + extra.encode("utf-8"),
+        zipped(content.rstrip() + "\n" + extra),
     )
 
 
@@ -131,15 +131,15 @@ def test_run_reports_rejected_rows(tmp_path):
     **何があれば落ちるか**: `_parse_reader` の集計を捨てる実装に戻したら落ちる。
     `rows_seen` を `organizations` と同じ値にしたら落ちる。
     """
-    good = "1,8000012070001,1,2015-10-05,2015-10-05,101,厚生労働省,,,,1,1,東京都,千代田区,x\n"
-    other = "2,7000012050002,1,2015-10-05,2015-10-05,101,財務省,,,,1,1,東京都,千代田区,x\n"
+    good = zenken_row()
+    other = zenken_row(houjin_bangou="7000012050002", name="財務省", seq="2")
     # 法人番号が13桁でない行(集計行のような実データのノイズ)を2行混ぜる
     noise = "件数,2,,,,,,,,,,,,,\n"
     lake.save(
         "houjin-bangou",
         DAY,
         houjin_bangou.FILENAME,
-        (good + other + noise * 2).encode("utf-8"),
+        zipped(good + other + noise * 2),
     )
 
     report = pipeline.run(FETCHED, tmp_path / "out")
@@ -154,7 +154,7 @@ def test_parse_stats_counts_short_rows():
     """列数不足の行数が数えられること(住所などが空文字になっている行)。"""
     from jgkg.transform.organization import ParseStats, parse_text
 
-    good = "1,8000012070001,1,2015-10-05,2015-10-05,101,厚生労働省,,,,1,1,東京都,千代田区,x\n"
+    good = zenken_row()
     short = "2,7000012050002,1,2015-10-05,2015-10-05,101,財務省\n"  # 7列
     stats = ParseStats()
     orgs = list(parse_text(good * 3 + short, stats=stats))
@@ -235,7 +235,7 @@ def test_run_fails_on_an_empty_snapshot(tmp_path):
     黙って捨てられるため、以前は `organizations=0` で「成功」を報告し、
     空のKGが build.sh から exit 0 で出荷された。
     """
-    lake.save("houjin-bangou", DAY, houjin_bangou.FILENAME, b"")
+    lake.save("houjin-bangou", DAY, houjin_bangou.FILENAME, zipped(""))
     with pytest.raises(ValueError, match="1件も解析できなかった"):
         pipeline.run(FETCHED, tmp_path / "out")
 
@@ -249,8 +249,8 @@ def test_run_fails_when_no_government_organ_is_found(tmp_path):
 
     **何があれば落ちるか**: この下限チェックを外したら落ちる。
     """
-    row = "1,3010001008683,1,2015-10-05,2015-10-05,301,株式会社サンプル,,,,1,1,東京都,千代田区,x\n"
-    lake.save("houjin-bangou", DAY, houjin_bangou.FILENAME, (row * 3).encode("utf-8"))
+    row = zenken_row(houjin_bangou="3010001008683", name="株式会社サンプル", kind="301", seq="3")
+    lake.save("houjin-bangou", DAY, houjin_bangou.FILENAME, zipped(row * 3))
     with pytest.raises(ValueError, match="国の機関"):
         pipeline.run(FETCHED, tmp_path / "out")
 

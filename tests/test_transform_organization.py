@@ -1,8 +1,14 @@
 from pathlib import Path
 
 import pytest
+from zenken_rows import zenken_row, zipped
 
-from jgkg.transform.organization import ColumnLayoutError, parse_file, parse_text
+from jgkg.transform.organization import (
+    ColumnLayoutError,
+    parse_file,
+    parse_source,
+    parse_text,
+)
 
 FIXTURE = Path("tests/fixtures/houjin_bangou_sample.csv")
 
@@ -44,8 +50,8 @@ def test_skips_rows_with_invalid_houjin_bangou():
     多数含めることで、**行単位の棄却**と**レイアウトの誤り**を分けて検査する
     (後者は test_wrong_column_layout_raises_instead_of_yielding_nothing)。
     """
-    good = "1,8000012070001,1,2015-10-05,2015-10-05,101,厚生労働省,,,,1,1,東京都,千代田区,x\n"
-    bad = "2,NOTANUMBER,1,2015-10-05,2015-10-05,101,壊れた行,,,,100,0001,東京都,千代田区,x\n"
+    good = zenken_row()
+    bad = zenken_row(houjin_bangou="NOTANUMBER", name="壊れた行", seq="2")
 
     orgs = list(parse_text(good * 3 + bad))
     assert [o.houjin_bangou for o in orgs] == ["8000012070001"] * 3
@@ -63,9 +69,8 @@ def test_wrong_column_layout_raises_instead_of_yielding_nothing():
     落ちる(例外が出なくなる)。
     """
     # 先頭に1列挿入して、全列を1つずつずらす
-    shifted = (
-        "x,1,8000012070001,1,2015-10-05,2015-10-05,101,厚生労働省,,,,1,1,東京都,千代田区,y\n"
-    )
+    base = zenken_row().rstrip().split(",")
+    shifted = ",".join(["x"] + base[:-1]) + "\n"
     with pytest.raises(ColumnLayoutError, match="1行も取り込めなかった"):
         list(parse_text(shifted * 5))
 
@@ -78,7 +83,8 @@ def test_shifted_kind_code_column_raises():
     **国の機関が0件のKGが検証を通って出荷される。**
     """
     # 法人種別の位置(索引5)に日付が来るように、その手前に1列足す
-    row = "1,8000012070001,1,extra,2015-10-05,2015-10-05,101,厚生労働省,,,,1,1,東京都,千代田区,x\n"
+    base = zenken_row().rstrip().split(",")
+    row = ",".join(base[:8] + ["2015-10-05"] + base[8:-1]) + "\n"
     with pytest.raises(ColumnLayoutError, match="法人種別コード"):
         list(parse_text(row * 5))
 
@@ -99,7 +105,7 @@ def test_empty_input_is_not_a_layout_error():
 
 
 def test_skips_blank_lines():
-    content = "\n\n1,8000012070001,1,2015-10-05,2015-10-05,101,厚生労働省,,,,1,1,東京都,千代田区,x\n\n"
+    content = "\n\n" + zenken_row() + "\n"
     assert len(list(parse_text(content))) == 1
 
 
@@ -111,7 +117,7 @@ def test_parse_file_does_not_read_whole_file_into_memory(tmp_path):
     「1行だけ消費した時点でファイル全体が読まれていない」ことで代替検証する。
     """
     big = tmp_path / "many.csv"
-    line = "1,8000012070001,1,2015-10-05,2015-10-05,101,厚生労働省,,,,1,1,東京都,千代田区,x\n"
+    line = zenken_row()
     big.write_text(line * 5000, encoding="utf-8")
 
     gen = parse_file(big)
@@ -129,7 +135,7 @@ def test_wrong_encoding_raises_instead_of_silently_mangling(tmp_path):
     置換文字に化け、500万行が静かに壊れる。系統的な誤りは止めるのが正しい。
     """
     sjis = tmp_path / "sjis.csv"
-    line = "1,8000012070001,1,2015-10-05,2015-10-05,101,厚生労働省,,,,1,1,東京都,千代田区,x\n"
+    line = zenken_row()
     sjis.write_bytes(line.encode("cp932"))
 
     with pytest.raises(UnicodeDecodeError):
@@ -139,9 +145,36 @@ def test_wrong_encoding_raises_instead_of_silently_mangling(tmp_path):
 def test_explicit_encoding_reads_shift_jis_correctly(tmp_path):
     """エンコーディングを明示すればShift_JIS版も正しく読めること。"""
     sjis = tmp_path / "sjis.csv"
-    line = "1,8000012070001,1,2015-10-05,2015-10-05,101,厚生労働省,,,,1,1,東京都,千代田区,x\n"
+    line = zenken_row()
     sjis.write_bytes(line.encode("cp932"))
 
     orgs = list(parse_file(sjis, encoding="cp932"))
     assert len(orgs) == 1
     assert orgs[0].name == "厚生労働省"
+
+
+def test_parse_source_reads_the_distributed_zip(tmp_path):
+    """配布形態(zip + .asc)をそのまま読めること。実物の構造を写したzipで検査する。"""
+    z = tmp_path / "zenken.zip"
+    z.write_bytes(zipped(zenken_row()))
+    orgs = list(parse_source(z))
+    assert [o.houjin_bangou for o in orgs] == ["8000012070001"]
+
+
+def test_zip_with_multiple_csvs_raises(tmp_path):
+    """zip内のCSVが1つでないなら黙って選ばず止まること(配布仕様の変化の検出)。
+
+    **何があれば落ちるか**: parse_zip のメンバー数検査を外すと、どれかを
+    黙って選んで通ってしまう。
+    """
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("a.csv", zenken_row())
+        zf.writestr("b.csv", zenken_row(seq="2"))
+    z = tmp_path / "zenken.zip"
+    z.write_bytes(buf.getvalue())
+    with pytest.raises(ValueError, match="CSVが1つではない"):
+        list(parse_source(z))
