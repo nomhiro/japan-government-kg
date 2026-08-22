@@ -91,4 +91,57 @@ def test_stage_release_keeps_the_previous_generation(tmp_path):
 
 def test_stage_release_reports_a_missing_artifact(tmp_path):
     with pytest.raises(FileNotFoundError, match="成果物が見つからない"):
-        serve.stage_release(tmp_path / "nope", tmp_path / "serve" / "tdb2")
+        serve.stage_release(
+            tmp_path / "nope", tmp_path / "serve" / "tdb2", expected_jena_version="6.2.0"
+        )
+
+
+def test_cli_refuses_when_the_jena_version_is_unknown(tmp_path, monkeypatch):
+    """Jenaバージョンが分からないまま配置しないこと。
+
+    以前は `--jena-version` を省略すると**何も言わずに照合を飛ばして配置**していた。
+    I3 で作った照合経路が既定で無効になっているのと同じで、Ruling 35 の
+    「記録の演技」に戻る。C2 と同じ方針(既定は止まる側)に揃える。
+
+    **何があれば落ちるか**: `expected_jena_version` に既定値 `None` を戻したら、
+    あるいはCLIが未解決のまま `stage_release` を呼ぶようになったら落ちる。
+    """
+    art = _make_artifact(tmp_path)
+    monkeypatch.delenv("JENA_VERSION", raising=False)
+    target = tmp_path / "serve" / "tdb2"
+
+    with pytest.raises(SystemExit) as e:
+        serve.main([str(art), "--target", str(target)])
+    assert e.value.code == 2
+    assert not target.exists(), "照合できないまま配置してしまった"
+
+
+def test_cli_takes_the_jena_version_from_the_environment(tmp_path, monkeypatch):
+    """環境変数 JENA_VERSION を既定として使うこと(compose と同じ値)。"""
+    art = _make_artifact(tmp_path, jena_version="6.2.0")
+    target = tmp_path / "serve" / "tdb2"
+
+    monkeypatch.setenv("JENA_VERSION", "6.2.0")
+    assert serve.main([str(art), "--target", str(target)]) == 0
+    assert (target / "nodes.dat").exists()
+
+    # 環境変数がずれていれば止まる
+    monkeypatch.setenv("JENA_VERSION", "6.3.0")
+    with pytest.raises(ValueError, match="Jenaバージョン"):
+        serve.main([str(art), "--target", str(target)])
+
+
+def test_cli_requires_an_explicit_flag_to_skip_the_check(tmp_path, monkeypatch):
+    """照合を飛ばすには明示的なフラグが必要であること。"""
+    art = _make_artifact(tmp_path, jena_version="6.2.0")
+    monkeypatch.delenv("JENA_VERSION", raising=False)
+    target = tmp_path / "serve" / "tdb2"
+
+    assert serve.main([str(art), "--target", str(target), "--skip-jena-check"]) == 0
+    assert (target / "nodes.dat").exists()
+
+    # 併用は誤りとして弾く(どちらの意図か曖昧になる)
+    with pytest.raises(SystemExit):
+        serve.main(
+            [str(art), "--target", str(target), "--skip-jena-check", "--jena-version", "6.2.0"]
+        )
