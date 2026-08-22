@@ -319,29 +319,23 @@ uv run pytest tests/test_uris.py -v
 
 期待: 6件すべて PASS。
 
-- [ ] **Step 8: `.gitignore` を作り、生成物を除外しないことを明示する**
+- [ ] **Step 8: 既存の `.gitignore` に不足エントリを追記する**
 
-`.gitignore`:
+> **`.gitignore` は既に存在する。** このリポジトリは設計フェーズで公開用の `.gitignore` を作っており、`.claude/worktrees/`、`.env.*` / `!.env.example`、Node/フロントエンド、Docker/Fuseki、OS/エディタの除外設定が入っている。**上書きしてはならない。** 既存の内容を確認し、不足している行だけを追記する。
+
+```bash
+# まず既存の内容を確認する
+cat .gitignore
+```
+
+既存ファイルには `data/lake/` と「`schema/generated/` を意図的に無視しない」旨のコメントが既に含まれている。**追記が必要なのは以下の2行だけ**(パイプラインが新たに使うディレクトリ):
 
 ```gitignore
-# 生データレイクと成果物はリポジトリに入れない
-data/lake/
 data/artifact/
 data/quarantine/
-
-# LinkML の生成物は「あえてコミットする」(設計書§5.1)
-# 生成物のコミットが LinkML 採用を可逆にする唯一の措置であり、
-# 差分レビューで生成器の回帰も検出できる。ここで除外してはならない。
-# schema/generated/  ← 意図的に無視しない
-
-.venv/
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.ruff_cache/
-.coverage
-.env
 ```
+
+`# 生データレイク・生成物(設計書§6.1)` のブロック内、`data/lake/` の直後に加える。他の行は触らない。
 
 - [ ] **Step 9: コミットする**
 
