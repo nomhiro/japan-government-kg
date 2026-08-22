@@ -2,7 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 政府データKGの基盤を作り、「全法人と府省が出典付きでSPARQL検索できる、再現可能に再構築できるKG成果物」を完成させる。
+**Goal:** 政府データKGの基盤を作り、「**国の機関と府省**が出典付きでSPARQL検索できる、再現可能に再構築できるKG成果物」を完成させる。
+
+> **範囲についての注記(2026-08-22 に縮小)**: 当初は「全法人(約500万件)」を対象にしていたが、実データでの検算により、全件を1つのグラフに取り込む設計では pydantic オブジェクトと rdflib のトリプルがそれぞれ数GB規模になり破綻することが判明した。設計書§6.2.3が「規模の問題はエンドポイント/成果物の分割で対処し、1つを大きくするな」と明示している(Wikidataが恒久化した解)ため、**Phase 0 は基盤の確立に集中し、全法人の取り込みは Phase 1(plan B)のストリーミング設計に送る**。任意の法人が実際に必要になるのは Phase 1 の縦スライス(支出先法人)である。
 
 **Architecture:** LinkMLをスキーマの単一ソースとし、CIでOWL/SHACL/Pydanticを生成する。コネクタは取得だけを行い、取得時点のスナップショットを不変で保持する。変換は決定的パーサのみ(LLMは使わない)。RDFは名前付きグラフ単位で出力し、各グラフにPROV-Oで出典を付ける。SHACL検証を通ったグラフだけをTDB2インデックスに投入し、tar.gzの成果物として配布する。実行側は成果物を展開して読み取り専用で提供する。
 
@@ -2800,7 +2802,12 @@ def run(fetched_on: datetime.date, out_dir: Path) -> PipelineReport:
         raise FileNotFoundError(
             f"スナップショットが無い: {snapshot_path}。先にコネクタで取得する"
         )
-    orgs = list(org_mod.parse_file(snapshot_path))
+    # **国の機関だけに絞る。** 全法人(約500万件)を list() すると pydantic オブジェクトで
+    # 数GB、さらに emit が rdflib に 3000万トリプルを載せるため破綻する。
+    # Phase 0 の目的は基盤の確立(URI設計・スキーマ・出典・コアマスター)であり、
+    # 任意の法人が必要になるのは Phase 1 の縦スライス(支出先法人)。設計書§6.2.3の
+    # 「規模の問題は分割で対処し、1つを大きくするな」に従い、全件取り込みは plan B に送る
+    orgs = [o for o in org_mod.parse_file(snapshot_path) if o.is_government_organ]
 
     reference = ministry_mod.load_reference(MINISTRY_REFERENCE)
     ministries, unmatched = ministry_mod.build(orgs, reference)
@@ -3299,7 +3306,7 @@ CIは生成物の差分とベースURIの散逸も検出する。"
 - [ ] `pipeline-report.json` に組織件数・府省件数・未突合件数・隔離グラフ件数が記録される
 
 **Phase 0 で実測して記録すること**(設計書§6.3、推測値を先に置かない):
-- 法人番号全件を投入したTDB2インデックスの実サイズ。サーバーレスコンテナ環境の一時ディスク上限(Azure Container Apps では最大8 GiB)に収まるか
+- 国の機関と府省を投入したTDB2インデックスの実サイズと、1件あたりのトリプル数・バイト数。**この単価から全法人(約500万件)を投入した場合のサイズを外挿し、サーバーレスコンテナ環境の一時ディスク上限(Azure Container Apps では最大8 GiB)に収まるかを判断する。**全件の実投入は plan B で行う(§Goal の範囲注記を参照)
 - 府省の突合率(`ministries / (ministries + unmatched_ministries)`)
 - パイプライン全体の実行時間とインデックス構築時間
 
