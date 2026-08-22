@@ -2890,7 +2890,8 @@ def test_run_produces_nquads_and_report(seeded_lake, tmp_path):
     out = tmp_path / "out"
     report = pipeline.run(DAY, out)
 
-    assert report.organizations == 4
+    assert report.organizations == 4       # 入力の全件数
+    assert report.government_organs == 3   # KGに入れた件数(株式会社1件を除外)
     assert report.ministries >= 1
     assert (out / "kg.nq").exists()
 
@@ -2949,7 +2950,12 @@ SHAPES_DIR = Path("schema/generated")
 
 class PipelineReport(BaseModel):
     release: str
+    # 入力スナップショットから解析した全件数。スナップショット破損や欠落の検知に使う
     organizations: int
+    # そのうちKGに入れた件数(国の機関のみ)。organizations との差が
+    # 「絞り込みで除外された数」になる。両方を出さないと、レポートを読んだ人が
+    # 「解析した件数がKGに入っている」と誤解する
+    government_organs: int
     ministries: int
     unmatched_ministries: int
     graphs_validated: int
@@ -2979,12 +2985,18 @@ def run(fetched_on: datetime.date, out_dir: Path) -> PipelineReport:
         raise FileNotFoundError(
             f"スナップショットが無い: {snapshot_path}。先にコネクタで取得する"
         )
-    # **国の機関だけに絞る。** 全法人(約500万件)を list() すると pydantic オブジェクトで
-    # 数GB、さらに emit が rdflib に 3000万トリプルを載せるため破綻する。
-    # Phase 0 の目的は基盤の確立(URI設計・スキーマ・出典・コアマスター)であり、
+    # **1パスで「全件数」と「国の機関のみのリスト」を分離する。**
+    # 全法人(約500万件)を list() すると pydantic オブジェクトで数GB、さらに emit が
+    # rdflib に 3000万トリプルを載せるため破綻する。Phase 0 の目的は基盤の確立であり、
     # 任意の法人が必要になるのは Phase 1 の縦スライス(支出先法人)。設計書§6.2.3の
-    # 「規模の問題は分割で対処し、1つを大きくするな」に従い、全件取り込みは plan B に送る
-    orgs = [o for o in org_mod.parse_file(snapshot_path) if o.is_government_organ]
+    # 「規模の問題は分割で対処し、1つを大きくするな」に従う。
+    # 全件数も数えるのは、スナップショット破損や欠落を検知するため(§11.1の観測性)
+    total_organizations = 0
+    orgs: list[org_mod.Organization] = []
+    for o in org_mod.parse_file(snapshot_path):
+        total_organizations += 1
+        if o.is_government_organ:
+            orgs.append(o)
 
     reference = ministry_mod.load_reference(MINISTRY_REFERENCE)
     ministries, unmatched = ministry_mod.build(orgs, reference)
@@ -3004,7 +3016,8 @@ def run(fetched_on: datetime.date, out_dir: Path) -> PipelineReport:
 
     return PipelineReport(
         release=fetched_on.isoformat(),
-        organizations=len(orgs),
+        organizations=total_organizations,
+        government_organs=len(orgs),
         ministries=len(ministries),
         unmatched_ministries=len(unmatched),
         graphs_validated=len(results),
@@ -3139,7 +3152,29 @@ echo "完了: ${OUT}"
 chmod +x scripts/build.sh
 ```
 
-- [ ] **Step 8: コミットする**
+- [ ] **Step 8: 2回に分けてコミットする**
+
+> **Step 0 の変更と本体の変更は別のコミットにする。** 1回でまとめると `refactor:` と `feat:` が混ざり、後から履歴を追いにくい。**各回で `git diff --cached --stat` を確認**して、意図したファイルだけがステージされていることを確かめる(他のエージェントがステージした変更を巻き込む事故が実際に起きている)。
+
+まず Step 0 の分:
+
+```bash
+git add src/jgkg/_io.py src/jgkg/lake.py src/jgkg/build.py src/jgkg/validate.py
+git diff --cached --stat   # 4ファイルだけであることを確認
+git commit -m "refactor: アトミック書き込みを共有ヘルパーに切り出しdefault_unionを補う
+
+lake.pyとbuild.pyに1バイトも違わない同一の_atomic_writeがあり、片方だけ
+直すと壊れる典型的な重複だった。src/jgkg/_io.py に切り出して共有する。
+
+あわせてvalidate.pyのpassing_datasetにDataset(default_union=True)を補った。
+この欠落は本プロジェクトで既に2件の実害を出しており(CQテストのfixture、
+emitのテスト)、現状はcontexts()走査のみで実害はないが、将来このDatasetを
+SPARQLで問い合わせた瞬間に3件目が起きる箇所だった。
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+```
+
+次に本体:
 
 ```bash
 git add src/jgkg/pipeline.py scripts/build.sh docker-compose.yml fuseki/kg.ttl tests/test_pipeline.py
