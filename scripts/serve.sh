@@ -10,6 +10,16 @@
 # レビューI7)。**先にFusekiを止める。**
 set -euo pipefail
 
+# .env を読み込む。**エラーメッセージが「.env に設定する」と案内しているのに、
+# 読み込んでいなかった**(2026-08-23、実行系を初めて通したときに判明)。
+# docker compose は .env を自動で読むが bash は読まない。このスクリプトは
+# JENA_VERSION をシェル側でも使う(compose に渡す前に検査する)ので明示的に読む。
+if [ -f .env ]; then
+  set -a
+  . ./.env
+  set +a
+fi
+
 : "${JENA_VERSION:?JENA_VERSION を .env に設定する}"
 RELEASE="${1:?使い方: scripts/serve.sh YYYY-MM-DD}"
 

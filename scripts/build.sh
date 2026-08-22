@@ -4,6 +4,16 @@
 # (バーストVMのクレジット枯渇対策。設計書§6.3)
 set -euo pipefail
 
+# .env を読み込む。**エラーメッセージが「.env に設定する」と案内しているのに、
+# 読み込んでいなかった**(2026-08-23、実行系を初めて通したときに判明)。
+# docker compose は .env を自動で読むが bash は読まない。このスクリプトは
+# JENA_VERSION をシェル側でも使う(compose に渡す前に検査する)ので明示的に読む。
+if [ -f .env ]; then
+  set -a
+  . ./.env
+  set +a
+fi
+
 : "${JENA_VERSION:?JENA_VERSION を .env に設定する}"
 FETCHED_ON="${1:?使い方: scripts/build.sh YYYY-MM-DD [--allow-partial]}"
 
@@ -44,7 +54,13 @@ pipeline.enforce_release_gate(report, allow_partial=${ALLOW_PARTIAL})
 "
 
 echo "== TDB2インデックス構築 =="
-docker compose --profile tools run --rm jena-tools \
+# MSYS_NO_PATHCONV=1 が必要。**Windows の Git Bash / MSYS は `/work/...` のような
+# POSIX風の絶対パス引数を Windows パスに書き換えてコンテナに渡す。**
+# 実測(2026-08-23): /work/data/artifact/<日付>/kg.nq が
+# `C:/Program Files/Git/work/data/artifact/<日付>/kg.nq` に化けて Can't read file で落ちた。
+# **コンテナ内のパスなのでホスト側の変換をしてはならない。**
+# cp932 や NTFS の予約文字と同じ、Windowsでしか出ない類型(設計書§11.1の再現性)。
+MSYS_NO_PATHCONV=1 docker compose --profile tools run --rm jena-tools \
   tdb2.tdbloader --loc "/work/${OUT}/tdb2" "/work/${OUT}/kg.nq"
 
 echo "== 成果物のtar.gz化とmanifest =="

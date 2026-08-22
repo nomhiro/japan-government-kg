@@ -4,10 +4,18 @@
 # Jenaバージョンを照合する(設計書§6.3)。手で置くとその照合が飛ぶ。
 services:
   fuseki:
-    image: apache/jena-fuseki:${JENA_VERSION:?JENA_VERSION を .env に設定する}
+    # **公開イメージを使わない。** apache/jena-fuseki は Docker Hub に存在せず、
+    # 実在する stain/jena-fuseki は最新が 5.1.0 で 6.x が無い(2026-08-23 実測)。
+    # JENA_VERSION でのピン留め(設計書§6.3)を満たすため公式アーカイブから自前ビルドする。
+    # インデックスを作る jena-tools と同じ ARG を渡し、バージョン一致を構造的に保証する。
+    build:
+      context: .
+      dockerfile: docker/fuseki.Dockerfile
+      args:
+        JENA_VERSION: ${JENA_VERSION:?JENA_VERSION を .env に設定する}
     ports:
       - "3030:3030"
-    command: ["/jena-fuseki/fuseki-server", "--config=/fuseki/config/kg.ttl"]
+    command: ["/opt/fuseki/fuseki-server", "--config=/fuseki/config/kg.ttl"]
     environment:
       - ADMIN_PASSWORD=${FUSEKI_ADMIN_PASSWORD:-change-me-in-env}
     volumes:
@@ -15,7 +23,20 @@ services:
       # ブロックデバイス上のローカルディレクトリをマウントする。
       # TDB2はメモリマップドファイルを使うため、ネットワークファイル共有
       # (SMB/NFS)上に置かないこと(設計書§6.3)
-      - ./data/artifact/tdb2:/fuseki/databases/kg:ro
+      #
+      # **`:ro` を付けてはならない。** 設計書§6.3は当初「実行時は読み取り専用」を
+      # ファイルシステムで担保する前提だったが、**TDB2は読み取り専用FS上では開けない。**
+      # 実測(2026-08-23, Jena/Fuseki 6.2.0):
+      #   java.nio.file.FileSystemException: /fuseki/databases/kg/tdb.lock:
+      #   Read-only file system
+      # TDB2 は起動時にプロセスロックファイルを作るため、書き込み可能な場所が必要。
+      #
+      # **書き込み禁止は別の2つで担保する。**
+      #   (1) fuseki/kg.ttl が公開するのは `fuseki:query` のみ。更新エンドポイントが無い
+      #   (2) 成果物は content-addressed で、配置前に serve.sh が sha256 と
+      #       Jenaバージョンを照合する。差し替えは成果物の入れ替えでのみ行う
+      # 設定ファイル側は本当に読み取り専用にできるので `:ro` を維持している(上のマウント)。
+      - ./data/artifact/tdb2:/fuseki/databases/kg
     restart: unless-stopped
 
   jena-tools:

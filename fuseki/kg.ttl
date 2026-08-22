@@ -6,7 +6,11 @@
 
 <#service> rdf:type fuseki:Service ;
     fuseki:name "kg" ;
-    # クエリのみを公開する。更新は成果物の差し替えで行う(設計書§6.3)
+    # クエリのみを公開する。更新は成果物の差し替えで行う(設計書§6.3)。
+    # **エンドポイントに fuseki:name を付けないと /kg 直下にしか束縛されず、
+    # 慣例的な /kg/sparql が404になる**(実測 2026-08-23。serve.sh が案内している
+    # URLが動かない状態だった)。両方を宣言して、どちらでも引けるようにする。
+    fuseki:endpoint [ fuseki:operation fuseki:query ; fuseki:name "sparql" ] ;
     fuseki:endpoint [ fuseki:operation fuseki:query ] ;
     fuseki:dataset <#dataset> .
 
