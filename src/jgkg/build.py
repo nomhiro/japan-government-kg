@@ -6,10 +6,11 @@
 """
 import hashlib
 import json
-import os
 from pathlib import Path
 
 from pydantic import BaseModel
+
+from jgkg._io import atomic_write
 
 
 class Manifest(BaseModel):
@@ -75,26 +76,10 @@ def build_manifest(
     )
 
 
-def _atomic_write(path: Path, data: bytes) -> None:
-    """同一ディレクトリの一時ファイルに書いてから rename する。
-
-    os.replace は同一ファイルシステム上でアトミックで、Windowsでも既存ファイルを
-    置き換えられる(jgkg.lake._atomic_write と同じ理由)。manifestは成果物の整合性
-    を保証する唯一の記録なので、書き込み途中で落ちて壊れた状態を残してはならない。
-    """
-    tmp = path.with_name(f".{path.name}.tmp")
-    try:
-        tmp.write_bytes(data)
-        os.replace(tmp, path)
-    finally:
-        if tmp.exists():
-            tmp.unlink()
-
-
 def write_manifest(m: Manifest, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     data = (json.dumps(m.model_dump(), ensure_ascii=False, indent=2) + "\n").encode("utf-8")
-    _atomic_write(path, data)
+    atomic_write(path, data)
 
 
 def verify_manifest(manifest_path: Path, tarball: Path) -> None:

@@ -91,7 +91,7 @@ def quarantine(ds: Dataset, results: list[ValidationResult], out_dir: Path) -> l
 def passing_dataset(ds: Dataset, results: list[ValidationResult]) -> Dataset:
     """検証を通ったグラフだけを含む新しいDatasetを返す。"""
     failing = {r.graph_uri for r in results if not r.conforms}
-    clean = Dataset()
+    clean = Dataset(default_union=True)
     for ctx in ds.contexts():
         if len(ctx) == 0 or str(ctx.identifier) in failing:
             continue

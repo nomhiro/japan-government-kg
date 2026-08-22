@@ -6,10 +6,10 @@
 import datetime
 import hashlib
 import json
-import os
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
+from jgkg._io import atomic_write
 from jgkg.config import get_settings
 from jgkg.sources import get_source
 
@@ -61,25 +61,9 @@ def save(source_id: str, fetched_on: datetime.date, filename: str, content: byte
 
     # データ本体 → メタデータ の順に、それぞれアトミックに置く。
     # 途中で落ちてもメタデータが無いので未コミットと判定され、再実行できる
-    _atomic_write(target, content)
-    _atomic_write(meta_path, meta_json.encode("utf-8"))
+    atomic_write(target, content)
+    atomic_write(meta_path, meta_json.encode("utf-8"))
     return snap
-
-
-def _atomic_write(path: Path, data: bytes) -> None:
-    """同一ディレクトリの一時ファイルに書いてから rename する。
-
-    os.replace は同一ファイルシステム上でアトミックで、Windowsでも既存ファイルを
-    置き換えられる。一時ファイル名を隠しファイルにしているのは、list_snapshots の
-    glob に拾われないようにするため。
-    """
-    tmp = path.with_name(f".{path.name}.tmp")
-    try:
-        tmp.write_bytes(data)
-        os.replace(tmp, path)
-    finally:
-        if tmp.exists():
-            tmp.unlink()
 
 
 def load(source_id: str, fetched_on: datetime.date, filename: str) -> bytes:
