@@ -5,13 +5,43 @@ import pytest
 from rdflib import OWL, RDF, Graph, URIRef
 from rdflib.namespace import SH, SKOS
 
+from jgkg import validate
+
 # **cwd に依存させない。** リポジトリ直下以外から pytest を起動したときに
 # glob が空になると、パラメータ化したテストが1件も収集されず「合格」に見える。
 # テストファイルの位置から解決する(tests/test_base_uri.py と同じ理由)
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = REPO_ROOT / "schema"
 GENERATED = SCHEMA / "generated"
-MODULES = ["core", "org"]
+
+# 束ねモジュールの名前は**検証が実際に読むファイル名から導く。** ここを文字列で
+# 書くと、シェイプファイルを改名したときに検査対象がずれる
+AGGREGATE_MODULE = validate.SHAPES_FILENAME.removesuffix(".shacl.ttl")
+
+
+def _discover_modules() -> list[str]:
+    """`schema/*.yaml` からモジュール名を列挙する。
+
+    **ハードコードしてはならない。** `MODULES = ["core", "org"]` と書いてあったため、
+    3つ目のモジュールとして `all.yaml` を作ったときに検査対象へ足し忘れ、
+    **検証の唯一の入力である `all.shacl.ttl` / `all.owl.ttl` を誰も見ていない**状態が
+    続いた(元レビューI6の指摘1)。Task 8 の「片方をハードコードしていて常に真」と
+    同じ型の欠陥で、これが3回目である。集合そのものを
+    `test_every_generated_ontology_is_covered_by_a_check` が検査する。
+    """
+    return sorted(p.stem for p in SCHEMA.glob("*.yaml"))
+
+
+# 全モジュール(束ねモジュールを含む)。**どのファイルがどの検査を受けるか**を
+# ここで明示する:
+#
+#   ALL_MODULES    … @ja の後処理 / OWLとSHACLのIRI一致
+#                    → `all.*` を含む。公開対象そのもので、SHACLゲートの実体だから
+#   DOMAIN_MODULES … 自分の名前空間でのクラス宣言 / Pydanticモデル / 名前空間の一致
+#                    → `all.yaml` は他モジュールを束ねるだけで自分の名前空間に
+#                      クラスを1つも宣言しない(実測で own_ns_classes=0)ため対象外
+ALL_MODULES = _discover_modules()
+DOMAIN_MODULES = [m for m in ALL_MODULES if m != AGGREGATE_MODULE]
 
 # モジュールごとに「そのモジュール自身が宣言すべきクラス」を明示する。
 # import されたクラスは各モジュールのOWL/モデルにも現れるため、共通のクラス名で
@@ -26,13 +56,54 @@ EXPECTED_MODELS = {
 }
 
 
+def test_every_generated_ontology_is_covered_by_a_check():
+    """生成された全OWL/SHACLが、どれかの検査対象に入っていること。
+
+    **モジュールを1つ足したのに検査対象に入らない状態**が起きないことを、
+    集合の突き合わせで担保する。左辺は `schema/*.yaml` から、右辺は
+    `schema/generated/` の実ファイルから独立に作るので、どちらかだけが増えても落ちる。
+
+    **何があれば落ちるか**: `schema/law.yaml` を足して再生成していない、
+    生成物だけあってYAMLが消えている、`_discover_modules` をハードコードに
+    戻した、`ALL_MODULES` から束ねモジュールを外した、のいずれでも落ちる。
+    """
+    assert ALL_MODULES, f"schema/*.yaml が1件も見つからない: {SCHEMA}"
+    assert AGGREGATE_MODULE in ALL_MODULES, (
+        f"束ねモジュール {AGGREGATE_MODULE!r} が検査対象に入っていない。"
+        f" 検出したモジュール: {ALL_MODULES}"
+    )
+    assert set(DOMAIN_MODULES) | {AGGREGATE_MODULE} == set(ALL_MODULES)
+
+    expected = {GENERATED / f"{m}.{kind}.ttl" for m in ALL_MODULES for kind in ("owl", "shacl")}
+    actual = set(GENERATED.glob("*.owl.ttl")) | set(GENERATED.glob("*.shacl.ttl"))
+    assert actual == expected, (
+        "生成物と検査対象が食い違っている。"
+        f" 検査対象なのに無い: {sorted(p.name for p in expected - actual)} /"
+        f" 生成物なのに検査対象外: {sorted(p.name for p in actual - expected)}"
+    )
+
+
+def test_expected_class_tables_cover_every_domain_module():
+    """`EXPECTED_CLASSES` / `EXPECTED_MODELS` がドメインモジュールを網羅すること。
+
+    **何があれば落ちるか**: 新しいドメインモジュールを足して期待値を書かなければ
+    落ちる(KeyErrorで落ちる前に、ここで理由が分かる形で落ちる)。
+    """
+    assert set(EXPECTED_CLASSES) == set(DOMAIN_MODULES), (
+        f"EXPECTED_CLASSES={sorted(EXPECTED_CLASSES)} DOMAIN_MODULES={DOMAIN_MODULES}"
+    )
+    assert set(EXPECTED_MODELS) == set(DOMAIN_MODULES), (
+        f"EXPECTED_MODELS={sorted(EXPECTED_MODELS)} DOMAIN_MODULES={DOMAIN_MODULES}"
+    )
+
+
 def _load(path: Path) -> Graph:
     g = Graph()
     g.parse(path, format="turtle")
     return g
 
 
-@pytest.mark.parametrize("module", MODULES)
+@pytest.mark.parametrize("module", DOMAIN_MODULES)
 def test_owl_declares_expected_classes(module):
     """そのモジュール自身の名前空間でクラスが宣言されていること。
 
@@ -50,7 +121,7 @@ def test_owl_declares_expected_classes(module):
         )
 
 
-@pytest.mark.parametrize("module", MODULES)
+@pytest.mark.parametrize("module", ALL_MODULES)
 def test_definitions_carry_japanese_language_tag(module):
     """定義文に @ja が付いていること。
 
@@ -58,6 +129,10 @@ def test_definitions_carry_japanese_language_tag(module):
     scripts/generate-schema.sh が rdflib で後処理して付けている。
     ここが落ちたら後処理が実行されていない。
     rdfs:label は要素名(ASCII識別子)なので対象にしない。
+
+    **`all.*` も対象にする(`ALL_MODULES`)。** ここが `["core", "org"]` だった間、
+    検証の唯一の入力かつ公開対象そのものである `all.owl.ttl` / `all.shacl.ttl` から
+    @ja を全部消しても全テストが緑だった(再レビュー Important 2 の実測)。
     """
     g = _load(GENERATED / f"{module}.owl.ttl")
     definitions = list(g.objects(None, SKOS.definition))
@@ -73,7 +148,7 @@ def test_definitions_carry_japanese_language_tag(module):
     assert not untagged_shapes, f"SHACLに@jaが付いていない説明文がある: {untagged_shapes[:3]}"
 
 
-@pytest.mark.parametrize("module", MODULES)
+@pytest.mark.parametrize("module", ALL_MODULES)
 def test_shacl_target_classes_match_owl_classes(module):
     """設計書§10 最重要: SHACLの sh:targetClass と OWLのクラスIRIが一致すること。
 
@@ -94,7 +169,7 @@ def test_shacl_target_classes_match_owl_classes(module):
     )
 
 
-@pytest.mark.parametrize("module", MODULES)
+@pytest.mark.parametrize("module", DOMAIN_MODULES)
 def test_pydantic_models_import(module):
     """生成されたPydanticモデルが import でき、そのモジュールのクラスを持つこと。"""
     import importlib.util
@@ -107,7 +182,7 @@ def test_pydantic_models_import(module):
         assert hasattr(mod, name), f"{module}_models に {name} が無い"
 
 
-@pytest.mark.parametrize("module", MODULES)
+@pytest.mark.parametrize("module", DOMAIN_MODULES)
 def test_schema_namespace_matches_config_default(module):
     """LinkMLスキーマの名前空間と設定の既定ベースURIが一致すること。
 
@@ -130,18 +205,7 @@ def test_schema_namespace_matches_config_default(module):
 
 
 # 検証の唯一の入力。ここに現れないクラスは「何を入れても conforms=True」になる
-ALL_SHACL = GENERATED / "all.shacl.ttl"
-
-
-def _domain_modules() -> list[str]:
-    """`schema/*.yaml` から `all.yaml` を除いたモジュール名を列挙する。
-
-    **モジュール名をハードコードしない。** Task 8 で「モジュールごとに
-    パラメータ化したつもりが片方の名前をハードコードしていて常に真だった」という
-    空振りが起きている。新しいモジュールを足したら、この検査が自動的に対象を
-    増やすことが目的なので、名前を書いてはいけない。
-    """
-    return sorted(p.stem for p in SCHEMA.glob("*.yaml") if p.stem != "all")
+ALL_SHACL = GENERATED / validate.SHAPES_FILENAME
 
 
 def _target_classes(path: Path) -> set[str]:
@@ -160,7 +224,7 @@ def test_all_shacl_covers_every_module():
     再生成していなければ落ちる。実行時には
     `validate.validate_dataset` の網羅性ガードが同じずれを捕まえる。
     """
-    modules = _domain_modules()
+    modules = DOMAIN_MODULES
     assert modules, "schema/*.yaml が1つも見つからない(検査対象が空)"
 
     all_targets = _target_classes(ALL_SHACL)
