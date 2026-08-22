@@ -86,6 +86,15 @@ def load(source_id: str, fetched_on: datetime.date, filename: str) -> bytes:
     return (_dir(source_id, fetched_on) / filename).read_bytes()
 
 
+def path_of(source_id: str, fetched_on: datetime.date, filename: str) -> Path:
+    """スナップショットのファイルパスを返す。
+
+    大きなファイルを bytes で読まずにストリームで処理したい呼び出し側のために、
+    パスだけを渡す。存在確認はしない(呼び出し側が open で判断する)。
+    """
+    return _dir(source_id, fetched_on) / filename
+
+
 def list_snapshots(source_id: str) -> list[Snapshot]:
     root = Path(get_settings().lake_dir) / source_id
     if not root.exists():

@@ -87,3 +87,9 @@ def test_no_temp_files_left_after_save():
     d = lake._dir("houjin-bangou", day)
     leftovers = [p.name for p in d.iterdir() if p.name.startswith(".") and p.name.endswith(".tmp")]
     assert leftovers == [], f"一時ファイルが残っている: {leftovers}"
+
+
+def test_path_of_matches_saved_location():
+    day = datetime.date(2026, 8, 1)
+    snap = lake.save("houjin-bangou", day, "sample.csv", b"x")
+    assert lake.path_of("houjin-bangou", day, "sample.csv") == snap.path
