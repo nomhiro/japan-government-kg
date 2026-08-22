@@ -12,9 +12,12 @@ export PYTHONUTF8=1
 OUT=schema/generated
 mkdir -p "$OUT"
 
-for module in core org all; do
-  src="schema/${module}.yaml"
+# **モジュール名を列挙しない。** ここに書き忘れると、そのモジュールの生成物が
+# 作られず(あるいは古いまま残り)、検証が静かに素通しになる。schema/*.yaml が
+# 対象の定義そのものである(レビューI6と同じ型の欠陥をここでも避ける)
+for src in schema/*.yaml; do
   [ -f "$src" ] || continue
+  module="$(basename "$src" .yaml)"
   echo "generating from ${src}"
   uv run gen-owl --no-use-native-uris "$src" > "${OUT}/${module}.owl.ttl"
   uv run gen-shacl "$src" > "${OUT}/${module}.shacl.ttl"

@@ -124,6 +124,82 @@ def test_schema_namespace_matches_config_default(module):
     )
 
 
+SCHEMA = Path("schema")
+# 検証の唯一の入力。ここに現れないクラスは「何を入れても conforms=True」になる
+ALL_SHACL = GENERATED / "all.shacl.ttl"
+
+
+def _domain_modules() -> list[str]:
+    """`schema/*.yaml` から `all.yaml` を除いたモジュール名を列挙する。
+
+    **モジュール名をハードコードしない。** Task 8 で「モジュールごとに
+    パラメータ化したつもりが片方の名前をハードコードしていて常に真だった」という
+    空振りが起きている。新しいモジュールを足したら、この検査が自動的に対象を
+    増やすことが目的なので、名前を書いてはいけない。
+    """
+    return sorted(p.stem for p in SCHEMA.glob("*.yaml") if p.stem != "all")
+
+
+def _target_classes(path: Path) -> set[str]:
+    return {str(o) for o in _load(path).objects(None, SH.targetClass)}
+
+
+def test_all_shacl_covers_every_module():
+    """全モジュールのNodeShapeが `all.shacl.ttl` に入っていること。
+
+    `schema/all.yaml` の imports に新モジュールを足し忘れると、
+    **そのクラスの検証だけが静かに消える**(そのグラフは何を入れても
+    `conforms=True` になる)。これを強制する装置が無かった(レビューI6)。
+
+    **何があれば落ちるか**: `all.yaml` の imports からモジュールを1つ外したら
+    落ちる。新しい `schema/<m>.yaml` を足して imports に書き忘れたら落ちる。
+    再生成していなければ落ちる。実行時には
+    `validate.validate_dataset` の網羅性ガードが同じずれを捕まえる。
+    """
+    modules = _domain_modules()
+    assert modules, "schema/*.yaml が1つも見つからない(検査対象が空)"
+
+    all_targets = _target_classes(ALL_SHACL)
+    assert all_targets, f"{ALL_SHACL} に sh:targetClass が無い"
+
+    missing: dict[str, list[str]] = {}
+    for module in modules:
+        path = GENERATED / f"{module}.shacl.ttl"
+        assert path.exists(), (
+            f"{path} が無い。schema/{module}.yaml を足したなら"
+            " scripts/generate-schema.sh を実行してコミットする"
+        )
+        targets = _target_classes(path)
+        assert targets, f"{path} に sh:targetClass が無い"
+        gap = sorted(targets - all_targets)
+        if gap:
+            missing[module] = gap
+
+    assert not missing, (
+        f"モジュールのNodeShapeが all.shacl.ttl に入っていない: {missing}。"
+        " schema/all.yaml の imports に追加して再生成する"
+        "(入っていないクラスの検証は素通しになる)"
+    )
+
+
+def test_all_shacl_covers_the_classes_emitted_by_the_pipeline():
+    """パイプラインが実際に出す型が `all.shacl.ttl` の対象になっていること。
+
+    モジュール間の網羅性(上のテスト)とは別に、**出力側から見た網羅性**を見る。
+    `emit` が出す型のどれか1つがシェイプの対象から外れると、そのグラフの
+    その型は検証されない。
+    """
+    emitted = {"Organization", "GovernmentOrgan", "Ministry"}
+    targets = _target_classes(ALL_SHACL)
+    for name in emitted:
+        assert any(t.endswith(f"/def/org#{name}") for t in targets), (
+            f"emit が出す org:{name} のシェイプが all.shacl.ttl に無い: {sorted(targets)}"
+        )
+    assert any(t.endswith("/def/core#UnresolvedReference") for t in targets), (
+        f"emit が出す core:UnresolvedReference のシェイプが無い: {sorted(targets)}"
+    )
+
+
 OVERLAY = Path("schema/overlay")
 
 
