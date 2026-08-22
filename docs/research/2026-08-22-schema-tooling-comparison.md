@@ -114,7 +114,7 @@
 1. **生成物をgitにコミットする。** `.gitignore`に入れないこと。**LinkMLの賭けを可逆にする唯一の措置**。差分レビューで生成器の回帰も検出できる
 2. **LinkMLのバージョンをピン留めする**(`linkml==1.11.1`等)。1.11.0が誤ったコミットに紐づいてyankされた前例あり(2026-05-13 yank → 05-20に1.11.1)
 3. **URI整合性のCIテストを書く。** `gen-owl --no-use-native-uris`を明示し、「生成SHACLの`sh:targetClass` == 生成OWLのクラスIRI == サンプルインスタンスの`rdf:type`」を突き合わせる。**これが最重要**
-4. **`--default-language ja`を`gen-owl`と`gen-shacl`の両方に指定する。** 日英併記の規約(日本語を`description`、英語を`structured_aliases`+`in_language: en`)を最初に決める
+4. ~~**`--default-language ja`を`gen-owl`と`gen-shacl`の両方に指定する。**~~ **← 訂正: このオプションは `linkml==1.11.1` に存在しない(下記の訂正を参照)。** 言語タグは生成後にrdflibで付ける後処理で実現する。日英併記の規約(日本語を`description`、英語を`structured_aliases`+`in_language: en`)を最初に決める点は有効
 5. **[公式の廃止手順](https://linkml.io/linkml/howtos/deprecating-elements.html)を初日から採用する。** URIを404させない運用は後付けが難しい
 6. **`gen-shacl`が要件を満たさなくなったら、手書きSHACLの混在ではなく「その制約はSPARQL CQテスト側で見る」に逃がす。** 混在は最悪の状態
 7. **LinkMLに書けないことを書かない。** 生成された出力を読んで理解できる範囲に留める
@@ -132,6 +132,25 @@ LinkMLは**生成器**であり、ランタイム依存でもデータフォー�
 **撤退手順**: 生成を止める → 最後の生成物を`git add` → YAMLを削除 → 続行。**ただしこれは生成物をコミットしている場合に限る。**
 
 **逆に、高価で不可逆な決定は別のところにある**: URI設計(一度公開したら消せない)、名前付きグラフ+PROV-Oの出典モデル(データ全体の再生成)、6軸の概念的な切り方(全ドメインスキーマに波及)、ELIのWork/Expression二層の粒度(法令データ全体の再構築)。**検討予算はこちらに回すべき。**
+
+## 訂正(2026-08-22、実装時に実機で判明)
+
+**この調査の「`--default-language` オプションがある」という記述は誤りである。** 実装時に検証した結果:
+
+- `uv run gen-owl --help` / `gen-shacl --help` に `--default-language` は出現しない
+- インストール済みの `linkml` / `linkml_runtime` を `default_language` でgrepしても0件。メタモデルにもこのフィールドは無い
+- 実行すると `Error: No such option: '--default-language'` で即エラー
+- `linkml` の最新リリースは 1.11.1(2026-05-20)であり、「バージョンを上げれば直る」話ではない
+
+linkml.io の現行ドキュメント(https://linkml.io/linkml/generators/owl.html)には記載があるが、**未リリースブランチのドキュメントが先行しているだけで、どのリリース版にも実装されていない**。
+
+**教訓: ツールのCLIオプションは公式ドキュメントではなく `--help` と実行結果で確認する。** この調査はドキュメントを一次情報として扱ったが、実装との乖離があった。
+
+あわせて判明した事実:
+- LinkMLは説明文を `rdfs:comment` ではなく **`skos:definition`** に出力する
+- Windowsでは `gen-owl ... > file.ttl` のリダイレクトでstdoutがコンソールのコードページ(cp932)で開かれ、生成Turtleが不正なUTF-8になる。`PYTHONUTF8=1` で回避できる
+
+対応: 言語タグは生成後にrdflibで付ける後処理(`jgkg.schema_lang`)で実現した。対象は定義文(`skos:definition` / `sh:description`)のみで、要素名である `rdfs:label` には付けない。詳細は設計書§5.7。
 
 ## 補足: 推測と事実の区別
 

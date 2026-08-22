@@ -33,7 +33,8 @@
 - **LinkMLのバージョンは `linkml==1.11.1` にピン留めする**(1.11.0がyankされた前例。設計書§5.7)
 - **LinkMLの生成物は `.gitignore` に入れず、必ずGitにコミットする。** これがLinkML採用を可逆にする唯一の措置(設計書§5.1)
 - **`gen-owl` には `--no-use-native-uris` を明示する。** 既定のTrueだとOWLとSHACL/データが別のIRIを語る(設計書§10)
-- **`gen-owl` と `gen-shacl` の両方に `--default-language ja` を指定する**(設計書§5.7)
+- **定義文には日本語の言語タグ `@ja` を付ける**(設計書§5.7)。ただし**`--default-language` オプションは `linkml==1.11.1` に存在しない**(公式ドキュメントには記載があるが未リリース機能。実機で確認済み)。生成後に `jgkg.schema_lang` でrdflibを使って付ける。対象は定義文(`skos:definition` / `sh:description`)のみで、要素名である `rdfs:label` には付けない
+- **生成スクリプトで `PYTHONUTF8=1` を設定する。** Windowsではstdoutがコンソールのコードページ(cp932)で開かれ、リダイレクト先のTurtleが不正なUTF-8になりrdflibが読めなくなる。どの環境でも同じ生成物になるための要件(設計書§11.1)
 - **日英併記の規約: 日本語を `description`、英語を `structured_aliases` + `in_language: en`。** LinkMLの `description` は単一文字列で言語別に持てないため(設計書§5.7)
 - **出典を持たない事実をKGに入れない**(設計書§2 原則7)
 - **Phase 0 では LLM を使わない**(設計書§8.1)
