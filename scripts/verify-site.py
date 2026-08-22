@@ -61,6 +61,15 @@ def _get(origin: str, path: str) -> tuple[int, dict[str, str], bytes]:
             return r.status, {k: v for k, v in r.headers.items()}, r.read()
     except urllib.error.HTTPError as e:
         return e.code, {k: v for k, v in e.headers.items()}, e.read()
+    except urllib.error.URLError as e:
+        # 接続そのものが失敗した場合も値で返す。例外死させると残りの項目が
+        # 「未検査」なのか「合格」なのか区別できなくなる。
+        #
+        # **実際に踏んだ例**(2026-08-23): `wrangler pages deploy` が出す
+        # デプロイ固有URL(`<hash>.<project>.pages.dev`)は3階層のサブドメインで、
+        # `*.pages.dev` のワイルドカード証明書の範囲外なのでTLSハンドシェイクが失敗する。
+        # 検証は本番URL(`<project>.pages.dev` か独自ドメイン)に対して流すこと。
+        return 0, {}, f"接続失敗: {e.reason}".encode()
 
 
 def main(argv: list[str]) -> int:

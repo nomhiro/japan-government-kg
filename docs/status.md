@@ -141,17 +141,20 @@ Phase 0 の全体レビューで出た指摘のうち、マージ前に直さず
 
 ## 次にやると効くこと(優先順)
 
-1. **オントロジーを公開する** — 組み立てとローカル検証は済んでいる。
-   **残るは Cloudflare へのデプロイと `jgkg` サブドメインのDNS設定だけ**で、これは外向きの
-   操作なので実行者が意図して行う。
+1. **`jgkg.norr-tech.com` を Pages プロジェクトに割り当てる** — オントロジーは
+   **既に <https://jgkg.pages.dev> で公開済み**(2026-08-23、検証26項目すべて合格)。
+   残るはカスタムドメインの割り当てのみ。**割り当てるまで、配信物が名乗る名前空間
+   `https://jgkg.norr-tech.com/def/...` は解決しない**(中身は正しいが、その名前で引けない)。
 
    ```
-   ./scripts/build-site.sh                              # 組み立て(整合検査を含む)
-   npx wrangler pages dev site --port 8788              # ローカル再現
-   uv run python scripts/verify-site.py                 # 18項目の検証
-   npx wrangler pages deploy site --project-name jgkg   # 公開(外向き)
-   uv run python scripts/verify-site.py https://jgkg.norr-tech.com   # 公開後に同じ検証
+   ./scripts/build-site.sh                                     # 組み立て(整合検査を含む)
+   npx wrangler pages deploy site --project-name jgkg --branch main
+   uv run python scripts/verify-site.py https://jgkg.pages.dev  # 公開先で検証
    ```
+
+   **デプロイ固有URL(`<hash>.jgkg.pages.dev`)には検証を流さないこと。** 3階層の
+   サブドメインで `*.pages.dev` のワイルドカード証明書の範囲外なので、TLSハンドシェイクが
+   失敗する(実測)。検証は `jgkg.pages.dev` か独自ドメインに対して流す。
 
 2. **実データを1回取得して3つの数字を測る** — TDB2実サイズ、府省突合率、実行時間。
    **Phase 1 の構成判断がこれに依存している。**
@@ -165,9 +168,10 @@ Phase 0 の全体レビューで出た指摘のうち、マージ前に直さず
 
 - **実行系を一度通した**(2026-08-23)。`build.sh` → `serve.sh` → Fuseki → CQ 6本。
   この過程で**テストが1件も検出していなかった欠陥5件**が出た
-- **オントロジーの静的配信を組み立て、Cloudflare Pages のローカル再現で検証した**(2026-08-23)。
-  `site/` に9件の配信物、検証18項目。解決すべきパスは生成物から導出しており、
-  ハードコードしていない。**公開はまだしていない**(外向きの操作なので)
+- **オントロジーを Cloudflare Pages に公開した**(2026-08-23)。<https://jgkg.pages.dev>
+  配信物9件、**公開先に対する検証26項目すべて合格。** 解決すべきパスは生成物から
+  導出しており、ハードコードしていない。**これが設計書の原則1「本体はオントロジーとKG」の
+  本体が、初めて外から参照できるようになった時点である**
 - **アーキテクチャの層の分離を設計書に明記した**(決定41)。データ・ストア・アプリの3層は
   リリースサイクルが独立であることを構成の要件とする。
   **フロントエンドは Cloudflare Pages に確定**(決定42)。API + Fuseki のホストは実測待ち
