@@ -20,7 +20,7 @@ CQ_DIR = Path("queries/cq")
 
 @pytest.fixture(autouse=True)
 def tmp_env(tmp_path, monkeypatch):
-    monkeypatch.setenv("JGKG_BASE_URI", "http://localhost:8080/kg")
+    monkeypatch.setenv("JGKG_BASE_URI", "https://jgkg.norr-tech.com")
     monkeypatch.setenv("JGKG_LAKE_DIR", str(tmp_path / "lake"))
     monkeypatch.setenv("JGKG_QUARANTINE_DIR", str(tmp_path / "quarantine"))
     from jgkg.config import get_settings

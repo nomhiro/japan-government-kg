@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     #
     # 整合しているかは `uv run python -m jgkg.base_uri --check`(CIも実行する)。
     # 上書きしたまま古い生成物で走らせた場合は `validate.validate_dataset` が例外にする。
-    base_uri: str = "http://localhost:8080/kg"
+    base_uri: str = "https://jgkg.norr-tech.com"
     lake_dir: str = "data/lake"
     artifact_dir: str = "data/artifact"
     quarantine_dir: str = "data/quarantine"

@@ -1,6 +1,6 @@
 # CQ P0-1: ある法人番号の組織の名称と所在地は何か
 PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
-PREFIX org:  <http://localhost:8080/kg/def/org#>
+PREFIX org:  <https://jgkg.norr-tech.com/def/org#>
 
 SELECT ?name ?prefecture WHERE {
   ?s org:houjinBangou "8000012070001" ;

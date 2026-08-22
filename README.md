@@ -3,8 +3,12 @@
 日本政府が公開する資料・データを、統一オントロジーに基づくナレッジグラフ(KG)として統合し、政府情報の「つながり」を誰でも検索・探索できるようにする公共財プロジェクト。
 
 > [!IMPORTANT]
-> **現在の状態: 設計フェーズ。実装は未着手です。**
-> このリポジトリには現時点で調査レポートと設計書のみが含まれます。動くコードはまだありません。
+> **このプロジェクトは日本国政府とは無関係です。** 日本国政府が公開するデータを第三者が構造化したものであり、**政府による公式なデータセットではありません。** 一次データの出典は各名前付きグラフに機械可読な形で保持しています。判断の根拠には必ず一次資料をご確認ください。
+
+> [!NOTE]
+> **現在の状態: Phase 0(データレイヤー基盤)完了。テスト115件。**
+> オントロジー(LinkML → OWL/SHACL)、出典付きスナップショット、名前付きグラフでの出力、SHACL検証ゲート、成果物ビルド、CQ(適格性質問)テストとCIが動きます。
+> **公開エンドポイントはまだありません。** 識別子の名前空間は `https://jgkg.norr-tech.com/` に確定しましたが、解決(dereference)はまだ実装していません。
 
 ## なぜ作るのか
 
@@ -81,14 +85,15 @@
 
 デジタル庁自身のOSS公開(コードMIT / 文書CC BY 4.0)と同じ慣行に揃えています。
 
-> [!NOTE]
-> ライセンス選定は設計書 §13 の残論点であり暫定です。実装開始前に確定します。
+スキーマは `license: https://creativecommons.org/licenses/by/4.0/` を宣言しており、生成した OWL/SHACL に `dcterms:license` として焼き込まれています。**変更するには再生成が必要です。**
 
 ## English
 
 **Japan Government Knowledge Graph (JGKG)** — a public-good project to integrate Japanese government open data into a knowledge graph under a unified ontology, with a visualization app on top.
 
-**Status: design phase. No implementation yet.** This repository currently contains research reports and the design specification only (in Japanese).
+**Not affiliated with the Government of Japan.** This is a third-party structuring of data published by the Japanese government; it is **not** an official government dataset. Provenance for every source is retained in machine-readable form in named graphs.
+
+**Status: Phase 0 (data layer foundation) complete — 115 tests passing.** The ontology (LinkML to OWL/SHACL), provenance-bearing snapshots, named-graph emission, a SHACL validation gate, artifact builds, and competency-question tests with CI all work. **No public endpoint yet.** The identifier namespace is fixed at `https://jgkg.norr-tech.com/`, but dereferencing is not yet implemented. Design documents and research reports are in Japanese.
 
 The core premise: the Japanese government publishes authoritative *join keys* (law IDs, corporate numbers, address registry IDs) and many individual APIs, but no cross-source joined graph exists. Questions like "which corporations received expenditures under a given law, from which ministry's budget line" cannot be answered with any combination of existing government offerings.
 

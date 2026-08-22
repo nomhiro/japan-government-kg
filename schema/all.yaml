@@ -1,4 +1,4 @@
-id: http://localhost:8080/kg/def/all
+id: https://jgkg.norr-tech.com/def/all
 name: jgkg-all
 title: 日本政府ナレッジグラフ 全モジュール統合(検証用)
 description: >-
@@ -7,10 +7,11 @@ description: >-
   上位モジュールのシェイプが各ファイルに重複して現れ、閉じたシェイプが同一クラスに
   複数適用されて偽の違反になるため。
   新しいドメインモジュールを追加したら、必ずここの imports にも追加する。
+  このオントロジーは日本国政府が公開するデータを第三者が構造化したものであり、日本国政府による公式なデータセットではない。
 license: https://creativecommons.org/licenses/by/4.0/
 
 prefixes:
-  jgkgall: http://localhost:8080/kg/def/all#
+  jgkgall: https://jgkg.norr-tech.com/def/all#
   linkml: https://w3id.org/linkml/
 default_prefix: jgkgall
 default_range: string

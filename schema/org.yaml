@@ -1,12 +1,13 @@
-id: http://localhost:8080/kg/def/org
+id: https://jgkg.norr-tech.com/def/org
 name: jgkg-org
 title: 日本政府ナレッジグラフ 組織モジュール
 description: 組織(府省・法人)を表すクラスとプロパティ。正準IDは法人番号。
+  このオントロジーは日本国政府が公開するデータを第三者が構造化したものであり、日本国政府による公式なデータセットではない。
 license: https://creativecommons.org/licenses/by/4.0/
 
 prefixes:
-  jgkgorg: http://localhost:8080/kg/def/org#
-  jgkgcore: http://localhost:8080/kg/def/core#
+  jgkgorg: https://jgkg.norr-tech.com/def/org#
+  jgkgcore: https://jgkg.norr-tech.com/def/core#
   linkml: https://w3id.org/linkml/
   skos: http://www.w3.org/2004/02/skos/core#
   schema: http://schema.org/

@@ -9,7 +9,7 @@ FIXTURE = Path("tests/fixtures/houjin_bangou_sample.csv")
 
 @pytest.fixture(autouse=True)
 def fixed_base(monkeypatch):
-    monkeypatch.setenv("JGKG_BASE_URI", "http://localhost:8080/kg")
+    monkeypatch.setenv("JGKG_BASE_URI", "https://jgkg.norr-tech.com")
     from jgkg.config import get_settings
     get_settings.cache_clear()
     yield
@@ -25,7 +25,7 @@ def test_maps_fields_and_builds_uri():
     orgs = {o.houjin_bangou: o for o in parse_file(FIXTURE)}
     kourou = orgs["8000012070001"]
     assert kourou.name == "厚生労働省"
-    assert kourou.uri == "http://localhost:8080/kg/id/org/8000012070001"
+    assert kourou.uri == "https://jgkg.norr-tech.com/id/org/8000012070001"
     assert kourou.prefecture == "東京都"
     assert kourou.city == "千代田区"
 

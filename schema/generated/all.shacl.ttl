@@ -4,7 +4,7 @@
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-<http://localhost:8080/kg/def/core#Concept> a sh:NodeShape ;
+<https://jgkg.norr-tech.com/def/core#Concept> a sh:NodeShape ;
     rdfs:comment "「何について」の軸。主題・指標・制度手続きの上位" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
@@ -18,13 +18,13 @@
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
             sh:order 0 ;
-            sh:path <http://localhost:8080/kg/def/core#id> ] ;
-    sh:targetClass <http://localhost:8080/kg/def/core#Concept> .
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ] ;
+    sh:targetClass <https://jgkg.norr-tech.com/def/core#Concept> .
 
-<http://localhost:8080/kg/def/core#Entity> a sh:NodeShape ;
+<https://jgkg.norr-tech.com/def/core#Entity> a sh:NodeShape ;
     rdfs:comment "本KGが扱うすべての事物の基底" ;
     sh:closed false ;
-    sh:ignoredProperties ( <http://localhost:8080/kg/def/core#amount_jpy> <http://localhost:8080/kg/def/core#involves_agent> <http://localhost:8080/kg/def/core#occurred_on> <http://localhost:8080/kg/def/core#unresolved_key> <http://localhost:8080/kg/def/core#unresolved_reason> <http://localhost:8080/kg/def/core#unresolved_text> <http://localhost:8080/kg/def/org#cityName> <http://localhost:8080/kg/def/org#houjinBangou> <http://localhost:8080/kg/def/org#ministryCode> <http://localhost:8080/kg/def/org#organizationKindCode> <http://localhost:8080/kg/def/org#prefectureName> rdf:type ) ;
+    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/core#amount_jpy> <https://jgkg.norr-tech.com/def/core#involves_agent> <https://jgkg.norr-tech.com/def/core#occurred_on> <https://jgkg.norr-tech.com/def/core#unresolved_key> <https://jgkg.norr-tech.com/def/core#unresolved_reason> <https://jgkg.norr-tech.com/def/core#unresolved_text> <https://jgkg.norr-tech.com/def/org#cityName> <https://jgkg.norr-tech.com/def/org#houjinBangou> <https://jgkg.norr-tech.com/def/org#ministryCode> <https://jgkg.norr-tech.com/def/org#organizationKindCode> <https://jgkg.norr-tech.com/def/org#prefectureName> ) ;
     sh:property [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
@@ -35,10 +35,10 @@
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
             sh:order 0 ;
-            sh:path <http://localhost:8080/kg/def/core#id> ] ;
-    sh:targetClass <http://localhost:8080/kg/def/core#Entity> .
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ] ;
+    sh:targetClass <https://jgkg.norr-tech.com/def/core#Entity> .
 
-<http://localhost:8080/kg/def/core#Event> a sh:NodeShape ;
+<https://jgkg.norr-tech.com/def/core#Event> a sh:NodeShape ;
     rdfs:comment "「いつ」の軸。時点を持つ出来事。関係を実体化するための中心クラス。 「AがBに影響した」を直接のエッジにせず、原則としてこのクラスを介す" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
@@ -48,26 +48,26 @@
             sh:nodeKind sh:Literal ;
             sh:order 3 ;
             sh:path skos:prefLabel ],
-        [ sh:description "このリソースのURI"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:IRI ;
-            sh:order 2 ;
-            sh:path <http://localhost:8080/kg/def/core#id> ],
         [ sh:datatype xsd:date ;
             sh:description "この出来事が起きた日"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
-            sh:path <http://localhost:8080/kg/def/core#occurred_on> ],
-        [ sh:class <http://localhost:8080/kg/def/core#Agent> ;
+            sh:path <https://jgkg.norr-tech.com/def/core#occurred_on> ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 2 ;
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ],
+        [ sh:class <https://jgkg.norr-tech.com/def/core#Agent> ;
             sh:description "この出来事に関与した主体"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
             sh:order 1 ;
-            sh:path <http://localhost:8080/kg/def/core#involves_agent> ] ;
-    sh:targetClass <http://localhost:8080/kg/def/core#Event> .
+            sh:path <https://jgkg.norr-tech.com/def/core#involves_agent> ] ;
+    sh:targetClass <https://jgkg.norr-tech.com/def/core#Event> .
 
-<http://localhost:8080/kg/def/core#MonetaryItem> a sh:NodeShape ;
+<https://jgkg.norr-tech.com/def/core#MonetaryItem> a sh:NodeShape ;
     rdfs:comment "「いくらで」の軸。予算科目・支出の上位" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
@@ -82,15 +82,15 @@
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
-            sh:path <http://localhost:8080/kg/def/core#amount_jpy> ],
+            sh:path <https://jgkg.norr-tech.com/def/core#amount_jpy> ],
         [ sh:description "このリソースのURI"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
             sh:order 1 ;
-            sh:path <http://localhost:8080/kg/def/core#id> ] ;
-    sh:targetClass <http://localhost:8080/kg/def/core#MonetaryItem> .
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ] ;
+    sh:targetClass <https://jgkg.norr-tech.com/def/core#MonetaryItem> .
 
-<http://localhost:8080/kg/def/core#Place> a sh:NodeShape ;
+<https://jgkg.norr-tech.com/def/core#Place> a sh:NodeShape ;
     rdfs:comment "「どこで」の軸。行政区域・住所・地物の上位" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
@@ -104,10 +104,10 @@
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
             sh:order 0 ;
-            sh:path <http://localhost:8080/kg/def/core#id> ] ;
-    sh:targetClass <http://localhost:8080/kg/def/core#Place> .
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ] ;
+    sh:targetClass <https://jgkg.norr-tech.com/def/core#Place> .
 
-<http://localhost:8080/kg/def/core#UnresolvedReference> a sh:NodeShape ;
+<https://jgkg.norr-tech.com/def/core#UnresolvedReference> a sh:NodeShape ;
     rdfs:comment "正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず KGに残して計測できるようにするためのクラス" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
@@ -122,26 +122,26 @@
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 2 ;
-            sh:path <http://localhost:8080/kg/def/core#unresolved_key> ],
+            sh:path <https://jgkg.norr-tech.com/def/core#unresolved_key> ],
+        [ sh:description "解決できなかった理由"@ja ;
+            sh:in ( "AMBIGUOUS" "NO_CANDIDATE" "OBSOLETE_ORGANIZATION" ) ;
+            sh:maxCount 1 ;
+            sh:order 1 ;
+            sh:path <https://jgkg.norr-tech.com/def/core#unresolved_reason> ],
         [ sh:datatype rdf:langString ;
             sh:description "正準IDに解決できなかった元の参照文字列"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
-            sh:path <http://localhost:8080/kg/def/core#unresolved_text> ],
+            sh:path <https://jgkg.norr-tech.com/def/core#unresolved_text> ],
         [ sh:description "このリソースのURI"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
             sh:order 3 ;
-            sh:path <http://localhost:8080/kg/def/core#id> ],
-        [ sh:description "解決できなかった理由"@ja ;
-            sh:in ( "AMBIGUOUS" "NO_CANDIDATE" "OBSOLETE_ORGANIZATION" ) ;
-            sh:maxCount 1 ;
-            sh:order 1 ;
-            sh:path <http://localhost:8080/kg/def/core#unresolved_reason> ] ;
-    sh:targetClass <http://localhost:8080/kg/def/core#UnresolvedReference> .
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ] ;
+    sh:targetClass <https://jgkg.norr-tech.com/def/core#UnresolvedReference> .
 
-<http://localhost:8080/kg/def/core#Work> a sh:NodeShape ;
+<https://jgkg.norr-tech.com/def/core#Work> a sh:NodeShape ;
     rdfs:comment "「何を」の軸。法令・政策・事業・文書・司法判断の上位" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
@@ -155,52 +155,52 @@
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
             sh:order 0 ;
-            sh:path <http://localhost:8080/kg/def/core#id> ] ;
-    sh:targetClass <http://localhost:8080/kg/def/core#Work> .
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ] ;
+    sh:targetClass <https://jgkg.norr-tech.com/def/core#Work> .
 
-<http://localhost:8080/kg/def/org#GovernmentOrgan> a sh:NodeShape ;
+<https://jgkg.norr-tech.com/def/org#GovernmentOrgan> a sh:NodeShape ;
     rdfs:comment "法人種別が国の機関である組織" ;
     sh:closed true ;
-    sh:ignoredProperties ( <http://localhost:8080/kg/def/org#ministryCode> rdf:type ) ;
+    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/org#ministryCode> ) ;
     sh:property [ sh:datatype rdf:langString ;
-            sh:description "所在地の都道府県名"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 2 ;
-            sh:path <http://localhost:8080/kg/def/org#prefectureName> ],
-        [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 5 ;
             sh:path skos:prefLabel ],
+        [ sh:datatype rdf:langString ;
+            sh:description "所在地の都道府県名"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 2 ;
+            sh:path <https://jgkg.norr-tech.com/def/org#prefectureName> ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 4 ;
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ],
         [ sh:datatype xsd:string ;
             sh:description "法人番号公表サイトの法人種別コード"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 1 ;
-            sh:path <http://localhost:8080/kg/def/org#organizationKindCode> ],
-        [ sh:description "このリソースのURI"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:IRI ;
-            sh:order 4 ;
-            sh:path <http://localhost:8080/kg/def/core#id> ],
+            sh:path <https://jgkg.norr-tech.com/def/org#organizationKindCode> ],
         [ sh:datatype rdf:langString ;
             sh:description "所在地の市区町村名"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 3 ;
-            sh:path <http://localhost:8080/kg/def/org#cityName> ],
+            sh:path <https://jgkg.norr-tech.com/def/org#cityName> ],
         [ sh:datatype xsd:string ;
             sh:description "国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
-            sh:path <http://localhost:8080/kg/def/org#houjinBangou> ;
+            sh:path <https://jgkg.norr-tech.com/def/org#houjinBangou> ;
             sh:pattern "^\\d{13}$" ] ;
-    sh:targetClass <http://localhost:8080/kg/def/org#GovernmentOrgan> .
+    sh:targetClass <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> .
 
-<http://localhost:8080/kg/def/org#Ministry> a sh:NodeShape ;
+<https://jgkg.norr-tech.com/def/org#Ministry> a sh:NodeShape ;
     rdfs:comment "府省。府省コードで識別できる国の機関" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
@@ -210,90 +210,90 @@
             sh:nodeKind sh:Literal ;
             sh:order 6 ;
             sh:path skos:prefLabel ],
-        [ sh:datatype rdf:langString ;
-            sh:description "所在地の市区町村名"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 4 ;
-            sh:path <http://localhost:8080/kg/def/org#cityName> ],
         [ sh:datatype xsd:string ;
             sh:description "法人番号公表サイトの法人種別コード"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 2 ;
-            sh:path <http://localhost:8080/kg/def/org#organizationKindCode> ],
-        [ sh:datatype xsd:string ;
-            sh:description "国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する"@ja ;
+            sh:path <https://jgkg.norr-tech.com/def/org#organizationKindCode> ],
+        [ sh:datatype rdf:langString ;
+            sh:description "所在地の市区町村名"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
-            sh:order 1 ;
-            sh:path <http://localhost:8080/kg/def/org#houjinBangou> ;
-            sh:pattern "^\\d{13}$" ],
+            sh:order 4 ;
+            sh:path <https://jgkg.norr-tech.com/def/org#cityName> ],
         [ sh:datatype rdf:langString ;
             sh:description "所在地の都道府県名"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 3 ;
-            sh:path <http://localhost:8080/kg/def/org#prefectureName> ],
+            sh:path <https://jgkg.norr-tech.com/def/org#prefectureName> ],
         [ sh:description "このリソースのURI"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
             sh:order 5 ;
-            sh:path <http://localhost:8080/kg/def/core#id> ],
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ],
         [ sh:datatype xsd:string ;
             sh:description "GIFコードリストの府省コード"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
-            sh:path <http://localhost:8080/kg/def/org#ministryCode> ] ;
-    sh:targetClass <http://localhost:8080/kg/def/org#Ministry> .
-
-<http://localhost:8080/kg/def/org#Organization> a sh:NodeShape ;
-    rdfs:comment "法人番号を持つ組織" ;
-    sh:closed true ;
-    sh:ignoredProperties ( <http://localhost:8080/kg/def/org#ministryCode> rdf:type ) ;
-    sh:property [ sh:datatype rdf:langString ;
-            sh:description "所在地の都道府県名"@ja ;
+            sh:path <https://jgkg.norr-tech.com/def/org#ministryCode> ],
+        [ sh:datatype xsd:string ;
+            sh:description "国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
-            sh:order 2 ;
-            sh:path <http://localhost:8080/kg/def/org#prefectureName> ],
-        [ sh:datatype rdf:langString ;
+            sh:order 1 ;
+            sh:path <https://jgkg.norr-tech.com/def/org#houjinBangou> ;
+            sh:pattern "^\\d{13}$" ] ;
+    sh:targetClass <https://jgkg.norr-tech.com/def/org#Ministry> .
+
+<https://jgkg.norr-tech.com/def/org#Organization> a sh:NodeShape ;
+    rdfs:comment "法人番号を持つ組織" ;
+    sh:closed true ;
+    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/org#ministryCode> ) ;
+    sh:property [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 5 ;
             sh:path skos:prefLabel ],
+        [ sh:datatype rdf:langString ;
+            sh:description "所在地の都道府県名"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 2 ;
+            sh:path <https://jgkg.norr-tech.com/def/org#prefectureName> ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 4 ;
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ],
         [ sh:datatype xsd:string ;
             sh:description "法人番号公表サイトの法人種別コード"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 1 ;
-            sh:path <http://localhost:8080/kg/def/org#organizationKindCode> ],
-        [ sh:description "このリソースのURI"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:IRI ;
-            sh:order 4 ;
-            sh:path <http://localhost:8080/kg/def/core#id> ],
+            sh:path <https://jgkg.norr-tech.com/def/org#organizationKindCode> ],
         [ sh:datatype rdf:langString ;
             sh:description "所在地の市区町村名"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 3 ;
-            sh:path <http://localhost:8080/kg/def/org#cityName> ],
+            sh:path <https://jgkg.norr-tech.com/def/org#cityName> ],
         [ sh:datatype xsd:string ;
             sh:description "国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
-            sh:path <http://localhost:8080/kg/def/org#houjinBangou> ;
+            sh:path <https://jgkg.norr-tech.com/def/org#houjinBangou> ;
             sh:pattern "^\\d{13}$" ] ;
-    sh:targetClass <http://localhost:8080/kg/def/org#Organization> .
+    sh:targetClass <https://jgkg.norr-tech.com/def/org#Organization> .
 
-<http://localhost:8080/kg/def/core#Agent> a sh:NodeShape ;
+<https://jgkg.norr-tech.com/def/core#Agent> a sh:NodeShape ;
     rdfs:comment "「誰が」の軸。行為の主体。組織と人の上位" ;
     sh:closed true ;
-    sh:ignoredProperties ( <http://localhost:8080/kg/def/org#cityName> <http://localhost:8080/kg/def/org#houjinBangou> <http://localhost:8080/kg/def/org#ministryCode> <http://localhost:8080/kg/def/org#organizationKindCode> <http://localhost:8080/kg/def/org#prefectureName> rdf:type ) ;
+    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/org#cityName> <https://jgkg.norr-tech.com/def/org#houjinBangou> <https://jgkg.norr-tech.com/def/org#ministryCode> <https://jgkg.norr-tech.com/def/org#organizationKindCode> <https://jgkg.norr-tech.com/def/org#prefectureName> ) ;
     sh:property [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
@@ -304,6 +304,6 @@
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
             sh:order 0 ;
-            sh:path <http://localhost:8080/kg/def/core#id> ] ;
-    sh:targetClass <http://localhost:8080/kg/def/core#Agent> .
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ] ;
+    sh:targetClass <https://jgkg.norr-tech.com/def/core#Agent> .
 

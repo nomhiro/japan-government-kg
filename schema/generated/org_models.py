@@ -68,15 +68,16 @@ class LinkMLMeta(RootModel):
 
 linkml_meta = LinkMLMeta({'default_prefix': 'jgkgorg',
      'default_range': 'string',
-     'description': '組織(府省・法人)を表すクラスとプロパティ。正準IDは法人番号。',
-     'id': 'http://localhost:8080/kg/def/org',
+     'description': '組織(府省・法人)を表すクラスとプロパティ。正準IDは法人番号。 '
+                    'このオントロジーは日本国政府が公開するデータを第三者が構造化したものであり、日本国政府による公式なデータセットではない。',
+     'id': 'https://jgkg.norr-tech.com/def/org',
      'imports': ['linkml:types', 'core'],
      'license': 'https://creativecommons.org/licenses/by/4.0/',
      'name': 'jgkg-org',
      'prefixes': {'jgkgcore': {'prefix_prefix': 'jgkgcore',
-                               'prefix_reference': 'http://localhost:8080/kg/def/core#'},
+                               'prefix_reference': 'https://jgkg.norr-tech.com/def/core#'},
                   'jgkgorg': {'prefix_prefix': 'jgkgorg',
-                              'prefix_reference': 'http://localhost:8080/kg/def/org#'},
+                              'prefix_reference': 'https://jgkg.norr-tech.com/def/org#'},
                   'linkml': {'prefix_prefix': 'linkml',
                              'prefix_reference': 'https://w3id.org/linkml/'},
                   'schema': {'prefix_prefix': 'schema',
@@ -109,7 +110,7 @@ class Entity(ConfiguredBaseModel):
     """
     本KGが扱うすべての事物の基底
     """
-    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'abstract': True, 'from_schema': 'http://localhost:8080/kg/def/core'})
+    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'abstract': True, 'from_schema': 'https://jgkg.norr-tech.com/def/core'})
 
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
@@ -120,7 +121,7 @@ class Agent(Entity):
     「誰が」の軸。行為の主体。組織と人の上位
     """
     linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'exact_mappings': ['prov:Agent'],
-         'from_schema': 'http://localhost:8080/kg/def/core'})
+         'from_schema': 'https://jgkg.norr-tech.com/def/core'})
 
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
@@ -131,7 +132,7 @@ class Work(Entity):
     「何を」の軸。法令・政策・事業・文書・司法判断の上位
     """
     linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'close_mappings': ['schema:CreativeWork'],
-         'from_schema': 'http://localhost:8080/kg/def/core'})
+         'from_schema': 'https://jgkg.norr-tech.com/def/core'})
 
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
@@ -142,7 +143,7 @@ class Place(Entity):
     「どこで」の軸。行政区域・住所・地物の上位
     """
     linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'close_mappings': ['schema:Place'],
-         'from_schema': 'http://localhost:8080/kg/def/core'})
+         'from_schema': 'https://jgkg.norr-tech.com/def/core'})
 
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
@@ -153,7 +154,7 @@ class Event(Entity):
     「いつ」の軸。時点を持つ出来事。関係を実体化するための中心クラス。 「AがBに影響した」を直接のエッジにせず、原則としてこのクラスを介す
     """
     linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'close_mappings': ['prov:Activity'],
-         'from_schema': 'http://localhost:8080/kg/def/core'})
+         'from_schema': 'https://jgkg.norr-tech.com/def/core'})
 
     occurred_on: Optional[date] = Field(default=None, description="""この出来事が起きた日""", json_schema_extra = { "linkml_meta": {'domain_of': ['Event']} })
     involves_agent: Optional[str] = Field(default=None, description="""この出来事に関与した主体""", json_schema_extra = { "linkml_meta": {'domain_of': ['Event']} })
@@ -165,7 +166,7 @@ class MonetaryItem(Entity):
     """
     「いくらで」の軸。予算科目・支出の上位
     """
-    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'http://localhost:8080/kg/def/core'})
+    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/core'})
 
     amount_jpy: Optional[int] = Field(default=None, description="""金額(円)""", json_schema_extra = { "linkml_meta": {'domain_of': ['MonetaryItem']} })
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
@@ -177,7 +178,7 @@ class Concept(Entity):
     「何について」の軸。主題・指標・制度手続きの上位
     """
     linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'exact_mappings': ['skos:Concept'],
-         'from_schema': 'http://localhost:8080/kg/def/core'})
+         'from_schema': 'https://jgkg.norr-tech.com/def/core'})
 
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
@@ -187,7 +188,7 @@ class UnresolvedReference(Entity):
     """
     正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず KGに残して計測できるようにするためのクラス
     """
-    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'http://localhost:8080/kg/def/core'})
+    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/core'})
 
     unresolved_text: Optional[str] = Field(default=None, description="""正準IDに解決できなかった元の参照文字列""", json_schema_extra = { "linkml_meta": {'domain_of': ['UnresolvedReference']} })
     unresolved_reason: Optional[UnresolvedReasonEnum] = Field(default=None, description="""解決できなかった理由""", json_schema_extra = { "linkml_meta": {'domain_of': ['UnresolvedReference']} })
@@ -201,7 +202,7 @@ class Organization(Agent):
     法人番号を持つ組織
     """
     linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'close_mappings': ['schema:Organization'],
-         'from_schema': 'http://localhost:8080/kg/def/org'})
+         'from_schema': 'https://jgkg.norr-tech.com/def/org'})
 
     houjinBangou: Optional[str] = Field(default=None, description="""国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
     organizationKindCode: Optional[str] = Field(default=None, description="""法人番号公表サイトの法人種別コード""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
@@ -228,7 +229,7 @@ class GovernmentOrgan(Organization):
     """
     法人種別が国の機関である組織
     """
-    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'http://localhost:8080/kg/def/org'})
+    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/org'})
 
     houjinBangou: Optional[str] = Field(default=None, description="""国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
     organizationKindCode: Optional[str] = Field(default=None, description="""法人番号公表サイトの法人種別コード""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
@@ -255,7 +256,7 @@ class Ministry(GovernmentOrgan):
     """
     府省。府省コードで識別できる国の機関
     """
-    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'http://localhost:8080/kg/def/org'})
+    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/org'})
 
     ministryCode: Optional[str] = Field(default=None, description="""GIFコードリストの府省コード""", json_schema_extra = { "linkml_meta": {'domain_of': ['Ministry']} })
     houjinBangou: Optional[str] = Field(default=None, description="""国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })

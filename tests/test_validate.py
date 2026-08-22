@@ -22,7 +22,7 @@ WINDOWS_RESERVED = '<>:"/\\|?*'
 
 @pytest.fixture(autouse=True)
 def fixed_base(monkeypatch):
-    monkeypatch.setenv("JGKG_BASE_URI", "http://localhost:8080/kg")
+    monkeypatch.setenv("JGKG_BASE_URI", "https://jgkg.norr-tech.com")
     from jgkg.config import get_settings
     get_settings.cache_clear()
     yield
@@ -31,7 +31,7 @@ def fixed_base(monkeypatch):
 
 def _valid_org():
     return Organization(
-        uri="http://localhost:8080/kg/id/org/8000012070001",
+        uri="https://jgkg.norr-tech.com/id/org/8000012070001",
         houjin_bangou="8000012070001",
         name="厚生労働省",
         kind_code="101",
@@ -51,9 +51,9 @@ def test_valid_dataset_conforms():
 def test_malformed_houjin_bangou_fails_validation():
     """法人番号のパターン制約に違反するデータは不合格になること。"""
     ds = emit.emit_organizations([_valid_org()], "houjin-bangou", DAY)
-    gid = URIRef("http://localhost:8080/kg/graph/houjin-bangou/2026-08-01")
+    gid = URIRef("https://jgkg.norr-tech.com/graph/houjin-bangou/2026-08-01")
     g = ds.graph(gid)
-    bad = URIRef("http://localhost:8080/kg/id/org/9999999999999")
+    bad = URIRef("https://jgkg.norr-tech.com/id/org/9999999999999")
     ns = emit.NS["org"]
     g.add((bad, RDF.type, ns["Organization"]))
     g.add((bad, ns["houjinBangou"], Literal("BROKEN")))
@@ -65,10 +65,10 @@ def test_malformed_houjin_bangou_fails_validation():
 
 def test_quarantine_writes_failing_graphs(tmp_path):
     ds = Dataset()
-    gid = URIRef("http://localhost:8080/kg/graph/broken/2026-08-01")
+    gid = URIRef("https://jgkg.norr-tech.com/graph/broken/2026-08-01")
     g = ds.graph(gid)
     ns = emit.NS["org"]
-    subj = URIRef("http://localhost:8080/kg/id/org/1")
+    subj = URIRef("https://jgkg.norr-tech.com/id/org/1")
     g.add((subj, RDF.type, ns["Organization"]))
     g.add((subj, ns["houjinBangou"], Literal("NOPE")))
 
@@ -114,7 +114,7 @@ def test_safe_stem_replaces_every_windows_reserved_character():
     )
 
     body = "".join(f"a{ch}" for ch in WINDOWS_RESERVED)
-    stem = validate._safe_stem(f"http://localhost:8080/kg/graph/{body}/2026-08-01")
+    stem = validate._safe_stem(f"https://jgkg.norr-tech.com/graph/{body}/2026-08-01")
     assert not set(stem) & set(WINDOWS_RESERVED), stem
     assert stem.endswith("2026-08-01")
 
@@ -165,10 +165,10 @@ def test_provenance_only_graph_is_not_flagged_by_the_coverage_guard():
 
 def test_passing_dataset_excludes_failing_graphs():
     ds = emit.emit_organizations([_valid_org()], "houjin-bangou", DAY)
-    broken_gid = URIRef("http://localhost:8080/kg/graph/broken/2026-08-01")
+    broken_gid = URIRef("https://jgkg.norr-tech.com/graph/broken/2026-08-01")
     bg = ds.graph(broken_gid)
     ns = emit.NS["org"]
-    subj = URIRef("http://localhost:8080/kg/id/org/2")
+    subj = URIRef("https://jgkg.norr-tech.com/id/org/2")
     bg.add((subj, RDF.type, ns["Organization"]))
     bg.add((subj, ns["houjinBangou"], Literal("NOPE")))
 

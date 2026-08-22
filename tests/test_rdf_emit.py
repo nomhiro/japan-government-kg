@@ -13,7 +13,7 @@ DAY = datetime.date(2026, 8, 1)
 
 @pytest.fixture(autouse=True)
 def fixed_base(monkeypatch):
-    monkeypatch.setenv("JGKG_BASE_URI", "http://localhost:8080/kg")
+    monkeypatch.setenv("JGKG_BASE_URI", "https://jgkg.norr-tech.com")
     from jgkg.config import get_settings
     get_settings.cache_clear()
     yield
@@ -22,7 +22,7 @@ def fixed_base(monkeypatch):
 
 def _org(bangou="8000012070001", name="厚生労働省", kind="101"):
     return Organization(
-        uri=f"http://localhost:8080/kg/id/org/{bangou}",
+        uri=f"https://jgkg.norr-tech.com/id/org/{bangou}",
         houjin_bangou=bangou,
         name=name,
         kind_code=kind,
@@ -33,7 +33,7 @@ def _org(bangou="8000012070001", name="厚生労働省", kind="101"):
 
 def test_organizations_land_in_the_named_graph_for_the_source():
     ds = emit.emit_organizations([_org()], "houjin-bangou", DAY)
-    expected_graph = URIRef("http://localhost:8080/kg/graph/houjin-bangou/2026-08-01")
+    expected_graph = URIRef("https://jgkg.norr-tech.com/graph/houjin-bangou/2026-08-01")
 
     contexts = {g.identifier for g in ds.contexts() if len(g) > 0}
     assert expected_graph in contexts
@@ -41,7 +41,7 @@ def test_organizations_land_in_the_named_graph_for_the_source():
 
 def test_organization_has_label_and_identifier():
     ds = emit.emit_organizations([_org()], "houjin-bangou", DAY)
-    subject = URIRef("http://localhost:8080/kg/id/org/8000012070001")
+    subject = URIRef("https://jgkg.norr-tech.com/id/org/8000012070001")
 
     labels = [str(o) for o in ds.objects(subject, SKOS.prefLabel)]
     assert "厚生労働省" in labels
@@ -69,7 +69,7 @@ def test_no_fact_without_provenance():
 
 def test_provenance_records_fetch_date_and_checksum():
     ds = emit.emit_organizations([_org()], "houjin-bangou", DAY, sha256="abc123")
-    gid = URIRef("http://localhost:8080/kg/graph/houjin-bangou/2026-08-01")
+    gid = URIRef("https://jgkg.norr-tech.com/graph/houjin-bangou/2026-08-01")
 
     times = [str(o) for o in ds.objects(gid, PROV.generatedAtTime)]
     assert any("2026-08-01" in t for t in times)
@@ -77,7 +77,7 @@ def test_provenance_records_fetch_date_and_checksum():
 
 def test_unmatched_ministries_are_emitted_not_dropped():
     ds = emit.emit_ministries(
-        [Ministry(uri="http://localhost:8080/kg/id/org/8000012070001",
+        [Ministry(uri="https://jgkg.norr-tech.com/id/org/8000012070001",
                   houjin_bangou="8000012070001", ministry_code="020", name="厚生労働省")],
         [UnmatchedMinistry(ministry_code="999", name="存在しない省", reason="NO_CANDIDATE")],
         "ministry-codes",

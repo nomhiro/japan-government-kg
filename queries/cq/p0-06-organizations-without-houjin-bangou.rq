@@ -2,7 +2,7 @@
 # SHACLの required では担保できない制約をここで見る。グラフをソース別に
 # 分けているため、グラフ単位のSHACL検証ではグラフを跨いだ必須制約を
 # 検証できない。その代償措置。
-PREFIX org: <http://localhost:8080/kg/def/org#>
+PREFIX org: <https://jgkg.norr-tech.com/def/org#>
 
 SELECT ?s WHERE {
   ?s a ?type .

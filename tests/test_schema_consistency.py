@@ -288,7 +288,7 @@ def test_overlay_terms_all_exist_in_generated_owl():
     for overlay in sorted(OVERLAY.glob("*.ttl")):
         referenced = overlay_terms(overlay)
         # 自分の名前空間の用語だけを検査する。外部語彙(prov: 等)は対象外
-        base = "http://localhost:8080/kg/def/"
+        base = "https://jgkg.norr-tech.com/def/"
         own = {t for t in referenced if t.startswith(base)}
         missing = own - declared
         assert not missing, (
@@ -323,7 +323,7 @@ def test_overlay_declares_all_axis_disjointness_pairs():
         generated=sorted(GENERATED.glob("*.owl.ttl")),
         overlay=sorted(OVERLAY.glob("*.ttl")),
     )
-    core = "http://localhost:8080/kg/def/core#"
+    core = "https://jgkg.norr-tech.com/def/core#"
     axes = [
         "Agent", "Work", "Place", "Event",
         "MonetaryItem", "Concept", "UnresolvedReference",

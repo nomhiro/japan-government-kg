@@ -125,7 +125,7 @@ def validate_dataset(ds: Dataset, shapes_dir: Path) -> list[ValidationResult]:
 
 # ファイル名に使えない文字。**Windowsでは `:` が致命的で、`名前:ストリーム名` は
 # NTFSの代替データストリーム(ADS)の構文になる。** 既定のベースURIは
-# `http://localhost:8080/kg` でポート番号のコロンを含むため、置換しないと
+# `https://jgkg.norr-tech.com` でポート番号のコロンを含むため、置換しないと
 # 隔離した内容が `ls` にも `git status` にも tar にも現れない(`Path.exists()` と
 # `stat()` だけは成功するので、返り値を見るテストでは検出できない)。
 # Linuxのコロンは合法なので、この差はCIには永久に出ない。

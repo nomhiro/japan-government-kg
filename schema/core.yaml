@@ -1,14 +1,15 @@
-id: http://localhost:8080/kg/def/core
+id: https://jgkg.norr-tech.com/def/core
 name: jgkg-core
 title: 日本政府ナレッジグラフ コアスキーマ
 description: >-
   6軸(誰が/何を/どこで/いつ/いくらで/何について)の基底クラスと、
   出典を表す用語を定義する。ドメイン固有のクラスは各ドメインモジュールで
   このモジュールを import して継承する。
+  このオントロジーは日本国政府が公開するデータを第三者が構造化したものであり、日本国政府による公式なデータセットではない。
 license: https://creativecommons.org/licenses/by/4.0/
 
 prefixes:
-  jgkgcore: http://localhost:8080/kg/def/core#
+  jgkgcore: https://jgkg.norr-tech.com/def/core#
   linkml: https://w3id.org/linkml/
   prov: http://www.w3.org/ns/prov#
   skos: http://www.w3.org/2004/02/skos/core#

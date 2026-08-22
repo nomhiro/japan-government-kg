@@ -14,7 +14,7 @@ FETCHED = {"houjin-bangou": DAY}
 
 @pytest.fixture(autouse=True)
 def tmp_env(tmp_path, monkeypatch):
-    monkeypatch.setenv("JGKG_BASE_URI", "http://localhost:8080/kg")
+    monkeypatch.setenv("JGKG_BASE_URI", "https://jgkg.norr-tech.com")
     monkeypatch.setenv("JGKG_LAKE_DIR", str(tmp_path / "lake"))
     monkeypatch.setenv("JGKG_QUARANTINE_DIR", str(tmp_path / "quarantine"))
     from jgkg.config import get_settings
@@ -42,7 +42,7 @@ def test_run_produces_nquads_and_report(seeded_lake, tmp_path):
     assert report.graphs_validated >= 2, "データグラフと出典グラフの少なくとも2つが検証される"
     assert report.graphs_quarantined == 0, "正常なfixtureで隔離が発生してはならない"
     assert report.graphs, "グラフ一覧が空である"
-    assert all(g.startswith("http://localhost:8080/kg/graph/") for g in report.graphs), (
+    assert all(g.startswith("https://jgkg.norr-tech.com/graph/") for g in report.graphs), (
         f"想定外のグラフURIがある: {report.graphs}"
     )
     assert report.graphs == sorted(report.graphs), "グラフ一覧はソート済みであること"

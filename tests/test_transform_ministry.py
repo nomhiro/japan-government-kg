@@ -8,7 +8,7 @@ from jgkg.transform.organization import Organization
 
 @pytest.fixture(autouse=True)
 def fixed_base(monkeypatch):
-    monkeypatch.setenv("JGKG_BASE_URI", "http://localhost:8080/kg")
+    monkeypatch.setenv("JGKG_BASE_URI", "https://jgkg.norr-tech.com")
     from jgkg.config import get_settings
     get_settings.cache_clear()
     yield
@@ -17,7 +17,7 @@ def fixed_base(monkeypatch):
 
 def _org(bangou: str, name: str, kind: str = "101") -> Organization:
     return Organization(
-        uri=f"http://localhost:8080/kg/id/org/{bangou}",
+        uri=f"https://jgkg.norr-tech.com/id/org/{bangou}",
         houjin_bangou=bangou,
         name=name,
         kind_code=kind,
@@ -37,7 +37,7 @@ def test_build_matches_by_name():
 
     by_code = {m.ministry_code: m for m in ministries}
     assert by_code["020"].houjin_bangou == "8000012070001"
-    assert by_code["020"].uri == "http://localhost:8080/kg/id/org/8000012070001"
+    assert by_code["020"].uri == "https://jgkg.norr-tech.com/id/org/8000012070001"
     assert unmatched == []
 
 
