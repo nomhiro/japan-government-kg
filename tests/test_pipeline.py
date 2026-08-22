@@ -113,6 +113,50 @@ def test_release_gate_allows_a_clean_run(seeded_lake, tmp_path):
     pipeline.enforce_release_gate(report)
 
 
+def test_run_reports_rejected_rows(tmp_path):
+    """取り込まなかった行数がレポートに出ること。
+
+    しきい値(`MIN_ACCEPT_RATIO` = 50%)の下では `ColumnLayoutError` が出ないため、
+    以前は**最大49.9%の行が無音で消えていた**。`organizations` のコメントは
+    「入力から解析した全件数」と書いてあったが、実際には取り込んだ件数だった。
+
+    **何があれば落ちるか**: `_parse_reader` の集計を捨てる実装に戻したら落ちる。
+    `rows_seen` を `organizations` と同じ値にしたら落ちる。
+    """
+    good = "1,8000012070001,1,2015-10-05,2015-10-05,101,厚生労働省,,,,1,1,東京都,千代田区,x\n"
+    other = "2,7000012050002,1,2015-10-05,2015-10-05,101,財務省,,,,1,1,東京都,千代田区,x\n"
+    # 法人番号が13桁でない行(集計行のような実データのノイズ)を2行混ぜる
+    noise = "件数,2,,,,,,,,,,,,,\n"
+    lake.save(
+        "houjin-bangou",
+        DAY,
+        houjin_bangou.FILENAME,
+        (good + other + noise * 2).encode("utf-8"),
+    )
+
+    report = pipeline.run(FETCHED, tmp_path / "out")
+
+    assert report.rows_seen == 4, report.model_dump()
+    assert report.organizations == 2, "取り込んだ件数"
+    assert report.rows_rejected == 2, "捨てた行数が出ていない"
+    assert report.rows_seen == report.organizations + report.rows_rejected
+
+
+def test_parse_stats_counts_short_rows():
+    """列数不足の行数が数えられること(住所などが空文字になっている行)。"""
+    from jgkg.transform.organization import ParseStats, parse_text
+
+    good = "1,8000012070001,1,2015-10-05,2015-10-05,101,厚生労働省,,,,1,1,東京都,千代田区,x\n"
+    short = "2,7000012050002,1,2015-10-05,2015-10-05,101,財務省\n"  # 7列
+    stats = ParseStats()
+    orgs = list(parse_text(good * 3 + short, stats=stats))
+
+    assert len(orgs) == 4
+    assert stats.rows_seen == 4
+    assert stats.rows_short == 1, "列数不足の行が数えられていない"
+    assert stats.rows_rejected == 0, "13桁の法人番号は読めているので棄却ではない"
+
+
 def test_run_records_a_date_per_source(seeded_lake, tmp_path):
     """ソースごとに「いつ時点か」を記録すること。
 

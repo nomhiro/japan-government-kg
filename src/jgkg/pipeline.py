@@ -22,7 +22,17 @@ SHAPES_DIR = Path("schema/generated")
 
 class PipelineReport(BaseModel):
     release: str
-    # 入力スナップショットから解析した全件数。スナップショット破損や欠落の検知に使う
+    # 入力スナップショットの非空行数。**破損や欠落の検知に使うのはこれと
+    # organizations の差(rows_rejected)である**
+    rows_seen: int
+    # 法人番号が13桁でないなどの理由で取り込まなかった行数。
+    # 列レイアウトの誤りは _assert_layout_plausible が例外にするが、しきい値
+    # (50%)の下では黙って消えるため、件数をここに出す(設計書§11.1の観測性)
+    rows_rejected: int
+    # COL が要求する列数に足りなかった行数。住所などが空文字になっている
+    rows_short: int
+    # **取り込んだ**件数(以前のコメントは「全件数」と書いていたが事実と違った。
+    # 全件数は rows_seen で、その差が捨てた数である)
     organizations: int
     # そのうちKGに入れた件数(国の機関のみ)。organizations との差が
     # 「絞り込みで除外された数」になる。両方を出さないと、レポートを読んだ人が
@@ -134,13 +144,22 @@ def run(fetched_on: Mapping[str, datetime.date], out_dir: Path) -> PipelineRepor
     # rdflib に 3000万トリプルを載せるため破綻する。Phase 0 の目的は基盤の確立であり、
     # 任意の法人が必要になるのは Phase 1 の縦スライス(支出先法人)。設計書§6.2.3の
     # 「規模の問題は分割で対処し、1つを大きくするな」に従う。
-    # 全件数も数えるのは、スナップショット破損や欠落を検知するため(§11.1の観測性)
+    # 非空行数と取り込み数の両方を数えるのは、破損や欠落を検知するため(§11.1の観測性)
     total_organizations = 0
     orgs: list[org_mod.Organization] = []
-    for o in org_mod.parse_file(snapshot_path):
+    stats = org_mod.ParseStats()
+    for o in org_mod.parse_file(snapshot_path, stats=stats):
         total_organizations += 1
         if o.is_government_organ:
             orgs.append(o)
+
+    # 棄却があれば黙って進まない。レポートにも出すが、実行ログでも見えるようにする
+    if stats.rows_rejected:
+        print(
+            f"警告: {stats.rows_rejected} 行を取り込まなかった"
+            f"(非空行 {stats.rows_seen} / 取り込み {stats.rows_accepted} /"
+            f" 列数不足 {stats.rows_short})。{snapshot_path}"
+        )
 
     # **0件を正常終了として返さない。** 列位置が違えば `_cell` は空文字を返し、
     # 法人番号が13桁でない行は黙って捨てられるため、以前は organizations=0 /
@@ -189,6 +208,9 @@ def run(fetched_on: Mapping[str, datetime.date], out_dir: Path) -> PipelineRepor
         # 参照表の recorded_on を混ぜないのは、成果物ディレクトリ名や manifest の
         # release と食い違わせないため
         release=max(fetched_on.values()).isoformat(),
+        rows_seen=stats.rows_seen,
+        rows_rejected=stats.rows_rejected,
+        rows_short=stats.rows_short,
         organizations=total_organizations,
         government_organs=len(orgs),
         ministries=len(ministries),

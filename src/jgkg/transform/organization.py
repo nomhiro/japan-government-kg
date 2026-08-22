@@ -7,6 +7,7 @@ import csv
 import io
 import re
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -64,6 +65,26 @@ GOVERNMENT_ORGAN_KIND = "101"
 MIN_ACCEPT_RATIO = 0.5
 
 
+@dataclass
+class ParseStats:
+    """解析の内訳。**判定に使って捨てるのではなく、呼び出し側に返す。**
+
+    しきい値(`MIN_ACCEPT_RATIO`)を超えなければ `ColumnLayoutError` は出ないが、
+    その下では最大49.9%の行が黙って捨てられる。500万行なら約249万行である。
+    設計書§11.1の観測性は「各段の件数を出す」ことを求めているのに、
+    **最も知りたい数字(捨てた数)がどこにも出ていなかった。**
+    """
+
+    rows_seen: int = 0        # 空行以外の行数
+    rows_accepted: int = 0    # Organization にした行数
+    rows_short: int = 0       # COL が要求する列数に足りなかった行数
+    rows_valid_kind: int = 0  # 法人種別コードが3桁だった行数(rows_accepted のうち)
+
+    @property
+    def rows_rejected(self) -> int:
+        return self.rows_seen - self.rows_accepted
+
+
 class ColumnLayoutError(ValueError):
     """CSVの列レイアウトが COL の想定と合っていない。
 
@@ -90,7 +111,9 @@ def _cell(row: list[str], key: str) -> str:
     return row[idx].strip() if idx < len(row) else ""
 
 
-def parse_file(path: Path, encoding: str = "utf-8") -> Iterator[Organization]:
+def parse_file(
+    path: Path, encoding: str = "utf-8", stats: ParseStats | None = None
+) -> Iterator[Organization]:
     """CSVファイルを1行ずつ Organization にする。
 
     **ファイル全体をメモリに載せない。** 法人番号の全件データは約500万行(約1GB)で、
@@ -106,20 +129,25 @@ def parse_file(path: Path, encoding: str = "utf-8") -> Iterator[Organization]:
     エンコーディングの誤りは行単位のノイズではなく全行に及ぶ系統的な誤りなので、
     errors="strict" にして UnicodeDecodeError で止める。置換して進むと500万行の
     法人名すべてが静かに壊れる(設計書の「沈黙させない」原則に反する)。
+
+    `stats` に `ParseStats` を渡すと、解析の内訳(非空行数・取り込み数・列数不足数)が
+    そこに書き込まれる。**捨てた行数を知る唯一の手段**なので、パイプラインは必ず渡す。
     """
     with path.open("r", encoding=encoding, errors="strict", newline="") as f:
-        yield from _parse_reader(csv.reader(f))
+        yield from _parse_reader(csv.reader(f), stats)
 
 
-def parse_text(text: str) -> Iterator[Organization]:
+def parse_text(text: str, stats: ParseStats | None = None) -> Iterator[Organization]:
     """文字列からパースする。小さなテスト入力用。
 
     実データには使わない(メモリに全載せするため)。実データは parse_file を使う。
     """
-    yield from _parse_reader(csv.reader(io.StringIO(text)))
+    yield from _parse_reader(csv.reader(io.StringIO(text)), stats)
 
 
-def _parse_reader(reader: Iterator[list[str]]) -> Iterator[Organization]:
+def _parse_reader(
+    reader: Iterator[list[str]], stats: ParseStats | None = None
+) -> Iterator[Organization]:
     """1行ずつ Organization にしつつ、**列レイアウトの誤りを最後に例外にする。**
 
     行単位の棄却は続ける(末尾の集計行などで処理を止めないため)が、棄却が
@@ -129,24 +157,24 @@ def _parse_reader(reader: Iterator[list[str]]) -> Iterator[Organization]:
     検査は列挙を最後まで消費したときに走る。途中で `close()` する呼び出し側
     (ストリーム性の確認など)には適用されない。
     """
-    seen = 0        # 空行以外の行数
-    accepted = 0    # Organization にした行数
-    short = 0       # COL が要求する列数に足りない行数
-    valid_kind = 0  # 法人種別コードが3桁だった行数(accepted のうち)
+    # 呼び出し側が渡した ParseStats をそのまま埋める(渡されなければ内部で持つ)。
+    # **集計を判定に使って捨ててはならない。** しきい値の下では最大49.9%の行が
+    # 黙って消えるので、捨てた行数は観測性の中心である
+    st = stats if stats is not None else ParseStats()
 
     for row in reader:
         if not row or not any(c.strip() for c in row):
             continue
-        seen += 1
+        st.rows_seen += 1
         if len(row) < MIN_COLUMNS:
-            short += 1
+            st.rows_short += 1
         bangou = _cell(row, "houjin_bangou")
         if not HOUJIN_BANGOU_RE.match(bangou):
             continue
         kind = _cell(row, "kind_code")
-        accepted += 1
+        st.rows_accepted += 1
         if KIND_CODE_RE.match(kind):
-            valid_kind += 1
+            st.rows_valid_kind += 1
         yield Organization(
             uri=org_uri(bangou),
             houjin_bangou=bangou,
@@ -158,11 +186,13 @@ def _parse_reader(reader: Iterator[list[str]]) -> Iterator[Organization]:
             is_government_organ=(kind == GOVERNMENT_ORGAN_KIND),
         )
 
-    _assert_layout_plausible(seen=seen, accepted=accepted, short=short, valid_kind=valid_kind)
+    _assert_layout_plausible(st)
 
 
-def _assert_layout_plausible(*, seen: int, accepted: int, short: int, valid_kind: int) -> None:
+def _assert_layout_plausible(st: ParseStats) -> None:
     """棄却の分布から列レイアウトの妥当性を判定する。"""
+    seen, accepted = st.rows_seen, st.rows_accepted
+    short, valid_kind = st.rows_short, st.rows_valid_kind
     if seen == 0:
         # 空のファイルは「レイアウトの誤り」とは区別する。件数の下限は
         # pipeline.run 側で見る(そこでソースごとの意味を持たせられる)
