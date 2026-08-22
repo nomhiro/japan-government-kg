@@ -1,5 +1,7 @@
 # 読み取り専用のKG提供と、インデックス構築ツール。
-# 成果物(TDB2インデックス)は data/artifact/tdb2 に展開しておく。
+# 成果物(TDB2インデックス)の展開は `scripts/serve.sh <リリース日>` が行う。
+# **手で展開しないこと** — serve.sh は展開の前に manifest の sha256 と
+# Jenaバージョンを照合する(設計書§6.3)。手で置くとその照合が飛ぶ。
 services:
   fuseki:
     image: apache/jena-fuseki:${JENA_VERSION:?JENA_VERSION を .env に設定する}
