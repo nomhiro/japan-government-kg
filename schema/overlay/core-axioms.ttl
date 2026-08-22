@@ -1,0 +1,24 @@
+# LinkML の gen-owl が出せない公理だけを置く。加算専用。
+# 規約(設計書§5.5):
+#   - 生成OWLが述べたことを上書き・否定しない
+#   - 言及するクラス・プロパティはすべて生成OWLに存在すること(CIで検証)
+#   - 肥大化したら LinkML の限界に達した徴候。撤退基準(§5.3)を再評価する
+
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix core: <http://localhost:8080/kg/def/core#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+
+# 6軸は互いに素である。同じものが Agent でも Place でもあることはない。
+core:Agent        owl:disjointWith core:Place , core:Event , core:MonetaryItem .
+core:Work         owl:disjointWith core:Agent , core:Place , core:Event .
+core:Place        owl:disjointWith core:Event , core:MonetaryItem .
+core:MonetaryItem owl:disjointWith core:Event .
+
+# 外部語彙との同値。gen-owl は exact_mappings を skos:exactMatch で出すため、
+# OWL レベルの同値はここで宣言する。
+core:Event owl:equivalentClass prov:Activity .
+
+# 未解決参照は他のどの軸でもない。計測のための補助クラスである。
+core:UnresolvedReference owl:disjointWith
+    core:Agent , core:Work , core:Place , core:Event , core:MonetaryItem , core:Concept .

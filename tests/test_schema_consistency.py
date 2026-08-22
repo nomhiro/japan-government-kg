@@ -101,3 +101,44 @@ def test_schema_namespace_matches_config_default(module):
         f"スキーマの名前空間が設定の既定ベースURI({default_base})と一致しない。"
         f" 実際のクラスIRI例: {own[:3]}"
     )
+
+
+OVERLAY = Path("schema/overlay")
+
+
+def test_overlay_terms_all_exist_in_generated_owl():
+    """設計書§10: オーバーレイが言及する用語はすべて生成OWLに存在すること。
+
+    存在しない用語への公理は、スキーマへの未反映かタイポである。
+    """
+    from jgkg.schema_merge import overlay_terms
+
+    owl_g = Graph()
+    for p in sorted(GENERATED.glob("*.owl.ttl")):
+        owl_g.parse(p, format="turtle")
+    declared = {str(s) for s in owl_g.subjects(RDF.type, OWL.Class)}
+    declared |= {str(s) for s in owl_g.subjects(RDF.type, OWL.ObjectProperty)}
+    declared |= {str(s) for s in owl_g.subjects(RDF.type, OWL.DatatypeProperty)}
+
+    for overlay in sorted(OVERLAY.glob("*.ttl")):
+        referenced = overlay_terms(overlay)
+        # 自分の名前空間の用語だけを検査する。外部語彙(prov: 等)は対象外
+        base = "http://localhost:8080/kg/def/"
+        own = {t for t in referenced if t.startswith(base)}
+        missing = own - declared
+        assert not missing, (
+            f"{overlay} が言及する用語が生成OWLに存在しない: {sorted(missing)}"
+        )
+
+
+def test_merged_ontology_contains_both_sources():
+    from jgkg.schema_merge import merge_ontology
+
+    merged = merge_ontology(
+        generated=sorted(GENERATED.glob("*.owl.ttl")),
+        overlay=sorted(OVERLAY.glob("*.ttl")),
+    )
+    # 生成側由来
+    assert (None, RDF.type, OWL.Class) in merged
+    # オーバーレイ由来
+    assert any(merged.triples((None, OWL.disjointWith, None))), "オーバーレイの公理が入っていない"
