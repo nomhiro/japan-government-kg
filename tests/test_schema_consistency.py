@@ -8,6 +8,18 @@ from rdflib.namespace import SH, SKOS
 GENERATED = Path("schema/generated")
 MODULES = ["core", "org"]
 
+# モジュールごとに「そのモジュール自身が宣言すべきクラス」を明示する。
+# import されたクラスは各モジュールのOWL/モデルにも現れるため、共通のクラス名で
+# 検査すると org の検査が常に真になり空振りする(実際にそうなっていた)
+EXPECTED_CLASSES = {
+    "core": ["Agent", "Work", "Place", "Event", "MonetaryItem", "Concept", "UnresolvedReference"],
+    "org": ["Organization", "GovernmentOrgan", "Ministry"],
+}
+EXPECTED_MODELS = {
+    "core": ["Event", "UnresolvedReference"],
+    "org": ["Organization", "GovernmentOrgan", "Ministry"],
+}
+
 
 def _load(path: Path) -> Graph:
     g = Graph()
@@ -17,11 +29,20 @@ def _load(path: Path) -> Graph:
 
 @pytest.mark.parametrize("module", MODULES)
 def test_owl_declares_expected_classes(module):
+    """そのモジュール自身の名前空間でクラスが宣言されていること。
+
+    import されたクラスも各モジュールのOWLに現れるため、名前空間で絞らないと
+    「常に真」の空振りテストになる。
+    """
     g = _load(GENERATED / f"{module}.owl.ttl")
-    classes = {str(s) for s in g.subjects(RDF.type, OWL.Class)}
-    assert any(c.endswith("#Event") for c in classes), f"Event が宣言されていない: {classes}"
-    assert any(c.endswith("#Agent") for c in classes)
-    assert any(c.endswith("#UnresolvedReference") for c in classes)
+    declared = {str(s) for s in g.subjects(RDF.type, OWL.Class)}
+    ns = f"/def/{module}#"
+    own = {c for c in declared if ns in c}
+    assert own, f"{module} が自身の名前空間でクラスを宣言していない"
+    for name in EXPECTED_CLASSES[module]:
+        assert any(c.endswith(f"{ns}{name}") for c in own), (
+            f"{module} が自身の名前空間で {name} を宣言していない。宣言済み: {sorted(own)}"
+        )
 
 
 @pytest.mark.parametrize("module", MODULES)
@@ -70,15 +91,15 @@ def test_shacl_target_classes_match_owl_classes(module):
 
 @pytest.mark.parametrize("module", MODULES)
 def test_pydantic_models_import(module):
-    """生成されたPydanticモデルが実際に import できること。"""
+    """生成されたPydanticモデルが import でき、そのモジュールのクラスを持つこと。"""
     import importlib.util
 
     path = GENERATED / f"{module}_models.py"
     spec = importlib.util.spec_from_file_location(f"{module}_models", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    assert hasattr(mod, "Event")
-    assert hasattr(mod, "UnresolvedReference")
+    for name in EXPECTED_MODELS[module]:
+        assert hasattr(mod, name), f"{module}_models に {name} が無い"
 
 
 @pytest.mark.parametrize("module", MODULES)
