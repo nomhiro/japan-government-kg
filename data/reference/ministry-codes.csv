@@ -1,0 +1,6 @@
+# source: デジタル庁 GIF コードリスト (https://github.com/JDA-DM/GIF) / CC BY 4.0
+# 小規模で安定した参照表のためリポジトリにコミットして管理する
+ministry_code,name
+013,総務省
+017,財務省
+020,厚生労働省
