@@ -14,10 +14,20 @@ prefixes:
   skos: http://www.w3.org/2004/02/skos/core#
   dcterms: http://purl.org/dc/terms/
   schema: http://schema.org/
+  rdf: http://www.w3.org/1999/02/22-rdf-syntax-ns#
 default_prefix: jgkgcore
 default_range: string
 imports:
   - linkml:types
+
+types:
+  LangString:
+    uri: rdf:langString
+    base: str
+    description: >-
+      言語タグ付きの文字列。人が読む名称や文章に使う。
+      識別子やコードには使わない(それらは言語に依存しないため plain な string を使う)。
+      この区別をスキーマに明示することで、どの値が言語依存かがモデルから読み取れる。
 
 slots:
   id:
@@ -27,6 +37,7 @@ slots:
   label:
     description: 人間が読む名称
     slot_uri: skos:prefLabel
+    range: LangString
   occurred_on:
     description: この出来事が起きた日
     range: date
@@ -44,6 +55,7 @@ slots:
     range: integer
   unresolved_text:
     description: 正準IDに解決できなかった元の参照文字列
+    range: LangString
   unresolved_reason:
     description: 解決できなかった理由
     range: UnresolvedReasonEnum

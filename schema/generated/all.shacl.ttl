@@ -8,7 +8,7 @@
     rdfs:comment "「何について」の軸。主題・指標・制度手続きの上位" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
-    sh:property [ sh:datatype xsd:string ;
+    sh:property [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
@@ -24,18 +24,18 @@
 <http://localhost:8080/kg/def/core#Entity> a sh:NodeShape ;
     rdfs:comment "本KGが扱うすべての事物の基底" ;
     sh:closed false ;
-    sh:ignoredProperties ( <http://localhost:8080/kg/def/core#involves_agent> <http://localhost:8080/kg/def/core#occurred_on> <http://localhost:8080/kg/def/core#amount_jpy> <http://localhost:8080/kg/def/org#prefectureName> rdf:type <http://localhost:8080/kg/def/org#ministryCode> <http://localhost:8080/kg/def/org#cityName> <http://localhost:8080/kg/def/org#houjinBangou> <http://localhost:8080/kg/def/core#unresolved_text> <http://localhost:8080/kg/def/core#unresolved_key> <http://localhost:8080/kg/def/org#organizationKindCode> <http://localhost:8080/kg/def/core#unresolved_reason> ) ;
-    sh:property [ sh:description "このリソースのURI"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:IRI ;
-            sh:order 0 ;
-            sh:path <http://localhost:8080/kg/def/core#id> ],
-        [ sh:datatype xsd:string ;
+    sh:ignoredProperties ( <http://localhost:8080/kg/def/org#prefectureName> rdf:type <http://localhost:8080/kg/def/org#organizationKindCode> <http://localhost:8080/kg/def/core#occurred_on> <http://localhost:8080/kg/def/core#unresolved_key> <http://localhost:8080/kg/def/core#unresolved_text> <http://localhost:8080/kg/def/core#amount_jpy> <http://localhost:8080/kg/def/org#cityName> <http://localhost:8080/kg/def/org#houjinBangou> <http://localhost:8080/kg/def/org#ministryCode> <http://localhost:8080/kg/def/core#involves_agent> <http://localhost:8080/kg/def/core#unresolved_reason> ) ;
+    sh:property [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 1 ;
-            sh:path skos:prefLabel ] ;
+            sh:path skos:prefLabel ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 0 ;
+            sh:path <http://localhost:8080/kg/def/core#id> ] ;
     sh:targetClass <http://localhost:8080/kg/def/core#Entity> .
 
 <http://localhost:8080/kg/def/core#Event> a sh:NodeShape ;
@@ -48,18 +48,18 @@
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
             sh:path <http://localhost:8080/kg/def/core#occurred_on> ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 2 ;
+            sh:path <http://localhost:8080/kg/def/core#id> ],
         [ sh:class <http://localhost:8080/kg/def/core#Agent> ;
             sh:description "この出来事に関与した主体"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
             sh:order 1 ;
             sh:path <http://localhost:8080/kg/def/core#involves_agent> ],
-        [ sh:description "このリソースのURI"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:IRI ;
-            sh:order 2 ;
-            sh:path <http://localhost:8080/kg/def/core#id> ],
-        [ sh:datatype xsd:string ;
+        [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
@@ -71,13 +71,7 @@
     rdfs:comment "「いくらで」の軸。予算科目・支出の上位" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
-    sh:property [ sh:datatype xsd:string ;
-            sh:description "人間が読む名称"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 2 ;
-            sh:path skos:prefLabel ],
-        [ sh:description "このリソースのURI"@ja ;
+    sh:property [ sh:description "このリソースのURI"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
             sh:order 1 ;
@@ -87,7 +81,13 @@
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
-            sh:path <http://localhost:8080/kg/def/core#amount_jpy> ] ;
+            sh:path <http://localhost:8080/kg/def/core#amount_jpy> ],
+        [ sh:datatype rdf:langString ;
+            sh:description "人間が読む名称"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 2 ;
+            sh:path skos:prefLabel ] ;
     sh:targetClass <http://localhost:8080/kg/def/core#MonetaryItem> .
 
 <http://localhost:8080/kg/def/core#Place> a sh:NodeShape ;
@@ -99,7 +99,7 @@
             sh:nodeKind sh:IRI ;
             sh:order 0 ;
             sh:path <http://localhost:8080/kg/def/core#id> ],
-        [ sh:datatype xsd:string ;
+        [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
@@ -111,51 +111,51 @@
     rdfs:comment "正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず KGに残して計測できるようにするためのクラス" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
-    sh:property [ sh:datatype xsd:string ;
-            sh:description "解決できなかった参照の、ソース側のキー(府省コード等)。ドメイン固有の プロパティを UnresolvedReference に足すと閉じたSHACLシェイプに違反するため、 汎用のキーとしてここで受ける"@ja ;
+    sh:property [ sh:datatype rdf:langString ;
+            sh:description "正準IDに解決できなかった元の参照文字列"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
-            sh:order 2 ;
-            sh:path <http://localhost:8080/kg/def/core#unresolved_key> ],
+            sh:order 0 ;
+            sh:path <http://localhost:8080/kg/def/core#unresolved_text> ],
         [ sh:description "このリソースのURI"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
             sh:order 3 ;
             sh:path <http://localhost:8080/kg/def/core#id> ],
-        [ sh:datatype xsd:string ;
+        [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 4 ;
             sh:path skos:prefLabel ],
+        [ sh:datatype xsd:string ;
+            sh:description "解決できなかった参照の、ソース側のキー(府省コード等)。ドメイン固有の プロパティを UnresolvedReference に足すと閉じたSHACLシェイプに違反するため、 汎用のキーとしてここで受ける"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 2 ;
+            sh:path <http://localhost:8080/kg/def/core#unresolved_key> ],
         [ sh:description "解決できなかった理由"@ja ;
             sh:in ( "NO_CANDIDATE" "AMBIGUOUS" "OBSOLETE_ORGANIZATION" ) ;
             sh:maxCount 1 ;
             sh:order 1 ;
-            sh:path <http://localhost:8080/kg/def/core#unresolved_reason> ],
-        [ sh:datatype xsd:string ;
-            sh:description "正準IDに解決できなかった元の参照文字列"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 0 ;
-            sh:path <http://localhost:8080/kg/def/core#unresolved_text> ] ;
+            sh:path <http://localhost:8080/kg/def/core#unresolved_reason> ] ;
     sh:targetClass <http://localhost:8080/kg/def/core#UnresolvedReference> .
 
 <http://localhost:8080/kg/def/core#Work> a sh:NodeShape ;
     rdfs:comment "「何を」の軸。法令・政策・事業・文書・司法判断の上位" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
-    sh:property [ sh:datatype xsd:string ;
+    sh:property [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 0 ;
+            sh:path <http://localhost:8080/kg/def/core#id> ],
+        [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 1 ;
-            sh:path skos:prefLabel ],
-        [ sh:description "このリソースのURI"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:IRI ;
-            sh:order 0 ;
-            sh:path <http://localhost:8080/kg/def/core#id> ] ;
+            sh:path skos:prefLabel ] ;
     sh:targetClass <http://localhost:8080/kg/def/core#Work> .
 
 <http://localhost:8080/kg/def/org#GovernmentOrgan> a sh:NodeShape ;
@@ -163,36 +163,36 @@
     sh:closed true ;
     sh:ignoredProperties ( <http://localhost:8080/kg/def/org#ministryCode> rdf:type ) ;
     sh:property [ sh:datatype xsd:string ;
-            sh:description "人間が読む名称"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 5 ;
-            sh:path skos:prefLabel ],
-        [ sh:datatype xsd:string ;
-            sh:description "法人番号公表サイトの法人種別コード"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 1 ;
-            sh:path <http://localhost:8080/kg/def/org#organizationKindCode> ],
-        [ sh:datatype xsd:string ;
             sh:description "国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
             sh:path <http://localhost:8080/kg/def/org#houjinBangou> ;
             sh:pattern "^\\d{13}$" ],
+        [ sh:datatype rdf:langString ;
+            sh:description "所在地の都道府県名"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 2 ;
+            sh:path <http://localhost:8080/kg/def/org#prefectureName> ],
+        [ sh:datatype rdf:langString ;
+            sh:description "人間が読む名称"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 5 ;
+            sh:path skos:prefLabel ],
         [ sh:description "このリソースのURI"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
             sh:order 4 ;
             sh:path <http://localhost:8080/kg/def/core#id> ],
         [ sh:datatype xsd:string ;
-            sh:description "所在地の都道府県名"@ja ;
+            sh:description "法人番号公表サイトの法人種別コード"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
-            sh:order 2 ;
-            sh:path <http://localhost:8080/kg/def/org#prefectureName> ],
-        [ sh:datatype xsd:string ;
+            sh:order 1 ;
+            sh:path <http://localhost:8080/kg/def/org#organizationKindCode> ],
+        [ sh:datatype rdf:langString ;
             sh:description "所在地の市区町村名"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
@@ -205,42 +205,42 @@
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
     sh:property [ sh:datatype xsd:string ;
-            sh:description "GIFコードリストの府省コード"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 0 ;
-            sh:path <http://localhost:8080/kg/def/org#ministryCode> ],
-        [ sh:datatype xsd:string ;
-            sh:description "法人番号公表サイトの法人種別コード"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 2 ;
-            sh:path <http://localhost:8080/kg/def/org#organizationKindCode> ],
-        [ sh:datatype xsd:string ;
-            sh:description "所在地の都道府県名"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 3 ;
-            sh:path <http://localhost:8080/kg/def/org#prefectureName> ],
-        [ sh:datatype xsd:string ;
             sh:description "国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 1 ;
             sh:path <http://localhost:8080/kg/def/org#houjinBangou> ;
             sh:pattern "^\\d{13}$" ],
-        [ sh:description "このリソースのURI"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:IRI ;
-            sh:order 5 ;
-            sh:path <http://localhost:8080/kg/def/core#id> ],
-        [ sh:datatype xsd:string ;
+        [ sh:datatype rdf:langString ;
             sh:description "所在地の市区町村名"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 4 ;
             sh:path <http://localhost:8080/kg/def/org#cityName> ],
         [ sh:datatype xsd:string ;
+            sh:description "法人番号公表サイトの法人種別コード"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 2 ;
+            sh:path <http://localhost:8080/kg/def/org#organizationKindCode> ],
+        [ sh:datatype rdf:langString ;
+            sh:description "所在地の都道府県名"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 3 ;
+            sh:path <http://localhost:8080/kg/def/org#prefectureName> ],
+        [ sh:datatype xsd:string ;
+            sh:description "GIFコードリストの府省コード"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 0 ;
+            sh:path <http://localhost:8080/kg/def/org#ministryCode> ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 5 ;
+            sh:path <http://localhost:8080/kg/def/core#id> ],
+        [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
@@ -252,24 +252,24 @@
     rdfs:comment "法人番号を持つ組織" ;
     sh:closed true ;
     sh:ignoredProperties ( <http://localhost:8080/kg/def/org#ministryCode> rdf:type ) ;
-    sh:property [ sh:datatype xsd:string ;
-            sh:description "所在地の市区町村名"@ja ;
+    sh:property [ sh:datatype rdf:langString ;
+            sh:description "所在地の都道府県名"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
-            sh:order 3 ;
-            sh:path <http://localhost:8080/kg/def/org#cityName> ],
-        [ sh:datatype xsd:string ;
-            sh:description "人間が読む名称"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 5 ;
-            sh:path skos:prefLabel ],
+            sh:order 2 ;
+            sh:path <http://localhost:8080/kg/def/org#prefectureName> ],
         [ sh:datatype xsd:string ;
             sh:description "法人番号公表サイトの法人種別コード"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 1 ;
             sh:path <http://localhost:8080/kg/def/org#organizationKindCode> ],
+        [ sh:datatype rdf:langString ;
+            sh:description "所在地の市区町村名"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 3 ;
+            sh:path <http://localhost:8080/kg/def/org#cityName> ],
         [ sh:datatype xsd:string ;
             sh:description "国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する"@ja ;
             sh:maxCount 1 ;
@@ -277,12 +277,12 @@
             sh:order 0 ;
             sh:path <http://localhost:8080/kg/def/org#houjinBangou> ;
             sh:pattern "^\\d{13}$" ],
-        [ sh:datatype xsd:string ;
-            sh:description "所在地の都道府県名"@ja ;
+        [ sh:datatype rdf:langString ;
+            sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
-            sh:order 2 ;
-            sh:path <http://localhost:8080/kg/def/org#prefectureName> ],
+            sh:order 5 ;
+            sh:path skos:prefLabel ],
         [ sh:description "このリソースのURI"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
@@ -293,17 +293,17 @@
 <http://localhost:8080/kg/def/core#Agent> a sh:NodeShape ;
     rdfs:comment "「誰が」の軸。行為の主体。組織と人の上位" ;
     sh:closed true ;
-    sh:ignoredProperties ( rdf:type <http://localhost:8080/kg/def/org#prefectureName> <http://localhost:8080/kg/def/org#ministryCode> <http://localhost:8080/kg/def/org#cityName> <http://localhost:8080/kg/def/org#houjinBangou> <http://localhost:8080/kg/def/org#organizationKindCode> ) ;
-    sh:property [ sh:description "このリソースのURI"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:IRI ;
-            sh:order 0 ;
-            sh:path <http://localhost:8080/kg/def/core#id> ],
-        [ sh:datatype xsd:string ;
+    sh:ignoredProperties ( <http://localhost:8080/kg/def/org#prefectureName> rdf:type <http://localhost:8080/kg/def/org#organizationKindCode> <http://localhost:8080/kg/def/org#cityName> <http://localhost:8080/kg/def/org#houjinBangou> <http://localhost:8080/kg/def/org#ministryCode> ) ;
+    sh:property [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 1 ;
-            sh:path skos:prefLabel ] ;
+            sh:path skos:prefLabel ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 0 ;
+            sh:path <http://localhost:8080/kg/def/core#id> ] ;
     sh:targetClass <http://localhost:8080/kg/def/core#Agent> .
 

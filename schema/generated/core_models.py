@@ -82,12 +82,22 @@ linkml_meta = LinkMLMeta({'default_prefix': 'jgkgcore',
                              'prefix_reference': 'https://w3id.org/linkml/'},
                   'prov': {'prefix_prefix': 'prov',
                            'prefix_reference': 'http://www.w3.org/ns/prov#'},
+                  'rdf': {'prefix_prefix': 'rdf',
+                          'prefix_reference': 'http://www.w3.org/1999/02/22-rdf-syntax-ns#'},
                   'schema': {'prefix_prefix': 'schema',
                              'prefix_reference': 'http://schema.org/'},
                   'skos': {'prefix_prefix': 'skos',
                            'prefix_reference': 'http://www.w3.org/2004/02/skos/core#'}},
      'source_file': 'schema/core.yaml',
-     'title': '日本政府ナレッジグラフ コアスキーマ'} )
+     'title': '日本政府ナレッジグラフ コアスキーマ',
+     'types': {'LangString': {'base': 'str',
+                              'description': '言語タグ付きの文字列。人が読む名称や文章に使う。 '
+                                             '識別子やコードには使わない(それらは言語に依存しないため plain な '
+                                             'string を使う)。 '
+                                             'この区別をスキーマに明示することで、どの値が言語依存かがモデルから読み取れる。',
+                              'from_schema': 'http://localhost:8080/kg/def/core',
+                              'name': 'LangString',
+                              'uri': 'rdf:langString'}}} )
 
 class UnresolvedReasonEnum(str, Enum):
     """

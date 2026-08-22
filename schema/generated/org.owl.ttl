@@ -25,13 +25,13 @@ jgkgcore:valid_until a owl:DatatypeProperty ;
 jgkgorg:Ministry a owl:Class ;
     rdfs:label "Ministry" ;
     rdfs:subClassOf [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty jgkgorg:ministryCode ],
+        [ a owl:Restriction ;
             owl:allValuesFrom xsd:string ;
             owl:onProperty jgkgorg:ministryCode ],
         [ a owl:Restriction ;
             owl:maxCardinality 1 ;
-            owl:onProperty jgkgorg:ministryCode ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
             owl:onProperty jgkgorg:ministryCode ],
         jgkgorg:GovernmentOrgan ;
     skos:definition "府省。府省コードで識別できる国の機関"@ja ;
@@ -53,23 +53,23 @@ jgkgcore:Concept a owl:Class ;
 jgkgcore:Event a owl:Class ;
     rdfs:label "Event" ;
     rdfs:subClassOf [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty jgkgcore:involves_agent ],
+            owl:allValuesFrom xsd:date ;
+            owl:onProperty jgkgcore:occurred_on ],
         [ a owl:Restriction ;
             owl:allValuesFrom jgkgcore:Agent ;
             owl:onProperty jgkgcore:involves_agent ],
         [ a owl:Restriction ;
-            owl:allValuesFrom xsd:date ;
-            owl:onProperty jgkgcore:occurred_on ],
-        [ a owl:Restriction ;
             owl:minCardinality 0 ;
             owl:onProperty jgkgcore:occurred_on ],
         [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty jgkgcore:occurred_on ],
+            owl:minCardinality 0 ;
+            owl:onProperty jgkgcore:involves_agent ],
         [ a owl:Restriction ;
             owl:maxCardinality 1 ;
             owl:onProperty jgkgcore:involves_agent ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty jgkgcore:occurred_on ],
         jgkgcore:Entity ;
     skos:closeMatch prov:Activity ;
     skos:definition "「いつ」の軸。時点を持つ出来事。関係を実体化するための中心クラス。 「AがBに影響した」を直接のエッジにせず、原則としてこのクラスを介す"@ja ;
@@ -100,16 +100,25 @@ jgkgcore:Place a owl:Class ;
 jgkgcore:UnresolvedReference a owl:Class ;
     rdfs:label "UnresolvedReference" ;
     rdfs:subClassOf [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty jgkgcore:unresolved_reason ],
+            owl:minCardinality 0 ;
+            owl:onProperty jgkgcore:unresolved_key ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom rdf:langString ;
+            owl:onProperty jgkgcore:unresolved_text ],
         [ a owl:Restriction ;
             owl:minCardinality 0 ;
             owl:onProperty jgkgcore:unresolved_reason ],
         [ a owl:Restriction ;
             owl:maxCardinality 1 ;
+            owl:onProperty jgkgcore:unresolved_text ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty jgkgcore:unresolved_reason ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
             owl:onProperty jgkgcore:unresolved_key ],
         [ a owl:Restriction ;
-            owl:allValuesFrom xsd:string ;
+            owl:minCardinality 0 ;
             owl:onProperty jgkgcore:unresolved_text ],
         [ a owl:Restriction ;
             owl:allValuesFrom jgkgcore:UnresolvedReasonEnum ;
@@ -117,15 +126,6 @@ jgkgcore:UnresolvedReference a owl:Class ;
         [ a owl:Restriction ;
             owl:allValuesFrom xsd:string ;
             owl:onProperty jgkgcore:unresolved_key ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty jgkgcore:unresolved_text ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty jgkgcore:unresolved_key ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty jgkgcore:unresolved_text ],
         jgkgcore:Entity ;
     skos:definition "正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず KGに残して計測できるようにするためのクラス"@ja ;
     skos:inScheme <http://localhost:8080/kg/def/core> .
@@ -146,19 +146,13 @@ jgkgorg:GovernmentOrgan a owl:Class ;
 jgkgorg:Organization a owl:Class ;
     rdfs:label "Organization" ;
     rdfs:subClassOf [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty jgkgorg:organizationKindCode ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom xsd:string ;
-            owl:onProperty jgkgorg:cityName ],
-        [ a owl:Restriction ;
             owl:allValuesFrom [ a rdfs:Datatype ;
                     owl:onDatatype xsd:string ;
                     owl:withRestrictions ( [ xsd:pattern "^\\d{13}$" ] ) ] ;
             owl:onProperty jgkgorg:houjinBangou ],
         [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty jgkgorg:organizationKindCode ],
+            owl:maxCardinality 1 ;
+            owl:onProperty jgkgorg:cityName ],
         [ a owl:Restriction ;
             owl:minCardinality 0 ;
             owl:onProperty jgkgorg:houjinBangou ],
@@ -167,21 +161,27 @@ jgkgorg:Organization a owl:Class ;
             owl:onProperty jgkgorg:cityName ],
         [ a owl:Restriction ;
             owl:maxCardinality 1 ;
-            owl:onProperty jgkgorg:houjinBangou ],
+            owl:onProperty jgkgorg:prefectureName ],
         [ a owl:Restriction ;
             owl:allValuesFrom xsd:string ;
+            owl:onProperty jgkgorg:organizationKindCode ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom rdf:langString ;
+            owl:onProperty jgkgorg:prefectureName ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty jgkgorg:houjinBangou ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
             owl:onProperty jgkgorg:organizationKindCode ],
         [ a owl:Restriction ;
             owl:minCardinality 0 ;
             owl:onProperty jgkgorg:prefectureName ],
         [ a owl:Restriction ;
             owl:maxCardinality 1 ;
-            owl:onProperty jgkgorg:prefectureName ],
+            owl:onProperty jgkgorg:organizationKindCode ],
         [ a owl:Restriction ;
-            owl:allValuesFrom xsd:string ;
-            owl:onProperty jgkgorg:prefectureName ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
+            owl:allValuesFrom rdf:langString ;
             owl:onProperty jgkgorg:cityName ],
         jgkgcore:Agent ;
     skos:closeMatch schema1:Organization ;
@@ -240,11 +240,13 @@ jgkgcore:unresolved_reason a owl:ObjectProperty ;
 
 jgkgcore:unresolved_text a owl:DatatypeProperty ;
     rdfs:label "unresolved_text" ;
+    rdfs:range rdf:langString ;
     skos:definition "正準IDに解決できなかった元の参照文字列"@ja ;
     skos:inScheme <http://localhost:8080/kg/def/core> .
 
 jgkgorg:cityName a owl:DatatypeProperty ;
     rdfs:label "cityName" ;
+    rdfs:range rdf:langString ;
     skos:definition "所在地の市区町村名"@ja ;
     skos:inScheme <http://localhost:8080/kg/def/org> .
 
@@ -268,11 +270,13 @@ jgkgorg:organizationKindCode a owl:DatatypeProperty ;
 
 jgkgorg:prefectureName a owl:DatatypeProperty ;
     rdfs:label "prefectureName" ;
+    rdfs:range rdf:langString ;
     skos:definition "所在地の都道府県名"@ja ;
     skos:inScheme <http://localhost:8080/kg/def/org> .
 
 skos:prefLabel a owl:DatatypeProperty ;
     rdfs:label "label" ;
+    rdfs:range rdf:langString ;
     skos:definition "人間が読む名称"@ja ;
     skos:inScheme <http://localhost:8080/kg/def/core> .
 
@@ -299,20 +303,22 @@ jgkgcore:Entity a owl:Class ;
             owl:onProperty jgkgcore:id ],
         [ a owl:Restriction ;
             owl:maxCardinality 1 ;
+            owl:onProperty jgkgcore:id ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom rdf:langString ;
             owl:onProperty skos:prefLabel ],
         [ a owl:Restriction ;
             owl:minCardinality 1 ;
             owl:onProperty jgkgcore:id ],
         [ a owl:Restriction ;
-            owl:allValuesFrom xsd:string ;
-            owl:onProperty skos:prefLabel ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
+            owl:maxCardinality 1 ;
             owl:onProperty skos:prefLabel ],
         [ owl:unionOf ( jgkgcore:Agent jgkgcore:Concept jgkgcore:Event jgkgcore:MonetaryItem jgkgcore:Place jgkgcore:UnresolvedReference jgkgcore:Work ) ],
         [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty jgkgcore:id ] ;
+            owl:minCardinality 0 ;
+            owl:onProperty skos:prefLabel ] ;
     skos:definition "本KGが扱うすべての事物の基底"@ja ;
     skos:inScheme <http://localhost:8080/kg/def/core> .
+
+rdf:langString a rdfs:Datatype .
 

@@ -31,8 +31,10 @@ slots:
     description: GIFコードリストの府省コード
   prefectureName:
     description: 所在地の都道府県名
+    range: LangString
   cityName:
     description: 所在地の市区町村名
+    range: LangString
 
 classes:
   Organization:
