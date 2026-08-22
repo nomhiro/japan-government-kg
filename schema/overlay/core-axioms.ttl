@@ -11,12 +11,15 @@
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix core: <http://localhost:8080/kg/def/core#> .
 
-# 6軸は互いに素である。同じものが Agent でも Place でもあることはない。
-core:Agent        owl:disjointWith core:Place , core:Event , core:MonetaryItem .
-core:Work         owl:disjointWith core:Agent , core:Place , core:Event .
-core:Place        owl:disjointWith core:Event , core:MonetaryItem .
-core:MonetaryItem owl:disjointWith core:Event .
-
-# 未解決参照は他のどの軸でもない。計測のための補助クラスである。
-core:UnresolvedReference owl:disjointWith
-    core:Agent , core:Work , core:Place , core:Event , core:MonetaryItem , core:Concept .
+# 6軸と未解決参照は互いに素である。7クラスの全組み合わせ21ペアを網羅する。
+# 上三角の形で書き、重複なく数えられるようにしている(6+5+4+3+2+1 = 21)。
+#
+# Agent と Place の排他は特に意味がある: 「東京都」という行政区域(Place)と、
+# 「東京都」という地方公共団体(Agent、法人番号を持つ)は別のものであり、
+# 別のURIで表す。この公理がその区別を強制する。
+core:Agent        owl:disjointWith core:Work , core:Place , core:Event , core:MonetaryItem , core:Concept , core:UnresolvedReference .
+core:Work         owl:disjointWith core:Place , core:Event , core:MonetaryItem , core:Concept , core:UnresolvedReference .
+core:Place        owl:disjointWith core:Event , core:MonetaryItem , core:Concept , core:UnresolvedReference .
+core:Event        owl:disjointWith core:MonetaryItem , core:Concept , core:UnresolvedReference .
+core:MonetaryItem owl:disjointWith core:Concept , core:UnresolvedReference .
+core:Concept      owl:disjointWith core:UnresolvedReference .

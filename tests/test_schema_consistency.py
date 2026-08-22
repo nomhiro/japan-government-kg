@@ -142,3 +142,33 @@ def test_merged_ontology_contains_both_sources():
     assert (None, RDF.type, OWL.Class) in merged
     # オーバーレイ由来
     assert any(merged.triples((None, OWL.disjointWith, None))), "オーバーレイの公理が入っていない"
+
+
+def test_overlay_declares_all_axis_disjointness_pairs():
+    """6軸+未解決参照の21ペアすべてがdisjointとして宣言されていること。
+
+    手で書くと漏れる。実際に初版では Concept が5軸との排他を落としていた
+    (15ペアしか無かった)。件数で固定して再発を防ぐ。
+    """
+    from itertools import combinations
+
+    from jgkg.schema_merge import merge_ontology
+
+    merged = merge_ontology(
+        generated=sorted(GENERATED.glob("*.owl.ttl")),
+        overlay=sorted(OVERLAY.glob("*.ttl")),
+    )
+    core = "http://localhost:8080/kg/def/core#"
+    axes = [
+        "Agent", "Work", "Place", "Event",
+        "MonetaryItem", "Concept", "UnresolvedReference",
+    ]
+
+    missing = []
+    for a, b in combinations(axes, 2):
+        ua, ub = URIRef(core + a), URIRef(core + b)
+        # owl:disjointWith は対称なのでどちら向きでも可
+        if (ua, OWL.disjointWith, ub) not in merged and (ub, OWL.disjointWith, ua) not in merged:
+            missing.append(f"{a}-{b}")
+
+    assert not missing, f"disjointの宣言が無いペアがある({len(missing)}件): {missing}"
