@@ -54,3 +54,7 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# 静的配信物。正は schema/generated/ なので同じものを2箇所にコミットしない
+site/def/
+site/sitemap.txt

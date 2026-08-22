@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JGKG — 日本政府ナレッジグラフ オントロジー</title>
+<meta name="description" content="日本政府が公開するデータを構造化するためのオントロジー。第三者による非公式なプロジェクトです。">
+<link rel="alternate" type="text/turtle" href="/def/all.owl.ttl">
+<style>
+  :root {
+    --paper: #f7f6f3; --ink: #16191d; --muted: #5c636d; --rule: #dcd8d1;
+    --signal: #8a2b1c; --signal-bg: #f6ece9; --code-bg: #eceae5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #14161a; --ink: #e7e4de; --muted: #a1a8b2; --rule: #2f343b;
+      --signal: #dd8570; --signal-bg: #2c1d19; --code-bg: #22262c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+    line-height: 1.85; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 46rem; margin: 0 auto; padding: 3.5rem 1.5rem 5rem; }
+  h1 { font-size: clamp(1.6rem, 4.5vw, 2.2rem); line-height: 1.35; margin: 0 0 .6rem; }
+  .sub { color: var(--muted); margin: 0 0 2.5rem; }
+  h2 { font-size: 1.15rem; margin: 2.75rem 0 .5rem; padding-bottom: .4rem; border-bottom: 1px solid var(--rule); }
+  p { margin: 0 0 1rem; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88em; }
+  code { background: var(--code-bg); padding: .12em .35em; border-radius: 3px; }
+  .notice {
+    border: 1px solid var(--signal); background: var(--signal-bg);
+    padding: 1.1rem 1.25rem; margin: 0 0 2.5rem; border-radius: 2px;
+  }
+  .notice strong { color: var(--signal); }
+  table { border-collapse: collapse; width: 100%; font-size: .94rem; }
+  th, td { text-align: left; padding: .55rem .8rem .55rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 400; }
+  a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  .tablescroll { overflow-x: auto; }
+  footer { margin-top: 3.5rem; padding-top: 1.25rem; border-top: 1px solid var(--rule); color: var(--muted); font-size: .88rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>日本政府ナレッジグラフ オントロジー</h1>
+  <p class="sub">Japan Government Knowledge Graph (JGKG) — 語彙定義</p>
+
+  <div class="notice">
+    <p><strong>このプロジェクトは日本国政府とは無関係です。</strong> 日本国政府が公開するデータを第三者が構造化したものであり、<strong>政府による公式なデータセットではありません。</strong></p>
+    <p style="margin:0">一次データの出典は各名前付きグラフに機械可読な形で保持しています。判断の根拠には必ず一次資料をご確認ください。</p>
+  </div>
+
+  <p>政府が公開するデータを横断して接続するためのオントロジーです。誰が・何を・どこで・いつ・いくらで・何について、の6軸を基底クラスに置き、関係は出来事(Event)を介して表すことで時点の情報を落とさない設計にしています。</p>
+
+  <h2>語彙</h2>
+  <div class="tablescroll">
+  <table>
+    <thead><tr><th>モジュール</th><th>URI</th><th>内容</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>core</td>
+        <td class="mono"><a href="/def/core">/def/core</a></td>
+        <td>6軸の基底クラスと、出典を表す用語</td>
+      </tr>
+      <tr>
+        <td>org</td>
+        <td class="mono"><a href="/def/org">/def/org</a></td>
+        <td>組織・府省。法人番号を正準IDに使う</td>
+      </tr>
+      <tr>
+        <td>all</td>
+        <td class="mono"><a href="/def/all">/def/all</a></td>
+        <td>全モジュールの統合(SHACL検証用)</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>用語のURIはハッシュURIです。<code>/def/core#Agent</code> のように参照し、フラグメントを外した <code>/def/core</code> がオントロジー本体を返します。SHACL形状は <code class="mono"><a href="/def/all.shacl.ttl">/def/all.shacl.ttl</a></code> にあります。いずれも <code>text/turtle</code> で配信し、CORSを開けています。</p>
+
+  <h2>識別子</h2>
+  <p>実体の識別子は <code>/id/org/{法人番号}</code>、出典グラフは <code>/graph/{ソース}/{取得日}</code> の形です。<strong>これらはまだ解決しません。</strong> SPARQLエンドポイントの公開後に対応します。</p>
+
+  <h2>現在の状態</h2>
+  <p>Phase 0(データレイヤー基盤)まで。オントロジー、出典付きスナップショット、名前付きグラフでの出力、SHACL検証ゲート、成果物ビルドと提供の経路が動きます。<strong>実データの投入はまだ行っていません。</strong></p>
+  <p>設計書・調査レポート・進捗状況は <a href="https://github.com/nomhiro/japan-government-kg">GitHub リポジトリ</a> にあります(日本語)。</p>
+
+  <h2>ライセンス</h2>
+  <p>オントロジーとドキュメントは <a href="https://creativecommons.org/licenses/by/4.0/deed.ja">CC BY 4.0</a>、コードは MIT です。</p>
+
+  <footer>
+    <p style="margin:0">JGKG — 第三者による非公式プロジェクト / <a href="/sitemap.txt">sitemap</a></p>
+  </footer>
+
+</div>
+</body>
+</html>

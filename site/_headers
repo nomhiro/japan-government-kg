@@ -1,0 +1,20 @@
+# Cloudflare Pages のヘッダ設定。
+#
+# **Content-Type を明示する理由**: 拡張子なしのエイリアス(/def/core)と .ttl の両方を
+# 配信するため、拡張子からの推測に任せると text/plain や octet-stream になる。
+# RDFの利用者は Content-Type を見て解釈するので、ここは推測させない。
+#
+# **CORS を開ける理由**: LODはブラウザ内のクライアントからも参照される。
+# 公開語彙で Access-Control-Allow-Origin を絞る理由が無い(公共財として公開している)。
+
+/def/*
+  Content-Type: text/turtle; charset=utf-8
+  Access-Control-Allow-Origin: *
+  # 語彙は頻繁には変わらないが、変えたときに古いものを掴まれ続けるのも困る。
+  # 1時間 + 再検証で妥協する。
+  Cache-Control: public, max-age=3600, must-revalidate
+  X-Content-Type-Options: nosniff
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin

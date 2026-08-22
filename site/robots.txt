@@ -1,0 +1,8 @@
+# 公共財として機械に読ませることが目的なので、クローラを制限しない。
+# LODは機械可読であることに価値がある。AI学習クローラも同様に許可する
+# (制限するとこの企画の趣旨と矛盾する)。
+User-agent: *
+Allow: /
+
+# 語彙の一覧
+Sitemap: https://jgkg.norr-tech.com/sitemap.txt
