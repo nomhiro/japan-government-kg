@@ -77,8 +77,45 @@ def kg_with_unresolved(tmp_path, monkeypatch):
     return ds
 
 
+@pytest.fixture
+def kg_without_houjin_bangou(kg):
+    """法人番号を持たない Organization を1件注入したKG。
+
+    CQ P0-6 の正のコントロール用。`houjinBangou` は Ruling 2 で `required` を
+    外しているのでSHACLは通ってしまう。つまりこの状態は**実際に起こりうる**。
+    """
+    from rdflib import RDF, URIRef
+
+    from jgkg.config import get_settings
+    from jgkg.rdf import emit
+
+    base = get_settings().base_uri
+    subject = f"{base}/id/org/9999999999999"
+    data = kg.graph(URIRef(f"{base}/graph/houjin-bangou/{DAY.isoformat()}"))
+    assert len(data) > 0, "注入先のデータグラフが空である"
+    data.add((URIRef(subject), RDF.type, emit.NS["org"]["Organization"]))
+    return kg, subject
+
+
 def _query(ds: Dataset, name: str):
     return list(ds.query((CQ_DIR / name).read_text(encoding="utf-8")))
+
+
+def _positive_control(ds: Dataset, name: str, drop: str):
+    """CQクエリから否定条件の行を外した「正のコントロール」を流す。
+
+    否定形のアサート(「違反が無いこと」)は**対象が0件でも合格する**。空のKG、
+    名前空間のずれ、union意味論の無効化のいずれでも、CQは静かに0件を返して
+    合格してしまう(レビューI5の実測では壊れ方4通りのうち3通りで合格した)。
+
+    **PREFIX宣言をCQファイルそのものから取ることが要点。** テスト側で名前空間を
+    書き直すと、名前空間がずれたときにコントロールも一緒にずれてしまい、
+    ずれを検出できなくなる(それが C1 で起きたことである)。
+    """
+    text = (CQ_DIR / name).read_text(encoding="utf-8")
+    stripped = "\n".join(ln for ln in text.splitlines() if drop not in ln)
+    assert stripped != text, f"{name} に {drop!r} の行が無い。クエリの前提が変わっている"
+    return list(ds.query(stripped))
 
 
 def test_cq_p0_01_organization_lookup(kg):
@@ -153,12 +190,39 @@ def test_cq_p0_05_unresolved_count_reports_actual_unresolved(kg_with_unresolved)
     assert by_reason == {"NO_CANDIDATE": 1}
 
 
+CQ_P0_06 = "p0-06-organizations-without-houjin-bangou.rq"
+
+
 def test_cq_p0_06_every_organization_has_houjin_bangou(kg):
     """法人番号を持たないOrganizationが存在しないこと。
 
     SHACLでは担保できない制約をここで見る。グラフをソース別に分けているため
     1エンティティの記述が複数グラフに分かれ、グラフ単位のSHACL検証では
     グラフを跨いだ必須制約を検証できない。設計書の判断に対する代償措置。
+
+    **正のコントロールを先に主張する。** これが無いと、空のKG・名前空間のずれ・
+    union意味論の無効化のいずれでも「違反0件」で合格してしまう。
     """
-    rows = _query(kg, "p0-06-organizations-without-houjin-bangou.rq")
+    control = _positive_control(kg, CQ_P0_06, drop="FILTER NOT EXISTS")
+    assert len(control) >= 3, (
+        f"同じPREFIXでOrganizationを1件も引けない。CQ P0-6 の『違反0件』は"
+        f" 空振りである(名前空間のずれ・union無効・KGが空のいずれか): {control}"
+    )
+
+    rows = _query(kg, CQ_P0_06)
     assert rows == [], f"法人番号を持たないOrganizationがある: {rows}"
+
+
+def test_cq_p0_06_detects_an_organization_without_houjin_bangou(kg_without_houjin_bangou):
+    """法人番号を持たないOrganizationを1件注入したら、実際に1行返ること。
+
+    **何があれば落ちるか**: クエリの名前空間がデータとずれたら落ちる。
+    `VALUES ?type` から型が欠けたら落ちる。`FILTER NOT EXISTS` の条件が
+    壊れたら落ちる。Ruling 2(houjinBangou の required を外す)の代償措置が
+    実際に機能していることの唯一の証拠。
+    """
+    ds, injected = kg_without_houjin_bangou
+    rows = _query(ds, CQ_P0_06)
+    assert [str(r[0]) for r in rows] == [injected], (
+        f"注入した {injected} が検出されない: {rows}"
+    )
