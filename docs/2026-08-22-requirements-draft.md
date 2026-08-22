@@ -126,11 +126,13 @@ Neo4j(Cypher 25=ISO GQL準拠)、エッジプロパティで出典注釈、Graph
 
 ### 決定(2026-08-22): 案Aを採用 — RDF中心・OSSスタック
 
+> Phase 0/1 の詳細設計は `docs/superpowers/specs/2026-08-22-japan-government-kg-design.md` に確定済み。以下は方針の要約。
+
 目的=公共財(OSS・LOD)の決定により案Aに確定。構成:
 
 - スキーマ: **LinkML**(Git管理、CIでOWL/SHACL+JSON Schema/Pydanticを生成)
 - ストア: 開発・小規模は**Apache Jena Fuseki**、公開読取エンドポイントは規模到達時に**QLever**へ(いずれもOSS)
-- 品質: **SHACL検証**をロード前ゲートに。出典・時点注釈はRDF-star
+- 品質: **SHACL検証**をロード前ゲートに。出典は**名前付きグラフ+PROV-O**を主方式とする(設計書§8.4で確定。RDF-starは必要箇所に限定)
 - 可視化アプリ用: SPARQL→REST/JSON API層を挟む(アプリはSPARQLを直接叩かない)。描画性能が必要になった場合のみLPG投影(一方向ETL)を追加検討
 - **アプリファースト原則は維持**: SPARQL/LODの一般公開は看板アプリ稼働後に行う(公共財ゴールだが、利用者不在エンドポイント先行の失敗パターンを踏まない)
 - コード・スキーマ・データはOSSライセンスで公開(ライセンス選定は未決事項)
