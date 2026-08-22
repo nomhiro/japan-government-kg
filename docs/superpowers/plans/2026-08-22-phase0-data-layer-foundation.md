@@ -2157,18 +2157,66 @@ git commit -m "feat: RDF出力と出典グラフを追加
 ### Task 9: SHACL検証ゲート
 
 **Files:**
+- Create: `schema/all.yaml`
+- Modify: `scripts/generate-schema.sh`(モジュールのループに `all` を追加)
 - Create: `src/jgkg/validate.py`
 - Test: `tests/test_validate.py`
 
 **Interfaces:**
-- Consumes: Task 2/8 の `schema/generated/*.shacl.ttl`、Task 8 の `Dataset`
+- Consumes: Task 8 の `Dataset`、`schema/generated/all.shacl.ttl`(Step 0 で生成)
 - Produces:
   - `jgkg.validate.ValidationResult` — dataclass。`graph_uri: str`, `conforms: bool`, `report_text: str`
+  - `jgkg.validate.SHAPES_FILENAME` = `"all.shacl.ttl"`
   - `jgkg.validate.validate_dataset(ds: Dataset, shapes_dir: Path) -> list[ValidationResult]`
   - `jgkg.validate.quarantine(ds: Dataset, results: list[ValidationResult], out_dir: Path) -> list[Path]` — 不合格グラフを隔離して書き出す
   - `jgkg.validate.passing_dataset(ds: Dataset, results: list[ValidationResult]) -> Dataset`
 
 **設計上の注意**: **不合格のグラフはストアにロードしない**(設計書§8.3)。「一部が壊れていても入れてしまう」ことを許すと公共財としての信頼性が最初に崩れるため、厳格側に倒す。不合格分は隔離ディレクトリに出力し、違反内容を人が読める形で報告する。
+
+- [ ] **Step 0: 検証用の統合スキーマを作る**
+
+> **なぜ必要か**: `org.yaml` が `core` を import するため、`org.shacl.ttl` にも core のクラスのNodeShapeが生成される(実測: `jgkgcore` への参照36件、`jgkgcore:Agent` が core/org 両ファイルに各3回)。モジュール別のSHACLをマージすると**同一クラスに閉じたシェイプが2つ適用され、許可プロパティ集合の積になって偽の違反を起こす**。全モジュールを束ねたスキーマから1つのSHACLを生成し、それだけを読む。
+>
+> 「`org` が `core` を import しているから `org.shacl.ttl` だけ読めばよい」という案は採らない。将来 `law` / `budget` が兄弟モジュールとして増えたとき、どれ1つを読んでも他がカバーされず壊れる。
+
+`schema/all.yaml`:
+
+```yaml
+id: http://localhost:8080/kg/def/all
+name: jgkg-all
+title: 日本政府ナレッジグラフ 全モジュール統合(検証用)
+description: >-
+  SHACL検証のために全モジュールを1つに束ねるだけのスキーマ。ここから生成した
+  all.shacl.ttl を検証の唯一の入力にする。モジュール別に生成すると、import された
+  上位モジュールのシェイプが各ファイルに重複して現れ、閉じたシェイプが同一クラスに
+  複数適用されて偽の違反になるため。
+  新しいドメインモジュールを追加したら、必ずここの imports にも追加する。
+license: https://creativecommons.org/licenses/by/4.0/
+
+prefixes:
+  jgkgall: http://localhost:8080/kg/def/all#
+  linkml: https://w3id.org/linkml/
+default_prefix: jgkgall
+default_range: string
+imports:
+  - linkml:types
+  - core
+  - org
+```
+
+`scripts/generate-schema.sh` のループに `all` を追加する(**他の行は変更しない**):
+
+```bash
+for module in core org all; do
+```
+
+生成して確認する:
+
+```bash
+./scripts/generate-schema.sh
+```
+
+期待: `schema/generated/all.owl.ttl`、`all.shacl.ttl`、`all_models.py` が追加される。`all.shacl.ttl` に `jgkgcore:Agent` と `jgkgorg:Organization` の両方の `sh:targetClass` が含まれること(`grep 'sh:targetClass' schema/generated/all.shacl.ttl` で確認)。
 
 - [ ] **Step 1: 失敗するテストを書く**
 
@@ -2294,16 +2342,25 @@ class ValidationResult:
     report_text: str
 
 
+SHAPES_FILENAME = "all.shacl.ttl"
+
+
 def _load_shapes(shapes_dir: Path) -> Graph:
-    shapes = Graph()
-    files = sorted(shapes_dir.glob("*.shacl.ttl"))
-    if not files:
+    """検証用のSHACLシェイプを読む。
+
+    **モジュール別のSHACLをマージしてはならない。** `org.yaml` は `core` を import する
+    ため `org.shacl.ttl` にも core のクラスのNodeShapeが生成される。両方を読むと同一
+    クラスに閉じたシェイプが2つ適用され、許可プロパティ集合の積になって偽の違反を
+    起こす。全モジュールを束ねた `all.yaml` から生成した単一ファイルだけを読む。
+    """
+    path = shapes_dir / SHAPES_FILENAME
+    if not path.exists():
         raise FileNotFoundError(
-            f"SHACLシェイプが見つからない: {shapes_dir}。"
+            f"SHACLシェイプが見つからない: {path}。"
             " scripts/generate-schema.sh を実行する"
         )
-    for f in files:
-        shapes.parse(f, format="turtle")
+    shapes = Graph()
+    shapes.parse(path, format="turtle")
     return shapes
 
 
@@ -2380,7 +2437,7 @@ uv run pytest tests/test_validate.py -v
 - [ ] **Step 5: コミットする**
 
 ```bash
-git add src/jgkg/validate.py tests/test_validate.py
+git add schema/all.yaml schema/generated/ scripts/generate-schema.sh src/jgkg/validate.py tests/test_validate.py
 git commit -m "feat: SHACL検証ゲートを追加
 
 名前付きグラフ単位で検証し、不合格のグラフはロード対象から外して隔離する
