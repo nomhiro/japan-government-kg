@@ -29,6 +29,34 @@ def test_build_manifest_records_checksum_and_jena_version(tmp_path):
     assert m.triple_count == 1
     assert m.graphs == ["http://example.test/g"]
     assert m.sources == {"houjin-bangou": "2026-08-01"}
+    assert m.quarantined_sources == []
+
+
+def test_manifest_records_quarantined_sources(tmp_path):
+    """隔離されたソースが manifest に出ること。
+
+    `sources` から外すだけでは「落ちたこと」が消える。設計書§8.2の
+    「未解決を無かったことにしない」と同じ趣旨で、落ちた事実を残す。
+
+    **何があれば落ちるか**: `quarantined_sources` を manifest に渡さなくなったら落ちる。
+    """
+    nq = tmp_path / "kg.nq"
+    nq.write_text("", encoding="utf-8")
+    tarball = tmp_path / "kg.tar.gz"
+    tarball.write_bytes(b"x")
+
+    m = build.build_manifest(
+        nquads=nq,
+        tarball=tarball,
+        jena_version="6.2.0",
+        release="2026-08-01",
+        sources={"ministry-codes": "2026-08-22"},
+        graphs=[],
+        quarantined_sources=["houjin-bangou"],
+    )
+    assert m.sources == {"ministry-codes": "2026-08-22"}
+    assert m.quarantined_sources == ["houjin-bangou"]
+    assert "houjin-bangou" not in m.sources, "隔離済みソースの日付を載せてはならない"
 
 
 def test_build_manifest_rejects_empty_jena_version(tmp_path):

@@ -63,6 +63,8 @@ m = build.build_manifest(
     # KGに入っている ministry-codes グラフが manifest に現れなかった
     sources=report['sources'],
     graphs=report['graphs'],
+    # 隔離されたソースは sources に載らない代わりにここに出る(--allow-partial 時)
+    quarantined_sources=report['quarantined_sources'],
 )
 build.write_manifest(m, out / 'manifest.json')
 print(m.model_dump_json(indent=2))

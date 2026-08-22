@@ -105,6 +105,14 @@ def test_quarantine_stops_the_release(lake_with_duplicate_label, tmp_path):
     assert not any("graph/houjin-bangou/" in g for g in remaining), remaining
     assert any(g.endswith("/graph/provenance") for g in remaining), remaining
 
+    # **manifest に渡す sources に隔離済みソースを載せない。**
+    # `--allow-partial` で出荷したとき「houjin-bangou は 2026-08-01 のデータを
+    # 含む」と書いてあるのにそのグラフが無い、という嘘になる(I2 と同族)
+    assert "houjin-bangou" not in report.sources, report.sources
+    assert report.quarantined_sources == ["houjin-bangou"], report.quarantined_sources
+    # 落ちなかったソースは残る
+    assert "ministry-codes" in report.sources, report.sources
+
 
 def test_release_gate_allows_a_clean_run(seeded_lake, tmp_path):
     """正常系ではゲートが通ること(常に例外を投げる実装になっていないこと)。"""

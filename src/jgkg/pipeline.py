@@ -9,7 +9,7 @@ from pathlib import Path
 from pydantic import BaseModel
 from rdflib import Dataset
 
-from jgkg import lake, sources, validate
+from jgkg import lake, sources, uris, validate
 from jgkg.config import get_settings
 from jgkg.connectors import houjin_bangou
 from jgkg.rdf import emit
@@ -48,8 +48,13 @@ class PipelineReport(BaseModel):
     graphs: list[str]
     # ソースIDごとの「いつ時点か」。**単一の取得日でリリース全体を語らない。**
     # 設計書§6.4の更新頻度表は monthly/annual/ondemand とソースごとに異なる。
-    # manifest はこれをそのまま使う(build.sh で手書きしない)
+    # manifest はこれをそのまま使う(build.sh で手書きしない)。
+    # **KGに実際に残ったソースだけを載せる。** 隔離されたソースの日付を書くと
+    # 「この日付のデータを含む」という嘘になる(I2 で直した捏造と同族)
     sources: dict[str, str]
+    # 隔離されて成果物に入らなかったソース。**落ちたことを黙って消さない**ため、
+    # sources から外す代わりにここに出す(設計書§8.2「未解決を無かったことにしない」)
+    quarantined_sources: list[str]
 
 
 class QuarantineNotEmptyError(RuntimeError):
@@ -203,6 +208,19 @@ def run(fetched_on: Mapping[str, datetime.date], out_dir: Path) -> PipelineRepor
     out_dir.mkdir(parents=True, exist_ok=True)
     emit.write_nquads(clean, out_dir / "kg.nq")
 
+    surviving_graphs = sorted(str(c.identifier) for c in clean.contexts() if len(c) > 0)
+    # **成果物に残ったソースだけを sources に載せる。** グラフが隔離されたのに
+    # 「このソースはこの日付のデータを含む」と書くと、manifest が嘘をつく
+    # (`--allow-partial` で出荷したときに実際に起きる)。落ちたことは
+    # quarantined_sources に出して、黙って消さない
+    source_dates = {"houjin-bangou": houjin_date, "ministry-codes": ministry_date}
+    surviving_sources = {
+        sid: d.isoformat()
+        for sid, d in source_dates.items()
+        if uris.graph_uri(sid, d) in surviving_graphs
+    }
+    quarantined_sources = sorted(set(source_dates) - set(surviving_sources))
+
     return PipelineReport(
         # リリース名は**呼び出し側が渡した取得日**のうち最も新しいもの。
         # 参照表の recorded_on を混ぜないのは、成果物ディレクトリ名や manifest の
@@ -218,9 +236,7 @@ def run(fetched_on: Mapping[str, datetime.date], out_dir: Path) -> PipelineRepor
         graphs_validated=len(results),
         graphs_quarantined=len(quarantined),
         # Dataset から正確なグラフURIを取る。テキストから推測してはならない
-        graphs=sorted(str(c.identifier) for c in clean.contexts() if len(c) > 0),
-        sources={
-            "houjin-bangou": houjin_date.isoformat(),
-            "ministry-codes": ministry_date.isoformat(),
-        },
+        graphs=surviving_graphs,
+        sources=surviving_sources,
+        quarantined_sources=quarantined_sources,
     )

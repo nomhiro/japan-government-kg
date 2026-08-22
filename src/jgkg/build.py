@@ -21,7 +21,12 @@ class Manifest(BaseModel):
     byte_size: int
     triple_count: int
     graphs: list[str]
+    # 成果物に**実際に入っている**ソースと、その「いつ時点か」。
+    # 隔離されたソースはここに載せない(載せると「この日付のデータを含む」という嘘になる)
     sources: dict[str, str]
+    # 隔離されて入らなかったソース。**落ちたことを黙って消さない。**
+    # 既定を空にしているのは、この項目が無い既存の manifest.json も読めるようにするため
+    quarantined_sources: list[str] = []
 
 
 def _sha256(path: Path) -> str:
@@ -58,6 +63,7 @@ def build_manifest(
     release: str,
     sources: dict[str, str],
     graphs: list[str],
+    quarantined_sources: list[str] | None = None,
 ) -> Manifest:
     if not jena_version:
         raise ValueError(
@@ -73,6 +79,7 @@ def build_manifest(
         triple_count=_count_triples(nquads),
         graphs=sorted(graphs),
         sources=sources,
+        quarantined_sources=sorted(quarantined_sources or []),
     )
 
 
