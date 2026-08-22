@@ -305,7 +305,10 @@ def graph_uri(source_id: str, fetched_on: datetime.date) -> str:
 
 
 def term_uri(module: str, term: str) -> str:
-    return f"{_base()}/def/{quote(module, safe='')}#{quote(term, safe='')}"
+    # term はパーセントエンコードしない。RDF 1.1 はIRI(RFC 3987)を使い
+    # 非ASCII文字をそのまま含められるため、日本語の用語名を符号化すると
+    # 読めない識別子になるだけで利点がない
+    return f"{_base()}/def/{quote(module, safe='')}#{term}"
 ```
 
 - [ ] **Step 7: テストが通ることを確認する**
@@ -422,6 +425,11 @@ slots:
   unresolved_reason:
     description: 解決できなかった理由
     range: UnresolvedReasonEnum
+  unresolved_key:
+    description: >-
+      解決できなかった参照の、ソース側のキー(府省コード等)。ドメイン固有の
+      プロパティを UnresolvedReference に足すと閉じたSHACLシェイプに違反するため、
+      汎用のキーとしてここで受ける
 
 enums:
   UnresolvedReasonEnum:
@@ -478,7 +486,7 @@ classes:
     description: >-
       正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず
       KGに残して計測できるようにするためのクラス
-    slots: [unresolved_text, unresolved_reason]
+    slots: [unresolved_text, unresolved_reason, unresolved_key]
 ```
 
 - [ ] **Step 2: 生成スクリプトを書く**
@@ -1909,8 +1917,11 @@ def emit_organizations(
 
     for org in orgs:
         s = URIRef(org.uri)
-        data.add((s, RDF.type, ns["core"]["Agent"]))
-        data.add((s, RDF.type, ns["org"]["Organization"]))
+        # 型は「最も具体的なもの1つ」だけを出す。上位型(core:Agent 等)を材質化
+        # しないのは、LinkMLの生成SHACLが閉じたシェイプであり、上位クラスが
+        # 宣言していないプロパティが違反になるため。上位型はOWLの階層から導ける
+        most_specific = "GovernmentOrgan" if org.is_government_organ else "Organization"
+        data.add((s, RDF.type, ns["org"][most_specific]))
         data.add((s, SKOS.prefLabel, Literal(org.name, lang="ja")))
         data.add((s, ns["org"]["houjinBangou"], Literal(org.houjin_bangou)))
         data.add((s, ns["org"]["organizationKindCode"], Literal(org.kind_code)))
@@ -1918,8 +1929,6 @@ def emit_organizations(
             data.add((s, ns["org"]["prefectureName"], Literal(org.prefecture, lang="ja")))
         if org.city:
             data.add((s, ns["org"]["cityName"], Literal(org.city, lang="ja")))
-        if org.is_government_organ:
-            data.add((s, RDF.type, ns["org"]["GovernmentOrgan"]))
     return ds
 
 
@@ -1944,7 +1953,11 @@ def emit_ministries(
         data.add((s, RDF.type, ns["core"]["UnresolvedReference"]))
         data.add((s, ns["core"]["unresolved_text"], Literal(u.name, lang="ja")))
         data.add((s, ns["core"]["unresolved_reason"], Literal(u.reason)))
-        data.add((s, ns["org"]["ministryCode"], Literal(u.ministry_code)))
+        # ドメイン固有の org:ministryCode ではなく core の汎用キーに入れる。
+        # UnresolvedReference は org: のプロパティを宣言しておらず、閉じたシェイプに
+        # 違反するため。CQ P0-5 が core:UnresolvedReference を直接問えるよう
+        # サブクラス化はしない(推論なしのFusekiでは上位型が引けない)
+        data.add((s, ns["core"]["unresolved_key"], Literal(u.ministry_code)))
     return ds
 
 
@@ -1978,9 +1991,13 @@ imports:
 
 slots:
   houjinBangou:
-    description: 国税庁が付与する13桁の法人番号。組織の正準ID
+    description: >-
+      国税庁が付与する13桁の法人番号。組織の正準ID。
+      required にしないのは、出典管理のためグラフをソース別に分けており、
+      1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位
+      (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。
+      「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する
     pattern: "^\\d{13}$"
-    required: true
   organizationKindCode:
     description: 法人番号公表サイトの法人種別コード
   ministryCode:
@@ -2720,7 +2737,31 @@ uv run pytest tests/test_pipeline.py -v
 
 期待: 4件すべて PASS。
 
-- [ ] **Step 5: `docker-compose.yml` を作る**
+- [ ] **Step 5: Fusekiのアセンブラ設定を作る**
+
+`fuseki/kg.ttl`。**`tdb2:unionDefaultGraph true` が要点。** これが無いと、`GRAPH` 句を使わないCQクエリが既定グラフ(空)を見て0件になる。CQテストは rdflib 側で `Dataset(default_union=True)` を使っているので、提供側も同じ意味論に揃える。
+
+```turtle
+# 成果物のTDB2インデックスを読み取り専用で提供する。
+@prefix fuseki: <http://jena.apache.org/fuseki#> .
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix ja:     <http://jena.hpl.hp.com/2005/11/Assembler#> .
+@prefix tdb2:   <http://jena.apache.org/2016/tdb#> .
+
+<#service> rdf:type fuseki:Service ;
+    fuseki:name "kg" ;
+    # クエリのみを公開する。更新は成果物の差し替えで行う(設計書§6.3)
+    fuseki:endpoint [ fuseki:operation fuseki:query ] ;
+    fuseki:dataset <#dataset> .
+
+<#dataset> rdf:type tdb2:DatasetTDB2 ;
+    tdb2:location "/fuseki/databases/kg" ;
+    # 名前付きグラフの和集合を既定グラフにする。CQテスト側の
+    # Dataset(default_union=True) と意味論を揃えるため必須
+    tdb2:unionDefaultGraph true .
+```
+
+- [ ] **Step 6: `docker-compose.yml` を作る**
 
 ```yaml
 # 読み取り専用のKG提供と、インデックス構築ツール。
@@ -2730,11 +2771,11 @@ services:
     image: apache/jena-fuseki:latest
     ports:
       - "3030:3030"
+    command: ["/jena-fuseki/fuseki-server", "--config=/fuseki/config/kg.ttl"]
     environment:
-      # 読み取り専用で提供する。更新は成果物の差し替えで行う(設計書§6.3)
-      - FUSEKI_DATASET_1=kg
       - ADMIN_PASSWORD=${FUSEKI_ADMIN_PASSWORD:-change-me-in-env}
     volumes:
+      - ./fuseki:/fuseki/config:ro
       # ブロックデバイス上のローカルディレクトリをマウントする。
       # TDB2はメモリマップドファイルを使うため、ネットワークファイル共有
       # (SMB/NFS)上に置かないこと(設計書§6.3)
@@ -2753,7 +2794,7 @@ services:
       - tools
 ```
 
-- [ ] **Step 6: ビルドスクリプトを作る**
+- [ ] **Step 7: ビルドスクリプトを作る**
 
 `scripts/build.sh`:
 
@@ -2812,10 +2853,10 @@ echo "完了: ${OUT}"
 chmod +x scripts/build.sh
 ```
 
-- [ ] **Step 7: コミットする**
+- [ ] **Step 8: コミットする**
 
 ```bash
-git add src/jgkg/pipeline.py scripts/build.sh docker-compose.yml tests/test_pipeline.py
+git add src/jgkg/pipeline.py scripts/build.sh docker-compose.yml fuseki/kg.ttl tests/test_pipeline.py
 git commit -m "feat: パイプラインの結線とdocker-composeを追加
 
 各段の件数をPipelineReportとして記録(設計書§11.1)。インデックス構築は
@@ -2951,6 +2992,21 @@ SELECT ?reason (COUNT(?s) AS ?count) WHERE {
 GROUP BY ?reason
 ```
 
+`queries/cq/p0-06-organizations-without-houjin-bangou.rq`:
+
+```sparql
+# CQ P0-6: 法人番号を持たないOrganizationは存在するか(0件であるべき)
+# SHACLの required では担保できない制約をここで見る。グラフをソース別に
+# 分けているため、グラフ単位のSHACL検証ではグラフを跨いだ必須制約を
+# 検証できない。その代償措置。
+PREFIX org: <http://localhost:8080/kg/def/org#>
+
+SELECT ?s WHERE {
+  ?s a ?type .
+  VALUES ?type { org:Organization org:GovernmentOrgan org:Ministry }
+  FILTER NOT EXISTS { ?s org:houjinBangou ?bangou }
+}
+
 - [ ] **Step 3: 失敗するテストを書く**
 
 `tests/test_competency_questions.py`:
@@ -2991,7 +3047,10 @@ def kg(tmp_path):
     out = tmp_path / "out"
     pipeline.run(DAY, out)
 
-    ds = Dataset()
+    # default_union=True が必須。既定(False)では既定グラフが空のため、
+    # GRAPH句を使わないCQクエリがすべて0件になる。本番のFusekiでも
+    # tdb2:unionDefaultGraph true を設定して同じ意味論に揃える(Task 11)
+    ds = Dataset(default_union=True)
     ds.parse(out / "kg.nq", format="nquads")
     return ds
 
@@ -3032,6 +3091,17 @@ def test_cq_p0_05_unresolved_count(kg):
     """未解決が0件でもクエリ自体は成立すること。件数を問える構造が要件。"""
     rows = _query(kg, "p0-05-unresolved-count.rq")
     assert isinstance(rows, list)
+
+
+def test_cq_p0_06_every_organization_has_houjin_bangou(kg):
+    """法人番号を持たないOrganizationが存在しないこと。
+
+    SHACLでは担保できない制約をここで見る。グラフをソース別に分けているため
+    1エンティティの記述が複数グラフに分かれ、グラフ単位のSHACL検証では
+    グラフを跨いだ必須制約を検証できない。設計書の判断に対する代償措置。
+    """
+    rows = _query(kg, "p0-06-organizations-without-houjin-bangou.rq")
+    assert rows == [], f"法人番号を持たないOrganizationがある: {rows}"
 ```
 
 - [ ] **Step 4: テストを実行する**
