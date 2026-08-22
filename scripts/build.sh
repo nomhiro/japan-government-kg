@@ -5,7 +5,16 @@
 set -euo pipefail
 
 : "${JENA_VERSION:?JENA_VERSION を .env に設定する}"
-FETCHED_ON="${1:?使い方: scripts/build.sh YYYY-MM-DD}"
+FETCHED_ON="${1:?使い方: scripts/build.sh YYYY-MM-DD [--allow-partial]}"
+
+# 隔離が発生してもリリースを続けるか。既定は止まる(設計書§6.3のリリースゲート)
+ALLOW_PARTIAL=False
+if [ "${2:-}" = "--allow-partial" ]; then
+  ALLOW_PARTIAL=True
+elif [ -n "${2:-}" ]; then
+  echo "不明な引数: $2(使えるのは --allow-partial のみ)" >&2
+  exit 2
+fi
 
 OUT="data/artifact/${FETCHED_ON}"
 mkdir -p "$OUT"
@@ -14,6 +23,9 @@ echo "== スキーマ生成 =="
 ./scripts/generate-schema.sh
 
 echo "== パイプライン実行(検証を含む) =="
+# 隔離が起きたら enforce_release_gate が例外を投げ、set -e で以降のインデックス
+# 構築・manifest作成に進まない。**レポートは例外の前に書く**(何が落ちたかを
+# 人が読めるようにするため)
 uv run python -c "
 import datetime, json, pathlib
 from jgkg import pipeline
@@ -21,6 +33,7 @@ report = pipeline.run(datetime.date.fromisoformat('${FETCHED_ON}'), pathlib.Path
 pathlib.Path('${OUT}/pipeline-report.json').write_text(
     report.model_dump_json(indent=2), encoding='utf-8')
 print(report.model_dump_json(indent=2))
+pipeline.enforce_release_gate(report, allow_partial=${ALLOW_PARTIAL})
 "
 
 echo "== TDB2インデックス構築 =="

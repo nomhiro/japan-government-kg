@@ -37,6 +37,40 @@ class PipelineReport(BaseModel):
     graphs: list[str]
 
 
+class QuarantineNotEmptyError(RuntimeError):
+    """隔離が発生した状態でリリースしようとした。"""
+
+
+def enforce_release_gate(report: PipelineReport, *, allow_partial: bool = False) -> None:
+    """隔離が起きていたらリリース処理を止める(設計書§6.3のリリースゲート)。
+
+    グラフ単位で隔離するため、**5百万行のうち1行の違反でそのソースのグラフ全体が
+    落ちる。** そのとき残るのは出典グラフだけなので、KGは「2026-08-01時点の法人番号
+    データを含む」と答え続けるのに中身が無い、という状態になる。設計書§6.3は
+    「CIで検証を通った成果物だけが本番に出るという構造を強制する」と書いているが、
+    この判定を行う場所がどのタスクにも割り当てられていなかった。
+
+    **既定は止まる側。** 部分的なリリースが必要な運用は、呼び出し側が
+    `allow_partial=True`(build.sh では `--allow-partial`)を明示的に渡す。
+    「気づかずに出荷される」経路を無くすことが目的なので、既定を緩めてはならない。
+    """
+    if report.graphs_quarantined == 0:
+        return
+    message = (
+        f"SHACL検証で {report.graphs_quarantined} グラフが隔離された"
+        f"(検証したグラフ数 {report.graphs_validated}、"
+        f"残ったグラフ {report.graphs})。"
+        f" 隔離内容は quarantine ディレクトリを見る。"
+        " このままリリースすると、中身が無いのに出典だけが残ったKGが出荷される"
+    )
+    if allow_partial:
+        print(f"警告: {message} — allow_partial が指定されているので続行する")
+        return
+    raise QuarantineNotEmptyError(
+        f"{message}。意図的に部分リリースするなら allow_partial を指定する"
+    )
+
+
 def _merge(target: Dataset, source: Dataset) -> None:
     for ctx in source.contexts():
         if len(ctx) == 0:
