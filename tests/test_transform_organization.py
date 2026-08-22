@@ -29,17 +29,17 @@ def test_parses_all_rows():
 
 def test_maps_fields_and_builds_uri():
     orgs = {o.houjin_bangou: o for o in parse_file(FIXTURE)}
-    kourou = orgs["8000012070001"]
+    kourou = orgs["6000012070001"]
     assert kourou.name == "厚生労働省"
-    assert kourou.uri == "https://jgkg.norr-tech.com/id/org/8000012070001"
+    assert kourou.uri == "https://jgkg.norr-tech.com/id/org/6000012070001"
     assert kourou.prefecture == "東京都"
     assert kourou.city == "千代田区"
 
 
 def test_flags_government_organs():
     orgs = {o.houjin_bangou: o for o in parse_file(FIXTURE)}
-    assert orgs["8000012070001"].is_government_organ is True   # 種別 101 = 国の機関
-    assert orgs["3010001008683"].is_government_organ is False  # 種別 301 = 株式会社
+    assert orgs["6000012070001"].is_government_organ is True   # 種別 101 = 国の機関
+    assert orgs["9999999999999"].is_government_organ is False  # 種別 301 = 株式会社
 
 
 def test_skips_rows_with_invalid_houjin_bangou():
@@ -54,7 +54,7 @@ def test_skips_rows_with_invalid_houjin_bangou():
     bad = zenken_row(houjin_bangou="NOTANUMBER", name="壊れた行", seq="2")
 
     orgs = list(parse_text(good * 3 + bad))
-    assert [o.houjin_bangou for o in orgs] == ["8000012070001"] * 3
+    assert [o.houjin_bangou for o in orgs] == ["6000012070001"] * 3
 
 
 def test_wrong_column_layout_raises_instead_of_yielding_nothing():
@@ -94,7 +94,7 @@ def test_rows_too_short_for_the_required_columns_raise():
 
     住所列が読めていない状態(空文字が入る)を「成功」にしない。
     """
-    row = "1,8000012070001,1,2015-10-05,2015-10-05,101,厚生労働省\n"  # 7列
+    row = "1,6000012070001,1,2015-10-05,2015-10-05,101,厚生労働省\n"  # 7列
     with pytest.raises(ColumnLayoutError, match="列数が足りない行"):
         list(parse_text(row * 5))
 
@@ -122,7 +122,7 @@ def test_parse_file_does_not_read_whole_file_into_memory(tmp_path):
 
     gen = parse_file(big)
     first = next(gen)          # 1件だけ取り出す
-    assert first.houjin_bangou == "8000012070001"
+    assert first.houjin_bangou == "6000012070001"
     # ジェネレータを閉じる(残りを読まない)。全件読み込みでは到達しない
     gen.close()
 
@@ -158,7 +158,7 @@ def test_parse_source_reads_the_distributed_zip(tmp_path):
     z = tmp_path / "zenken.zip"
     z.write_bytes(zipped(zenken_row()))
     orgs = list(parse_source(z))
-    assert [o.houjin_bangou for o in orgs] == ["8000012070001"]
+    assert [o.houjin_bangou for o in orgs] == ["6000012070001"]
 
 
 def test_zip_with_multiple_csvs_raises(tmp_path):

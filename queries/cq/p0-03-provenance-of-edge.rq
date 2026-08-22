@@ -4,7 +4,7 @@ PREFIX dcterms: <http://purl.org/dc/terms/>
 PREFIX org:     <https://jgkg.norr-tech.com/def/org#>
 
 SELECT ?graph ?source ?fetchedOn ?license WHERE {
-  GRAPH ?graph { ?s org:houjinBangou "8000012070001" }
+  GRAPH ?graph { ?s org:houjinBangou "6000012070001" }
   ?graph prov:wasDerivedFrom ?source ;
          prov:generatedAtTime ?fetchedOn ;
          dcterms:rights ?license .

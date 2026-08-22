@@ -31,8 +31,8 @@ def fixed_base(monkeypatch):
 
 def _valid_org():
     return Organization(
-        uri="https://jgkg.norr-tech.com/id/org/8000012070001",
-        houjin_bangou="8000012070001",
+        uri="https://jgkg.norr-tech.com/id/org/6000012070001",
+        houjin_bangou="6000012070001",
         name="厚生労働省",
         kind_code="101",
         is_government_organ=True,
@@ -136,7 +136,7 @@ def test_namespace_drift_raises_instead_of_passing_with_zero_targets(monkeypatch
 
     # 新しい名前空間で、しかも明白な sh:pattern 違反を含むデータを作る
     org = Organization(
-        uri=f"{DRIFT_BASE}/id/org/8000012070001",
+        uri=f"{DRIFT_BASE}/id/org/6000012070001",
         houjin_bangou="これは法人番号ではない",
         name="厚生労働省",
         kind_code="101",

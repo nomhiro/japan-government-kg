@@ -20,7 +20,7 @@ def fixed_base(monkeypatch):
     get_settings.cache_clear()
 
 
-def _org(bangou="8000012070001", name="厚生労働省", kind="101"):
+def _org(bangou="6000012070001", name="厚生労働省", kind="101"):
     return Organization(
         uri=f"https://jgkg.norr-tech.com/id/org/{bangou}",
         houjin_bangou=bangou,
@@ -41,7 +41,7 @@ def test_organizations_land_in_the_named_graph_for_the_source():
 
 def test_organization_has_label_and_identifier():
     ds = emit.emit_organizations([_org()], "houjin-bangou", DAY)
-    subject = URIRef("https://jgkg.norr-tech.com/id/org/8000012070001")
+    subject = URIRef("https://jgkg.norr-tech.com/id/org/6000012070001")
 
     labels = [str(o) for o in ds.objects(subject, SKOS.prefLabel)]
     assert "厚生労働省" in labels
@@ -77,8 +77,8 @@ def test_provenance_records_fetch_date_and_checksum():
 
 def test_unmatched_ministries_are_emitted_not_dropped():
     ds = emit.emit_ministries(
-        [Ministry(uri="https://jgkg.norr-tech.com/id/org/8000012070001",
-                  houjin_bangou="8000012070001", ministry_code="020", name="厚生労働省")],
+        [Ministry(uri="https://jgkg.norr-tech.com/id/org/6000012070001",
+                  houjin_bangou="6000012070001", ministry_code="020", name="厚生労働省")],
         [UnmatchedMinistry(ministry_code="999", name="存在しない省", reason="NO_CANDIDATE")],
         "ministry-codes",
         DAY,

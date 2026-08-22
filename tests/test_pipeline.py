@@ -132,7 +132,7 @@ def test_run_reports_rejected_rows(tmp_path):
     `rows_seen` を `organizations` と同じ値にしたら落ちる。
     """
     good = zenken_row()
-    other = zenken_row(houjin_bangou="7000012050002", name="財務省", seq="2")
+    other = zenken_row(houjin_bangou="8000012050001", name="財務省", seq="2")
     # 法人番号が13桁でない行(集計行のような実データのノイズ)を2行混ぜる
     noise = "件数,2,,,,,,,,,,,,,\n"
     lake.save(
@@ -155,7 +155,7 @@ def test_parse_stats_counts_short_rows():
     from jgkg.transform.organization import ParseStats, parse_text
 
     good = zenken_row()
-    short = "2,7000012050002,1,2015-10-05,2015-10-05,101,財務省\n"  # 7列
+    short = "2,8000012050001,1,2015-10-05,2015-10-05,101,財務省\n"  # 7列
     stats = ParseStats()
     orgs = list(parse_text(good * 3 + short, stats=stats))
 
@@ -249,7 +249,7 @@ def test_run_fails_when_no_government_organ_is_found(tmp_path):
 
     **何があれば落ちるか**: この下限チェックを外したら落ちる。
     """
-    row = zenken_row(houjin_bangou="3010001008683", name="株式会社サンプル", kind="301", seq="3")
+    row = zenken_row(houjin_bangou="9999999999999", name="株式会社サンプル", kind="301", seq="3")
     lake.save("houjin-bangou", DAY, houjin_bangou.FILENAME, zipped(row * 3))
     with pytest.raises(ValueError, match="国の機関"):
         pipeline.run(FETCHED, tmp_path / "out")

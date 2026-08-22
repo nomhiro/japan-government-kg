@@ -32,18 +32,18 @@ def test_load_reference_skips_comments():
 
 
 def test_build_matches_by_name():
-    orgs = [_org("8000012070001", "厚生労働省"), _org("8000012020001", "総務省")]
+    orgs = [_org("6000012070001", "厚生労働省"), _org("2000012020001", "総務省")]
     ministries, unmatched = build(orgs, [("020", "厚生労働省"), ("013", "総務省")])
 
     by_code = {m.ministry_code: m for m in ministries}
-    assert by_code["020"].houjin_bangou == "8000012070001"
-    assert by_code["020"].uri == "https://jgkg.norr-tech.com/id/org/8000012070001"
+    assert by_code["020"].houjin_bangou == "6000012070001"
+    assert by_code["020"].uri == "https://jgkg.norr-tech.com/id/org/6000012070001"
     assert unmatched == []
 
 
 def test_build_reports_unmatched_instead_of_dropping():
     """突合できなかった府省を沈黙させない(設計書§8.2)。"""
-    orgs = [_org("8000012070001", "厚生労働省")]
+    orgs = [_org("6000012070001", "厚生労働省")]
     ministries, unmatched = build(orgs, [("020", "厚生労働省"), ("999", "存在しない省")])
 
     assert len(ministries) == 1
@@ -53,7 +53,7 @@ def test_build_reports_unmatched_instead_of_dropping():
 
 
 def test_build_ignores_non_government_organizations():
-    orgs = [_org("3010001008683", "厚生労働省", kind="301")]  # 同名だが株式会社
+    orgs = [_org("9999999999999", "厚生労働省", kind="301")]  # 同名だが株式会社
     ministries, unmatched = build(orgs, [("020", "厚生労働省")])
 
     assert ministries == []
@@ -61,7 +61,7 @@ def test_build_ignores_non_government_organizations():
 
 
 def test_build_reports_ambiguous_matches():
-    orgs = [_org("8000012070001", "厚生労働省"), _org("8000012070002", "厚生労働省")]
+    orgs = [_org("6000012070001", "厚生労働省"), _org("8000012070002", "厚生労働省")]
     ministries, unmatched = build(orgs, [("020", "厚生労働省")])
 
     assert ministries == []

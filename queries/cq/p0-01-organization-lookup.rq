@@ -3,7 +3,7 @@ PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
 PREFIX org:  <https://jgkg.norr-tech.com/def/org#>
 
 SELECT ?name ?prefecture WHERE {
-  ?s org:houjinBangou "8000012070001" ;
+  ?s org:houjinBangou "6000012070001" ;
      skos:prefLabel ?name .
   OPTIONAL { ?s org:prefectureName ?prefecture }
 }

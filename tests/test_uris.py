@@ -20,7 +20,7 @@ def fixed_base(monkeypatch):
 
 
 def test_org_uri_uses_houjin_bangou():
-    assert uris.org_uri("8000012070001") == f"{TEST_BASE}/id/org/8000012070001"
+    assert uris.org_uri("6000012070001") == f"{TEST_BASE}/id/org/6000012070001"
 
 
 def test_org_uri_rejects_malformed_houjin_bangou():
