@@ -1,54 +1,17 @@
-# Claude Code のローカル作業ディレクトリ(worktree等)
-.claude/worktrees/
-.claude/settings.local.json
-
-# 生データレイク・生成物(設計書§6.1)
-# 取得したスナップショットと生成RDFはリポジトリに入れない
-data/raw/
+# 生データレイクと成果物はリポジトリに入れない
 data/lake/
-data/snapshots/
-data/generated/
-*.zip
-*.n3
-*.nt
-*.ttl.gz
+data/artifact/
+data/quarantine/
 
 # LinkML の生成物は「あえてコミットする」(設計書§5.1)
-# 生成物をコミットすることが LinkML 採用を可逆にする唯一の措置であり、
+# 生成物のコミットが LinkML 採用を可逆にする唯一の措置であり、
 # 差分レビューで生成器の回帰も検出できる。ここで除外してはならない。
 # schema/generated/  ← 意図的に無視しない
 
-# Python
+.venv/
 __pycache__/
 *.py[cod]
-*.egg-info/
-.venv/
-venv/
 .pytest_cache/
-.mypy_cache/
 .ruff_cache/
 .coverage
-htmlcov/
-
-# Node / フロントエンド
-node_modules/
-dist/
-.vite/
-*.tsbuildinfo
-
-# 環境変数・秘匿情報
 .env
-.env.*
-!.env.example
-
-# Docker / Fuseki の永続データ
-fuseki-data/
-*.tdb
-
-# OS / エディタ
-.DS_Store
-Thumbs.db
-*.swp
-.idea/
-.vscode/*
-!.vscode/extensions.json
