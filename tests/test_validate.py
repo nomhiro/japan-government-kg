@@ -13,6 +13,11 @@ SHAPES = Path("schema/generated")
 # ドリフト検査用の別ベースURI。IRIを文字列リテラルで書かないのは、
 # tests/*.py 自体が jgkg.base_uri の整合検査の対象だから(test_base_uri.py 参照)
 DRIFT_BASE = "https://example.test/drift-kg"
+# Windowsがファイル名に使えない文字。**実装の `_UNSAFE_IN_FILENAME` から
+# 導出してはならない。** 導出すると、定数から1文字外したときテストの入力からも
+# 消えて常に合格する(fixtureを COL から逆算したのと同じ円環。実際に一度作った)。
+# 出典: Windowsのファイル名規則(予約文字9種のうち、パス区切りを含む)
+WINDOWS_RESERVED = '<>:"/\\|?*'
 
 
 @pytest.fixture(autouse=True)
@@ -97,11 +102,20 @@ def test_safe_stem_replaces_every_windows_reserved_character():
     """名前生成が予約文字を残さないこと。
 
     **何があれば落ちるか**: `_UNSAFE_IN_FILENAME` からどれか1文字を外したら落ちる。
+    入力には**予約文字を1文字ずつ全部**入れる。以前はバックスラッシュが入力に
+    無かったため、`\\` だけを置換対象から外しても落ちなかった(再レビュー Minor 1)。
     """
-    stem = validate._safe_stem(
-        'http://localhost:8080/kg/graph/a<b>c"d|e?f*g/2026-08-01'
+    # 実装の定数を**参照して合格させないこと**を先に固定する。
+    # `set(WINDOWS_RESERVED) <= set(_UNSAFE_IN_FILENAME)` が、定数から1文字
+    # 外したことを直接検出する
+    assert set(WINDOWS_RESERVED) <= set(validate._UNSAFE_IN_FILENAME), (
+        f"置換対象から漏れている文字がある: "
+        f"{sorted(set(WINDOWS_RESERVED) - set(validate._UNSAFE_IN_FILENAME))}"
     )
-    assert not set(stem) & set('<>:"/|?*\\'), stem
+
+    body = "".join(f"a{ch}" for ch in WINDOWS_RESERVED)
+    stem = validate._safe_stem(f"http://localhost:8080/kg/graph/{body}/2026-08-01")
+    assert not set(stem) & set(WINDOWS_RESERVED), stem
     assert stem.endswith("2026-08-01")
 
 
