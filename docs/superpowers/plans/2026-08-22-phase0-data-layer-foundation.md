@@ -2218,6 +2218,43 @@ for module in core org all; do
 
 期待: `schema/generated/all.owl.ttl`、`all.shacl.ttl`、`all_models.py` が追加される。`all.shacl.ttl` に `jgkgcore:Agent` と `jgkgorg:Organization` の両方の `sh:targetClass` が含まれること(`grep 'sh:targetClass' schema/generated/all.shacl.ttl` で確認)。
 
+- [ ] **Step 0b: enum のIRIが1つに定まっていることを検証する**
+
+> **なぜ必要か**: `UnresolvedReasonEnum` が `core.owl.ttl` では `def/core#UnresolvedReasonEnum`、`org.owl.ttl` では `def/org#UnresolvedReasonEnum` という**別IRIでシリアライズされている**ことが判明している(import された enum が import 側の名前空間で再鋳造される)。**コミット必須の公開オントロジーの中で同一概念が2つのIRIを持つ構造的矛盾**であり、識別子の一貫性を中核に置く本設計と衝突する。`all.yaml` を追加すると `def/all#` という3つ目が生まれる恐れもある。
+
+`tests/test_schema_consistency.py` の末尾に追記:
+
+```python
+def test_enum_has_a_single_iri_across_generated_owl():
+    """同一の enum が複数のIRIで宣言されていないこと。
+
+    import された enum が import 側の名前空間で再鋳造されると、公開する
+    オントロジーの中で同一概念が複数のIRIを持つ。識別子の一貫性を中核に置く
+    設計と衝突するため、ここで固定する。
+    """
+    from collections import defaultdict
+
+    by_local_name: dict[str, set[str]] = defaultdict(set)
+    for path in sorted(GENERATED.glob("*.owl.ttl")):
+        g = _load(path)
+        for s in g.subjects(RDF.type, OWL.Class):
+            iri = str(s)
+            if "#" not in iri:
+                continue
+            local = iri.rsplit("#", 1)[1]
+            if local.endswith("Enum"):
+                by_local_name[local].add(iri)
+
+    conflicts = {name: sorted(iris) for name, iris in by_local_name.items() if len(iris) > 1}
+    assert not conflicts, f"同一の enum が複数のIRIで宣言されている: {conflicts}"
+```
+
+**このテストは現状では落ちる見込みです。** 落ちた場合の対処:
+
+1. `schema/core.yaml` の `UnresolvedReasonEnum` に `enum_uri` を明示できるか**実機で確認する**(`gen-owl --help`、LinkMLのメタモデルを `enum_uri` でgrep、実際に書いて生成してみる)。**公式ドキュメントの記述を根拠にしないこと** — このプロジェクトでは既に、ドキュメントに載っているオプションがリリース版に存在しなかった前例がある
+2. `enum_uri` で解決するならそれを使う
+3. 解決しない場合は**テストを緩めず報告する。** 私が判定する(選択肢としては、enum をやめて `pattern` 付きの文字列にする、`all.owl.ttl` だけを公開成果物とする、等がある)
+
 - [ ] **Step 1: 失敗するテストを書く**
 
 `tests/test_validate.py`:
