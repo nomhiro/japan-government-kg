@@ -15,7 +15,13 @@ import pytest
 
 from jgkg import base_uri
 
-ROOT = Path.cwd()
+# **`Path.cwd()` にしてはならない。** リポジトリ直下以外から pytest を起動すると
+# glob が何も見つけず、`find_inconsistencies` が空を返して
+# `test_base_uri_is_consistent_across_every_target_file` が**1ファイルも見ずに合格する**
+# (このプロジェクトが最も警戒している「対象0件で合格」そのものになる)。
+# テストファイルの位置から解決すれば、どこから起動しても同じ範囲を見る。
+# `base_uri.find_inconsistencies` / `main()` 側の `Path.cwd()` はCLIとして正しい。
+ROOT = Path(__file__).resolve().parents[1]
 
 # 検査用のダミー。ホストは RFC 6761 の予約名で、単体では §4.2 のパス構造を持たない
 OLD = "http://example.test/old-kg"
@@ -33,6 +39,11 @@ def test_base_uri_is_consistent_across_every_target_file():
     つまり「差し替えたが再生成していない」「一部のファイルだけ直した」
     「未登録の外部語彙が混ざった」のいずれもここで止まる。
     """
+    # **先に検査対象が空でないことを主張する。** 空リストに対する
+    # 「不整合が無い」は無意味であり、それが「対象0件で合格」の正体である
+    targets = base_uri.checked_paths(ROOT)
+    assert len(targets) >= 10, f"検査対象が少なすぎる({len(targets)}件): {ROOT}"
+
     problems = base_uri.find_inconsistencies(ROOT)
     assert not problems, "ベースURIが一致しない箇所がある:\n" + "\n".join(
         f"  {p}" for p in problems

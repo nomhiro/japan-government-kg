@@ -5,7 +5,12 @@ import pytest
 from rdflib import OWL, RDF, Graph, URIRef
 from rdflib.namespace import SH, SKOS
 
-GENERATED = Path("schema/generated")
+# **cwd に依存させない。** リポジトリ直下以外から pytest を起動したときに
+# glob が空になると、パラメータ化したテストが1件も収集されず「合格」に見える。
+# テストファイルの位置から解決する(tests/test_base_uri.py と同じ理由)
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SCHEMA = REPO_ROOT / "schema"
+GENERATED = SCHEMA / "generated"
 MODULES = ["core", "org"]
 
 # モジュールごとに「そのモジュール自身が宣言すべきクラス」を明示する。
@@ -124,7 +129,6 @@ def test_schema_namespace_matches_config_default(module):
     )
 
 
-SCHEMA = Path("schema")
 # 検証の唯一の入力。ここに現れないクラスは「何を入れても conforms=True」になる
 ALL_SHACL = GENERATED / "all.shacl.ttl"
 
@@ -200,7 +204,7 @@ def test_all_shacl_covers_the_classes_emitted_by_the_pipeline():
     )
 
 
-OVERLAY = Path("schema/overlay")
+OVERLAY = SCHEMA / "overlay"
 
 
 def test_overlay_terms_all_exist_in_generated_owl():
