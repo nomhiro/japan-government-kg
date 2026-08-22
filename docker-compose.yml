@@ -1,0 +1,28 @@
+# 読み取り専用のKG提供と、インデックス構築ツール。
+# 成果物(TDB2インデックス)は data/artifact/tdb2 に展開しておく。
+services:
+  fuseki:
+    image: apache/jena-fuseki:latest
+    ports:
+      - "3030:3030"
+    command: ["/jena-fuseki/fuseki-server", "--config=/fuseki/config/kg.ttl"]
+    environment:
+      - ADMIN_PASSWORD=${FUSEKI_ADMIN_PASSWORD:-change-me-in-env}
+    volumes:
+      - ./fuseki:/fuseki/config:ro
+      # ブロックデバイス上のローカルディレクトリをマウントする。
+      # TDB2はメモリマップドファイルを使うため、ネットワークファイル共有
+      # (SMB/NFS)上に置かないこと(設計書§6.3)
+      - ./data/artifact/tdb2:/fuseki/databases/kg:ro
+    restart: unless-stopped
+
+  jena-tools:
+    build:
+      context: .
+      dockerfile: docker/jena-tools.Dockerfile
+      args:
+        JENA_VERSION: ${JENA_VERSION:?JENA_VERSION を .env に設定する}
+    volumes:
+      - ./data:/work/data
+    profiles:
+      - tools
