@@ -389,10 +389,22 @@ prefixes:
   skos: http://www.w3.org/2004/02/skos/core#
   dcterms: http://purl.org/dc/terms/
   schema: http://schema.org/
+  rdf: http://www.w3.org/1999/02/22-rdf-syntax-ns#
 default_prefix: jgkgcore
 default_range: string
 imports:
   - linkml:types
+
+types:
+  LangString:
+    uri: rdf:langString
+    base: str
+    description: >-
+      言語タグ付きの文字列。人が読む名称や文章に使う。
+      識別子やコードには使わない(それらは言語に依存しないため plain な string を使う)。
+      この区別をスキーマに明示することで、どの値が言語依存かがモデルから読み取れる。
+      emit が言語タグ付きリテラルを出す一方、既定の `range: string` は
+      `sh:datatype xsd:string` を要求するため、この型なしではSHACL検証が必ず落ちる。
 
 slots:
   id:
@@ -402,6 +414,7 @@ slots:
   label:
     description: 人間が読む名称
     slot_uri: skos:prefLabel
+    range: LangString
   occurred_on:
     description: この出来事が起きた日
     range: date
@@ -419,6 +432,7 @@ slots:
     range: integer
   unresolved_text:
     description: 正準IDに解決できなかった元の参照文字列
+    range: LangString
   unresolved_reason:
     description: 解決できなかった理由
     range: UnresolvedReasonEnum
@@ -431,6 +445,10 @@ slots:
 enums:
   UnresolvedReasonEnum:
     description: 参照が未解決である理由の分類
+    # enum_uri を明示しないと、import 側のモジュール(org, all)で名前空間が
+    # 再鋳造され、同一の enum が複数のIRIを持つ(実測で確認)。公開する
+    # オントロジーの中で同一概念が複数のIRIを持つのは識別子の一貫性に反する
+    enum_uri: jgkgcore:UnresolvedReasonEnum
     permissible_values:
       NO_CANDIDATE:
         description: 候補が見つからなかった
@@ -2099,8 +2117,10 @@ slots:
     description: GIFコードリストの府省コード
   prefectureName:
     description: 所在地の都道府県名
+    range: LangString
   cityName:
     description: 所在地の市区町村名
+    range: LangString
 
 classes:
   Organization:
