@@ -24,7 +24,7 @@ def fixed_base(monkeypatch):
 
 def test_parses_all_rows():
     orgs = list(parse_file(FIXTURE))
-    assert len(orgs) == 4
+    assert len(orgs) == 27  # 現行26機関(裁定B12。実在の法人番号)+ 株式会社1件
 
 
 def test_maps_fields_and_builds_uri():

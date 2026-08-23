@@ -126,10 +126,21 @@ def test_cq_p0_01_organization_lookup(kg):
 
 
 def test_cq_p0_02_ministry_list(kg):
+    """府省の一覧が名称で問えること(裁定B12: 主キーは名称)。
+
+    ministryCode は現行コードの一次資料が見つかっていないため、いずれの行も
+    持たない(OPTIONALでも0件になるのが今の正しい姿)。**主キーが名称に変わった
+    ことそのものをここで固定する**——コードが無いことが「クエリの欠陥」ではなく
+    「参照表の設計」であることの証拠にする
+    """
     rows = _query(kg, "p0-02-ministry-list.rq")
     assert rows, "CQ P0-2 に答えられない"
-    codes = {str(r[3]) for r in rows}
-    assert "020" in codes
+    names = {str(r[1]) for r in rows}
+    assert "厚生労働省" in names
+    assert len(rows) == 26, "参照表の26機関すべてが返るべき"
+    assert all(r[3] is None for r in rows), (
+        "ministryCode列は現行コードの一次資料が無いため全行未束縛のはず"
+    )
 
 
 def test_cq_p0_03_provenance_of_edge(kg):

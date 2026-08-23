@@ -70,19 +70,37 @@ SOURCES: dict[str, Source] = {
     ),
     "ministry-codes": Source(
         id="ministry-codes",
-        name="府省コード参照表(GIFコードリストより作成)",
-        url="https://github.com/JDA-DM/GIF",
-        license="CC BY 4.0",
-        license_url="https://creativecommons.org/licenses/by/4.0/",
+        name="府省名簿(RS実データの所管府省庁名 + 法令経路3機関より作成)",
+        # 名簿の主要な出典はRS(23行)。法令経路3行(人事院・会計検査院・
+        # 国家公安委員会)はe-Gov法令API実データの法令番号が示す発令機関であり、
+        # 単一のurlフィールドでは表現できないため、主要な出典をurlに置きnoteで
+        # 補う(裁定B12。judgment call。詳細はtask-5-report.md)
+        url="https://rssystem.go.jp",
+        # RSのライセンスは政府標準利用規約ではなく「公共データ利用規約
+        # (第1.0版)」(rs-systemソースの note 参照)。名簿の23/26行はRS由来
+        # なのでこちらを名簿全体の代表ライセンスとする。残り3行の出典
+        # (e-Gov法令API)は政府標準利用規約(GOV_STANDARD_TERMS)
+        license="公共データ利用規約(第1.0版)(PDL1.0)",
+        license_url="https://www.digital.go.jp/resources/open_data/public_data_license_v1.0",
         frequency="ondemand",
         access="bulk",
-        note="小規模で安定した参照表のため data/reference/ にコミットして管理する。"
-             "上流から取得した日付は記録されていないため、prov:generatedAtTime には"
-             "『このリポジトリに記録した日』を入れる(取得日ではない)",
+        note="小規模で安定した名簿のため data/reference/ にコミットして管理する。"
+             "23行はRS 2025年度分(project_summary/organization_informationの"
+             "所管府省庁列、取得日2026-08-23)のdistinct。残り3行(人事院・"
+             "会計検査院・国家公安委員会)はRSのdistinctに現れないが、e-Gov"
+             "法令APIの実在の法令番号(人事院規則一―四 等)が発令機関として指す"
+             "現存機関(§7.3経路1に必要。裁定B7のOBSOLETE_ORGANIZATION誤分類の"
+             "解消対象)。ministry_code列は現行コードの一次資料が見つかって"
+             "いないため全行空欄(裁定B12。旧来の013/017/020はGIF・統計局の"
+             "利用機関コードいずれとも一致せず削除した)。上流(RS)には取得日が"
+             "あるが、名簿自体はコミット済み参照表として扱うため、他の"
+             "コミット済み参照表と同じ規約で prov:generatedAtTime には"
+             "『このリポジトリに記録した日』を入れる(取得日そのものではない)",
         local_path="data/reference/ministry-codes.csv",
-        # git log --diff-filter=A で確認した、このファイルがリポジトリに入った日
-        recorded_on=datetime.date(2026, 8, 22),
-        sha256="d0c46d408bf3578a9b3fab221de1101540d1fdc4454e972869e9796d0ca5e094",
+        # git log --diff-filter=AM で確認した、この版(B12: RS由来26行)を
+        # リポジトリに記録した日
+        recorded_on=datetime.date(2026, 8, 23),
+        sha256="af2a5c1580410761859da80b3fc6f78622b1158f1964546e3aa60108dd37a84e",
     ),
     "rs-system": Source(
         id="rs-system",
