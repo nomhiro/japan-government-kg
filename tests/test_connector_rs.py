@@ -312,6 +312,26 @@ def test_find_budget_aggregate_row_raises_when_the_fiscal_year_is_absent():
         rs_columns.find_budget_aggregate_row(rows, "1999")
 
 
+def test_ministry_name_uses_column_5_not_column_6_when_they_disagree():
+    """レビュー指摘3: project 828(危険物事故防止対策の推進)は列5≠列6の
+    実例([5]政策所管府省庁='総務省' [6]府省庁='消防庁')。RS_COLの
+    ministry_nameは列5(総務省)を指すこと。
+
+    将来誰かが「列6の方が素直な名前だから」と書き換えても、payee/lawの
+    fixtureは列5=列6の行しか無いため検知できない(レビュー指摘3)。この
+    テストが、列5・列6が実際に異なる実データ行で検査する最初のテスト。
+    """
+    rows = _budget_rows_for_project("828")
+    spec = rs_columns.RS_FILES["budget_summary"]
+    idx_ministry = spec.col["ministry_name"]
+    idx_col6 = 6  # 「府省庁」列。RS_COLでは論理名を割り当てていない
+
+    agg = rs_columns.find_budget_aggregate_row(rows, "2025")
+    assert agg[idx_ministry] == "総務省"
+    assert agg[idx_col6] == "消防庁"
+    assert agg[idx_ministry] != agg[idx_col6], "fixtureが列5≠列6の実例でなくなっている"
+
+
 def test_kensei_jun_matches_ministry_name_1to1_and_agrees_with_the_reference_table():
     """レビュー指摘1: 列4(建制順)が[5]ministry_nameと1対1対応すること、かつ
     data/reference/ministry-codes.csv の kensei_jun 列と一致すること
