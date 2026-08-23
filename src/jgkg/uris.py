@@ -28,6 +28,18 @@ def law_version_uri(law_id: str, date: datetime.date) -> str:
     return f"{law_uri(law_id)}/{date:%Y%m%d}"
 
 
+def unresolved_jurisdiction_uri(law_id: str, name: str) -> str:
+    """経路1(法令番号→府省)で解決できなかった名称の `core:UnresolvedReference` ノードのURI。
+
+    `name` だけを鍵にしない。複数の法令が同じ旧省庁名(例: 大蔵省令が数百件)を
+    指すたびに1つのノードへ収束すると、UnresolvedReference の件数が法令ごとの
+    ミス件数(CQ9が数えたいもの)ではなく「名称の種類数」に潰れてしまう
+    """
+    if not law_id or not name:
+        raise ValueError("law_id と name はいずれも空であってはならない")
+    return f"{_base()}/id/unresolved/jurisdiction/{quote(law_id, safe='')}/{quote(name, safe='')}"
+
+
 def graph_uri(source_id: str, fetched_on: datetime.date) -> str:
     if not source_id:
         raise ValueError("ソースIDが空である")
