@@ -53,15 +53,32 @@ def _load_ontology(shapes_dir: Path) -> Graph:
     型しか持たないため、この `ont_graph` を渡さないと `sh:class` がスーパー
     クラスを指すプロパティ(`law:jurisdiction` 等)は常に不合格になる(裁定B3)。
 
-    **`inference` は指定しない。** `inference='rdfs'` はRDFS推論結果を
-    データグラフに実体化するため、`org:Ministry` の値に `org:Organization`
-    の `rdf:type` が実体化され、`org:Organization` の閉じたシェイプが
-    `org:Ministry` にも適用されてしまう(`ministryCode` が「宣言されていない
-    プロパティ」として偽の違反になる。Phase 0 の R24 と同種の推論経由の
-    二重シェイプ問題)。`ont_graph` だけを渡せば、`sh:class` の値検証に
-    必要な subClassOf の**参照**はできるが、型の**実体化**は起きないため、
-    閉じたシェイプには影響しない(`test_closed_shapes_survive_ont_graph` /
+    **`ont_graph` を渡すだけで、閉じたシェイプの多重ターゲティングは起きる。**
+    pySHACLは `sh:targetClass` のインスタンス判定を `rdf:type/rdfs:subClassOf*`
+    で行うため、`ont_graph` がクラス階層を提供した時点で `org:Organization`
+    の閉じたシェイプは `org:Ministry` 型のノードにも適用される(実測:
+    `sh:sourceShape` に `Organization`/`GovernmentOrgan`/`Agent`/`Ministry`
+    が並ぶ。`ont_graph` を渡さなければ `Ministry` のみ)。`inference` の
+    有無は無関係 — `inference='rdfs'` を追加してもこの集合は変わらない。
+    つまり「型の実体化が起きないから閉じたシェイプに影響しない」のではない。
+
+    それでも偽の違反(`ministryCode` が「宣言されていないプロパティ」になる、
+    Phase 0 の R24 と同種の二重シェイプ問題)は起きない。理由は事故ではなく、
+    LinkML の `gen-shacl` が閉じたNodeShapeごとに「既知の全サブクラスが持つ
+    追加プロパティ」を機械的に `sh:ignoredProperties` へ足しているため
+    (`org:Organization` の ignoredProperties に `org:ministryCode` が入っている
+    のを `all.shacl.ttl` で確認できる)。**この安全網はスキーマのクラス階層と
+    生成物が同期している間だけ効く。** 新しいサブクラスを追加したのに
+    `scripts/generate-schema.sh` を再実行していない場合、この吸収は効かず
+    偽の違反が出る(`test_closed_shapes_survive_ont_graph` /
     `test_wrong_type_still_fails_the_class_constraint` で実測済み)。
+
+    **それでも `inference` を指定しない理由**: 多重ターゲティング自体は
+    `ont_graph` 単体で既に起きているので `inference='rdfs'` を足しても
+    それは増えない(実測で同一の `sourceShapes` 集合)。だが `inference='rdfs'`
+    はデータグラフに推論結果を実体化し、`subPropertyOf` 等の他のRDFS含意も
+    まとめて有効化する。ここで検証していない範囲まで安全性を広げる根拠が無い
+    ため、必要最小限の `ont_graph` のみに絞る。
     """
     path = shapes_dir / ONTOLOGY_FILENAME
     if not path.exists():
