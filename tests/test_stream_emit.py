@@ -366,7 +366,7 @@ def _shapes_dir():
     return Path("schema/generated")
 
 
-def test_validate_stream_batched_result_matches_the_whole_graph_result_for_a_valid_stream():
+def test_validate_stream_batched_result_matches_the_whole_graph_result_for_a_valid_stream(tmp_path):
     """正常系: batch_size=2で細かく割っても、全体一発の結果(合格)と一致すること。
 
     stream_emit_organizations(dedup済み前提)の出力を使う — 実運用の経路
@@ -389,7 +389,7 @@ def test_validate_stream_batched_result_matches_the_whole_graph_result_for_a_val
     nq_path = tmp_nq_path()
     nq_path.write_text(out.getvalue(), encoding="utf-8")
 
-    batched = validate.validate_stream(nq_path, _shapes_dir(), batch_size=2)
+    batched = validate.validate_stream(nq_path, _shapes_dir(), tmp_path / "quarantine", batch_size=2)
     assert len(batched) > 1, "batch_size=2が分割を起こしていない(テストの前提が崩れている)"
 
     whole = _whole_graph_conforms(nq_path)
@@ -397,7 +397,7 @@ def test_validate_stream_batched_result_matches_the_whole_graph_result_for_a_val
     assert all(r.conforms for r in batched), "バッチ検証の結果が全体一発(合格)と一致しない"
 
 
-def test_validate_stream_batched_result_matches_the_whole_graph_result_for_a_local_violation():
+def test_validate_stream_batched_result_matches_the_whole_graph_result_for_a_local_violation(tmp_path):
     """正常系(壊し確認込み): エンティティ局所な違反(法人番号の桁数不正)は、
 
     バッチに分けても分けなくても同じく検出されること。この違反は1エンティティ
@@ -405,6 +405,7 @@ def test_validate_stream_batched_result_matches_the_whole_graph_result_for_a_loc
     (エンティティ局所シェイプという前提そのものの確認)。
     """
     import io
+    from pathlib import Path
 
     from rdflib import Literal, URIRef
 
@@ -430,13 +431,25 @@ def test_validate_stream_batched_result_matches_the_whole_graph_result_for_a_loc
     whole = _whole_graph_conforms(nq_path)
     assert whole is False, "違反入りのfixtureが全体検証で合格してしまっている(テストの前提が崩れている)"
 
-    batched = validate.validate_stream(nq_path, _shapes_dir(), batch_size=2)
+    quarantine_dir = tmp_path / "quarantine"
+    batched = validate.validate_stream(nq_path, _shapes_dir(), quarantine_dir, batch_size=2)
     assert not all(r.conforms for r in batched), (
         "エンティティ局所な違反がバッチ検証で検出できていない"
     )
+    # B-1(裁定B23): 不合格バッチにはreport_path/violation_countが埋まり、
+    # 全文が実際にディスクへ書かれていること
+    failing = [r for r in batched if not r.conforms]
+    assert failing, "不合格バッチが1つも無い"
+    for r in failing:
+        assert r.violation_count > 0, "違反件数が0のまま(_count_violationsが機能していない)"
+        assert r.report_path is not None, "不合格バッチにreport_pathが埋まっていない"
+        assert Path(r.report_path).read_text(encoding="utf-8"), (
+            "隔離レポートのファイルが空(全文がディスクに書かれていない)"
+        )
+    assert quarantine_dir.exists(), "quarantine_dirが実際に作られていない"
 
 
-def test_validate_stream_diverges_from_the_whole_graph_result_when_split_mid_subject():
+def test_validate_stream_diverges_from_the_whole_graph_result_when_split_mid_subject(tmp_path):
     """**等価条件が実質であることの証明**: 主語の切れ目を無視して(=わざと
 
     主語を跨いで)分割すると、全体一発の結果と一致しなくなること。
@@ -489,7 +502,9 @@ def test_validate_stream_diverges_from_the_whole_graph_result_when_split_mid_sub
     # 最後のバッチ、という3分割になる(主語の切れ目でのみ切る実装なら、
     # 「同じ主語が別バッチに分かれる」状況そのものは入力側の問題として
     # 再現できる)
-    batched = validate.validate_stream(nq_path, _shapes_dir(), batch_size=4)
+    batched = validate.validate_stream(
+        nq_path, _shapes_dir(), tmp_path / "quarantine", batch_size=4
+    )
     assert len(batched) >= 2, "主語跨ぎの分割が起きていない(テストの前提が崩れている)"
     assert all(r.conforms for r in batched), (
         "各バッチが単独では合格するはず(それぞれ1つのprefLabelしか見ないため)"
@@ -501,7 +516,7 @@ def test_validate_stream_diverges_from_the_whole_graph_result_when_split_mid_sub
     )
 
 
-def test_validate_stream_never_cuts_a_single_contiguous_subject_block_even_past_batch_size():
+def test_validate_stream_never_cuts_a_single_contiguous_subject_block_even_past_batch_size(tmp_path):
     """`validate_stream`自身の責務(条件2)を単独で固定する。
 
     上のテスト(`test_validate_stream_diverges_...`)は**入力側**が条件1
@@ -545,7 +560,9 @@ def test_validate_stream_never_cuts_a_single_contiguous_subject_block_even_past_
     # batch_size=2: 連続ブロックの5行に対して十分小さい。主語の切れ目でしか
     # 切らない実装なら、主語が最後まで変わらないこのファイルは1バッチのまま
     # (=全体一発と同じグラフ)になり、結果は一致するはず
-    batched = validate.validate_stream(nq_path, _shapes_dir(), batch_size=2)
+    batched = validate.validate_stream(
+        nq_path, _shapes_dir(), tmp_path / "quarantine", batch_size=2
+    )
     assert len(batched) == 1, (
         "1つの連続ブロックが複数バッチに分かれた"
         "(主語が変わっていないのにbatch_sizeだけで切っている疑いがある)"
@@ -556,7 +573,7 @@ def test_validate_stream_never_cuts_a_single_contiguous_subject_block_even_past_
     )
 
 
-def test_validate_stream_raises_instead_of_treating_an_empty_file_as_conforming():
+def test_validate_stream_raises_instead_of_treating_an_empty_file_as_conforming(tmp_path):
     """空ファイル(0バッチ)を「合格」として返さないこと(§8.2の作法)。
 
     何があれば落ちるか: `results=[]`をそのまま返す実装だと、呼び出し側が
@@ -573,7 +590,98 @@ def test_validate_stream_raises_instead_of_treating_an_empty_file_as_conforming(
     nq_path.write_text("", encoding="utf-8")
 
     with pytest.raises(ValueError, match="1件も検証できなかった"):
-        validate.validate_stream(nq_path, _shapes_dir())
+        validate.validate_stream(nq_path, _shapes_dir(), tmp_path / "quarantine")
+
+
+# =============================================================================
+# B-1(裁定B23): validate_streamの結果がバッチの違反件数に比例して肥大しないこと。
+#
+# 8GiB想定構成での実測(レビュー指摘)により、以前の実装は不合格バッチの
+# report_text(pyshaclの全文)をそのままResultsに積んでおり、581万件規模で
+# メモリが破綻した。ここでは違反200件・2,000件という2つの規模で、
+# report_textの長さが**同じ**固定上限に収まることを示す(件数に比例して
+# 伸びていないことの直接証拠)。全文が消えていないこと(ディスクに書かれた
+# report_pathのファイルを開けば全件見える)も同時に確認する。
+# =============================================================================
+
+
+def _broken_org(i: int) -> Organization:
+    """sh:pattern違反(法人番号が不正)を持つOrganizationを、一意なURIで作る。
+
+    `_org()`は`uri`と`houjin_bangou`を同じ値から作るため使えない(それだと
+    `org_uri()`の検証自体で例外になる)。ここではURIだけ有効な連番にし、
+    houjin_bangouは意図的に不正な値のままにする(既存テストと同じ壊し方)。
+    """
+    valid_for_uri = str(6_000_000_000_000 + i)
+    return Organization(
+        uri=org_uri(valid_for_uri),
+        houjin_bangou="BROKEN",
+        name=f"テスト法人{i}",
+        kind_code="301",
+        is_government_organ=False,
+    )
+
+
+def _validate_stream_report_for_n_violations(n: int, tmp_path):
+    """N件の系統的違反を実経路(stream_emit_organizations)で流し、1バッチで検証する。"""
+    import io
+
+    from jgkg import validate
+
+    out = io.StringIO()
+    stream_emit.stream_emit_organizations((_broken_org(i) for i in range(n)), GRAPH_URI, out)
+    nq_path = tmp_path / "broken.nq"
+    nq_path.write_text(out.getvalue(), encoding="utf-8")
+
+    # batch_sizeをNより十分大きくし、N件全部を1バッチにまとめる
+    # (1バッチの違反件数が増えてもreport_textが伸びないことを見るのが目的
+    # なので、複数バッチに分かれてはならない)
+    results = validate.validate_stream(
+        nq_path, _shapes_dir(), tmp_path / "quarantine", batch_size=10_000
+    )
+    assert len(results) == 1, "意図せず複数バッチに分かれた(テストの前提が崩れている)"
+    return results[0]
+
+
+def test_validate_stream_keeps_the_result_summary_bounded_at_200_violations(tmp_path):
+    """B-1(裁定B23): 200件の系統的違反でも、report_textが小さい定数に収まること。"""
+    from pathlib import Path
+
+    result = _validate_stream_report_for_n_violations(200, tmp_path)
+
+    assert result.conforms is False
+    assert result.violation_count == 200, "違反件数が厳密に一致しない"
+    assert len(result.report_text) < 3000, (
+        f"要約がO(1)でない疑いがある(200件でreport_textが{len(result.report_text)}文字)"
+    )
+    assert result.report_path is not None, "不合格バッチにreport_pathが埋まっていない"
+    full = Path(result.report_path).read_text(encoding="utf-8")
+    assert full.count("Constraint Violation") == 200, (
+        "全文には200件分の違反がすべて書かれているはず"
+        "(要約だけが短いのであって、全文まで欠落してはならない)"
+    )
+
+
+def test_validate_stream_keeps_the_result_summary_bounded_at_2000_violations(tmp_path):
+    """B-1(裁定B23): 違反が10倍(2,000件)になっても、report_textの上限は変わらないこと。
+
+    これが本題: 200件と2,000件で**同じ**上限(3,000文字)に収まることを示すのが、
+    「バッチの違反件数に比例してメモリが伸びない」ことの直接証拠になる
+    (ブロッカーB-1が実測で指摘した、8GiB想定構成での破綻の再現と解消)。
+    """
+    from pathlib import Path
+
+    result = _validate_stream_report_for_n_violations(2000, tmp_path)
+
+    assert result.conforms is False
+    assert result.violation_count == 2000, "違反件数が厳密に一致しない"
+    assert len(result.report_text) < 3000, (
+        f"要約がO(1)でない疑いがある(2,000件でreport_textが{len(result.report_text)}文字。"
+        "200件のときと同じ上限に収まっていない=件数に比例して伸びている)"
+    )
+    assert result.report_path is not None, "不合格バッチにreport_pathが埋まっていない"
+    full = Path(result.report_path).read_text(encoding="utf-8")
+    assert full.count("Constraint Violation") == 2000
 
 
 _tmp_nq_counter = 0

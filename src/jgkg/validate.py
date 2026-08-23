@@ -20,12 +20,33 @@ from jgkg.schema_lang import REFERENCE_CLASSES_FILENAME
 class ValidationResult:
     graph_uri: str
     conforms: bool
+    # **`validate_dataset`では全文。`validate_stream`では要約(意識的な非対称。
+    # B-1/裁定B23)。** `validate_dataset`が検証するグラフは設計上有界
+    # (Phase 1のrs-systemグラフでも最大2万エンティティ規模。O(5.8M)には
+    # ならない)ため全文を保持してもメモリは問題にならず、不合格時は
+    # `quarantine()`が既にディスクへ書く。一方`validate_stream`は581万件÷
+    # batch_size回分の結果を`list`に積むため、1件でも全文(pyshaclは違反
+    # 1件ごとにshapeの説明文まで複製する形式で出す — 実測5件で4,117文字)
+    # を持たせるとバッチ数×違反件数に比例してメモリが伸びる(実測: 8GiB
+    # 想定構成で破綻)。`validate_stream`はここに要約だけを置き、全文は
+    # `report_path`(ディスク)に書く
     report_text: str
     # バッチ検証(validate_stream)の結果にのみ設定される(0起点)。
     # validate_datasetの結果は常にNone(グラフ単位=バッチという概念が無い)。
     # Task 11がどのバッチで違反が起きたかを特定できるようにするための追加情報
-    # (task-8-brief.md「消費者のいない記録」を避ける)
+    # (task-8-brief.md「消費者のいない記録」を避ける)。**batch_indexの読み手は
+    # 2つ**: 不合格時の隔離レポートのファイル名(batch-{index:04d})と、
+    # pipeline.pyがコンソールに出す警告
     batch_index: int | None = None
+    # 違反の総件数。`report_text`が要約であっても、この値だけは常に厳密
+    # (pyshaclの検証レポートグラフから`sh:ValidationResult`型の主語数を数えた
+    # 値。validate_dataset/validate_streamの両方で埋める)
+    violation_count: int = 0
+    # 不合格バッチの違反全文を書き出したファイルへのパス文字列。
+    # `validate_stream`が不合格バッチについてのみ設定する(合格バッチ・
+    # `validate_dataset`の結果は常にNone)。全文は`quarantine_dir`直下に
+    # バッチ単位でストリーミング書き出しする(B-1/裁定B23)
+    report_path: str | None = None
 
 
 SHAPES_FILENAME = "all.shacl.ttl"
@@ -73,6 +94,18 @@ def _shape_target_classes(shapes: Graph) -> set[URIRef]:
     将来 `sh:targetSubjectsOf` 等を手書きで足したら、ここも足す必要がある。
     """
     return {o for o in shapes.objects(None, SH.targetClass) if isinstance(o, URIRef)}
+
+
+def _count_violations(report_graph: Graph) -> int:
+    """SHACL検証レポートから違反件数を数える(`sh:ValidationResult`型の主語数)。
+
+    `report_text`(pyshaclの人間向けテキスト出力)は違反1件ごとにshapeの
+    説明文まで複製して積むため、件数が増えるほど文字数が線形に伸びる
+    (実測: 5件で4,117文字)。件数だけが要る場面(validate_streamの要約・
+    バッチ結果の集計)では、テキストを数えるのではなく、構造化された
+    レポートグラフ側の`sh:ValidationResult`を数える方が正確かつ軽い。
+    """
+    return len(list(report_graph.subjects(RDF.type, SH.ValidationResult)))
 
 
 def _own_declared_classes(graph: Graph, term_prefix: str) -> set[URIRef]:
@@ -137,7 +170,7 @@ def validate_dataset(ds: Dataset, shapes_dir: Path) -> list[ValidationResult]:
             targets,
         )
 
-        conforms, _report_graph, report_text = shacl_validate(
+        conforms, report_graph, report_text = shacl_validate(
             data_graph=target,
             shacl_graph=shapes,
             advanced=True,
@@ -148,6 +181,7 @@ def validate_dataset(ds: Dataset, shapes_dir: Path) -> list[ValidationResult]:
                 graph_uri=str(ctx.identifier),
                 conforms=bool(conforms),
                 report_text=report_text,
+                violation_count=_count_violations(report_graph),
             )
         )
     return results
@@ -188,8 +222,32 @@ def _split_nquads_line(line: str) -> tuple[str, str]:
     return nt_body, graph_term
 
 
+# validate_streamの要約(ValidationResult.report_text)の文字数上限。
+# pyshaclのreport_textは違反1件ごとにshapeの説明文まで複製するため件数に
+# 比例して伸びる(実測: 5件で4,117文字≒1件あたり約800文字)。先頭をこの
+# 文字数で切ることで、要約の長さをバッチの違反件数と無関係なO(1)に保つ
+# (B-1/裁定B23)。全文は`quarantine_dir`のファイルに別途書く
+_SUMMARY_MAX_CHARS = 2000
+
+
+def _bounded_summary(report_text: str, violation_count: int, report_path: Path) -> str:
+    """`report_text`の先頭`_SUMMARY_MAX_CHARS`文字だけを使った要約を作る。
+
+    全文は`report_path`(呼び出し側が既に書いたファイル)を指すだけで、
+    ここでは保持しない。バッチの違反が1件でも2,000件でも、この関数が返す
+    文字列の長さはほぼ一定になる(B-1修正の中心。実際の固定を
+    tests/test_stream_emit.pyで違反200件・2,000件の2規模で確認する)。
+    """
+    head = report_text[:_SUMMARY_MAX_CHARS]
+    suffix = "...(以下省略。全文は上記ファイル)" if len(report_text) > _SUMMARY_MAX_CHARS else ""
+    return f"{violation_count}件の違反。全文: {report_path}\n{head}{suffix}"
+
+
 def validate_stream(
-    nq_path: Path, shapes_dir: Path, batch_size: int = 50_000
+    nq_path: Path,
+    shapes_dir: Path,
+    quarantine_dir: Path,
+    batch_size: int = 50_000,
 ) -> list[ValidationResult]:
     """N-Quadsファイルをバッチに分けてSHACL検証する(全件を一度にrdflibへ載せない)。
 
@@ -203,6 +261,14 @@ def validate_stream(
     「今までのバッファを閉じるか」を判定するため、実際のバッチ行数は
     `batch_size`以上になることがある(1エンティティが`batch_size`行を
     超える場合はそのエンティティが尽きるまで閉じない)。
+
+    **結果は要約のみを保持する(B-1/裁定B23)。** 以前は`ValidationResult.
+    report_text`にpyshaclの全文をバッチごとに積んでいたため、`results`
+    (バッチ数に比例する`list`)全体のメモリがバッチ数×違反件数に比例して
+    伸びた(実測: 8GiB想定構成で破綻する規模)。不合格バッチについては
+    全文を`quarantine_dir`へバッチ単位のファイルとして書き出し、
+    `ValidationResult`には要約(`_bounded_summary`)・厳密な違反件数
+    (`violation_count`)・そのファイルへのパス(`report_path`)だけを持たせる。
 
     バッチごとに新しい`Graph`へN-Triples(グラフ項を剥がした形)としてパース
     し、`validate_dataset`と同じ検査(網羅性ガード`_assert_shapes_cover` +
@@ -244,18 +310,31 @@ def validate_stream(
             _own_declared_classes(batch_graph, term_prefix),
             targets,
         )
-        conforms, _report_graph, report_text = shacl_validate(
+        conforms, report_graph, report_text = shacl_validate(
             data_graph=batch_graph,
             shacl_graph=shapes,
             advanced=True,
             inplace=False,
         )
+        violation_count = _count_violations(report_graph)
+        report_path: str | None = None
+        summary = report_text
+        if not conforms:
+            quarantine_dir.mkdir(parents=True, exist_ok=True)
+            stem = _safe_stem(graph_uri or "unknown")
+            out_path = quarantine_dir / f"{stem}.batch-{batch_index:04d}.report.txt"
+            out_path.write_text(report_text, encoding="utf-8")
+            report_path = str(out_path)
+            summary = _bounded_summary(report_text, violation_count, out_path)
+
         results.append(
             ValidationResult(
                 graph_uri=graph_uri or "(unknown)",
                 conforms=bool(conforms),
-                report_text=report_text,
+                report_text=summary,
                 batch_index=batch_index,
+                violation_count=violation_count,
+                report_path=report_path,
             )
         )
         batch_index += 1

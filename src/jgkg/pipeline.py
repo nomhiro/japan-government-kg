@@ -317,10 +317,25 @@ def run(
                 deduped, all_corporations_graph_uri, f, stats=stream_stats
             )
 
-        batch_results = validate.validate_stream(all_corporations_nq_path, SHAPES_DIR)
+        batch_results = validate.validate_stream(
+            all_corporations_nq_path, SHAPES_DIR, Path(settings.quarantine_dir)
+        )
         corporations_all = stream_stats.entities
         corporations_all_dedup_removed = stream_stats.dedup_removed
-        corporations_all_quarantined = sum(1 for r in batch_results if not r.conforms)
+        failing_batches = [r for r in batch_results if not r.conforms]
+        corporations_all_quarantined = len(failing_batches)
+        if failing_batches:
+            # batch_indexの読み手その1(もう1つは隔離レポートのファイル名)。
+            # 581万件規模で「どのバッチが」「何件」落ちたかが分からないと、
+            # quarantine_dirを手探りで漁ることになる(B-1/裁定B23)
+            total_violations = sum(r.violation_count for r in failing_batches)
+            print(
+                f"警告: houjin-bangou-allのバッチ検証で"
+                f"{corporations_all_quarantined}バッチが不合格"
+                f"(違反合計{total_violations}件)。"
+                f" バッチ番号: {[r.batch_index for r in failing_batches]}"
+                f" 詳細レポート: {[r.report_path for r in failing_batches]}"
+            )
 
     ds = Dataset(default_union=True)
     _merge(
