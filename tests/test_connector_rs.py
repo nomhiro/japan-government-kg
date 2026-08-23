@@ -283,3 +283,11 @@ def test_every_group_filename_is_accounted_for():
     all_groups = set(rs_system.RS_GROUP_FILENAMES.keys())
     accounted = set(rs_columns.RS_FILES.keys()) | set(rs_columns.RS_UNVERIFIED_GROUPS)
     assert all_groups == accounted
+
+
+def test_column_layout_error_matches_organization_pys_base_class():
+    """レビュー指摘6: organization.pyのColumnLayoutErrorと同じ基底クラス
+    (ValueError)であること。docstringが「同じ考え方」と書いているのに
+    実装がRuntimeErrorだった食い違いを、型として固定する。
+    """
+    assert issubclass(rs_columns.ColumnLayoutError, ValueError)

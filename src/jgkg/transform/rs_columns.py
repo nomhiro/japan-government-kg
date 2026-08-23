@@ -108,14 +108,15 @@ project_id=4の行を引用に使う):
 from dataclasses import dataclass, field
 
 
-class ColumnLayoutError(RuntimeError):
+class ColumnLayoutError(ValueError):
     """実データのヘッダが照合記録(full_header)と一致しない。
 
     列がずれた・RS側の配布フォーマットが変わったことを示す。organization.py の
-    ColumnLayoutError と同じ考え方(円環の外の守衛): fixtureがCOLから逆算されて
-    いても、実データに対する検査であれば検出できる。RSにはヘッダ行があるため、
-    列数の一致だけでなく**ヘッダ文字列そのものの一致**まで検査できる
-    (zenken全件データにはヘッダが無く、列数と値の形でしか検査できなかった)。
+    ColumnLayoutError(`src/jgkg/transform/organization.py`、ValueErrorを継承)
+    と同じ考え方(円環の外の守衛)・**同じ基底クラス**にしている: fixtureがCOL
+    から逆算されていても、実データに対する検査であれば検出できる。RSにはヘッダ
+    行があるため、列数の一致だけでなく**ヘッダ文字列そのものの一致**まで検査
+    できる(zenken全件データにはヘッダが無く、列数と値の形でしか検査できなかった)。
     """
 
 
