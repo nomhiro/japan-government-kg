@@ -148,18 +148,53 @@ def test_fetch_group_raises_on_soft_404_html_response():
     assert lake.list_snapshots(rs_system.SOURCE_ID) == []
 
 
-def test_url_for_matches_the_url_verified_against_the_real_network():
-    """2026-08-23 に実際に rssystem.go.jp へHEAD/GETして確認した実URLと一致すること。
-
-    url_for() は urllib.parse.quote で組み立てる。この値がずれれば
-    (例: quoteの safe引数やUnicode正規化が変わった場合)、実サーバーには
-    通らないのに単体テストは気付かない。実測URLをここに固定して照合する。
-    """
-    assert rs_system.url_for("organization_information", 2025) == (
+# 2026-08-23 に実際に rssystem.go.jp へGETして200 OK(application/zip)を
+# 確認した実URL(5本すべて。task-6-report.md「叩いたURL」参照)。
+# レビュー指摘7: 以前はorganization_informationの1本だけを固定していたため、
+# 残り4本のファイル名テンプレートに将来誤字が入っても検知できなかった
+VERIFIED_URLS: dict[str, str] = {
+    "organization_information": (
         "https://rssystem.go.jp/files/2025/rs/"
         "1-1_RS_2025_%E5%9F%BA%E6%9C%AC%E6%83%85%E5%A0%B1_"
         "%E7%B5%84%E7%B9%94%E6%83%85%E5%A0%B1.zip"
+    ),
+    "project_summary": (
+        "https://rssystem.go.jp/files/2025/rs/"
+        "1-2_RS_2025_%E5%9F%BA%E6%9C%AC%E6%83%85%E5%A0%B1_"
+        "%E4%BA%8B%E6%A5%AD%E6%A6%82%E8%A6%81%E7%AD%89.zip"
+    ),
+    "policy_measure_laws_and_regulations": (
+        "https://rssystem.go.jp/files/2025/rs/"
+        "1-3_RS_2025_%E5%9F%BA%E6%9C%AC%E6%83%85%E5%A0%B1_"
+        "%E6%94%BF%E7%AD%96%E3%83%BB%E6%96%BD%E7%AD%96%E3%80%81%E6%B3%95%E4%BB%A4%E7%AD%89.zip"
+    ),
+    "budget_summary": (
+        "https://rssystem.go.jp/files/2025/rs/"
+        "2-1_RS_2025_%E4%BA%88%E7%AE%97%E3%83%BB%E5%9F%B7%E8%A1%8C_"
+        "%E3%82%B5%E3%83%9E%E3%83%AA.zip"
+    ),
+    "payee_payment_information": (
+        "https://rssystem.go.jp/files/2025/rs/"
+        "5-1_RS_2025_%E6%94%AF%E5%87%BA%E5%85%88_"
+        "%E6%94%AF%E5%87%BA%E6%83%85%E5%A0%B1.zip"
+    ),
+}
+
+
+def test_url_for_matches_the_url_verified_against_the_real_network():
+    """2026-08-23 に実際に rssystem.go.jp へGETして確認した実URLと一致すること。
+
+    url_for() は urllib.parse.quote で組み立てる。この値がずれれば
+    (例: quoteの safe引数やUnicode正規化が変わった場合)、実サーバーには
+    通らないのに単体テストは気付かない。**FETCHED_GROUPS(実取得済みの5本)
+    すべてを固定する**(レビュー指摘7。以前はorganization_informationの
+    1本だけだった)。
+    """
+    assert set(VERIFIED_URLS.keys()) == set(rs_system.FETCHED_GROUPS), (
+        "VERIFIED_URLSがFETCHED_GROUPSと1対1で対応していない"
     )
+    for group, expected_url in VERIFIED_URLS.items():
+        assert rs_system.url_for(group, 2025) == expected_url, group
 
 
 # ============================================================
