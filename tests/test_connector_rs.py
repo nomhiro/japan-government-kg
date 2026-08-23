@@ -50,6 +50,14 @@ def _header_of(sample_bytes: bytes) -> list[str]:
 
 PAYEE_SAMPLE = (FIXTURES / "rs_sample.csv").read_bytes()
 LAW_SAMPLE = (FIXTURES / "rs_law_sample.csv").read_bytes()
+BUDGET_SAMPLE = (FIXTURES / "rs_budget_sample.csv").read_bytes()
+
+
+def _budget_rows_for_project(project_id: str) -> list[list[str]]:
+    reader = csv.reader(io.StringIO(BUDGET_SAMPLE.decode("utf-8-sig")))
+    next(reader)  # header
+    idx_pid = rs_columns.RS_FILES["budget_summary"].col["project_id"]
+    return [row for row in reader if row[idx_pid] == project_id]
 
 
 def _client(handler) -> httpx.Client:
@@ -256,6 +264,52 @@ def test_fixture_law_rows_have_a_basis_law_with_egov_style_law_id():
         # (列がずれた場合に起きる)だけを弾く
         assert law_id.isalnum(), f"law_idが英数字ではない: {law_id!r}"
         assert len(law_id) >= 10, f"law_idが短すぎる: {law_id!r}"
+
+
+def test_find_budget_aggregate_row_picks_the_right_row_for_the_simple_case():
+    """レビュー指摘2: project 828(総務省/消防庁。列5≠6でもある実例)の
+    単純な集計+明細ペアから、集計行だけを正しく拾えること。
+    """
+    rows = _budget_rows_for_project("828")
+    assert len(rows) == 2  # 集計1 + 明細1
+    agg = rs_columns.find_budget_aggregate_row(rows, "2025")
+    spec = rs_columns.RS_FILES["budget_summary"]
+    assert agg[spec.col["budget_amount"]] == "95667000"
+    assert agg[spec.col["ministry_name"]] == "総務省"
+
+
+def test_find_budget_aggregate_row_ignores_multiple_detail_rows():
+    """project 159は明細行が2件(特別会計の勘定が2つに分かれる)あるが、
+    集計行は例外なく1件に絞れること。
+    """
+    rows = _budget_rows_for_project("159")
+    assert len(rows) == 3  # 集計1 + 明細2
+    agg = rs_columns.find_budget_aggregate_row(rows, "2023")
+    spec = rs_columns.RS_FILES["budget_summary"]
+    assert agg[spec.col["budget_amount"]] == "10041533000"
+
+
+def test_find_budget_aggregate_row_treats_the_string_zero_as_non_empty():
+    """project 5551はゼロ予算だが、'0'という文字列は空文字ではないので、
+    集計行として正しく拾えること。
+
+    踏みやすい罠は「予算が0なら実質的にデータが無い行と同じ」と誤解し、
+    '0'を明細行の空欄と混同すること(意味的な誤り。Pythonの文字列真偽値
+    としては非空文字列は常にTruthyなので、`if amount:`という素朴な判定でも
+    偶然正しく動く。危険なのは`amount in ("", "0")`のように**明示的に'0'を
+    「無い」扱いする**実装)。ゼロ予算は実データに実在する正規の値である。
+    """
+    rows = _budget_rows_for_project("5551")
+    agg = rs_columns.find_budget_aggregate_row(rows, "2025")
+    spec = rs_columns.RS_FILES["budget_summary"]
+    assert agg[spec.col["budget_amount"]] == "0"
+
+
+def test_find_budget_aggregate_row_raises_when_the_fiscal_year_is_absent():
+    """指定した予算年度の行が無ければ、空を返さずColumnLayoutErrorにすること。"""
+    rows = _budget_rows_for_project("828")
+    with pytest.raises(rs_columns.ColumnLayoutError):
+        rs_columns.find_budget_aggregate_row(rows, "1999")
 
 
 def test_kensei_jun_matches_ministry_name_1to1_and_agrees_with_the_reference_table():
