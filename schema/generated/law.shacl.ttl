@@ -309,6 +309,13 @@
             sh:nodeKind sh:Literal ;
             sh:order 2 ;
             sh:path <https://jgkg.norr-tech.com/def/org#prefectureName> ],
+        [ sh:datatype xsd:string ;
+            sh:description "国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 0 ;
+            sh:path <https://jgkg.norr-tech.com/def/org#houjinBangou> ;
+            sh:pattern "^[0-9]{13}$" ],
         [ sh:description "このリソースのURI"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
@@ -325,14 +332,7 @@
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 3 ;
-            sh:path <https://jgkg.norr-tech.com/def/org#cityName> ],
-        [ sh:datatype xsd:string ;
-            sh:description "国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 0 ;
-            sh:path <https://jgkg.norr-tech.com/def/org#houjinBangou> ;
-            sh:pattern "^\\d{13}$" ] ;
+            sh:path <https://jgkg.norr-tech.com/def/org#cityName> ] ;
     sh:targetClass <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> .
 
 <https://jgkg.norr-tech.com/def/org#Ministry> a sh:NodeShape ;
@@ -363,6 +363,13 @@
             sh:nodeKind sh:Literal ;
             sh:order 3 ;
             sh:path <https://jgkg.norr-tech.com/def/org#prefectureName> ],
+        [ sh:datatype xsd:string ;
+            sh:description "国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 1 ;
+            sh:path <https://jgkg.norr-tech.com/def/org#houjinBangou> ;
+            sh:pattern "^[0-9]{13}$" ],
         [ sh:description "このリソースのURI"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
@@ -373,14 +380,7 @@
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
-            sh:path <https://jgkg.norr-tech.com/def/org#ministryCode> ],
-        [ sh:datatype xsd:string ;
-            sh:description "国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 1 ;
-            sh:path <https://jgkg.norr-tech.com/def/org#houjinBangou> ;
-            sh:pattern "^\\d{13}$" ] ;
+            sh:path <https://jgkg.norr-tech.com/def/org#ministryCode> ] ;
     sh:targetClass <https://jgkg.norr-tech.com/def/org#Ministry> .
 
 <https://jgkg.norr-tech.com/def/org#Organization> a sh:NodeShape ;
@@ -399,6 +399,13 @@
             sh:nodeKind sh:Literal ;
             sh:order 2 ;
             sh:path <https://jgkg.norr-tech.com/def/org#prefectureName> ],
+        [ sh:datatype xsd:string ;
+            sh:description "国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 0 ;
+            sh:path <https://jgkg.norr-tech.com/def/org#houjinBangou> ;
+            sh:pattern "^[0-9]{13}$" ],
         [ sh:description "このリソースのURI"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
@@ -415,13 +422,6 @@
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 3 ;
-            sh:path <https://jgkg.norr-tech.com/def/org#cityName> ],
-        [ sh:datatype xsd:string ;
-            sh:description "国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 0 ;
-            sh:path <https://jgkg.norr-tech.com/def/org#houjinBangou> ;
-            sh:pattern "^\\d{13}$" ] ;
+            sh:path <https://jgkg.norr-tech.com/def/org#cityName> ] ;
     sh:targetClass <https://jgkg.norr-tech.com/def/org#Organization> .
 

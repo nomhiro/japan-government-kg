@@ -25,7 +25,9 @@ slots:
       1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位
       (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。
       「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する
-    pattern: "^\\d{13}$"
+    # 数字はASCIIに固定する(裁定B22)。全角数字は`\d`にマッチしても
+    # `[0-9]`にはマッチしない — uris.HOUJIN_BANGOU_REと同じ理由
+    pattern: "^[0-9]{13}$"
   organizationKindCode:
     description: 法人番号公表サイトの法人種別コード
   ministryCode:

@@ -55,8 +55,13 @@ EXPECTED_COLUMNS = 30
 MIN_COLUMNS = EXPECTED_COLUMNS
 
 # 法人種別コードは3桁(101 国の機関 / 201 地方公共団体 / 301 株式会社 など)。
-# 列がずれると日付や名称がここに入るので、形の検査が索引のずれを検出する
-KIND_CODE_RE = re.compile(r"^\d{3}$")
+# 列がずれると日付や名称がここに入るので、形の検査が索引のずれを検出する。
+# **数字はASCIIに固定する(裁定B22。HOUJIN_BANGOU_REと同じ理由)。** `\d`は
+# 全角数字にもマッチするため、全角の種別コードを「3桁で妥当」と誤って
+# 数え(rows_valid_kind)てしまう — is_government_organ判定自体はASCII文字列
+# "101"との比較なので誤爆しないが、観測性の数字(rows_valid_kind)が
+# 実態より多く出るのは望ましくない
+KIND_CODE_RE = re.compile(r"^[0-9]{3}$")
 
 # 法人種別コード 101 = 国の機関
 GOVERNMENT_ORGAN_KIND = "101"

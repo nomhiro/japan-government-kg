@@ -28,6 +28,20 @@ def test_org_uri_rejects_malformed_houjin_bangou():
         uris.org_uri("12345")
 
 
+def test_org_uri_rejects_fullwidth_digit_houjin_bangou():
+    """全角数字13桁は拒否すること(裁定B22)。
+
+    Pythonの`\\d`は既定でUnicode対応で全角数字(U+FF10-FF19)にもマッチする。
+    実測: 全角の"９９９９９９９９９９９９９"は`\\d{13}`にマッチしつつ`int()`は
+    ASCII表記("9999999999999")と同じ整数値にパースされる — つまり見た目も
+    符号位置も違う2つの文字列が、dedup_organizationsのキー(`int(houjin_bangou)`)
+    では同一視されてしまう(意図しない衝突)。`[0-9]`はASCII専用にする。
+    """
+    fullwidth = "９" * 13  # "9999999999999" の全角表記
+    with pytest.raises(ValueError, match="13桁の数字"):
+        uris.org_uri(fullwidth)
+
+
 def test_law_uri_and_version_uri():
     assert uris.law_uri("507M60000100010") == f"{TEST_BASE}/id/law/507M60000100010"
     assert uris.law_version_uri("507M60000100010", datetime.date(2026, 8, 1)) == (

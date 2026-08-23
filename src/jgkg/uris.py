@@ -5,7 +5,13 @@ from urllib.parse import quote
 
 from jgkg.config import get_settings
 
-HOUJIN_BANGOU_RE = re.compile(r"^\d{13}$")
+# **数字はASCIIに固定する(裁定B22)。** Pythonの`\d`は既定でUnicode対応で、
+# 全角数字(U+FF10-FF19)にもマッチする。実測: 全角の"１２３４５６７８９０１２３"は
+# `\d{13}`にマッチしつつ`int()`はASCII版と同じ整数値にパースされる —
+# つまり見た目も符号位置も違う2つの文字列が、dedup_organizationsのキー
+# (`int(houjin_bangou)`)では同一視されてしまう(意図しない衝突)。
+# `[0-9]`はASCII専用なので、この経路を数字レベルで閉じる
+HOUJIN_BANGOU_RE = re.compile(r"^[0-9]{13}$")
 
 
 def _base() -> str:

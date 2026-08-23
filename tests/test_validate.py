@@ -548,6 +548,29 @@ def test_malformed_houjin_bangou_fails_validation():
     assert failing, "不正な法人番号が検証を通ってしまった"
 
 
+def test_fullwidth_digit_houjin_bangou_fails_shacl_validation():
+    """全角数字13桁のhoujinBangouもSHACLで不合格になること(裁定B22)。
+
+    再生成前(pattern: "^\\d{13}$")では全角数字も`\\d`にマッチしてしまい、
+    このデータはSHACL単体では**合格していた**(実測で確認済みの退行 —
+    このテストは壊れた状態の鏡像: `schema/org.yaml`のpatternを`[0-9]`に
+    固定し再生成した後でなければ、このテストはfailingが空のまま落ちる)。
+    """
+    ds = emit.emit_organizations([_valid_org()], "houjin-bangou", DAY)
+    gid = URIRef("https://jgkg.norr-tech.com/graph/houjin-bangou/2026-08-01")
+    g = ds.graph(gid)
+    bad = URIRef("https://jgkg.norr-tech.com/id/org/9999999999999")
+    ns = emit.NS["org"]
+    g.add((bad, RDF.type, ns["Organization"]))
+    # "9999999999999" の全角表記。桁数は13桁で見た目は数字だが、ASCII固定の
+    # `[0-9]{13}$`にはマッチしない
+    g.add((bad, ns["houjinBangou"], Literal("９９９９９９９９９９９９９")))
+
+    results = validate.validate_dataset(ds, SHAPES)
+    failing = [r for r in results if not r.conforms]
+    assert failing, "全角数字の法人番号がSHACL検証を通ってしまった(patternのASCII固定が効いていない)"
+
+
 def test_quarantine_writes_failing_graphs(tmp_path):
     ds = Dataset()
     gid = URIRef("https://jgkg.norr-tech.com/graph/broken/2026-08-01")

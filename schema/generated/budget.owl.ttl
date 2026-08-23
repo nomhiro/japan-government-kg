@@ -573,7 +573,7 @@ skos:prefLabel a owl:DatatypeProperty ;
     rdfs:label "houjinBangou" ;
     rdfs:range [ a rdfs:Datatype ;
             owl:onDatatype xsd:string ;
-            owl:withRestrictions ( [ xsd:pattern "^\\d{13}$" ] ) ] ;
+            owl:withRestrictions ( [ xsd:pattern "^[0-9]{13}$" ] ) ] ;
     skos:definition "国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
@@ -599,6 +599,11 @@ skos:prefLabel a owl:DatatypeProperty ;
             owl:minCardinality 0 ;
             owl:onProperty <https://jgkg.norr-tech.com/def/org#cityName> ],
         [ a owl:Restriction ;
+            owl:allValuesFrom [ a rdfs:Datatype ;
+                    owl:onDatatype xsd:string ;
+                    owl:withRestrictions ( [ xsd:pattern "^[0-9]{13}$" ] ) ] ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#houjinBangou> ],
+        [ a owl:Restriction ;
             owl:minCardinality 0 ;
             owl:onProperty <https://jgkg.norr-tech.com/def/org#houjinBangou> ],
         [ a owl:Restriction ;
@@ -609,11 +614,6 @@ skos:prefLabel a owl:DatatypeProperty ;
             owl:onProperty <https://jgkg.norr-tech.com/def/org#cityName> ],
         [ a owl:Restriction ;
             owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/org#houjinBangou> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom [ a rdfs:Datatype ;
-                    owl:onDatatype xsd:string ;
-                    owl:withRestrictions ( [ xsd:pattern "^\\d{13}$" ] ) ] ;
             owl:onProperty <https://jgkg.norr-tech.com/def/org#houjinBangou> ],
         [ a owl:Restriction ;
             owl:minCardinality 0 ;

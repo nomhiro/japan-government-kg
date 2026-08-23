@@ -5,6 +5,7 @@ from zenken_rows import zenken_row, zipped
 
 from jgkg.transform.organization import (
     ColumnLayoutError,
+    ParseStats,
     parse_file,
     parse_source,
     parse_text,
@@ -55,6 +56,45 @@ def test_skips_rows_with_invalid_houjin_bangou():
 
     orgs = list(parse_text(good * 3 + bad))
     assert [o.houjin_bangou for o in orgs] == ["6000012070001"] * 3
+
+
+def test_skips_rows_with_fullwidth_digit_houjin_bangou():
+    """全角数字13桁の法人番号は取り込まないこと(裁定B22)。
+
+    Pythonの`\\d`は既定でUnicode対応で全角数字にもマッチするため、
+    ASCII固定前は「桁数だけ13桁」の全角文字列を受理してしまい、
+    `dedup_organizations`のint化キー(`int(houjin_bangou)`)がASCII表記の
+    同じ数字と同一視してしまう恐れがあった(意図しない名寄せ・衝突)。
+    良い行を複数含めて、行単位の棄却であることを確認する
+    (test_skips_rows_with_invalid_houjin_bangouと同じ作法)。
+    """
+    good = zenken_row()
+    fullwidth_bangou = "９" * 13  # "9999999999999" の全角表記
+    bad = zenken_row(houjin_bangou=fullwidth_bangou, name="全角の法人番号", seq="2")
+
+    stats = ParseStats()
+    orgs = list(parse_text(good * 3 + bad, stats=stats))
+    assert [o.houjin_bangou for o in orgs] == ["6000012070001"] * 3
+    assert stats.rows_rejected == 1, "全角数字の法人番号が取り込まれてしまった"
+
+
+def test_fullwidth_kind_code_is_not_counted_as_valid():
+    """全角の法人種別コードは`rows_valid_kind`に数えないこと(裁定B22)。
+
+    法人番号が正しく13桁ASCIIならこの行自体は取り込まれる
+    (`is_government_organ`判定はASCII文字列"101"との比較なので誤爆しない)が、
+    観測性の数字(`rows_valid_kind`)が実態より多く出てはならない。
+    """
+    fullwidth_kind = "１０１"  # "101" の全角表記
+    good = zenken_row()
+    fullwidth = zenken_row(kind=fullwidth_kind, seq="2")
+
+    stats = ParseStats()
+    orgs = list(parse_text(good * 4 + fullwidth * 4, stats=stats))
+    assert len(orgs) == 8, "法人番号は正しいので取り込み自体は行われるはず"
+    assert stats.rows_valid_kind == 4, (
+        "全角の法人種別コードがrows_valid_kindに数えられてしまっている"
+    )
 
 
 def test_wrong_column_layout_raises_instead_of_yielding_nothing():

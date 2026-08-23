@@ -218,7 +218,7 @@ class Organization(Agent):
 
     @field_validator('houjinBangou')
     def pattern_houjinBangou(cls, v):
-        pattern=re.compile(r"^\d{13}$")
+        pattern=re.compile(r"^[0-9]{13}$")
         if isinstance(v, list):
             for element in v:
                 if isinstance(element, str) and not pattern.match(element):
@@ -245,7 +245,7 @@ class GovernmentOrgan(Organization):
 
     @field_validator('houjinBangou')
     def pattern_houjinBangou(cls, v):
-        pattern=re.compile(r"^\d{13}$")
+        pattern=re.compile(r"^[0-9]{13}$")
         if isinstance(v, list):
             for element in v:
                 if isinstance(element, str) and not pattern.match(element):
@@ -273,7 +273,7 @@ class Ministry(GovernmentOrgan):
 
     @field_validator('houjinBangou')
     def pattern_houjinBangou(cls, v):
-        pattern=re.compile(r"^\d{13}$")
+        pattern=re.compile(r"^[0-9]{13}$")
         if isinstance(v, list):
             for element in v:
                 if isinstance(element, str) and not pattern.match(element):
