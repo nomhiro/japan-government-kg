@@ -1,0 +1,323 @@
+"""Phase 1(計画B) CQ1〜CQ10 用の合成データセット構築ヘルパー。
+
+`tests/zenken_rows.py` と同じ位置づけ(pytestに依存しない、素の構築関数の集合)。
+`test_competency_questions_phase1.py` がpytestフィクスチャの中からここを呼ぶ。
+
+**実在の値(R45。org/law/budget各yamlのdocstring・task-9-brief.md Interfaces節
+「実在の府省令のlaw_id/law_num、実在の府省の法人番号」を満たす)**:
+
+- 厚生労働省(現行府省。houjin_bangou=6000012070001)。
+  `tests/fixtures/houjin_bangou_sample.csv`・`tests/zenken_rows.py`・
+  P0のCQテスト(`test_cq_p0_01_organization_lookup`)と同じ値。
+- KOUSEIROUDOU_LAW_ID/KOUSEIROUDOU_LAW_NUM: 2026-08-24、レイクの実データ
+  `data/lake/rs-system/2026-08-23/1-3_RS_2025_基本情報_政策・施策、法令等.zip`
+  ([20]法令番号・[21]法令ID)を実際に全走査し、`law.extract_ministry_names`が
+  返す名称が現行のdata/reference/ministry-codes.csv(40件)に一致する行を
+  検索して見つけた。RS project_id=1953(政策所管府省庁=厚生労働省)が引用する
+  組。**実在のRS引用に現れる法令ID・法令番号そのもの**であり、以前のタスク
+  (test_transform_law.py等)が使っていた`323M60000100010`は法令番号
+  (令和七年厚生労働省令第十号。ブリーフ引用)こそ実在確認済みだが、その
+  law_id(e-GovのID)自体は実データでの裏付けが無かった(egov-lawはレイクに
+  実データが無く、Task 4がネットワーク無しで構成した値である疑いが残る)。
+  今回はlaw_id・law_num・所管府省の組そのものが実データ引用に現れる、
+  より強い根拠を持つ値に置き換える。
+- OLD_KOUSEISHO_LAW_ID/OLD_KOUSEISHO_LAW_NUM: 同じ走査で見つけた、旧省庁
+  (厚生省。2001年の中央省庁再編で廃止、data/reference/old-ministries.csv記載)
+  を指す組。RS project_id=1735(政策所管府省庁=厚生労働省。廃止された前身の
+  厚生省令を今も根拠法令として引用している)。
+- WOLFSTYLE_BANGOU/WOLFSTYLE_NAME: rs_columns.py照合記録・task-7の
+  test_rdf_emit.py/test_transform_rs.pyが引用する実在のRS支出先
+  (project_id=1、内閣人事局経費)と同じ値。所在地もrs_columns.py引用の実測値
+  (東京都中央区築地１丁目９番１１号)をそのまま使う。
+
+**架空の値(R45: 明らかに合成と分かる形式にする)**: budget事業のproject_id
+(`999901`〜`999903`。RSの実在project_idは最大5,794件程度で4桁までしか
+観測されていないため、6桁・`9999`始まりは実データと衝突しない)。
+事業名・法人番号(`1000000000001`/`1000000000002`。tests/test_transform_rs.py
+の既存の合成パターンと同型)・改正版(架空。法令(Law)自体は実在するが、
+版(LawRevision)の施行日・番号はテスト用に作った)。
+"""
+import datetime
+from pathlib import Path
+
+from rdflib import RDF, XSD, Dataset, Literal, URIRef
+from zenken_rows import zipped
+
+from jgkg import lake
+from jgkg.connectors import houjin_bangou
+from jgkg.rdf import emit
+from jgkg.transform import rs
+from jgkg.transform.law import JurisdictionResult, LawRecord, Revision, UnresolvedJurisdiction
+from jgkg.transform.ministry import Ministry
+from jgkg.transform.organization import Organization
+
+DAY = datetime.date(2026, 8, 1)
+
+# --- 実在の値(モジュールdocstring参照) -------------------------------------
+KOUSEIROUDOU_BANGOU = "6000012070001"
+KOUSEIROUDOU_LAW_ID = "417M60000100021"
+KOUSEIROUDOU_LAW_NUM = "平成十七年厚生労働省令第二十一号"
+# 実データの照合記録に無い(RSは法令の題名・公布日を持たない)。年(平成十七年
+# =2005年)だけが法令番号から確定しており、月日は未確認のプレースホルダ
+KOUSEIROUDOU_PROMULGATION_DATE = "2005-01-01"
+
+OLD_KOUSEISHO_LAW_ID = "327M50000100010"
+OLD_KOUSEISHO_LAW_NUM = "昭和二十七年厚生省令第十号"
+OLD_KOUSEISHO_NAME = "厚生省"
+# 昭和二十七年=1952年。KOUSEIROUDOU_PROMULGATION_DATEと同じ理由でプレースホルダ
+OLD_KOUSEISHO_PROMULGATION_DATE = "1952-01-01"
+
+WOLFSTYLE_BANGOU = "3010001137944"
+WOLFSTYLE_NAME = "株式会社ウルフスタイル"
+
+# --- 架空だが明らかに合成と分かる値 ------------------------------------------
+PROJECT_CORE = "999901"  # 厚生労働省・FY2025・basisLaw有・支出3件(解決1/未解決1/束ね1)+sentinel1件
+PROJECT_MULTI_YEAR = "999902"  # 厚生労働省・FY2024・WOLFSTYLEへの2件目の支出(CQ3の年度別確認用)
+PROJECT_ROLE_DEMO = "999903"  # B20実演用。役割による二重計上を最小構成で示す
+
+ROGUE_REVISION_URI = URIRef(
+    "https://jgkg.norr-tech.com/id/law/TEST-ROGUE-REVISION-NO-LAWID"
+)
+"""law:lawIdを持たない`law:LawRevision`(Task 2レビュー申し送りの正のコントロール)。
+
+`emit_laws`は常に親Lawのlaw_idをコピーするため、この状態は本番コードパスでは
+作れない(schemaがminCardinality 0で許容している状態を、意図的に手で作る)。
+CQ8がlawIdでの絞り込みを外すと、この版が誤って「最新版」に選ばれる日付
+(2022-06-01。KOUSEIROUDOU_LAW_IDの2版の間)にしている。
+"""
+ROGUE_REVISION_DATE = datetime.date(2022, 6, 1)
+
+
+def _merge_into(target: Dataset, source: Dataset) -> None:
+    """複数の`emit_*`が返す`Dataset`を1つに合流する(test_validate.pyと同じ形)。"""
+    for ctx in source.graphs():
+        if len(ctx) == 0:
+            continue
+        g = target.graph(ctx.identifier)
+        for triple in ctx:
+            g.add(triple)
+
+
+def _wolfstyle_organization() -> Organization:
+    return Organization(
+        uri=f"https://jgkg.norr-tech.com/id/org/{WOLFSTYLE_BANGOU}",
+        houjin_bangou=WOLFSTYLE_BANGOU,
+        name=WOLFSTYLE_NAME,
+        kind_code="301",
+        prefecture="東京都",
+        city="中央区",
+        street="築地１丁目９番１１号",
+        is_government_organ=False,
+    )
+
+
+def _law_records_and_jurisdictions() -> tuple[list[LawRecord], dict[str, JurisdictionResult]]:
+    current = LawRecord(
+        law_id=KOUSEIROUDOU_LAW_ID,
+        law_num=KOUSEIROUDOU_LAW_NUM,
+        law_num_type="MinisterialOrdinance",
+        law_type="MinisterialOrdinance",
+        law_title="架空の題名(厚生労働省令。RS実データはlaw_id/law_numのみで題名を持たない)",
+        abbrev=[],
+        promulgation_date=KOUSEIROUDOU_PROMULGATION_DATE,
+        repeal_status="None",
+        revisions=[
+            # 改正2版(ブリーフStep1)。日付以外は架空(RS/e-Govいずれも改正履歴の
+            # 実データをこのタスクは持たない)
+            Revision(
+                amendment_law_num="令和二年厚生労働省令第一号",
+                amendment_enforcement_date="2020-04-01",
+                revision_status="Enforced",
+            ),
+            Revision(
+                amendment_law_num="令和六年厚生労働省令第一号",
+                amendment_enforcement_date="2024-04-01",
+                revision_status="Enforced",
+            ),
+        ],
+    )
+    old = LawRecord(
+        law_id=OLD_KOUSEISHO_LAW_ID,
+        law_num=OLD_KOUSEISHO_LAW_NUM,
+        law_num_type="MinisterialOrdinance",
+        law_type="MinisterialOrdinance",
+        law_title="架空の題名(厚生省令)",
+        abbrev=[],
+        promulgation_date=OLD_KOUSEISHO_PROMULGATION_DATE,
+        repeal_status="None",
+        revisions=[],
+    )
+    jurisdictions = {
+        KOUSEIROUDOU_LAW_ID: JurisdictionResult(
+            law_id=KOUSEIROUDOU_LAW_ID,
+            ministry_names=["厚生労働省"],
+            resolved=[KOUSEIROUDOU_BANGOU],
+            unresolved=[],
+        ),
+        OLD_KOUSEISHO_LAW_ID: JurisdictionResult(
+            law_id=OLD_KOUSEISHO_LAW_ID,
+            ministry_names=[OLD_KOUSEISHO_NAME],
+            resolved=[],
+            unresolved=[
+                UnresolvedJurisdiction(name=OLD_KOUSEISHO_NAME, reason="OLD_MINISTRY"),
+            ],
+        ),
+    }
+    return [current, old], jurisdictions
+
+
+def build_budget_result() -> rs.BuildResult:
+    """budget側(3事業・7支出)を本番の`rs.build_projects`経由で組み立てる。
+
+    手組みの`ExpenditureRecord`を直接作らない(advisorレビュー指摘)。センチネル・
+    束ね・未解決の分類が実際に本番コードパス(`resolve_recipient`)を通ることを
+    CQ6の前提にする — Task 7の`BuildStats`計数とCQ6の4分類が食い違えば、
+    どちらかが壊れている証拠になる。
+    """
+    ministry_ref = {
+        "厚生労働省": [
+            Ministry(
+                uri=f"https://jgkg.norr-tech.com/id/org/{KOUSEIROUDOU_BANGOU}",
+                houjin_bangou=KOUSEIROUDOU_BANGOU,
+                name="厚生労働省",
+            )
+        ]
+    }
+    laws_by_id = {
+        OLD_KOUSEISHO_LAW_ID: LawRecord(
+            law_id=OLD_KOUSEISHO_LAW_ID,
+            law_num=OLD_KOUSEISHO_LAW_NUM,
+            law_num_type="MinisterialOrdinance",
+            law_type="MinisterialOrdinance",
+            law_title="架空の題名(厚生省令)",
+            abbrev=[],
+            promulgation_date=OLD_KOUSEISHO_PROMULGATION_DATE,
+            repeal_status="None",
+            revisions=[],
+        )
+    }
+
+    rows = [
+        # PROJECT_CORE: 解決1(WOLFSTYLE・実在)/未解決1(NO_CANDIDATE)/束ね1/
+        # センチネル1。basisLaw=OLD_KOUSEISHO_LAW_ID(CQ4が「府省→jurisdiction」
+        # 経路と「事業→basisLaw」経路を取り違えていないかを分けるための、
+        # 意図的に異なる法令。advisorレビュー指摘3)
+        rs.RsRow(
+            project_id=PROJECT_CORE,
+            fiscal_year="2025",
+            project_name="(架空)地域医療体制強化推進事業",
+            ministry_name="厚生労働省",
+            budget_amount=100_000_000,
+            basis_law_citations=(
+                rs.BasisLawCitation(law_id=OLD_KOUSEISHO_LAW_ID, law_title=None),
+            ),
+            expenditures=(
+                # 実在の金額そのもの(rs_columns.py引用: project_id=1・
+                # ブロックA・株式会社ウルフスタイル=3,025,000円)
+                rs.ExpenditureLine(
+                    recipient_name=WOLFSTYLE_NAME, recipient_houjin_bangou=WOLFSTYLE_BANGOU,
+                    is_bundled=False, amount=3_025_000, role="",
+                ),
+                rs.ExpenditureLine(
+                    recipient_name="存在しない株式会社", recipient_houjin_bangou=None,
+                    is_bundled=False, amount=500_000, role="",
+                ),
+                rs.ExpenditureLine(
+                    recipient_name="その他", recipient_houjin_bangou=None,
+                    is_bundled=True, amount=200_000, role="",
+                ),
+                rs.ExpenditureLine(
+                    recipient_name="個人Ａ", recipient_houjin_bangou="9999999999999",
+                    is_bundled=False, amount=100_000, role="",
+                ),
+            ),
+        ),
+        # PROJECT_MULTI_YEAR: WOLFSTYLEへの2件目の支出(別事業・別年度)。
+        # CQ3「年度別に並べられるか」の正のコントロール(2行以上で初めて
+        # 並べる意味が出る)
+        rs.RsRow(
+            project_id=PROJECT_MULTI_YEAR,
+            fiscal_year="2024",
+            project_name="(架空)医療従事者確保対策事業",
+            ministry_name="厚生労働省",
+            budget_amount=50_000_000,
+            basis_law_citations=(),
+            expenditures=(
+                rs.ExpenditureLine(
+                    recipient_name=WOLFSTYLE_NAME, recipient_houjin_bangou=WOLFSTYLE_BANGOU,
+                    is_bundled=False, amount=2_000_000, role="",
+                ),
+            ),
+        ),
+        # PROJECT_ROLE_DEMO: B20実演。素朴なΣ(amount_jpy)=2,000,000だが、
+        # 「間接補助事業者」ブロックは一次受給者ブロックが受けた同じ資金の
+        # 通過金である(task-7-review.md指摘8と同じ構造の最小再現)。
+        # 実データでこの2値だけの除外が245事業を解消しないことは別途検証済み
+        # (task-9-report.md参照)なので、ここは「roleがqueryableであること」
+        # と「素朴なΣが二重計上すること」の実演に用途を絞る
+        rs.RsRow(
+            project_id=PROJECT_ROLE_DEMO,
+            fiscal_year="2025",
+            project_name="(架空)役割二重計上デモ事業",
+            ministry_name="厚生労働省",
+            budget_amount=10_000_000,
+            basis_law_citations=(),
+            expenditures=(
+                rs.ExpenditureLine(
+                    recipient_name="デモ一次受給者株式会社", recipient_houjin_bangou="1000000000001",
+                    is_bundled=False, amount=1_000_000, role="",
+                ),
+                rs.ExpenditureLine(
+                    recipient_name="デモ間接補助事業者株式会社", recipient_houjin_bangou="1000000000002",
+                    is_bundled=False, amount=1_000_000, role="間接補助事業者",
+                ),
+            ),
+        ),
+    ]
+
+    return rs.build_projects(rows, ministry_ref, laws_by_id, laws_by_title={})
+
+
+def build_dataset(out_dir: Path) -> Dataset:
+    """org(pipeline.run経由)+ law/budget(emit_*直呼び。Task 11がまだpipeline.py
+    に結線していないため)を1つのDatasetに合流する。
+
+    呼び出し側が先に`JGKG_BASE_URI`/`JGKG_LAKE_DIR`/`JGKG_QUARANTINE_DIR`を
+    monkeypatchしていること(test_competency_questions.pyのtmp_envと同じ)。
+    """
+    from jgkg import pipeline
+
+    content = Path("tests/fixtures/houjin_bangou_sample.csv").read_text(encoding="utf-8")
+    lake.save("houjin-bangou", DAY, houjin_bangou.FILENAME, zipped(content))
+    report = pipeline.run({"houjin-bangou": DAY}, out_dir)
+    assert report.graphs_quarantined == 0, "org側のfixtureがSHACL検証で隔離された"
+
+    ds = Dataset(default_union=True)
+    ds.parse(out_dir / "kg.nq", format="nquads")
+
+    _merge_into(ds, emit.emit_organizations([_wolfstyle_organization()], "houjin-bangou", DAY))
+
+    records, jurisdictions = _law_records_and_jurisdictions()
+    _merge_into(ds, emit.emit_laws(records, jurisdictions, "egov-law", DAY))
+
+    # 正のコントロール: lawIdを持たないLawRevision(Task 2レビュー申し送り)。
+    # emit_lawsは常にlawIdを書くため本番コードパスでは作れず、ここで直接注入する
+    law_ns = emit.NS["law"]
+    egov_graph = ds.graph(URIRef(f"https://jgkg.norr-tech.com/graph/egov-law/{DAY.isoformat()}"))
+    egov_graph.add((ROGUE_REVISION_URI, RDF.type, law_ns["LawRevision"]))
+    egov_graph.add((
+        ROGUE_REVISION_URI, law_ns["amendmentEnforcementDate"],
+        Literal(ROGUE_REVISION_DATE, datatype=XSD.date),
+    ))
+    egov_graph.add((ROGUE_REVISION_URI, law_ns["revisionStatus"], Literal("Enforced")))
+
+    budget_result = build_budget_result()
+    _merge_into(
+        ds,
+        emit.emit_budget(
+            budget_result.projects, budget_result.expenditures, budget_result.unresolved,
+            "rs-system", DAY,
+        ),
+    )
+
+    return ds
