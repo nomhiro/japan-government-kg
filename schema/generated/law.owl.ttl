@@ -162,7 +162,7 @@
             owl:maxCardinality 1 ;
             owl:onProperty <https://jgkg.norr-tech.com/def/org#ministryCode> ],
         <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> ;
-    skos:definition "府省。府省コードで識別できる国の機関"@ja ;
+    skos:definition "府省。RS(行政事業レビューシステム)実データの所管府省庁名等で識別する 国の機関(裁定B12。名称が主キーで、府省コードは分かる場合のみ持つ)"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
 <https://jgkg.norr-tech.com/def/core#Concept> a owl:Class ;
@@ -463,7 +463,7 @@ skos:prefLabel a owl:DatatypeProperty ;
 
 <https://jgkg.norr-tech.com/def/org#ministryCode> a owl:DatatypeProperty ;
     rdfs:label "ministryCode" ;
-    skos:definition "GIFコードリストの府省コード"@ja ;
+    skos:definition "府省コード。分かる場合にのみ持つ任意の識別子プロパティ(裁定B12)。 現行の全府省を安定して網羅するコード出典が見つかっておらず、 Ministryの主キーは名称(skos:prefLabel)である"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
 <https://jgkg.norr-tech.com/def/org#organizationKindCode> a owl:DatatypeProperty ;

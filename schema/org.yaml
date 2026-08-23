@@ -29,7 +29,11 @@ slots:
   organizationKindCode:
     description: 法人番号公表サイトの法人種別コード
   ministryCode:
-    description: GIFコードリストの府省コード
+    description: >-
+      府省コード。分かる場合にのみ持つ任意の識別子プロパティ(裁定B12)。
+      現行の全府省を安定して網羅するコード出典が見つかっておらず、
+      Ministryの主キーは名称(skos:prefLabel)である
+    required: false
   prefectureName:
     description: 所在地の都道府県名
     range: LangString
@@ -50,5 +54,7 @@ classes:
 
   Ministry:
     is_a: GovernmentOrgan
-    description: 府省。府省コードで識別できる国の機関
+    description: >-
+      府省。RS(行政事業レビューシステム)実データの所管府省庁名等で識別する
+      国の機関(裁定B12。名称が主キーで、府省コードは分かる場合のみ持つ)
     slots: [ministryCode]

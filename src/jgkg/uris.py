@@ -53,6 +53,20 @@ def unresolved_jurisdiction_uri(law_id: str, name: str) -> str:
     return f"{_base()}/id/unresolved/jurisdiction/{quote(law_id, safe='')}/{quote(name, safe='')}"
 
 
+def unresolved_ministry_uri(name: str) -> str:
+    """府省参照表(名称主キー、裁定B12)で突合できなかった行の
+    `core:UnresolvedReference` ノードのURI。
+
+    `unresolved_jurisdiction_uri` と違い、鍵は `name` 単独でよい。参照表の
+    1行=1つの「解決できるはずの府省」であり、同じ行が複数の法令から指される
+    経路1(法令→府省)のような「件数が潰れる」問題が起こらないため
+    (裁定B12: 未解決府省URIの鍵を ministry_code から名称(percent-encode)へ変更)
+    """
+    if not name:
+        raise ValueError("name が空である")
+    return f"{_base()}/id/unresolved/ministry/{quote(name, safe='')}"
+
+
 def graph_uri(source_id: str, fetched_on: datetime.date) -> str:
     if not source_id:
         raise ValueError("ソースIDが空である")

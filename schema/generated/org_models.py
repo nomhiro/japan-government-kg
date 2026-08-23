@@ -259,11 +259,11 @@ class GovernmentOrgan(Organization):
 
 class Ministry(GovernmentOrgan):
     """
-    府省。府省コードで識別できる国の機関
+    府省。RS(行政事業レビューシステム)実データの所管府省庁名等で識別する 国の機関(裁定B12。名称が主キーで、府省コードは分かる場合のみ持つ)
     """
     linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/org'})
 
-    ministryCode: Optional[str] = Field(default=None, description="""GIFコードリストの府省コード""", json_schema_extra = { "linkml_meta": {'domain_of': ['Ministry']} })
+    ministryCode: Optional[str] = Field(default=None, description="""府省コード。分かる場合にのみ持つ任意の識別子プロパティ(裁定B12)。 現行の全府省を安定して網羅するコード出典が見つかっておらず、 Ministryの主キーは名称(skos:prefLabel)である""", json_schema_extra = { "linkml_meta": {'domain_of': ['Ministry']} })
     houjinBangou: Optional[str] = Field(default=None, description="""国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
     organizationKindCode: Optional[str] = Field(default=None, description="""法人番号公表サイトの法人種別コード""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
     prefectureName: Optional[str] = Field(default=None, description="""所在地の都道府県名""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })

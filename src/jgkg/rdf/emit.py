@@ -15,7 +15,14 @@ from jgkg.rdf.provenance import provenance_graph
 from jgkg.transform.law import JurisdictionResult, LawRecord
 from jgkg.transform.ministry import Ministry, UnmatchedMinistry
 from jgkg.transform.organization import Organization
-from jgkg.uris import graph_uri, law_uri, law_version_uri, org_uri, unresolved_jurisdiction_uri
+from jgkg.uris import (
+    graph_uri,
+    law_uri,
+    law_version_uri,
+    org_uri,
+    unresolved_jurisdiction_uri,
+    unresolved_ministry_uri,
+)
 
 
 def _ns() -> dict[str, Namespace]:
@@ -100,23 +107,30 @@ def emit_ministries(
 ) -> Dataset:
     ns = _ns()
     ds, data = _new_dataset(source_id, fetched_on, sha256, recorded_on)
-    base = get_settings().base_uri
 
     for m in ministries:
         s = URIRef(m.uri)
         data.add((s, RDF.type, ns["org"]["Ministry"]))
-        data.add((s, ns["org"]["ministryCode"], Literal(m.ministry_code)))
+        # ministryCode は現行コードの一次資料が見つかった行だけが持つ(裁定B12)。
+        # 無い行にまで `Literal(None)` を書くと、KGに"None"という文字列リテラルが
+        # 実在してしまう(欠落の表現として最悪の形。SHACLの sh:maxCount 1は
+        # 満たすがCQを読む人間を騙す)
+        if m.ministry_code is not None:
+            data.add((s, ns["org"]["ministryCode"], Literal(m.ministry_code)))
 
     for u in unmatched:
-        s = URIRef(f"{base}/id/unresolved/ministry/{u.ministry_code}")
+        # 未解決府省URIの鍵は名称(裁定B12)。主キーが名称に変わったため、
+        # ministry_code(欠落しうる・任意)ではなく必須の name を鍵にする
+        s = URIRef(unresolved_ministry_uri(u.name))
         data.add((s, RDF.type, ns["core"]["UnresolvedReference"]))
         data.add((s, ns["core"]["unresolved_text"], Literal(u.name, lang="ja")))
         data.add((s, ns["core"]["unresolved_reason"], Literal(u.reason)))
         # ドメイン固有の org:ministryCode ではなく core の汎用キーに入れる。
         # UnresolvedReference は org: のプロパティを宣言しておらず、閉じたシェイプに
         # 違反するため。CQ P0-5 が core:UnresolvedReference を直接問えるよう
-        # サブクラス化はしない(推論なしのFusekiでは上位型が引けない)
-        data.add((s, ns["core"]["unresolved_key"], Literal(u.ministry_code)))
+        # サブクラス化はしない(推論なしのFusekiでは上位型が引けない)。
+        # 値そのものも ministry_code ではなく name にする(鍵と同じ理由)
+        data.add((s, ns["core"]["unresolved_key"], Literal(u.name)))
     return ds
 
 

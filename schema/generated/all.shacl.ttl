@@ -336,7 +336,7 @@
     sh:targetClass <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> .
 
 <https://jgkg.norr-tech.com/def/org#Ministry> a sh:NodeShape ;
-    rdfs:comment "府省。府省コードで識別できる国の機関" ;
+    rdfs:comment "府省。RS(行政事業レビューシステム)実データの所管府省庁名等で識別する 国の機関(裁定B12。名称が主キーで、府省コードは分かる場合のみ持つ)" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
     sh:property [ sh:datatype rdf:langString ;
@@ -369,7 +369,7 @@
             sh:order 5 ;
             sh:path <https://jgkg.norr-tech.com/def/core#id> ],
         [ sh:datatype xsd:string ;
-            sh:description "GIFコードリストの府省コード"@ja ;
+            sh:description "府省コード。分かる場合にのみ持つ任意の識別子プロパティ(裁定B12)。 現行の全府省を安定して網羅するコード出典が見つかっておらず、 Ministryの主キーは名称(skos:prefLabel)である"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;

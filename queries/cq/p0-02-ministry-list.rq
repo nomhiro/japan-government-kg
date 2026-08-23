@@ -1,11 +1,15 @@
-# CQ P0-2: 府省の一覧と、それぞれの法人番号・府省コードは何か
+# CQ P0-2: 府省の一覧と、それぞれの法人番号・(分かる場合は)府省コードは何か
+#
+# 主キーは名称(裁定B12)。ministryCode は現行コードの一次資料が見つかった
+# 府省だけが持つ任意の識別子なので OPTIONAL にし、ORDER BY も ?name にする
+# (?ministryCode でソートすると、値を持たない行の順序が不定になる)
 PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
 PREFIX org:  <https://jgkg.norr-tech.com/def/org#>
 
 SELECT ?ministry ?name ?houjinBangou ?ministryCode WHERE {
   ?ministry a org:Ministry ;
-            org:ministryCode ?ministryCode ;
             org:houjinBangou ?houjinBangou ;
             skos:prefLabel ?name .
+  OPTIONAL { ?ministry org:ministryCode ?ministryCode }
 }
-ORDER BY ?ministryCode
+ORDER BY ?name

@@ -8,7 +8,7 @@ from jgkg.rdf import emit
 from jgkg.transform.law import JurisdictionResult, LawRecord, Revision, UnresolvedJurisdiction
 from jgkg.transform.ministry import Ministry, UnmatchedMinistry
 from jgkg.transform.organization import Organization
-from jgkg.uris import law_version_uri
+from jgkg.uris import law_version_uri, unresolved_ministry_uri
 
 DAY = datetime.date(2026, 8, 1)
 
@@ -81,13 +81,54 @@ def test_unmatched_ministries_are_emitted_not_dropped():
     ds = emit.emit_ministries(
         [Ministry(uri="https://jgkg.norr-tech.com/id/org/6000012070001",
                   houjin_bangou="6000012070001", ministry_code="020", name="厚生労働省")],
-        [UnmatchedMinistry(ministry_code="999", name="存在しない省", reason="NO_CANDIDATE")],
+        [UnmatchedMinistry(name="存在しない省", reason="NO_CANDIDATE")],
         "ministry-codes",
         DAY,
     )
     core = emit.NS["core"]
     unresolved = [s for s in ds.subjects(RDF.type, core["UnresolvedReference"])]
     assert unresolved, "未解決の府省がKGに出力されていない(設計書§8.2)"
+
+
+def test_unmatched_ministry_uri_and_key_are_keyed_by_name():
+    """未解決府省のURI・core:unresolved_key の鍵が名称であること(裁定B12)。
+
+    以前は ministry_code を鍵にしていたが、主キーが名称に変わったため、
+    分かる場合しか値を持たない ministry_code を鍵にし続けると、コード無しの
+    行がすべて `.../unresolved/ministry/None` という1つのURIに収束してしまう
+    (複数の未解決府省が1件に化けて隠れる、という設計書§8.2に反する退行)。
+    """
+    ds = emit.emit_ministries(
+        [],
+        [UnmatchedMinistry(name="存在しない省", reason="NO_CANDIDATE")],
+        "ministry-codes",
+        DAY,
+    )
+    core = emit.NS["core"]
+    expected_uri = URIRef(unresolved_ministry_uri("存在しない省"))
+    assert (expected_uri, RDF.type, core["UnresolvedReference"]) in ds
+    assert (expected_uri, core["unresolved_key"], Literal("存在しない省")) in ds
+
+
+def test_ministry_code_triple_is_omitted_when_absent():
+    """府省コードが分からない行は org:ministryCode 自体を出力しないこと(裁定B12)。
+
+    `Literal(None)` を書くと、KGに文字列"None"が実在してしまう
+    (欠落の表現として最悪の形。SHACLのsh:maxCount 1は満たすがCQを読む人間を
+    騙す)。トリプル自体を出さないことでこれを避ける
+    """
+    ds = emit.emit_ministries(
+        [Ministry(uri="https://jgkg.norr-tech.com/id/org/2000012010002",
+                  houjin_bangou="2000012010002", name="人事院")],
+        [],
+        "ministry-codes",
+        DAY,
+    )
+    org = emit.NS["org"]
+    s = URIRef("https://jgkg.norr-tech.com/id/org/2000012010002")
+    assert list(ds.objects(s, org["ministryCode"])) == [], (
+        "ministry_code=None なのに org:ministryCode トリプルが出力されている"
+    )
 
 
 def test_write_nquads_roundtrips(tmp_path):
