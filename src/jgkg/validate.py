@@ -21,6 +21,7 @@ class ValidationResult:
 
 
 SHAPES_FILENAME = "all.shacl.ttl"
+ONTOLOGY_FILENAME = "all.owl.ttl"
 
 
 def _load_shapes(shapes_dir: Path) -> Graph:
@@ -40,6 +41,37 @@ def _load_shapes(shapes_dir: Path) -> Graph:
     shapes = Graph()
     shapes.parse(path, format="turtle")
     return shapes
+
+
+def _load_ontology(shapes_dir: Path) -> Graph:
+    """`sh:class` がスーパークラスの range を検証するのに必要な `rdfs:subClassOf` を読む。
+
+    `sh:class` の意味論は `rdf:type/rdfs:subClassOf*` で判定される(SHACL仕様)。
+    この階層知識(例: `org:Ministry rdfs:subClassOf org:Organization`)は
+    SHACLシェイプ(`all.shacl.ttl`)には無く、OWL(`all.owl.ttl`)にしか無い。
+    R1(上位クラスの `rdf:type` を実体化しない)により値ノードは最も具体的な
+    型しか持たないため、この `ont_graph` を渡さないと `sh:class` がスーパー
+    クラスを指すプロパティ(`law:jurisdiction` 等)は常に不合格になる(裁定B3)。
+
+    **`inference` は指定しない。** `inference='rdfs'` はRDFS推論結果を
+    データグラフに実体化するため、`org:Ministry` の値に `org:Organization`
+    の `rdf:type` が実体化され、`org:Organization` の閉じたシェイプが
+    `org:Ministry` にも適用されてしまう(`ministryCode` が「宣言されていない
+    プロパティ」として偽の違反になる。Phase 0 の R24 と同種の推論経由の
+    二重シェイプ問題)。`ont_graph` だけを渡せば、`sh:class` の値検証に
+    必要な subClassOf の**参照**はできるが、型の**実体化**は起きないため、
+    閉じたシェイプには影響しない(`test_closed_shapes_survive_ont_graph` /
+    `test_wrong_type_still_fails_the_class_constraint` で実測済み)。
+    """
+    path = shapes_dir / ONTOLOGY_FILENAME
+    if not path.exists():
+        raise FileNotFoundError(
+            f"OWLオントロジーが見つからない: {path}。"
+            " scripts/generate-schema.sh を実行する"
+        )
+    ontology = Graph()
+    ontology.parse(path, format="turtle")
+    return ontology
 
 
 def _shape_target_classes(shapes: Graph) -> set[URIRef]:
@@ -90,6 +122,7 @@ def _assert_shapes_cover(graph_uri: str, declared: set[URIRef], targets: set[URI
 def validate_dataset(ds: Dataset, shapes_dir: Path) -> list[ValidationResult]:
     """名前付きグラフごとに検証する。グラフが置換の単位なので検証も同じ単位で行う。"""
     shapes = _load_shapes(shapes_dir)
+    ontology = _load_ontology(shapes_dir)
     targets = _shape_target_classes(shapes)
     term_prefix = f"{get_settings().base_uri}/def/"
     results: list[ValidationResult] = []
@@ -110,6 +143,7 @@ def validate_dataset(ds: Dataset, shapes_dir: Path) -> list[ValidationResult]:
         conforms, _report_graph, report_text = shacl_validate(
             data_graph=target,
             shacl_graph=shapes,
+            ont_graph=ontology,
             advanced=True,
             inplace=False,
         )

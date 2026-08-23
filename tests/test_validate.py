@@ -6,6 +6,8 @@ from rdflib import RDF, Dataset, Literal, URIRef
 
 from jgkg import validate
 from jgkg.rdf import emit
+from jgkg.transform.law import JurisdictionResult, LawRecord
+from jgkg.transform.ministry import Ministry
 from jgkg.transform.organization import Organization
 
 DAY = datetime.date(2026, 8, 1)
@@ -39,6 +41,29 @@ def _valid_org():
     )
 
 
+def _law_record(law_id: str, law_num: str = "令和七年厚生労働省令第十号", **overrides) -> LawRecord:
+    defaults: dict = {
+        "law_num_type": "MinisterialOrdinance",
+        "law_type": "MinisterialOrdinance",
+        "law_title": "テスト用の題名",
+        "abbrev": [],
+        "promulgation_date": "2020-01-01",
+        "repeal_status": "None",
+        "revisions": [],
+    }
+    defaults.update(overrides)
+    return LawRecord(law_id=law_id, law_num=law_num, **defaults)
+
+
+def _merge_into(target: Dataset, source: Dataset) -> None:
+    for ctx in source.graphs():
+        if len(ctx) == 0:
+            continue
+        g = target.graph(ctx.identifier)
+        for triple in ctx:
+            g.add(triple)
+
+
 def test_valid_dataset_conforms():
     ds = emit.emit_organizations([_valid_org()], "houjin-bangou", DAY)
     results = validate.validate_dataset(ds, SHAPES)
@@ -46,6 +71,114 @@ def test_valid_dataset_conforms():
     data_results = [r for r in results if "provenance" not in r.graph_uri]
     assert data_results, "検証対象のグラフが無い"
     assert all(r.conforms for r in data_results), [r.report_text for r in data_results if not r.conforms]
+
+
+# =============================================================================
+# 裁定B3: ont_graph(inferenceなし)でも sh:class がサブクラスを辿れること
+# =============================================================================
+
+
+def test_subclass_value_satisfies_superclass_range():
+    """`law:jurisdiction`(range: Organization)の値がMinistry型でも通ること(B3の本体)。
+
+    Ministryの型トリプルとjurisdictionのトリプルを**同一グラフ**に置く
+    (source_id/fetched_onを揃えて強制する)。`org:Ministry`は`org:Organization`の
+    サブクラスだが、その`rdfs:subClassOf`知識はデータグラフにはなく
+    `all.owl.ttl`にしかない。
+
+    何があれば落ちるか: `validate_dataset`が`ont_graph`を渡していない
+    (または渡していても機能していない)と、値ノードの型が`org:Ministry`
+    としか分からず`sh:class org:Organization`に違反し続ける。
+    """
+    law_id = "323M60000100010"
+    record = _law_record(law_id)
+    jr = JurisdictionResult(
+        law_id=law_id,
+        ministry_names=["厚生労働省"],
+        resolved=["6000012070001"],
+        unresolved=[],
+    )
+    ministry = Ministry(
+        uri="https://jgkg.norr-tech.com/id/org/6000012070001",
+        houjin_bangou="6000012070001",
+        ministry_code="020",
+        name="厚生労働省",
+    )
+
+    ds = Dataset(default_union=True)
+    # 同じsource_id/fetched_onにして、law と ministry を強制的に同一グラフへ入れる
+    _merge_into(ds, emit.emit_laws([record], {law_id: jr}, "egov-law", DAY))
+    _merge_into(ds, emit.emit_ministries([ministry], [], "egov-law", DAY))
+
+    results = validate.validate_dataset(ds, SHAPES)
+    data_results = [r for r in results if "provenance" not in r.graph_uri]
+    assert data_results, "検証対象のグラフが無い"
+    assert all(r.conforms for r in data_results), [
+        r.report_text for r in data_results if not r.conforms
+    ]
+
+
+def test_closed_shapes_survive_ont_graph():
+    """`ont_graph`を渡しても、Ministry自身の閉じたシェイプが偽の違反を出さないこと。
+
+    何があれば落ちるか: `ont_graph`の導入で`org:Organization`の閉じたシェイプが
+    (サブクラスだからという理由で)`org:Ministry`型のノードにも適用される
+    ようになると、Ministry固有の`ministryCode`が「宣言されていないプロパティ」
+    として誤って違反になる(Phase 0のR24と同種の、推論経由の二重シェイプ問題)。
+    このテストは既存の`test_valid_dataset_conforms`が`org:Organization`しか
+    検証していない(`org:Ministry`を検証していない)穴を塞ぐ。
+    """
+    ministry = Ministry(
+        uri="https://jgkg.norr-tech.com/id/org/6000012070001",
+        houjin_bangou="6000012070001",
+        ministry_code="020",
+        name="厚生労働省",
+    )
+    ds = emit.emit_ministries([ministry], [], "ministry-codes", DAY)
+
+    results = validate.validate_dataset(ds, SHAPES)
+    data_results = [r for r in results if "provenance" not in r.graph_uri]
+    assert data_results, "検証対象のグラフが無い"
+    assert all(r.conforms for r in data_results), [
+        r.report_text for r in data_results if not r.conforms
+    ]
+
+
+def test_wrong_type_still_fails_the_class_constraint():
+    """`org:Organization`のどのサブクラスでもない値は、`ont_graph`を渡しても
+    `sh:class`に違反し続けること(`sh:class`が死んでいない証拠)。
+
+    値ノード自身は`core:UnresolvedReference`として最小限に妥当なものにする
+    (閉じたシェイプの必須プロパティを満たす)。**そうしないと、値ノード自身の
+    閉じたシェイプ違反がconforms=Falseの原因になり、sh:classが実際に発火した
+    かどうかが分からなくなる**(何があれば落ちるか、を測るテスト自体の穴)。
+    """
+    law_id = "999AC0000000001"
+    ds = emit.emit_laws([_law_record(law_id)], {}, "egov-law", DAY)
+
+    gid = URIRef("https://jgkg.norr-tech.com/graph/egov-law/2026-08-01")
+    g = ds.graph(gid)
+    core = emit.NS["core"]
+    law = emit.NS["law"]
+    wrong = URIRef(
+        "https://jgkg.norr-tech.com/id/unresolved/jurisdiction/999AC0000000001/dummy"
+    )
+    # core:UnresolvedReference として最小限に妥当(必須プロパティを埋める)
+    g.add((wrong, RDF.type, core["UnresolvedReference"]))
+    g.add((wrong, core["unresolved_text"], Literal("ダミー", lang="ja")))
+    g.add((wrong, core["unresolved_reason"], Literal("NO_CANDIDATE")))
+    g.add((wrong, core["unresolved_key"], Literal("ダミー")))
+    # law:jurisdiction を、Organizationでも何のサブクラスでもないこのノードへ張る
+    g.add((URIRef(f"https://jgkg.norr-tech.com/id/law/{law_id}"), law["jurisdiction"], wrong))
+
+    results = validate.validate_dataset(ds, SHAPES)
+    data_results = [r for r in results if "provenance" not in r.graph_uri]
+    failing = [r for r in data_results if not r.conforms]
+    assert failing, "Organizationでない値がsh:classを素通りしてしまった"
+    assert any("ClassConstraintComponent" in r.report_text for r in failing), (
+        "落ちてはいるが、sh:classではない別の理由で落ちている可能性がある: "
+        f"{[r.report_text for r in failing]}"
+    )
 
 
 def test_malformed_houjin_bangou_fails_validation():
