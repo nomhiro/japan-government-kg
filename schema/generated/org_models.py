@@ -259,7 +259,7 @@ class GovernmentOrgan(Organization):
 
 class Ministry(GovernmentOrgan):
     """
-    府省。RS(行政事業レビューシステム)実データの所管府省庁名等で識別する 国の機関(裁定B12。名称が主キーで、府省コードは分かる場合のみ持つ)
+    府省及び外局等、行政事業レビューシステム(RS)実データの所管府省庁欄・ 府省庁欄に現れる国の行政機関(裁定B12・B16。名称が主キーで、 府省コードは分かる場合のみ持つ)
     """
     linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/org'})
 

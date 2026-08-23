@@ -222,7 +222,7 @@
     sh:targetClass <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> .
 
 <https://jgkg.norr-tech.com/def/org#Ministry> a sh:NodeShape ;
-    rdfs:comment "府省。RS(行政事業レビューシステム)実データの所管府省庁名等で識別する 国の機関(裁定B12。名称が主キーで、府省コードは分かる場合のみ持つ)" ;
+    rdfs:comment "府省及び外局等、行政事業レビューシステム(RS)実データの所管府省庁欄・ 府省庁欄に現れる国の行政機関(裁定B12・B16。名称が主キーで、 府省コードは分かる場合のみ持つ)" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
     sh:property [ sh:datatype rdf:langString ;
