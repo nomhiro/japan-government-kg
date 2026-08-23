@@ -39,29 +39,35 @@ def test_load_reference_keeps_a_row_whose_ministry_code_is_blank(tmp_path):
     以前は `if code and name` で、名称だけの行がコードの有無で消えていた。
     それは「主キーは名称」という設計と矛盾する欠陥だった
     """
+    # "999" は明らかな合成コード(実在するどの現行コードとも一致しない)。
+    # 013/017/020のような実在しそうに見える値を使わないこと(R45)
     path = tmp_path / "ministry-codes.csv"
-    path.write_text("ministry_code,name\n,人事院\n020,厚生労働省\n", encoding="utf-8")
+    path.write_text("ministry_code,name\n,人事院\n999,厚生労働省\n", encoding="utf-8")
 
     ref = load_reference(path)
 
     assert (None, "人事院") in ref, f"コード無しの行が消えている: {ref}"
-    assert ("020", "厚生労働省") in ref
+    assert ("999", "厚生労働省") in ref
 
 
 def test_build_matches_by_name():
+    # "999"/"998" は明らかな合成コード。013/017/020のような実在しそうに
+    # 見える値は使わない(R45)。ここで検査したいのは「コードがある行を
+    # build()が正しく引き継ぐか」というマッピングの機構であり、値そのものの
+    # 現実性ではない
     orgs = [_org("6000012070001", "厚生労働省"), _org("2000012020001", "総務省")]
-    ministries, unmatched = build(orgs, [("020", "厚生労働省"), ("013", "総務省")])
+    ministries, unmatched = build(orgs, [("999", "厚生労働省"), ("998", "総務省")])
 
     by_code = {m.ministry_code: m for m in ministries}
-    assert by_code["020"].houjin_bangou == "6000012070001"
-    assert by_code["020"].uri == "https://jgkg.norr-tech.com/id/org/6000012070001"
+    assert by_code["999"].houjin_bangou == "6000012070001"
+    assert by_code["999"].uri == "https://jgkg.norr-tech.com/id/org/6000012070001"
     assert unmatched == []
 
 
 def test_build_reports_unmatched_instead_of_dropping():
     """突合できなかった府省を沈黙させない(設計書§8.2)。"""
     orgs = [_org("6000012070001", "厚生労働省")]
-    ministries, unmatched = build(orgs, [("020", "厚生労働省"), ("999", "存在しない省")])
+    ministries, unmatched = build(orgs, [("998", "厚生労働省"), ("999", "存在しない省")])
 
     assert len(ministries) == 1
     assert len(unmatched) == 1
@@ -71,7 +77,7 @@ def test_build_reports_unmatched_instead_of_dropping():
 
 def test_build_ignores_non_government_organizations():
     orgs = [_org("9999999999999", "厚生労働省", kind="301")]  # 同名だが株式会社
-    ministries, unmatched = build(orgs, [("020", "厚生労働省")])
+    ministries, unmatched = build(orgs, [("999", "厚生労働省")])
 
     assert ministries == []
     assert len(unmatched) == 1
@@ -79,7 +85,7 @@ def test_build_ignores_non_government_organizations():
 
 def test_build_reports_ambiguous_matches():
     orgs = [_org("6000012070001", "厚生労働省"), _org("8000012070002", "厚生労働省")]
-    ministries, unmatched = build(orgs, [("020", "厚生労働省")])
+    ministries, unmatched = build(orgs, [("999", "厚生労働省")])
 
     assert ministries == []
     assert unmatched[0].reason == "AMBIGUOUS"

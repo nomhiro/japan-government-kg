@@ -278,10 +278,13 @@ def test_derive_jurisdiction_classifies_ambiguous_when_reference_has_duplicate_n
     `ministry.build()` の出力を `to_ministry_reference` でグループ化した結果、
     同名が複数残っていた場合を表す
     """
+    # コード値そのものは重複行を作るためのダミー(実在しそうに見える値を
+    # 避ける。R45)。2行が別のministry_codeを持ちながら同名であることだけが
+    # このテストの前提
     reference = to_ministry_reference(
         [
-            _ministry(KOUSEIROUDOU_BANGOU, "厚生労働省", ministry_code="020"),
-            _ministry("8000012070099", "厚生労働省", ministry_code="020X"),
+            _ministry(KOUSEIROUDOU_BANGOU, "厚生労働省", ministry_code="999"),
+            _ministry("8000012070099", "厚生労働省", ministry_code="999X"),
         ]
     )
     record = _law_record("323M60000100010", "令和七年厚生労働省令第十号")

@@ -102,7 +102,7 @@ def test_pure_shacl_no_longer_constrains_the_jurisdiction_class():
     ministry = Ministry(
         uri="https://jgkg.norr-tech.com/id/org/6000012070001",
         houjin_bangou="6000012070001",
-        ministry_code="020",
+        ministry_code="999",  # 合成コード。013/017/020のような値は使わない(R45)
         name="厚生労働省",
     )
 
@@ -126,7 +126,7 @@ def test_closed_shapes_still_conform_after_sh_class_extraction():
     ministry = Ministry(
         uri="https://jgkg.norr-tech.com/id/org/6000012070001",
         houjin_bangou="6000012070001",
-        ministry_code="020",
+        ministry_code="999",  # 合成コード。013/017/020のような値は使わない(R45)
         name="厚生労働省",
     )
     ds = emit.emit_ministries([ministry], [], "ministry-codes", DAY)
@@ -230,7 +230,7 @@ def test_check_reference_integrity_passes_a_correct_cross_graph_reference():
     ministry = Ministry(
         uri="https://jgkg.norr-tech.com/id/org/6000012070001",
         houjin_bangou="6000012070001",
-        ministry_code="020",
+        ministry_code="999",  # 合成コード。013/017/020のような値は使わない(R45)
         name="厚生労働省",
     )
 

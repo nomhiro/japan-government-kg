@@ -80,7 +80,7 @@ def test_provenance_records_fetch_date_and_checksum():
 def test_unmatched_ministries_are_emitted_not_dropped():
     ds = emit.emit_ministries(
         [Ministry(uri="https://jgkg.norr-tech.com/id/org/6000012070001",
-                  houjin_bangou="6000012070001", ministry_code="020", name="厚生労働省")],
+                  houjin_bangou="6000012070001", ministry_code="999", name="厚生労働省")],
         [UnmatchedMinistry(name="存在しない省", reason="NO_CANDIDATE")],
         "ministry-codes",
         DAY,

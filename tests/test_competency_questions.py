@@ -49,18 +49,21 @@ def kg(tmp_path):
 def kg_with_unresolved(tmp_path, monkeypatch):
     """CQ P0-5を、未解決が実際に存在する状態で検証するためのfixture。
 
-    通常のfixture(参照表3府省がすべて突合される)では未解決が0件になり、
+    通常のfixture(参照表の全機関がすべて突合される)では未解決が0件になり、
     「クエリが例外にならず空リストを返す」という常に真の確認しかできない
     (`test_cq_p0_05_unresolved_count` 参照)。ここでは参照表に候補の無い
-    府省コードを1件追加し、`pipeline.run` を通した実際のパイプライン出力に
+    府省名を1件追加し、`pipeline.run` を通した実際のパイプライン出力に
     対してクエリを流し、件数が正しく返ることを確認する。
+
+    `ministry_code` 列は空欄にする(裁定B12以降、突合は名称のみで行う。
+    実在する「厚生労働省」に実在しない旧コードを組ませるとR45に反する)。
     """
     content = Path("tests/fixtures/houjin_bangou_sample.csv").read_text(encoding="utf-8")
     lake.save("houjin-bangou", DAY, houjin_bangou.FILENAME, zipped(content))
 
     reference_path = tmp_path / "ministry-codes-with-unresolved.csv"
     reference_path.write_text(
-        "ministry_code,name\n020,厚生労働省\n999,存在しない省\n",
+        "ministry_code,name\n,厚生労働省\n999,存在しない省\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(pipeline, "MINISTRY_REFERENCE", reference_path)
