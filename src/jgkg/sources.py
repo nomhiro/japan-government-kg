@@ -92,6 +92,9 @@ SOURCES: dict[str, Source] = {
              "distinctにも現れないが、e-Gov法令APIの実在の法令番号"
              "(人事院規則一―四 等)が発令機関として指す現存機関(§7.3経路1に"
              "必要。裁定B7のOBSOLETE_ORGANIZATION誤分類の解消対象)。"
+             "この3行はRSの年度更新に追従しない(レビュー指摘3。そもそもRSに"
+             "実在しないため、将来年度が更新されても反映される予定が無い)。"
+             "継続的な整合性はTask 11等の実データ再検証で別途確認すること。"
              "kensei_jun列はRS実データの[4]建制順(任意・裁定B15。府省コードの"
              "意味論と異なるため ministry_code には入れない)。ministry_code列は"
              "現行コードの一次資料が見つかっていないため全行空欄(裁定B12。"
@@ -104,7 +107,7 @@ SOURCES: dict[str, Source] = {
         # git log --diff-filter=AM で確認した、この版(B15: [5][6]和集合40行+
         # kensei_jun列)をリポジトリに記録した日
         recorded_on=datetime.date(2026, 8, 23),
-        sha256="6fe9f4ae5c1b446c5f53e57bc11c283087ab082fd0b1546ebb369b7cdbd415fd",
+        sha256="5818790d921bc903cd121d4d7faf0f7c2d3b0d73212a01db62b7e835c0bee7b7",
     ),
     "rs-system": Source(
         id="rs-system",
