@@ -192,9 +192,17 @@ def run(fetched_on: Mapping[str, datetime.date], out_dir: Path) -> PipelineRepor
 
     # 法人番号スナップショットの sha256 はレイクの実メタデータから取る(レビューI1)。
     # `snapshot_path.exists()` はデータ本体の存在しか見ないため、メタデータ
-    # (`.meta.json`)自体が欠けている(中断された取得)場合はここで別途落とす
+    # (`.meta.json`)自体が欠けている(中断された取得)場合はここで別途落とす。
+    # **日付だけで絞らない。** 同じ日付のディレクトリに別ファイルが増えたら、
+    # ソート順で先に来た方のsha256を黙って拾ってしまう(sha256の真正性という
+    # このタスクの主旨そのものに関わる)。ファイル名も houjin_bangou.FILENAME に
+    # 一致させ、実際にパースした対象と紐づけを固定する
     houjin_snapshot = next(
-        (s for s in lake.list_snapshots("houjin-bangou") if s.fetched_on == houjin_date),
+        (
+            s
+            for s in lake.list_snapshots("houjin-bangou")
+            if s.fetched_on == houjin_date and s.path.name == houjin_bangou.FILENAME
+        ),
         None,
     )
     if houjin_snapshot is None:

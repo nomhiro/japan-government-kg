@@ -107,6 +107,44 @@ def test_ministry_codes_sha256_matches_the_registry(kg_dataset):
     )
 
 
+def test_houjin_bangou_sha256_ignores_a_decoy_file_in_the_same_date_dir(tmp_path):
+    """同じソース×日付のレイクディレクトリに無関係なファイルが増えても、
+
+    `houjin_bangou.FILENAME` のスナップショットだけを見ること。
+    `lake.list_snapshots()` は同じディレクトリ内の全 `.meta.json` を返すため、
+    ファイル名で絞らないとソート順で先に来た方のsha256を黙って拾ってしまう
+    (sha256の真正性というこのタスクの主旨そのものに関わる欠陥。ミニレビューで
+    指摘された)。
+
+    何があれば落ちるか: pipeline.py の houjin_snapshot 検索から
+    `s.path.name == houjin_bangou.FILENAME` の条件を外したら落ちる
+    (`"a-decoy-file.txt.meta.json"` は辞書順で `"zenken.zip.meta.json"` より
+    前に来るため、`list_snapshots()` の並びで先に見つかる)。
+    """
+    content = Path("tests/fixtures/houjin_bangou_sample.csv").read_text(encoding="utf-8")
+    lake.save("houjin-bangou", DAY, houjin_bangou.FILENAME, zipped(content))
+    decoy = lake.save("houjin-bangou", DAY, "a-decoy-file.txt", b"not the real snapshot")
+
+    real_snapshot = next(
+        s
+        for s in lake.list_snapshots("houjin-bangou")
+        if s.fetched_on == DAY and s.path.name == houjin_bangou.FILENAME
+    )
+    assert decoy.sha256 != real_snapshot.sha256, "テストの前提(2つの値が違う)が崩れている"
+
+    out = tmp_path / "out"
+    pipeline.run(FETCHED, out)
+
+    ds = Dataset(default_union=True)
+    ds.parse(out / "kg.nq", format="nquads")
+    g = ds.get_graph(URIRef(PROV_GRAPH_URI))
+    graph_uri = URIRef(f"{BASE}/graph/houjin-bangou/{DAY.isoformat()}")
+    sha = g.value(graph_uri, CORE.sourceSha256)
+    assert str(sha) == real_snapshot.sha256, (
+        f"decoyファイルのsha256({decoy.sha256})を誤って拾っている(emit={sha})"
+    )
+
+
 def test_recorded_on_is_present_only_for_the_reference_table(kg_dataset):
     """recordedOn は『取得の無いソース』(ministry-codes)だけが持つこと。
 
