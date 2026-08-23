@@ -154,6 +154,128 @@ def validate_dataset(ds: Dataset, shapes_dir: Path) -> list[ValidationResult]:
 
 
 # =============================================================================
+# Task 8: 全法人規模のバッチSHACL検証(validate_stream)
+#
+# **バッチSHACLが全体検証と等価である条件(このタスクの中心の論証)**:
+# このスキーマのSHACLシェイプはエンティティ局所(閉じたNodeShape。エンティティ
+# を跨ぐ制約はR2で排除済み、裁定B4)である。したがって、同一主語の全トリプル
+# が同じバッチに入っていれば、バッチ単位の検証結果の合併は全体検証と一致する。
+# この関数は3条件のうち「バッチ境界は主語の切れ目でのみ切る」を担う。
+# 残り2条件(1エンティティ連続書き/上流dedup)は`stream_emit`側の責務であり、
+# この関数はそれが守られたN-Quadsファイルであることを前提にする
+# (tests/test_stream_emit.pyのStep3が、この前提を外すと結果が全体一発と
+# 一致しなくなることを実証している)。
+# =============================================================================
+
+
+def _split_nquads_line(line: str) -> tuple[str, str]:
+    """1行のN-Quadsを`(N-Triples本体, グラフ項)`に分ける。
+
+    行は必ず`SUBJ PRED OBJ GRAPH .`の形($8.3節のstream_emit出力そのもの)。
+    末尾から2つ目・1つ目の空白がそれぞれ「OBJの終わり/GRAPHの始まり」と
+    「GRAPHの終わり/`.`の始まり」に一致する。**これはIRI(グラフ項)がraw
+    spaceを含まないから常に成立する**。OBJがリテラルで内部に空白を含んでいても、
+    その空白は末尾から数えて3つ目以降にしか現れないので`rsplit(maxsplit=2)`
+    は安全(`stream_emit_organizations`が書いた行にのみ通用する前提)。
+    """
+    body = line.rstrip("\n").rstrip("\r")
+    nt_body, graph_term, dot = body.rsplit(" ", 2)
+    if dot != ".":
+        raise ValueError(
+            f"N-Quadsの行として想定外の終端(末尾が'.'でない): {line!r}。"
+            " stream_emit_organizations以外が書いたファイルの疑いがある"
+        )
+    return nt_body, graph_term
+
+
+def validate_stream(
+    nq_path: Path, shapes_dir: Path, batch_size: int = 50_000
+) -> list[ValidationResult]:
+    """N-Quadsファイルをバッチに分けてSHACL検証する(全件を一度にrdflibへ載せない)。
+
+    **前提**: `nq_path`は`stream_emit.stream_emit_organizations`が書いた
+    ファイルであること(1行=1トリプル・主語は常にIRI・1エンティティの全
+    トリプルが連続・上流でdedup済み)。この前提が崩れていると、バッチ検証の
+    結果が全体一発の結果と一致しなくなる(モジュールdocstring参照)。
+
+    **バッチ境界は主語の切れ目でのみ切る。** `batch_size`はバッチが到達する
+    目安の行数であり、厳密な上限ではない — 主語が変わった行でだけ
+    「今までのバッファを閉じるか」を判定するため、実際のバッチ行数は
+    `batch_size`以上になることがある(1エンティティが`batch_size`行を
+    超える場合はそのエンティティが尽きるまで閉じない)。
+
+    バッチごとに新しい`Graph`へN-Triples(グラフ項を剥がした形)としてパース
+    し、`validate_dataset`と同じ検査(網羅性ガード`_assert_shapes_cover` +
+    `pyshacl`)を適用する。`_load_shapes`はモジュールレベルでキャッシュされる
+    ため、バッチ数(581万÷batch_size)に比例した再パースは起きない
+    (Task 4の申し送り)。
+    """
+    shapes = _load_shapes(shapes_dir)
+    targets = _shape_target_classes(shapes)
+    term_prefix = f"{get_settings().base_uri}/def/"
+
+    results: list[ValidationResult] = []
+    batch_index = 0
+    graph_uri: str | None = None
+
+    def _flush(lines: list[str]) -> None:
+        nonlocal batch_index, graph_uri
+        if not lines:
+            return
+        nt_lines: list[str] = []
+        for line in lines:
+            nt_body, graph_term = _split_nquads_line(line)
+            this_graph = graph_term[1:-1] if graph_term.startswith("<") else graph_term
+            if graph_uri is None:
+                graph_uri = this_graph
+            elif this_graph != graph_uri:
+                raise ValueError(
+                    f"1ファイル内に複数のグラフが混在している({graph_uri!r} と "
+                    f"{this_graph!r})。stream_emit_organizationsは1呼び出しにつき"
+                    "1グラフしか書かない前提が崩れている"
+                )
+            nt_lines.append(nt_body + " .\n")
+
+        batch_graph = Graph()
+        batch_graph.parse(data="".join(nt_lines), format="nt")
+
+        _assert_shapes_cover(
+            graph_uri or "(unknown)",
+            _own_declared_classes(batch_graph, term_prefix),
+            targets,
+        )
+        conforms, _report_graph, report_text = shacl_validate(
+            data_graph=batch_graph,
+            shacl_graph=shapes,
+            advanced=True,
+            inplace=False,
+        )
+        results.append(
+            ValidationResult(
+                graph_uri=graph_uri or "(unknown)",
+                conforms=bool(conforms),
+                report_text=report_text,
+                batch_index=batch_index,
+            )
+        )
+        batch_index += 1
+
+    buffer: list[str] = []
+    current_subject: str | None = None
+    with nq_path.open("r", encoding="utf-8") as f:
+        for line in f:
+            subject = line.split(" ", 1)[0]
+            if subject != current_subject and len(buffer) >= batch_size:
+                _flush(buffer)
+                buffer = []
+            buffer.append(line)
+            current_subject = subject
+    _flush(buffer)
+
+    return results
+
+
+# =============================================================================
 # 参照整合ゲート(裁定B4): グラフを跨ぐ参照の型制約を和集合Datasetで検証する
 # =============================================================================
 

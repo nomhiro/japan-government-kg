@@ -332,3 +332,244 @@ def test_stream_emit_raises_on_an_embedded_newline_instead_of_corrupting_the_str
     out = io.StringIO()
     with pytest.raises(ValueError, match="改行"):
         stream_emit.stream_emit_organizations(iter([org]), GRAPH_URI, out)
+
+
+# =============================================================================
+# Step 3: validate_stream — バッチ=全体の等価性の実証
+#
+# 「バッチ検証の合併=全体検証」が成り立つのは、シェイプがエンティティ局所
+# だから、かつ、同一主語の全トリプルが同じバッチに入っているから。前者は
+# schema側の裁定(R2)で既に成立している。後者を検証するのがこのセクション:
+# 正常系(主語の切れ目でのみ分割)では一致し、わざと主語を跨いで分割すると
+# 一致しなくなることを示す(等価条件が装飾ではなく実質であることの証明)。
+# =============================================================================
+
+
+def _whole_graph_conforms(nq_path) -> bool:
+    """全体一発の検証結果(比較の基準)。1ファイル=1グラフという前提で、
+    validate_dataset(グラフ単位検証)にそのまま流せば「全体検証」になる。
+    """
+    from rdflib import Dataset
+
+    from jgkg import validate
+
+    ds = Dataset()
+    ds.parse(nq_path, format="nquads")
+    results = validate.validate_dataset(ds, _shapes_dir())
+    assert results, "検証対象のグラフが無い(比較の前提が崩れている)"
+    return all(r.conforms for r in results)
+
+
+def _shapes_dir():
+    from pathlib import Path
+
+    return Path("schema/generated")
+
+
+def test_validate_stream_batched_result_matches_the_whole_graph_result_for_a_valid_stream():
+    """正常系: batch_size=2で細かく割っても、全体一発の結果(合格)と一致すること。
+
+    stream_emit_organizations(dedup済み前提)の出力を使う — 実運用の経路
+    そのもの。batch_size=2は各エンティティ(5〜6行)より小さいので、
+    確実に複数バッチに分かれる(バッチ数>1をまず確認し、この設定が
+    本当に分割を起こしていることを保証する)。
+    """
+    import io
+
+    from jgkg import validate
+
+    orgs = [
+        _org(bangou="6000012070001", name="厚生労働省", prefecture="東京都", city="千代田区"),
+        _org(bangou="2000012020001", name="総務省", prefecture="東京都", city="千代田区"),
+        _org(bangou="8000012050001", name="財務省", prefecture="東京都", city="霞が関"),
+    ]
+    out = io.StringIO()
+    stream_emit.stream_emit_organizations(iter(orgs), GRAPH_URI, out)
+
+    nq_path = tmp_nq_path()
+    nq_path.write_text(out.getvalue(), encoding="utf-8")
+
+    batched = validate.validate_stream(nq_path, _shapes_dir(), batch_size=2)
+    assert len(batched) > 1, "batch_size=2が分割を起こしていない(テストの前提が崩れている)"
+
+    whole = _whole_graph_conforms(nq_path)
+    assert all(r.conforms for r in batched) == whole == True  # noqa: E712 (意図的に明示比較)
+
+
+def test_validate_stream_batched_result_matches_the_whole_graph_result_for_a_local_violation():
+    """正常系(壊し確認込み): エンティティ局所な違反(法人番号の桁数不正)は、
+
+    バッチに分けても分けなくても同じく検出されること。この違反は1エンティティ
+    の中に閉じているため、バッチ分割の有無に結果が影響されないはず
+    (エンティティ局所シェイプという前提そのものの確認)。
+    """
+    import io
+
+    from rdflib import Literal, URIRef
+
+    from jgkg import validate
+    from jgkg.config import get_settings
+
+    org = _org(bangou="6000012070001", name="厚生労働省")
+    out = io.StringIO()
+    stream_emit.stream_emit_organizations(iter([org]), GRAPH_URI, out)
+
+    # 手作業で1エンティティ分を足す: 法人番号がsh:patternに違反する行
+    # (既存テストのtest_malformed_houjin_bangou_fails_validationと同じ壊し方)
+    org_ns = f"{get_settings().base_uri}/def/org#"
+    bad_s = URIRef(f"{get_settings().base_uri}/id/org/9999999999999").n3()
+    graph_n3 = URIRef(GRAPH_URI).n3()
+    rdf_type = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>"
+    out.write(f"{bad_s} {rdf_type} <{org_ns}Organization> {graph_n3} .\n")
+    out.write(f"{bad_s} <{org_ns}houjinBangou> {Literal('BROKEN').n3()} {graph_n3} .\n")
+
+    nq_path = tmp_nq_path()
+    nq_path.write_text(out.getvalue(), encoding="utf-8")
+
+    whole = _whole_graph_conforms(nq_path)
+    assert whole is False, "違反入りのfixtureが全体検証で合格してしまっている(テストの前提が崩れている)"
+
+    batched = validate.validate_stream(nq_path, _shapes_dir(), batch_size=2)
+    assert not all(r.conforms for r in batched), (
+        "エンティティ局所な違反がバッチ検証で検出できていない"
+    )
+
+
+def test_validate_stream_diverges_from_the_whole_graph_result_when_split_mid_subject():
+    """**等価条件が実質であることの証明**: 主語の切れ目を無視して(=わざと
+
+    主語を跨いで)分割すると、全体一発の結果と一致しなくなること。
+
+    同一主語(法人番号)の`skos:prefLabel`を2つ持つデータ(sh:maxCount 1
+    違反)を作るが、その2つを**連続させずに**別の主語のブロックを挟んで書く
+    (「1エンティティの全トリプルを連続して書く」という条件1が破れている
+    状況を人為的に再現する — dedup済みの正常な経路ではこの状態は作れない
+    ため、手書きのN-Quadsで構成する)。batch_sizeを、ちょうど「主語が
+    変わった直後」に流れ込むように選ぶと、同一主語の2つのブロックが別々の
+    バッチに分かれる。各バッチは単独ではprefLabelを1つしか見ないため
+    合格してしまうが、全体一発ではsh:maxCount 1違反として検出される。
+    """
+    from rdflib import URIRef
+
+    from jgkg import validate
+    from jgkg.config import get_settings
+
+    base = get_settings().base_uri
+    org_ns = f"{base}/def/org#"
+    s1 = URIRef(org_uri("6000012070001")).n3()
+    s2 = URIRef(org_uri("2000012020001")).n3()
+    graph_n3 = URIRef(GRAPH_URI).n3()
+    rdf_type = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>"
+    pref_label = "<http://www.w3.org/2004/02/skos/core#prefLabel>"
+
+    lines = [
+        # S1の最初のブロック(4行。旧いprefLabel)
+        f'{s1} {rdf_type} <{org_ns}GovernmentOrgan> {graph_n3} .\n',
+        f'{s1} {pref_label} "旧名称"@ja {graph_n3} .\n',
+        f'{s1} <{org_ns}houjinBangou> "6000012070001" {graph_n3} .\n',
+        f'{s1} <{org_ns}organizationKindCode> "101" {graph_n3} .\n',
+        # S2の4行(別法人。無関係で正常)
+        f'{s2} {rdf_type} <{org_ns}GovernmentOrgan> {graph_n3} .\n',
+        f'{s2} {pref_label} "総務省"@ja {graph_n3} .\n',
+        f'{s2} <{org_ns}houjinBangou> "2000012020001" {graph_n3} .\n',
+        f'{s2} <{org_ns}organizationKindCode> "101" {graph_n3} .\n',
+        # S1が再度出現(1行。新しいprefLabel — 最初のブロックと連続していない)
+        f'{s1} {pref_label} "新名称"@ja {graph_n3} .\n',
+    ]
+    nq_path = tmp_nq_path()
+    nq_path.write_text("".join(lines), encoding="utf-8")
+
+    whole = _whole_graph_conforms(nq_path)
+    assert whole is False, (
+        "全体一発ではS1のprefLabelが2つ(sh:maxCount 1違反)になるはずが合格している"
+    )
+
+    # batch_size=4: S1最初の4行で1バッチ、S2の4行で1バッチ、S1再出現の1行が
+    # 最後のバッチ、という3分割になる(主語の切れ目でのみ切る実装なら、
+    # 「同じ主語が別バッチに分かれる」状況そのものは入力側の問題として
+    # 再現できる)
+    batched = validate.validate_stream(nq_path, _shapes_dir(), batch_size=4)
+    assert len(batched) >= 2, "主語跨ぎの分割が起きていない(テストの前提が崩れている)"
+    assert all(r.conforms for r in batched), (
+        "各バッチが単独では合格するはず(それぞれ1つのprefLabelしか見ないため)"
+    )
+    # ここが本題: 全体一発は不合格、バッチ検証(この壊れた分割)は全合格。一致しない
+    assert whole != all(r.conforms for r in batched), (
+        "主語跨ぎの分割でも全体一発と結果が一致してしまった"
+        "(等価性が主語連続の仮定に依存していることを示せていない)"
+    )
+
+
+def test_validate_stream_never_cuts_a_single_contiguous_subject_block_even_past_batch_size():
+    """`validate_stream`自身の責務(条件2)を単独で固定する。
+
+    上のテスト(`test_validate_stream_diverges_...`)は**入力側**が条件1
+    (1エンティティ連続)を破っている場合の実証だった。こちらは**入力は
+    連続している**(1エンティティのブロックが途切れず並んでいる)のに、
+    `validate_stream`が`batch_size`だけで機械的に切ってしまうと同じ種類の
+    見落としが起きることを、`validate_stream`単体の壊し確認として固定する。
+
+    何があれば落ちるか: バッチ判定が`len(buffer) >= batch_size`だけになり
+    「主語が変わったか」を見なくなると、1つの連続ブロック(5行、同一主語に
+    2つのprefLabelを含む)が`batch_size=2`でブロックの途中で切られ、
+    2つのprefLabelが別バッチに分かれて見落とされる。
+    """
+    from rdflib import URIRef
+
+    from jgkg import validate
+    from jgkg.config import get_settings
+
+    base = get_settings().base_uri
+    org_ns = f"{base}/def/org#"
+    s1 = URIRef(org_uri("6000012070001")).n3()
+    graph_n3 = URIRef(GRAPH_URI).n3()
+    rdf_type = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>"
+    pref_label = "<http://www.w3.org/2004/02/skos/core#prefLabel>"
+
+    # 1つの連続ブロック(5行、途切れていない)。dedupが効かずに同じ法人番号の
+    # 2行分がそのまま連続して書かれてしまった、という想定のfixture
+    lines = [
+        f'{s1} {rdf_type} <{org_ns}GovernmentOrgan> {graph_n3} .\n',
+        f'{s1} {pref_label} "旧名称"@ja {graph_n3} .\n',
+        f'{s1} <{org_ns}houjinBangou> "6000012070001" {graph_n3} .\n',
+        f'{s1} <{org_ns}organizationKindCode> "101" {graph_n3} .\n',
+        f'{s1} {pref_label} "新名称"@ja {graph_n3} .\n',  # 同じ主語のまま2つ目のprefLabel
+    ]
+    nq_path = tmp_nq_path()
+    nq_path.write_text("".join(lines), encoding="utf-8")
+
+    whole = _whole_graph_conforms(nq_path)
+    assert whole is False, "全体一発ではprefLabelが2つでsh:maxCount 1違反になるはず"
+
+    # batch_size=2: 連続ブロックの5行に対して十分小さい。主語の切れ目でしか
+    # 切らない実装なら、主語が最後まで変わらないこのファイルは1バッチのまま
+    # (=全体一発と同じグラフ)になり、結果は一致するはず
+    batched = validate.validate_stream(nq_path, _shapes_dir(), batch_size=2)
+    assert len(batched) == 1, (
+        "1つの連続ブロックが複数バッチに分かれた"
+        "(主語が変わっていないのにbatch_sizeだけで切っている疑いがある)"
+    )
+    assert all(r.conforms for r in batched) == whole, (
+        "1エンティティの連続ブロックをbatch_size未満で切ってしまい、"
+        "全体一発の結果と一致しなくなっている"
+    )
+
+
+_tmp_nq_counter = 0
+
+
+def tmp_nq_path():
+    """テスト用の一時N-Quadsファイルパス(pytestのtmp_pathを使わない軽量版)。
+
+    このファイル内の複数テストで使うヘルパーなので、pytestのtmp_path
+    フィクスチャを都度引き渡す代わりに、モジュール共通のtempディレクトリに
+    連番でファイルを作る。
+    """
+    import tempfile
+    from pathlib import Path
+
+    global _tmp_nq_counter
+    _tmp_nq_counter += 1
+    d = Path(tempfile.gettempdir()) / "jgkg-test-stream-emit"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"batch-{_tmp_nq_counter}.nq"
