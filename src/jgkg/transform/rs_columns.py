@@ -50,6 +50,8 @@ project_id=4の行を引用に使う):
 [project_summary] project_id=4の行(冒頭のみ):
   レビューシート,2025,4,情報システムの整備（情報通信技術調達等適正・効率化推進費）,
   13,デジタル庁,デジタル庁,戦略・組織,,統括監理担当,...
+  → **[4]府省庁の建制順='13'。この列が検証0で訂正した数値識別子(kensei_jun)**
+     (訂正の経緯は下記「検証0」参照。他の4ファイルでも同じ位置に同じ値で現れる)
 
 [policy_measure_laws_and_regulations] project_id=4の行(冒頭のみ):
   ...,1,デジタル庁,情報通信技術等の適正・効率化に関する施策の推進,
@@ -78,14 +80,35 @@ project_id=4の行を引用に使う):
      将来のhoujin-bangouとの突合は必ず `.strip()` してから比較すること
 ======================================================================
 
-検証0(裁定B11・最優先): **府省コード列は無い。**
-  確認した5本すべてで、府省庁を表す列は名称文字列のみ
-  (所管府省庁 / 政策所管府省庁 / 政策所管府省庁_P / 府省庁)。
-  数値・記号のコード列は存在しない。
-  → RSとの結合は名称マッチ(houjin-bangou由来のOrganization.nameとの突合)
-    に拠るしかない。府省コード参照表(Task 5)がこの結合そのものに必要かは
-    別問題(RS側は名称しか持たないため、Task 5の参照表を経由しなくても
-    houjin-bangouのOrganization.nameと直接突合できる)
+検証0(裁定B11・最優先): **訂正(task-6-review.md 指摘1により訂正。
+  当初「数値・記号コードは無い」と結論したが、報告書自身が引用する
+  実データと矛盾する誤りだった)。**
+
+  列4(organization_informationでは「建制順」、他4ファイルでは
+  「府省庁の建制順」)に、[5]所管府省庁/政策所管府省庁の値と
+  **完全な1対1対応(全単射)を成す数値識別子が実在する。**
+  取得した5ファイル・約271,000行全件で検算済み: distinct値23、
+  「1つの名称が複数の建制順を持つ」「1つの建制順が複数の名称を持つ」の
+  いずれも0件(詳細な集計はtask-6-review.md指摘1)。値の例(23件全部の
+  対応は data/reference/ministry-codes.csv の kensei_jun 列、または
+  下記RS_FILESのcolを参照): 1=内閣官房, 13=デジタル庁, 15=総務省,
+  18=財務省, 23=国土交通省, 26=防衛省。**人事院・会計検査院は
+  この23件に含まれない**(RSの実データの範囲に、両機関が所管府省庁と
+  なる事業が存在しないため)。
+
+  **ただし、裁定B15により建制順は「府省コード」として扱わない。**
+  建制順は儀典上の府省の設置順序(組織の設置順)であり、法人番号のような
+  恒久的な登録識別子ではない。`org:ministryCode` のような結合キー用途への
+  使用は禁止する(013/017/020のときと同じ「実在しそうに見える偽の対応」の
+  再発を避けるため)。また、**このタスクが取得したのは2025年度1本のみで
+  あり、建制順が省庁再編を挟んで年度をまたいで安定するかは未検証**
+  (不安定だと分かったわけではなく、単に確認していないという意味)。
+
+  → RSとの結合(所管府省庁の判定)は、名称マッチ(houjin-bangou由来の
+    Organization.nameとの突合)で行う。建制順(`kensei_jun`。下記RS_COL)は
+    識別子としてではなく、**府省庁名の粒度([5]と[6]のどちらを採るか)を
+    選ぶ根拠**として使う(列5・列6の選定理由は下記「列5(ministry_name)を
+    列6より優先する理由」を参照)
 
 検証1: 根拠法令列は「ある」。
   policy_measure_laws_and_regulations の [19]法令名 と [21]法令ID。
@@ -142,7 +165,10 @@ RS_FILES: dict[str, RSFileSpec] = {
             "室（その他担当組織）", "班（その他担当組織）", "係（その他担当組織）",
             "作成責任者",
         ),
-        col={"fiscal_year": 1, "project_id": 2, "project_name": 3, "ministry_name": 5},
+        col={
+            "fiscal_year": 1, "project_id": 2, "project_name": 3, "ministry_name": 5,
+            "kensei_jun": 4,
+        },
     ),
     "project_summary": RSFileSpec(
         group_key="project_summary",
@@ -156,7 +182,10 @@ RS_FILES: dict[str, RSFileSpec] = {
             "実施方法ー負担", "実施方法ー交付", "実施方法ー分担金・拠出金",
             "実施方法ーその他", "旧事業番号", "整理表表示順",
         ),
-        col={"fiscal_year": 1, "project_id": 2, "project_name": 3, "ministry_name": 5},
+        col={
+            "fiscal_year": 1, "project_id": 2, "project_name": 3, "ministry_name": 5,
+            "kensei_jun": 4,
+        },
     ),
     "policy_measure_laws_and_regulations": RSFileSpec(
         group_key="policy_measure_laws_and_regulations",
@@ -170,6 +199,7 @@ RS_FILES: dict[str, RSFileSpec] = {
         ),
         col={
             "fiscal_year": 1, "project_id": 2, "project_name": 3, "ministry_name": 5,
+            "kensei_jun": 4,
             "basis_law_text": 19, "basis_law_number": 20, "basis_law_id": 21,
         },
     ),
@@ -190,6 +220,7 @@ RS_FILES: dict[str, RSFileSpec] = {
         ),
         col={
             "fiscal_year": 1, "project_id": 2, "project_name": 3, "ministry_name": 5,
+            "kensei_jun": 4,
             "budget_amount": 14, "executed_amount": 19,
         },
     ),
@@ -208,6 +239,7 @@ RS_FILES: dict[str, RSFileSpec] = {
         ),
         col={
             "fiscal_year": 1, "project_id": 2, "project_name": 3, "ministry_name": 5,
+            "kensei_jun": 4,
             "recipient_name": 18, "recipient_houjin_bangou": 19,
             "recipient_address": 20, "recipient_kind_code": 21,
             "expenditure_amount": 23,
@@ -223,6 +255,10 @@ RS_COL: dict[str, tuple[str, int]] = {
     "project_name": ("project_summary", 3),
     "ministry_name": ("project_summary", 5),
     "fiscal_year": ("project_summary", 1),
+    # 建制順。**識別子(府省コード)としては使わない**(裁定B15。検証0の
+    # 訂正を参照)。data/reference/ministry-codes.csv の kensei_jun 列と
+    # 同じ実データ由来の値(2026-08-23取得)なので一致するはず
+    "kensei_jun": ("project_summary", 4),
     "budget_amount": ("budget_summary", 14),
     "basis_law_text": ("policy_measure_laws_and_regulations", 19),
     "recipient_name": ("payee_payment_information", 18),

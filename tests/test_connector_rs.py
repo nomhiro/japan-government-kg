@@ -10,7 +10,10 @@ import pytest
 
 from jgkg import lake
 from jgkg.connectors import rs_system
-from jgkg.transform import rs_columns
+from jgkg.transform import ministry, rs_columns
+
+REPO_ROOT = Path(__file__).parent.parent
+MINISTRY_CODES_CSV = REPO_ROOT / "data" / "reference" / "ministry-codes.csv"
 
 FIXTURES = Path(__file__).parent / "fixtures"
 YEAR = 2025
@@ -253,6 +256,51 @@ def test_fixture_law_rows_have_a_basis_law_with_egov_style_law_id():
         # (列がずれた場合に起きる)だけを弾く
         assert law_id.isalnum(), f"law_idが英数字ではない: {law_id!r}"
         assert len(law_id) >= 10, f"law_idが短すぎる: {law_id!r}"
+
+
+def test_kensei_jun_matches_ministry_name_1to1_and_agrees_with_the_reference_table():
+    """レビュー指摘1: 列4(建制順)が[5]ministry_nameと1対1対応すること、かつ
+    data/reference/ministry-codes.csv の kensei_jun 列と一致すること
+    (どちらも2026-08-23のRS実データ由来なので一致するはず)。
+
+    fixtureに含まれる実在の対応(実測): 内閣官房=1、デジタル庁=13。
+    **kensei_junは識別子(府省コード)として使わない**(裁定B15)。この
+    テストは値の一貫性のみを検査する。
+    """
+    reference_kensei_jun = {
+        row.name: row.kensei_jun
+        for row in ministry.load_reference(MINISTRY_CODES_CSV)
+        if row.kensei_jun is not None
+    }
+    assert reference_kensei_jun, "ministry-codes.csv にkensei_jun列の値が1つも無い"
+
+    for sample, group in [
+        (PAYEE_SAMPLE, "payee_payment_information"),
+        (LAW_SAMPLE, "policy_measure_laws_and_regulations"),
+    ]:
+        reader = csv.reader(io.StringIO(sample.decode("utf-8-sig")))
+        next(reader)  # header
+        spec = rs_columns.RS_FILES[group]
+        idx_ministry = spec.col["ministry_name"]
+        idx_kensei = spec.col["kensei_jun"]
+
+        seen: dict[str, str] = {}
+        for row in reader:
+            name, kensei = row[idx_ministry], row[idx_kensei]
+            if name in seen:
+                assert seen[name] == kensei, (
+                    f"{group}: {name!r} の建制順が行によって違う"
+                    f"({seen[name]!r} vs {kensei!r})"
+                )
+            seen[name] = kensei
+
+            assert name in reference_kensei_jun, (
+                f"{group}: {name!r} が data/reference/ministry-codes.csv に無い"
+            )
+            assert reference_kensei_jun[name] == kensei, (
+                f"{group}: {name!r} の建制順がministry-codes.csvと食い違う"
+                f"(fixture={kensei!r}, 参照表={reference_kensei_jun[name]!r})"
+            )
 
 
 # ============================================================
