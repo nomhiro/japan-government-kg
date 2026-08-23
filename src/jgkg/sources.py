@@ -56,6 +56,18 @@ SOURCES: dict[str, Source] = {
         note="全件データは月次(前月末時点)。差分は日次。商用・再配布可。"
              "Shift_JIS版とUnicode版の両方が配布されているため、Unicode(UTF-8)版を取得すること",
     ),
+    "egov-law": Source(
+        id="egov-law",
+        name="e-Gov法令API v2 全法令メタデータ",
+        url="https://laws.e-gov.go.jp/api/2/laws",
+        license=GOV_STANDARD_TERMS,
+        license_url=GOV_STANDARD_TERMS_URL,
+        frequency="monthly",
+        access="api",
+        encoding="utf-8",
+        note="limit/offsetのページングで全法令のメタデータ(law_info/revision_info等)を取得する。"
+             "所管府省を示すフィールドは存在しない(実測済み)。条文本文(all_xml.zip)は対象外",
+    ),
     "ministry-codes": Source(
         id="ministry-codes",
         name="府省コード参照表(GIFコードリストより作成)",
