@@ -240,7 +240,9 @@ def test_pagination_sums_to_total_count(monkeypatch, tmp_path):
 
 **Interfaces:**
 - Consumes: Task 3 の `laws.jsonl`(レイクから `parse_laws(path) -> Iterator[LawRecord]`)
-- Consumes: Task 5 の参照表 `load_reference()`(名前→(府省コード, 法人番号))
+- Consumes: `ministry.build(orgs, reference)` の出力 `list[Ministry]` を
+  `dict[name, Ministry]` にしたもの(**Ministry.houjin_bangou が府省URIの材料**。
+  load_reference は (code, name) しか持たないので直接は使えない — 実行前スキャン B-S1)
 - Produces:
   ```python
   class LawRecord(BaseModel):      # laws.jsonl の1行を正規化したもの
@@ -375,6 +377,7 @@ def test_reference_digest_matches_registry():
 **Files:**
 - Create: `schema/budget.yaml`(all.yaml の imports にも追加)
 - Create: `src/jgkg/transform/rs.py`
+- Modify: `src/jgkg/uris.py`(`budget_uri(fiscal_year, project_id)` / `expenditure_uri(fiscal_year, project_id, seq)` を追加 — URI構築はここに集約する規約。実行前スキャン B-S2)
 - Modify: `src/jgkg/rdf/emit.py`(emit_budget)
 - Test: `tests/test_transform_rs.py` / `tests/test_rdf_emit.py` に追加
 
@@ -477,7 +480,7 @@ R2 で排除済み)なので、同一主語の全トリプルが同じバッチ�
 | CQ4 | 法人→支出→事業→府省→(経路1の)法令 をひと繋ぎで(プロパティパスではなく明示ジョイン。出典グラフを跨ぐ) |
 | CQ5 | `?p budget:basisLaw ?law . ?p budget:ministry ?m` |
 | CQ6 | `?e budget:recipient ?r . ?r a core:UnresolvedReference` のCOUNT(事業単位) |
-| CQ7 | P0-3 の一般化: `GRAPH ?g { 任意の対象トリプル } . ?g prov:wasDerivedFrom ?src ; prov:generatedAtTime ?t` |
+| CQ7 | P0-3 の一般化。クエリには**実データとfixtureの両方に存在する特定のエッジ**(実在の府省令の jurisdiction)を焼く(B-S3。実在値のみ→fixtureで空振り、fixture値のみ→実データで0件、の両方を避ける) |
 | CQ8 | `law:LawRevision` を law_id で絞り、`?d <= 指定日` の最大の版 |
 | CQ9 | 法令の unresolved のうち `unresolved_reason = OLD_MINISTRY` と resolved を分けて数える |
 | CQ10 | P0-4 の全ソース版(取得日/記録日ラベル付き) |
