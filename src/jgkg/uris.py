@@ -67,6 +67,79 @@ def unresolved_ministry_uri(name: str) -> str:
     return f"{_base()}/id/unresolved/ministry/{quote(name, safe='')}"
 
 
+def budget_uri(fiscal_year: str, project_id: str) -> str:
+    """`budget:BudgetProject` のURI。
+
+    `project_id` 単独では一意でない(同じ事業が複数の予算年度に渡って
+    存在する。budget.yaml の `projectId` docstring参照)。同一性は
+    `(project_id, fiscal_year)` の組で決まるため、両方をURIの材料にする
+    (Task 7 brief §URI規約)。
+    """
+    if not fiscal_year or not project_id:
+        raise ValueError("fiscal_year と project_id はいずれも空であってはならない")
+    return f"{_base()}/id/budget/{quote(fiscal_year, safe='')}/{quote(project_id, safe='')}"
+
+
+def expenditure_uri(fiscal_year: str, project_id: str, seq: int) -> str:
+    """`budget:Expenditure` のURI。ハッシュの安定IDではなく連番(ソース内の行順)。
+
+    **連番が版間で安定しない場合は Task 10 の置換セマンティクスが吸収する**
+    (グラフごと置き換わるため、個別IDの持続性はこのタスクの要件ではない。
+    Task 7 brief §URI規約)。
+    """
+    if seq < 0:
+        raise ValueError(f"seq は0以上である必要がある: {seq!r}")
+    return f"{budget_uri(fiscal_year, project_id)}/{seq}"
+
+
+def unresolved_budget_ministry_uri(fiscal_year: str, project_id: str, name: str) -> str:
+    """予算事業→府省の解決に失敗した名称の `core:UnresolvedReference` ノードのURI。
+
+    `unresolved_ministry_uri`(参照表の1行が突合できない、という別の軸)とは
+    意図的に別関数にする。あちらは名称のみを鍵にするが、こちらを名称のみで
+    鍵にすると、同じ未突合の府省名を指す予算事業が何百件あっても1ノードに
+    収束し、事業ごとの件数(法令の`unresolved_jurisdiction_uri`と同じ理由、
+    CQ9型の集計)が測れなくなる。鍵に `(fiscal_year, project_id)` を含める。
+    """
+    if not fiscal_year or not project_id or not name:
+        raise ValueError("fiscal_year・project_id・name はいずれも空であってはならない")
+    return (
+        f"{_base()}/id/unresolved/budget-ministry/"
+        f"{quote(fiscal_year, safe='')}/{quote(project_id, safe='')}/{quote(name, safe='')}"
+    )
+
+
+def unresolved_basis_law_uri(fiscal_year: str, project_id: str, key: str) -> str:
+    """予算事業の根拠法令引用が解決に失敗した場合の `core:UnresolvedReference` ノードのURI。
+
+    `key` は試みた識別子(law_idが分かっていればそれ、無ければ法令名)。
+    `unresolved_jurisdiction_uri` と同じ理由で `(fiscal_year, project_id)` を
+    鍵に含める(同じ未解決の法令名/IDを指す予算事業が複数あっても1ノードに
+    収束させない)。
+    """
+    if not fiscal_year or not project_id or not key:
+        raise ValueError("fiscal_year・project_id・key はいずれも空であってはならない")
+    return (
+        f"{_base()}/id/unresolved/budget-basis-law/"
+        f"{quote(fiscal_year, safe='')}/{quote(project_id, safe='')}/{quote(key, safe='')}"
+    )
+
+
+def unresolved_recipient_uri(fiscal_year: str, project_id: str, seq: int, key: str) -> str:
+    """支出(Expenditure)の支出先が解決に失敗した場合の `core:UnresolvedReference` ノードのURI。
+
+    支出自体が `expenditure_uri` で連番により一意なので、その連番を鍵に含める
+    だけで事業内の衝突を避けられる(法令・府省の未解決URIのように名称だけで
+    件数が潰れる心配は無い — 1つの支出行につき未解決ノードは最大1つ)。
+    `key` は支出先名(束ね行なら「その他」等の表示名そのもの)。
+    """
+    if not fiscal_year or not project_id or not key:
+        raise ValueError("fiscal_year・project_id・key はいずれも空であってはならない")
+    if seq < 0:
+        raise ValueError(f"seq は0以上である必要がある: {seq!r}")
+    return f"{expenditure_uri(fiscal_year, project_id, seq)}/unresolved/{quote(key, safe='')}"
+
+
 def graph_uri(source_id: str, fetched_on: datetime.date) -> str:
     if not source_id:
         raise ValueError("ソースIDが空である")

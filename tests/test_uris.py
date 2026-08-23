@@ -93,3 +93,81 @@ def test_base_uri_trailing_slash_is_normalized(monkeypatch):
     from jgkg.config import get_settings
     get_settings.cache_clear()
     assert Settings().base_uri == "https://uri-test.invalid/kg"
+
+
+# =============================================================================
+# budget_uri / expenditure_uri(Task 7 brief §URI規約、B-S2)
+# =============================================================================
+
+
+def test_budget_uri_uses_fiscal_year_and_project_id():
+    assert uris.budget_uri("2025", "828") == f"{TEST_BASE}/id/budget/2025/828"
+
+
+def test_budget_uri_distinguishes_the_same_project_across_fiscal_years():
+    """`project_id` 単独では同一性が決まらないこと(budget.yaml の projectId docstring)。
+
+    同じ事業(project_id)でも予算年度が違えば別のBudgetProjectノードになる。
+    """
+    a = uris.budget_uri("2025", "159")
+    b = uris.budget_uri("2023", "159")
+    assert a != b
+
+
+def test_budget_uri_rejects_empty_parts():
+    with pytest.raises(ValueError):
+        uris.budget_uri("", "828")
+    with pytest.raises(ValueError):
+        uris.budget_uri("2025", "")
+
+
+def test_expenditure_uri_nests_under_the_budget_project_by_sequence():
+    assert uris.expenditure_uri("2025", "1", 0) == f"{TEST_BASE}/id/budget/2025/1/0"
+    first = uris.expenditure_uri("2025", "1", 0)
+    second = uris.expenditure_uri("2025", "1", 1)
+    assert first != second
+
+
+def test_expenditure_uri_rejects_a_negative_sequence():
+    with pytest.raises(ValueError):
+        uris.expenditure_uri("2025", "1", -1)
+
+
+def test_unresolved_budget_ministry_uri_is_keyed_by_project_not_just_name():
+    """同じ未突合の府省名を指す別の事業が、1ノードに収束しないこと。"""
+    a = uris.unresolved_budget_ministry_uri("2025", "1", "存在しない省")
+    b = uris.unresolved_budget_ministry_uri("2025", "2", "存在しない省")
+    assert a != b
+
+
+def test_unresolved_budget_ministry_uri_is_distinct_from_the_reference_table_axis():
+    """`unresolved_ministry_uri`(参照表の突合失敗)と同じ名称でも別のURIになること。
+
+    2つは別の軸(参照表の1行 vs 個々の予算事業)の未解決なので、
+    衝突してはならない。
+    """
+    from jgkg.uris import unresolved_ministry_uri
+
+    a = uris.unresolved_budget_ministry_uri("2025", "1", "存在しない省")
+    b = unresolved_ministry_uri("存在しない省")
+    assert a != b
+
+
+def test_unresolved_basis_law_uri_is_keyed_by_project():
+    a = uris.unresolved_basis_law_uri("2025", "1", "大蔵省令")
+    b = uris.unresolved_basis_law_uri("2025", "2", "大蔵省令")
+    assert a != b
+
+
+def test_unresolved_recipient_uri_nests_under_the_expenditure():
+    uri = uris.unresolved_recipient_uri("2025", "1", 0, "その他")
+    assert uri.startswith(uris.expenditure_uri("2025", "1", 0))
+
+
+def test_unresolved_uri_helpers_reject_empty_parts():
+    with pytest.raises(ValueError):
+        uris.unresolved_budget_ministry_uri("", "1", "省")
+    with pytest.raises(ValueError):
+        uris.unresolved_basis_law_uri("2025", "", "省")
+    with pytest.raises(ValueError):
+        uris.unresolved_recipient_uri("2025", "1", 0, "")

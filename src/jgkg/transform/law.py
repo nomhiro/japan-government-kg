@@ -76,8 +76,16 @@ class ExtractionFailed:
 
     `None`(経路1の対象外。法律・政令など)と衝突しない、明確に区別できる
     第3の値が必要だったため、単純な`bool`や文字列ではなく専用の型にした。
-    件数の集計は呼び出し側(将来のTask 7でpipelineに法令を繋いだ時点)が
-    `is EXTRACTION_FAILED` で判定して行う。
+    件数の集計は呼び出し側が `is EXTRACTION_FAILED` で判定して行う。
+
+    **この forward reference はTask 7で訂正した(元は「将来のTask 7で
+    pipelineに法令を繋いだ時点」と書いていた)**: Task 7はbudgetモジュールの
+    範囲であり、egov-lawのpipeline.pyへの結線はTask 7の対象外と判明した
+    (egov-lawはこのリポジトリのレイクに実データが無く、Task 7はネットワークを
+    使えないため取得もできない。test_pipeline.pyの既存コメント「法令を流す
+    pipelineへの結線はTask 4の範囲外(Task 7/9/11)」、およびこの計画書の
+    Task 11「統合 — 実データの全経路実行と実測」を参照)。この分類分けの
+    件数集計は、egov-lawがpipelineに実際に繋がるタスク(Task 9/11)が行う。
     """
 
     __slots__ = ()
@@ -271,9 +279,14 @@ def derive_jurisdiction(
     - `None`: 経路1の対象外(法令番号に府省名を含まない法律・政令など)
     - `ExtractionFailed`(`EXTRACTION_FAILED`): 府省令・規則の形をしているのに
       名称を抽出できなかった(レビュー指摘2)。件数の集計は呼び出し側が
-      `is EXTRACTION_FAILED` で判定して行う(Task 7でpipelineに法令を
-      繋いだ時点で`PipelineReport`に載せる。現時点ではlawはpipeline未結線
-      のため、ここでは戻り値を区別できる形にするところまでを行う)
+      `is EXTRACTION_FAILED` で判定して行う(egov-lawがpipelineに実際に
+      繋がった時点で`PipelineReport`に載せる。**Task 7で訂正**: 当初この
+      docstringは「Task 7でpipelineに法令を繋いだ時点」と書いていたが、
+      Task 7の対象はbudgetモジュールであり、egov-lawをpipeline.pyへ結線する
+      ことはTask 7の範囲外と判明した(レイクに実データが無く、Task 7は
+      ネットワークを使えない。test_pipeline.pyの既存コメントの通りTask 7/9/11
+      で分担する。全経路の実行と実測はTask 11)。現時点でもlawはpipeline
+      未結線のままなので、ここでは戻り値を区別できる形にするところまでを行う)
     - `JurisdictionResult`: 対象内。抽出した名称は**必ず** `resolved` か
       `unresolved` のどちらかに振り分ける(§8.2「解決できた分だけ返す」
       設計にしない — このタスクで踏みやすい欠陥の型の2番目)
