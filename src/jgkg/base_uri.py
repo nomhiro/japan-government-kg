@@ -62,6 +62,7 @@ ALLOWED_EXTERNAL_HOSTS: frozenset[str] = frozenset({
     "www.digital.go.jp",
     "www.houjin-bangou.nta.go.jp",
     "laws.e-gov.go.jp",
+    "rssystem.go.jp",
     "github.com",
     # `wrangler pages dev` のローカル再現サーバ。**ポート込みで限定する。**
     # ここをポート無しの "localhost" と書くと、移行前の開発用ベースURI

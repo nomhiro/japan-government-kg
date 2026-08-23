@@ -84,6 +84,28 @@ SOURCES: dict[str, Source] = {
         recorded_on=datetime.date(2026, 8, 22),
         sha256="d0c46d408bf3578a9b3fab221de1101540d1fdc4454e972869e9796d0ca5e094",
     ),
+    "rs-system": Source(
+        id="rs-system",
+        name="行政事業レビュー見える化サイト RSシステム 一括CSVダウンロード",
+        url="https://rssystem.go.jp/download-csv",
+        # 政府標準利用規約(第2.0版)ではない。RSは「公共データ利用規約(第1.0版)」
+        # (PDL1.0)に準拠する、と当サイトの利用規約ページ自体が明記している
+        # (2026-08-23 実測。JSバンドル main-Cyt4dzWq.js の i18n 文字列
+        # "ps-terms-page-intro-text-2/3" より)。出典記載例(同ページより):
+        # 「出典：行政事業レビュー見える化サイト」
+        license="公共データ利用規約(第1.0版)(PDL1.0)",
+        license_url="https://www.digital.go.jp/resources/open_data/public_data_license_v1.0",
+        frequency="annual",
+        access="bulk",
+        encoding="utf-8-sig",
+        note="事業年度ごとに15本の関連CSV(zip配布、jgkg.connectors.rs_system."
+             "RS_GROUP_FILENAMES参照)に分かれる。単一テーブルではない。"
+             "当サイトは「更新型のデータベース」であり(利用規約ページの記載)、"
+             "補正予算成立等に伴い同じ事業年度のCSVの内容が年内に更新されることが"
+             "ある(取得日の記録が重要になる理由)。ダウンロードページはSPAで専用APIは"
+             "無く、実体は https://rssystem.go.jp/files/<year>/rs/<ファイル名>.zip "
+             "への直接GET(認証不要、2026-08-23実測)",
+    ),
 }
 
 
