@@ -506,7 +506,10 @@ R2 で排除済み)なので、同一主語の全トリプルが同じバッチ�
 
 **Files:**
 - Modify: `src/jgkg/lake.py`(`latest_before(source_id, before: date) -> Snapshot | None`)
-- Modify: `src/jgkg/pipeline.py`(差分検出: 前回スナップショットと sha256 が同じソースは
+- Modify: `src/jgkg/pipeline.py`(**egov-law / rs-system ソースの結線を含む — Ruling B17。**
+  Task 7 は emit_budget までを実装済みで、pipeline.run への結線は複数ソースの
+  オーケストレーション変更と同時にここで行う。**RSを含むリリースは全法人グラフ必須**
+  (recipient の参照整合。Task 7 懸念2)。差分検出: 前回スナップショットと sha256 が同じソースは
   「据え置き」としてグラフ再生成をスキップし、**前リリースのグラフを引き継ぐ**)
 - Modify: `scripts/serve.sh`(アトミック切替: `data/artifact/current` を
   ディレクトリごと入れ替える。**稼働中のmmapディレクトリを上書きしない** —
