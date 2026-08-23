@@ -1,0 +1,16 @@
+# CQ5: ある法令を根拠とする事業を所管する府省はどこか
+#
+# 「ある法令」は固有名を焼き込まない(骨子どおり全件を返す一般形。呼び出し側/
+# テストが特定の法令で結果を絞る)。事業のbasisLawはその事業自身の
+# budget:ministryで所管府省が決まるため、根拠法令(basisLaw)自身の
+# law:jurisdictionが未解決であっても(例: 廃止された旧省庁の省令を今も
+# 根拠として引用している事業)、このCQは正しく答えられる — CQ4(府省→
+# jurisdictionの経路)とは別の軸であることの証拠にもなる。
+PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
+PREFIX skos:   <http://www.w3.org/2004/02/skos/core#>
+
+SELECT ?law ?project ?ministry ?ministryName WHERE {
+  ?project budget:basisLaw ?law ;
+           budget:ministry ?ministry .
+  ?ministry skos:prefLabel ?ministryName .
+}

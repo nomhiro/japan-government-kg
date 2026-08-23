@@ -1,0 +1,13 @@
+# CQ1: この府省令の所管府省はどこか
+#
+# 実在の府省令(2026-08-24、レイクの実データ policy_measure_laws_and_regulations
+# を走査して見つけた、RS project_id=1953が引用する法令ID・法令番号の組。
+# 詳細は schema/competency-questions.md)。値は fixture(tests/phase1_fixture.py)
+# にも同じ組で存在する(B-S3)。
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX law:  <https://jgkg.norr-tech.com/def/law#>
+
+SELECT ?ministry ?ministryName WHERE {
+  <https://jgkg.norr-tech.com/id/law/417M60000100021> law:jurisdiction ?ministry .
+  ?ministry skos:prefLabel ?ministryName .
+}

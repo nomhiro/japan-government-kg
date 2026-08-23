@@ -1,0 +1,25 @@
+# CQ3: この法人はどの事業からいくら支出を受けたか。年度別に並べられるか
+#
+# 「年度」はExpenditure.fiscalYear=RSレビューシート自体の事業年度であり、
+# 支出の実際の支払年度ではない(B19。実測でシート年度-1の執行実績と一致。
+# schema/competency-questions.md参照)。amountは core:amount_jpy
+# (budget:amount というプロパティは存在しない。Expenditure は
+# core:MonetaryItem の amount_jpy を継承する。budget.yaml参照)。
+#
+# B20の役割による除外はここには適用しない: これは特定の法人「自身」が
+# 実際に受け取った額の一覧であり、その法人が資金の流れの中でどの段
+# (一次受給者/間接補助事業者等)にあるかによらず、受け取った額は受け取った
+# 額である。役割による除外が意味を持つのは事業内・受給者横断の合計であり、
+# 単一法人のこの一覧には適用しない(schema/competency-questions.md「B20」節)。
+PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
+PREFIX core:   <https://jgkg.norr-tech.com/def/core#>
+PREFIX skos:   <http://www.w3.org/2004/02/skos/core#>
+
+SELECT ?project ?projectName ?y ?a WHERE {
+  ?e budget:recipient <https://jgkg.norr-tech.com/id/org/3010001137944> ;
+     budget:project ?project ;
+     budget:fiscalYear ?y ;
+     core:amount_jpy ?a .
+  ?project skos:prefLabel ?projectName .
+}
+ORDER BY ?y

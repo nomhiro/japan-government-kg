@@ -1,0 +1,23 @@
+# CQ4: ある法人に流れた資金をさかのぼると、どの府省・どの法令に行き着くか
+#
+# 法人→支出→事業→府省→法令、をプロパティパスではなく明示ジョインで辿る
+# (どのグラフを経由したかを名前として残すため。骨子: 「出典グラフを跨ぐ」)。
+#
+# **法令へは事業の根拠法令(budget:basisLaw)ではなく、事業を所管する府省が
+# 経路1(法令番号からの導出)で所管を持つ法令(law:jurisdictionの逆方向)を
+# 辿る。** 事業のbasisLawは「その事業が根拠として引用する法令」という別の軸
+# (CQ5の対象)であり、同じ法令に一致するとは限らない — fixtureはこの2つを
+# 意図的に別の法令にしている(basisLaw=旧・厚生省令/所管=厚生労働省令)ため、
+# 経路を取り違えると答えが変わる。
+PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
+PREFIX law:    <https://jgkg.norr-tech.com/def/law#>
+PREFIX skos:   <http://www.w3.org/2004/02/skos/core#>
+
+SELECT DISTINCT ?ministry ?ministryName ?law ?lawTitle WHERE {
+  ?e budget:recipient <https://jgkg.norr-tech.com/id/org/3010001137944> ;
+     budget:project ?project .
+  ?project budget:ministry ?ministry .
+  ?ministry skos:prefLabel ?ministryName .
+  ?law law:jurisdiction ?ministry ;
+       skos:prefLabel ?lawTitle .
+}
