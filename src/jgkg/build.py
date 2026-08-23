@@ -27,6 +27,12 @@ class Manifest(BaseModel):
     # 隔離されて入らなかったソース。**落ちたことを黙って消さない。**
     # 既定を空にしているのは、この項目が無い既存の manifest.json も読めるようにするため
     quarantined_sources: list[str] = []
+    # 成果物のmanifest形式そのものの版。この欄自体を計画B Task 1で追加したため、
+    # それ以前に作られた manifest.json には欄が無い。`Manifest(...)` を直接構築する
+    # (=新規に作る)場合の既定はこの 2。**旧manifestを読むときに 1 とみなす処理は
+    # ここではなく read_manifest() 側に置く**(pydanticのフィールド既定だけでは
+    # 「新規構築で省略した」のか「旧ファイルに欄が無い」のかを区別できないため)
+    manifest_version: int = 2
 
 
 def _sha256(path: Path) -> str:
@@ -89,6 +95,20 @@ def write_manifest(m: Manifest, path: Path) -> None:
     atomic_write(path, data)
 
 
+def read_manifest(path: Path) -> Manifest:
+    """manifest.json を読む。
+
+    **`manifest_version` が無い旧 manifest は 1 とみなす。** この欄自体を
+    計画B Task 1 で追加したため、それ以前の manifest には存在しない。
+    `Manifest` フィールドの既定値(2、新規構築時の版)をそのまま使うと、
+    旧ファイルも「欄を省略した新規構築」と区別できず誤って2とみなされる
+    ため、読み込み時だけここで明示的に補う。
+    """
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data.setdefault("manifest_version", 1)
+    return Manifest(**data)
+
+
 def verify_manifest(
     manifest_path: Path,
     tarball: Path,
@@ -103,7 +123,7 @@ def verify_manifest(
     ものと一致するかも確かめる。**TDB2のオンディスク形式はJenaのバージョンに
     紐づく**ため、記録しただけで照合しなければ意味がない。
     """
-    m = Manifest(**json.loads(manifest_path.read_text(encoding="utf-8")))
+    m = read_manifest(manifest_path)
     actual = _sha256(tarball)
     if actual != m.sha256:
         raise ValueError(

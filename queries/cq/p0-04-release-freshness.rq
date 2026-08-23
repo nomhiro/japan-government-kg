@@ -1,9 +1,15 @@
 # CQ P0-4: このリリースは各ソースについていつ時点のデータを含むか
+# 「取得日」(実際に取得した日。prov:generatedAtTime)と「記録日」
+# (取得の概念が無い参照表をリポジトリに記録した日。core:recordedOn)は
+# 別の概念なので(レビューMod①)、どちらの日付かをラベルとして返す。
 PREFIX prov:    <http://www.w3.org/ns/prov#>
 PREFIX dcterms: <http://purl.org/dc/terms/>
+PREFIX core:    <https://jgkg.norr-tech.com/def/core#>
 
-SELECT ?sourceName ?fetchedOn WHERE {
-  ?graph prov:generatedAtTime ?fetchedOn ;
+SELECT ?sourceName ?asOf ?dateKind WHERE {
+  ?graph prov:generatedAtTime ?asOf ;
          dcterms:source ?sourceName .
+  OPTIONAL { ?graph core:recordedOn ?recordedOn }
+  BIND(IF(BOUND(?recordedOn), "記録日", "取得日") AS ?dateKind)
 }
 ORDER BY ?sourceName

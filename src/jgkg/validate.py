@@ -94,7 +94,7 @@ def validate_dataset(ds: Dataset, shapes_dir: Path) -> list[ValidationResult]:
     term_prefix = f"{get_settings().base_uri}/def/"
     results: list[ValidationResult] = []
 
-    for ctx in ds.contexts():
+    for ctx in ds.graphs():
         if len(ctx) == 0:
             continue
         target = Graph()
@@ -168,7 +168,7 @@ def passing_dataset(ds: Dataset, results: list[ValidationResult]) -> Dataset:
     """検証を通ったグラフだけを含む新しいDatasetを返す。"""
     failing = {r.graph_uri for r in results if not r.conforms}
     clean = Dataset(default_union=True)
-    for ctx in ds.contexts():
+    for ctx in ds.graphs():
         if len(ctx) == 0 or str(ctx.identifier) in failing:
             continue
         target = clean.graph(ctx.identifier)

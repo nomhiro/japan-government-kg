@@ -35,7 +35,7 @@ def test_organizations_land_in_the_named_graph_for_the_source():
     ds = emit.emit_organizations([_org()], "houjin-bangou", DAY)
     expected_graph = URIRef("https://jgkg.norr-tech.com/graph/houjin-bangou/2026-08-01")
 
-    contexts = {g.identifier for g in ds.contexts() if len(g) > 0}
+    contexts = {g.identifier for g in ds.graphs() if len(g) > 0}
     assert expected_graph in contexts
 
 
@@ -57,7 +57,7 @@ def test_no_fact_without_provenance():
 
     data_graphs = {
         g.identifier
-        for g in ds.contexts()
+        for g in ds.graphs()
         if len(g) > 0 and "/graph/" in str(g.identifier) and "provenance" not in str(g.identifier)
     }
     assert data_graphs, "データを含むグラフが無い"

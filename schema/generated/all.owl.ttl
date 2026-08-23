@@ -13,6 +13,17 @@
     dcterms:title "日本政府ナレッジグラフ 全モジュール統合(検証用)" ;
     skos:definition "SHACL検証のために全モジュールを1つに束ねるだけのスキーマ。ここから生成した all.shacl.ttl を検証の唯一の入力にする。モジュール別に生成すると、import された 上位モジュールのシェイプが各ファイルに重複して現れ、閉じたシェイプが同一クラスに 複数適用されて偽の違反になるため。 新しいドメインモジュールを追加したら、必ずここの imports にも追加する。 このオントロジーは日本国政府が公開するデータを第三者が構造化したものであり、日本国政府による公式なデータセットではない。"@ja .
 
+<https://jgkg.norr-tech.com/def/core#recordedOn> a owl:DatatypeProperty ;
+    rdfs:label "recordedOn" ;
+    rdfs:range xsd:date ;
+    skos:definition "リポジトリに参照表として記録した日。取得日(prov:generatedAtTime)とは 別の概念(レビューMod①)。「取得」の無いソース(手作りの参照表)はこちらを持つ"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
+
+<https://jgkg.norr-tech.com/def/core#sourceSha256> a owl:DatatypeProperty ;
+    rdfs:label "sourceSha256" ;
+    skos:definition "取得した一次資料のバイト列のSHA-256。レイクのスナップショットと一致し、 KGから入力バイト列まで遡れる(レビューI1)。値はレイクのメタデータから取る"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
+
 <https://jgkg.norr-tech.com/def/core#valid_from> a owl:DatatypeProperty ;
     rdfs:label "valid_from" ;
     rdfs:range xsd:date ;

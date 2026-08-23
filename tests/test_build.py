@@ -157,3 +157,57 @@ def test_triple_count_handles_tricky_literals(tmp_path):
     # 3項行のオブジェクトIRIがグラフとして混入していないこと
     assert m.graphs == ["http://example.test/g"]
     assert "http://example.test/o" not in m.graphs
+
+
+def test_build_manifest_produces_version_2(tmp_path):
+    """新規に構築した manifest は manifest_version=2 を持つこと(計画B Task 1)。"""
+    nq = tmp_path / "kg.nq"
+    nq.write_text("", encoding="utf-8")
+    tarball = tmp_path / "kg.tar.gz"
+    tarball.write_bytes(b"x")
+
+    m = build.build_manifest(nquads=nq, tarball=tarball, jena_version="5.0.0",
+                             release="r", sources={}, graphs=[])
+    assert m.manifest_version == 2
+
+
+def test_read_manifest_treats_a_missing_version_field_as_1(tmp_path):
+    """`manifest_version` 欄が無い旧 manifest.json を読むと 1 とみなすこと。
+
+    この欄自体を計画B Task 1 で追加したため、それ以前に作られた manifest には
+    存在しない。**何があれば落ちるか**: `Manifest` フィールドの既定値(2)を
+    そのまま使う実装に戻すと、旧ファイルも2と誤判定されて落ちる。
+    """
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps({
+            "release": "2026-08-01",
+            "created_on": "2026-08-01",
+            "jena_version": "5.0.0",
+            "sha256": "0" * 64,
+            "byte_size": 1,
+            "triple_count": 1,
+            "graphs": [],
+            "sources": {},
+        }),
+        encoding="utf-8",
+    )
+
+    m = build.read_manifest(manifest_path)
+    assert m.manifest_version == 1
+
+
+def test_manifest_version_roundtrips_through_write_and_read(tmp_path):
+    """新規 manifest を書いて読み直しても版(2)が保たれること。"""
+    nq = tmp_path / "kg.nq"
+    nq.write_text("", encoding="utf-8")
+    tarball = tmp_path / "kg.tar.gz"
+    tarball.write_bytes(b"x")
+
+    m = build.build_manifest(nquads=nq, tarball=tarball, jena_version="5.0.0",
+                             release="r", sources={}, graphs=[])
+    manifest_path = tmp_path / "manifest.json"
+    build.write_manifest(m, manifest_path)
+
+    reloaded = build.read_manifest(manifest_path)
+    assert reloaded.manifest_version == 2

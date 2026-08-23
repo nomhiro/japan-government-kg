@@ -92,7 +92,7 @@ def enforce_release_gate(report: PipelineReport, *, allow_partial: bool = False)
 
 
 def _merge(target: Dataset, source: Dataset) -> None:
-    for ctx in source.contexts():
+    for ctx in source.graphs():
         if len(ctx) == 0:
             continue
         g = target.graph(ctx.identifier)
@@ -188,14 +188,37 @@ def run(fetched_on: Mapping[str, datetime.date], out_dir: Path) -> PipelineRepor
     # **実際に読んだファイルのハッシュ**を出典に入れる。参照表にはレイクの
     # スナップショットが無いので、内容ハッシュが「どの版を使ったか」の唯一の証拠
     reference_digest = sources.content_digest(MINISTRY_REFERENCE.read_bytes())
+    ministry_recorded_on = sources.get_source("ministry-codes").recorded_on
+
+    # 法人番号スナップショットの sha256 はレイクの実メタデータから取る(レビューI1)。
+    # `snapshot_path.exists()` はデータ本体の存在しか見ないため、メタデータ
+    # (`.meta.json`)自体が欠けている(中断された取得)場合はここで別途落とす
+    houjin_snapshot = next(
+        (s for s in lake.list_snapshots("houjin-bangou") if s.fetched_on == houjin_date),
+        None,
+    )
+    if houjin_snapshot is None:
+        raise FileNotFoundError(
+            f"スナップショットのメタデータが無い: {snapshot_path}.meta.json。"
+            " lake.save() がメタデータを書く前に中断された疑いがある(未コミット)"
+        )
 
     ds = Dataset(default_union=True)
-    # 法人番号スナップショットの sha256 は未記録(レビューI1。本修正の範囲外)
-    _merge(ds, emit.emit_organizations(orgs, "houjin-bangou", houjin_date))
+    _merge(
+        ds,
+        emit.emit_organizations(
+            orgs, "houjin-bangou", houjin_date, sha256=houjin_snapshot.sha256
+        ),
+    )
     _merge(
         ds,
         emit.emit_ministries(
-            ministries, unmatched, "ministry-codes", ministry_date, sha256=reference_digest
+            ministries,
+            unmatched,
+            "ministry-codes",
+            ministry_date,
+            sha256=reference_digest,
+            recorded_on=ministry_recorded_on,
         ),
     )
 
@@ -208,7 +231,7 @@ def run(fetched_on: Mapping[str, datetime.date], out_dir: Path) -> PipelineRepor
     out_dir.mkdir(parents=True, exist_ok=True)
     emit.write_nquads(clean, out_dir / "kg.nq")
 
-    surviving_graphs = sorted(str(c.identifier) for c in clean.contexts() if len(c) > 0)
+    surviving_graphs = sorted(str(c.identifier) for c in clean.graphs() if len(c) > 0)
     # **成果物に残ったソースだけを sources に載せる。** グラフが隔離されたのに
     # 「このソースはこの日付のデータを含む」と書くと、manifest が嘘をつく
     # (`--allow-partial` で出荷したときに実際に起きる)。落ちたことは

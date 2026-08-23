@@ -7,6 +7,17 @@
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
+<https://jgkg.norr-tech.com/def/core#recordedOn> a owl:DatatypeProperty ;
+    rdfs:label "recordedOn" ;
+    rdfs:range xsd:date ;
+    skos:definition "リポジトリに参照表として記録した日。取得日(prov:generatedAtTime)とは 別の概念(レビューMod①)。「取得」の無いソース(手作りの参照表)はこちらを持つ"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
+
+<https://jgkg.norr-tech.com/def/core#sourceSha256> a owl:DatatypeProperty ;
+    rdfs:label "sourceSha256" ;
+    skos:definition "取得した一次資料のバイト列のSHA-256。レイクのスナップショットと一致し、 KGから入力バイト列まで遡れる(レビューI1)。値はレイクのメタデータから取る"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
+
 <https://jgkg.norr-tech.com/def/core#valid_from> a owl:DatatypeProperty ;
     rdfs:label "valid_from" ;
     rdfs:range xsd:date ;

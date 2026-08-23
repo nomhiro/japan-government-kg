@@ -39,7 +39,12 @@ def _metadata_graph_uri() -> str:
     return f"{get_settings().base_uri}/graph/provenance"
 
 
-def _new_dataset(source_id: str, fetched_on: datetime.date, sha256: str | None) -> tuple[Dataset, Graph]:
+def _new_dataset(
+    source_id: str,
+    fetched_on: datetime.date,
+    sha256: str | None,
+    recorded_on: datetime.date | None = None,
+) -> tuple[Dataset, Graph]:
     # default_union=True にしないと、rdflib の Dataset は既定でクエリを
     # デフォルトグラフだけに限定する(名前付きグラフを跨いだ ds.objects() 等が
     # 常に空になる)。データもメタデータも名前付きグラフに入れる設計(デフォルト
@@ -49,7 +54,9 @@ def _new_dataset(source_id: str, fetched_on: datetime.date, sha256: str | None) 
     data = ds.graph(URIRef(gid))
 
     meta = ds.graph(URIRef(_metadata_graph_uri()))
-    for triple in provenance_graph(gid, source_id, fetched_on, sha256=sha256):
+    for triple in provenance_graph(
+        gid, source_id, fetched_on, sha256=sha256, recorded_on=recorded_on
+    ):
         meta.add(triple)
     return ds, data
 
@@ -59,9 +66,10 @@ def emit_organizations(
     source_id: str,
     fetched_on: datetime.date,
     sha256: str | None = None,
+    recorded_on: datetime.date | None = None,
 ) -> Dataset:
     ns = _ns()
-    ds, data = _new_dataset(source_id, fetched_on, sha256)
+    ds, data = _new_dataset(source_id, fetched_on, sha256, recorded_on)
 
     for org in orgs:
         s = URIRef(org.uri)
@@ -86,9 +94,10 @@ def emit_ministries(
     source_id: str,
     fetched_on: datetime.date,
     sha256: str | None = None,
+    recorded_on: datetime.date | None = None,
 ) -> Dataset:
     ns = _ns()
-    ds, data = _new_dataset(source_id, fetched_on, sha256)
+    ds, data = _new_dataset(source_id, fetched_on, sha256, recorded_on)
     base = get_settings().base_uri
 
     for m in ministries:

@@ -65,6 +65,17 @@ slots:
       解決できなかった参照の、ソース側のキー(府省コード等)。ドメイン固有の
       プロパティを UnresolvedReference に足すと閉じたSHACLシェイプに違反するため、
       汎用のキーとしてここで受ける
+  # 以下2つは出典グラフ(graph/provenance)の語彙。どのクラスの slots にも
+  # 加えない(UnresolvedReference 等の閉じたシェイプに違反するため)。
+  sourceSha256:
+    description: >-
+      取得した一次資料のバイト列のSHA-256。レイクのスナップショットと一致し、
+      KGから入力バイト列まで遡れる(レビューI1)。値はレイクのメタデータから取る
+  recordedOn:
+    description: >-
+      リポジトリに参照表として記録した日。取得日(prov:generatedAtTime)とは
+      別の概念(レビューMod①)。「取得」の無いソース(手作りの参照表)はこちらを持つ
+    range: date
 
 enums:
   UnresolvedReasonEnum:

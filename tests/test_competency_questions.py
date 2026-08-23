@@ -154,20 +154,25 @@ def test_cq_p0_04_release_freshness(kg):
     無い日付を答えていた(レビューI2)。参照表には取得日が存在しないので、
     リポジトリに記録した日を答える。
 
+    **計画B Task 1 で「取得日/記録日」ラベルを追加。** 日付の値だけでは
+    両ソースが同じ意味の日付(取得日)なのか判別できない(レビューMod①の
+    「取得日と記録日は別概念」がクエリの出力からは見えなかった)。ラベルまで
+    含めて固定することで、この区別が崩れたら検出できるようにする。
+
     **何があれば落ちるか**: 参照表の日付が法人番号の取得日に戻ったら落ちる。
-    ソースが1つでも欠けたら落ちる。
+    ソースが1つでも欠けたら落ちる。ラベルが両ソースで同じ値になったら落ちる。
     """
     from jgkg.sources import get_source
 
     rows = _query(kg, "p0-04-release-freshness.rq")
     assert rows, "CQ P0-4 に答えられない(鮮度が問えない)"
 
-    by_source = {str(name): str(date) for name, date in rows}
+    by_source = {str(name): (str(date), str(kind)) for name, date, kind in rows}
     houjin = get_source("houjin-bangou")
     ministry = get_source("ministry-codes")
     assert by_source == {
-        houjin.name: "2026-08-01",
-        ministry.name: ministry.recorded_on.isoformat(),
+        houjin.name: ("2026-08-01", "取得日"),
+        ministry.name: (ministry.recorded_on.isoformat(), "記録日"),
     }, by_source
 
 

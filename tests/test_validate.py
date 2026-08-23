@@ -175,5 +175,5 @@ def test_passing_dataset_excludes_failing_graphs():
     results = validate.validate_dataset(ds, SHAPES)
     clean = validate.passing_dataset(ds, results)
 
-    contexts = {str(c.identifier) for c in clean.contexts() if len(c) > 0}
+    contexts = {str(c.identifier) for c in clean.graphs() if len(c) > 0}
     assert str(broken_gid) not in contexts, "不合格グラフがロード対象に残っている"
