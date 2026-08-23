@@ -335,14 +335,32 @@ class BudgetProject(Work):
 
 class Expenditure(MonetaryItem):
     """
-    予算事業からの1件の支出(支出先1件分)。金額(amount_jpy)はMonetaryItemから 継承する(core.yamlに既存の「金額(円)」スロットがあるため、budget独自の amountスロットは追加しない。Task 7報告書の逸脱台帳を参照)。支出先の 表示名(束ね行なら「その他」等の集約ラベル)はEntityから継承する core:label(skos:prefLabel)に持たせる(recipientLabel等の専用スロットは 追加しない。理由は同上)
+    予算事業からの1件の支出(支出先1件分)。金額(amount_jpy)はMonetaryItemから 継承する(core.yamlに既存の「金額(円)」スロットがあるため、budget独自の amountスロットは追加しない。Task 7報告書の逸脱台帳を参照)。支出先の 表示名(束ね行なら「その他」等の集約ラベル)はEntityから継承する core:label(skos:prefLabel)に持たせる(recipientLabel等の専用スロットは 追加しない。理由は同上)。センチネル法人番号の行の表示名は`payeeLabel` が別に持つ(上記recipientのdocstring・B18参照)
     """
     linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/budget',
-         'slot_usage': {'project': {'name': 'project', 'required': True}}})
+         'slot_usage': {'fiscalYear': {'description': 'このExpenditureが属するBudgetProjectと同じRSレビューシートの年度 '
+                                                      '(URIの構成要素でもある。`uris.expenditure_uri`)。**支出の実際の '
+                                                      '支払年度ではない** — '
+                                                      'task-7-review.md指摘7の実測: RS '
+                                                      '2025シートの '
+                                                      '支出先ファイルは実はFY2024の執行実績であり(事業ごとのΣ[23]と '
+                                                      'budget_summaryのFY2024執行額[19]の比較で、中央比1.0000・完全一致 '
+                                                      '32.3%を確認)、支出先ファイル自身の事業年度列は193,912行すべて '
+                                                      "'2025'固定でFY2024/2025を区別する列を持たない。したがって "
+                                                      '`budgetAmount`(FY2025当初予算)と`Σ '
+                                                      'amount_jpy`(FY2024執行)を '
+                                                      '同じBudgetProjectの下で単純に比較すると、年度の異なる2つの値を '
+                                                      '比べることになる(URIのキーとリテラルの意味を分けるモデル変更は '
+                                                      'Task '
+                                                      '7の範囲外。controllerの裁定を仰いだ懸念として報告書に記載)',
+                                       'name': 'fiscalYear'},
+                        'project': {'name': 'project', 'required': True}}})
 
     project: str = Field(default=..., description="""この支出が属する予算事業""", json_schema_extra = { "linkml_meta": {'domain_of': ['Expenditure']} })
-    recipient: Optional[str] = Field(default=None, description="""この支出の支払先。法人番号による直結を主とし、無い場合は名称正規化の 一意一致でフォールバックする。「その他」等への束ね行(RSの その他支出先フラグ、またはその他支出先名)は名称解決の対象ではないため、 このスロットを設定しない(黙って支出自体を落とすわけではない — core:label に表示名を残す。rs_columns.py照合記録「検証7」参照)。 解決を試みて失敗した場合(束ね行ではないのに一致しない)は core:UnresolvedReference を別に立てる""", json_schema_extra = { "linkml_meta": {'domain_of': ['Expenditure']} })
-    fiscalYear: int = Field(default=..., description="""この記述が対応する事業年度(RSのレビューシート自体の年度)。 budgetAmountは同じ年度の当初予算(合計)を指す (budget_summaryの「予算年度」列がこの値と一致する集計行)。RSは 1シートに直近5年度分の予算履歴を束ねて持つが、Task 7はレビューシート 自体の年度分のみを1つのBudgetProjectとしてモデル化する(過去4年度分の 履歴は対象外。Task 7報告書の逸脱台帳を参照)""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject', 'Expenditure']} })
+    recipient: Optional[str] = Field(default=None, description="""この支出の支払先。法人番号による直結を主とし、無い場合は名称正規化の 一意一致でフォールバックする。このスロットを設定しない場合が3つある: (1)「その他」等への束ね行(RSのその他支出先フラグ、またはその他支出先名。 rs_columns.py照合記録「検証7」参照) — 黙って支出自体を落とすわけではなく core:label に表示名を残す。(2) RSが「法人番号を持たない支払先」(個人・ 職員等)に使うセンチネル法人番号(`9999999999999`。法人番号の検査数字は 満たすが実在しない。task-7-review.md指摘1・B18裁定)— この場合も core:UnresolvedReferenceは立てない(照合すべき実体がそもそも存在しない ので「未解決」と呼ぶと嘘になる)代わりに`payeeLabel`に表示名を残す。 (3) 解決を試みて失敗した場合(束ね行・センチネルのいずれでもないのに 一致しない)は core:UnresolvedReference を別に立てる""", json_schema_extra = { "linkml_meta": {'domain_of': ['Expenditure']} })
+    fiscalYear: int = Field(default=..., description="""このExpenditureが属するBudgetProjectと同じRSレビューシートの年度 (URIの構成要素でもある。`uris.expenditure_uri`)。**支出の実際の 支払年度ではない** — task-7-review.md指摘7の実測: RS 2025シートの 支出先ファイルは実はFY2024の執行実績であり(事業ごとのΣ[23]と budget_summaryのFY2024執行額[19]の比較で、中央比1.0000・完全一致 32.3%を確認)、支出先ファイル自身の事業年度列は193,912行すべて '2025'固定でFY2024/2025を区別する列を持たない。したがって `budgetAmount`(FY2025当初予算)と`Σ amount_jpy`(FY2024執行)を 同じBudgetProjectの下で単純に比較すると、年度の異なる2つの値を 比べることになる(URIのキーとリテラルの意味を分けるモデル変更は Task 7の範囲外。controllerの裁定を仰いだ懸念として報告書に記載)""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject', 'Expenditure']} })
+    payeeLabel: Optional[str] = Field(default=None, description="""支払先の表示名(RS上の名称。「個人Ａ」等)。`recipient`がセンチネル 法人番号(B18)により未設定になったExpenditureだけが持つ — 束ね行は core:label(skos:prefLabel)で表示名を既に持つため重複させず、 解決に失敗した行(NO_CANDIDATE/AMBIGUOUS)はcore:unresolved_textが 同じ役割を果たすため、このスロットは「照合対象ではないと分かっている」 行専用にする(task-7-review.md指摘1)""", json_schema_extra = { "linkml_meta": {'domain_of': ['Expenditure']} })
+    role: Optional[str] = Field(default=None, description="""RSの[16]事業を行う上での役割の文言をそのまま保存する(verbatim。 解釈しない — LangStringではなく識別子的なコード値に近い扱いとして plainなstringにする。B20裁定)。「一次支出先」「間接補助事業者」 「再委託」等の値が実データに現れ、事業内の支出額を段を区別せず単純合計 すると通過金を二重に数える(task-7-review.md指摘8)。この段を集計から どう扱うか(モデル化するか、一次支出先のみを対象にするか)はTask 9の 裁定事項であり、Task 7はデータを保存するだけにとどめる""", json_schema_extra = { "linkml_meta": {'domain_of': ['Expenditure']} })
     amount_jpy: Optional[int] = Field(default=None, description="""金額(円)""", json_schema_extra = { "linkml_meta": {'domain_of': ['MonetaryItem']} })
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })

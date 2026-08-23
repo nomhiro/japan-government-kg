@@ -16,6 +16,24 @@
 <https://jgkg.norr-tech.com/def/budget#Expenditure> a owl:Class ;
     rdfs:label "Expenditure" ;
     rdfs:subClassOf [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#role> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:string ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#role> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#role> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#payeeLabel> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom rdf:langString ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#payeeLabel> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#payeeLabel> ],
+        [ a owl:Restriction ;
             owl:maxCardinality 1 ;
             owl:onProperty <https://jgkg.norr-tech.com/def/budget#project> ],
         [ a owl:Restriction ;
@@ -43,7 +61,7 @@
             owl:allValuesFrom <https://jgkg.norr-tech.com/def/core#Agent> ;
             owl:onProperty <https://jgkg.norr-tech.com/def/budget#recipient> ],
         <https://jgkg.norr-tech.com/def/core#MonetaryItem> ;
-    skos:definition "予算事業からの1件の支出(支出先1件分)。金額(amount_jpy)はMonetaryItemから 継承する(core.yamlに既存の「金額(円)」スロットがあるため、budget独自の amountスロットは追加しない。Task 7報告書の逸脱台帳を参照)。支出先の 表示名(束ね行なら「その他」等の集約ラベル)はEntityから継承する core:label(skos:prefLabel)に持たせる(recipientLabel等の専用スロットは 追加しない。理由は同上)"@ja ;
+    skos:definition "予算事業からの1件の支出(支出先1件分)。金額(amount_jpy)はMonetaryItemから 継承する(core.yamlに既存の「金額(円)」スロットがあるため、budget独自の amountスロットは追加しない。Task 7報告書の逸脱台帳を参照)。支出先の 表示名(束ね行なら「その他」等の集約ラベル)はEntityから継承する core:label(skos:prefLabel)に持たせる(recipientLabel等の専用スロットは 追加しない。理由は同上)。センチネル法人番号の行の表示名は`payeeLabel` が別に持つ(上記recipientのdocstring・B18参照)"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
 
 <https://jgkg.norr-tech.com/def/core#recordedOn> a owl:DatatypeProperty ;
@@ -413,6 +431,12 @@ skos:prefLabel a owl:DatatypeProperty ;
     skos:definition "所管府省庁。RSの政策所管府省庁欄(rs_columns.RS_COLのministry_name。 列5を採用する根拠はrs_columns.pyの照合記録)の名称で、Task 5の府省参照表と 突合する。突合できない場合はこのスロットを設定せず、 core:UnresolvedReference を別に立てる"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
 
+<https://jgkg.norr-tech.com/def/budget#payeeLabel> a owl:DatatypeProperty ;
+    rdfs:label "payeeLabel" ;
+    rdfs:range rdf:langString ;
+    skos:definition "支払先の表示名(RS上の名称。「個人Ａ」等)。`recipient`がセンチネル 法人番号(B18)により未設定になったExpenditureだけが持つ — 束ね行は core:label(skos:prefLabel)で表示名を既に持つため重複させず、 解決に失敗した行(NO_CANDIDATE/AMBIGUOUS)はcore:unresolved_textが 同じ役割を果たすため、このスロットは「照合対象ではないと分かっている」 行専用にする(task-7-review.md指摘1)"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
+
 <https://jgkg.norr-tech.com/def/budget#project> a owl:ObjectProperty ;
     rdfs:label "project" ;
     rdfs:range <https://jgkg.norr-tech.com/def/budget#BudgetProject> ;
@@ -433,7 +457,13 @@ skos:prefLabel a owl:DatatypeProperty ;
 <https://jgkg.norr-tech.com/def/budget#recipient> a owl:ObjectProperty ;
     rdfs:label "recipient" ;
     rdfs:range <https://jgkg.norr-tech.com/def/core#Agent> ;
-    skos:definition "この支出の支払先。法人番号による直結を主とし、無い場合は名称正規化の 一意一致でフォールバックする。「その他」等への束ね行(RSの その他支出先フラグ、またはその他支出先名)は名称解決の対象ではないため、 このスロットを設定しない(黙って支出自体を落とすわけではない — core:label に表示名を残す。rs_columns.py照合記録「検証7」参照)。 解決を試みて失敗した場合(束ね行ではないのに一致しない)は core:UnresolvedReference を別に立てる"@ja ;
+    skos:definition "この支出の支払先。法人番号による直結を主とし、無い場合は名称正規化の 一意一致でフォールバックする。このスロットを設定しない場合が3つある: (1)「その他」等への束ね行(RSのその他支出先フラグ、またはその他支出先名。 rs_columns.py照合記録「検証7」参照) — 黙って支出自体を落とすわけではなく core:label に表示名を残す。(2) RSが「法人番号を持たない支払先」(個人・ 職員等)に使うセンチネル法人番号(`9999999999999`。法人番号の検査数字は 満たすが実在しない。task-7-review.md指摘1・B18裁定)— この場合も core:UnresolvedReferenceは立てない(照合すべき実体がそもそも存在しない ので「未解決」と呼ぶと嘘になる)代わりに`payeeLabel`に表示名を残す。 (3) 解決を試みて失敗した場合(束ね行・センチネルのいずれでもないのに 一致しない)は core:UnresolvedReference を別に立てる"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
+
+<https://jgkg.norr-tech.com/def/budget#role> a owl:DatatypeProperty ;
+    rdfs:label "role" ;
+    rdfs:range xsd:string ;
+    skos:definition "RSの[16]事業を行う上での役割の文言をそのまま保存する(verbatim。 解釈しない — LangStringではなく識別子的なコード値に近い扱いとして plainなstringにする。B20裁定)。「一次支出先」「間接補助事業者」 「再委託」等の値が実データに現れ、事業内の支出額を段を区別せず単純合計 すると通過金を二重に数える(task-7-review.md指摘8)。この段を集計から どう扱うか(モデル化するか、一次支出先のみを対象にするか)はTask 9の 裁定事項であり、Task 7はデータを保存するだけにとどめる"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
 
 <https://jgkg.norr-tech.com/def/core#Work> a owl:Class ;
