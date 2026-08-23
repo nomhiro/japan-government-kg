@@ -202,6 +202,15 @@ def process(path: Path, lang: str = LANG) -> int:
     持たない設計を保てる — `scripts/generate-schema.sh`はモジュールごとに
     このスクリプトを別プロセスで呼ぶ)。
 
+    **この関数は`sh:class`の除去について冪等ではない(レビュー指摘5で実測)。**
+    既に`sh:class`を除去済みの`all.shacl.ttl`にもう一度`process()`を適用すると、
+    2回目は除去対象の`sh:class`が既に無いため`reference-classes.json`が`[]`
+    になる。`scripts/generate-schema.sh`は毎回`gen-shacl`の生の出力から
+    `process()`を呼ぶため通常はこの非冪等性を踏まないが、生成物1ファイルだけを
+    手で流し直すと踏む。この`[]`は「対象が無い」正常状態ではなく二重適用の
+    証拠として扱う(`validate._load_reference_classes`が実行時に例外にする。
+    裁定B9)。
+
     タグ付けした件数を返す(呼び出し側のログ用途。既存の戻り値契約を維持する)。
     """
     g = Graph()

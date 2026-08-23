@@ -178,12 +178,21 @@ def _load_ontology(shapes_dir: Path) -> Graph:
 def _load_reference_classes(shapes_dir: Path) -> list[dict[str, str]]:
     """`schema_lang`が`sh:class`から抽出した参照制約(`reference-classes.json`)を読む。
 
-    **読めなかったら例外にする。** 空リストで素通りすると、`_assert_shapes_cover`
-    が閉じたシェイプで防いでいる「対象0件で合格」の退化と同じ形になる —
-    このファイルは消費者(このゲート)と同時に`scripts/generate-schema.sh`が
-    生成するので、無いのは生成し忘れである。ファイルの中身が`[]`(有効なJSON
-    だが0件)であること自体は不正ではない(自名前空間を指す`sh:class`が
-    スキーマに1つも無ければ、それが正しい状態)。
+    **ファイルが無ければ例外。中身が`[]`でも例外にする(裁定B9)。** 空リストで
+    素通りすると、`_assert_shapes_cover`が閉じたシェイプで防いでいる「対象0件で
+    合格」の退化と同じ形になる。
+
+    このスキーマには自名前空間への`sh:class`が現に存在する(`jurisdiction`/
+    `involves_agent`/`unresolvedFor`)ので、`[]`は「対象が無い」という正常な
+    状態ではなく、**後処理の二重適用の証拠**である(実測で確認した非冪等性:
+    `schema_lang.process()`は`sh:class`を除去しながら対を書き出すため、
+    既に処理済みの`all.shacl.ttl`に再適用すると`reference-classes.json`が
+    `[]`になる。`scripts/generate-schema.sh`は毎回`gen-shacl`から作り直すので
+    通常は起きないが、生成物1ファイルだけを手で流し直すと起きる)。
+    レビュー指摘5を受け、「対象0件で合格」を作らない原則をここでも優先する
+    (将来このスキーマから自名前空間へのsh:classが本当に0件になる変更が
+    入った場合、この例外はいったん誤検知になる — その場合はこの関数自体を
+    見直す)。
     """
     path = shapes_dir / REFERENCE_CLASSES_FILENAME
     if not path.exists():
@@ -191,7 +200,16 @@ def _load_reference_classes(shapes_dir: Path) -> list[dict[str, str]]:
             f"{path} が無い。scripts/generate-schema.sh を実行する"
             "(schema_lang が sh:class から参照制約を抽出してこのファイルに書く)"
         )
-    return json.loads(path.read_text(encoding="utf-8"))
+    entries = json.loads(path.read_text(encoding="utf-8"))
+    if not entries:
+        raise ValueError(
+            f"{path} の中身が空である。このスキーマには自名前空間へのsh:classが"
+            "現に存在するため、空は後処理の二重適用の疑いがある(schema_lang."
+            "process()は非冪等 — 既に除去済みのシェイプに再適用すると空になる)。"
+            " scripts/generate-schema.sh からやり直す(gen-shaclの生の出力から"
+            "作り直せば正しい件数になる)"
+        )
+    return entries
 
 
 def _subclass_closure(ontology: Graph, cls: URIRef) -> set[URIRef]:

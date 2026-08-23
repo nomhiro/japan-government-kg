@@ -288,6 +288,25 @@ def test_check_reference_integrity_raises_if_reference_classes_json_is_missing(t
         validate.check_reference_integrity(ds, tmp_path)
 
 
+def test_check_reference_integrity_raises_if_reference_classes_json_is_empty(tmp_path):
+    """`reference-classes.json`の中身が`[]`でも素通ししない(裁定B9)。
+
+    このスキーマには自名前空間へのsh:class(jurisdiction/involves_agent/
+    unresolvedFor)が現に存在するため、空は「抽出対象が無い」という妥当な
+    状態ではなく、`schema_lang.process()`の後処理が二重適用された疑いを
+    示す。空ファイルを書いてから読ませ、例外になることを確認する
+    (OWLファイルは読む前に例外が飛ぶので用意しない)。
+
+    何があれば落ちるか: `_load_reference_classes`が空リストをそのまま返すよう
+    退行すると、参照整合ゲートが「チェック対象0件」で常に合格してしまい、
+    レビューが実測で確認した非冪等性の穴が再び黙って通る。
+    """
+    path = tmp_path / validate.REFERENCE_CLASSES_FILENAME
+    path.write_text("[]", encoding="utf-8")
+    with pytest.raises(ValueError, match="二重適用"):
+        validate._load_reference_classes(tmp_path)
+
+
 def test_malformed_houjin_bangou_fails_validation():
     """法人番号のパターン制約に違反するデータは不合格になること。"""
     ds = emit.emit_organizations([_valid_org()], "houjin-bangou", DAY)
