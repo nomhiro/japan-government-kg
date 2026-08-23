@@ -93,7 +93,7 @@ class UnresolvedReasonEnum(str, Enum):
     """
     NO_CANDIDATE = "NO_CANDIDATE"
     """
-    候補が見つからなかった
+    候補が見つからず、政府機関の形(省/府/庁/院/委員会等)にも見えない。 抽出そのものを疑うべき警報
     """
     AMBIGUOUS = "AMBIGUOUS"
     """
@@ -101,11 +101,11 @@ class UnresolvedReasonEnum(str, Enum):
     """
     OBSOLETE_ORGANIZATION = "OBSOLETE_ORGANIZATION"
     """
-    旧省庁名など、現存しない組織を指している
+    現存府省の参照表にも2001年再編の名称一覧にも無いが、政府機関の形 (省/府/庁/院/委員会等で終わる)をしている。2001年より前に廃止された 省庁名や、参照表にまだ収録されていない現存機関などが該当し得る (裁定B7。列挙ではなく形から導出するため、参照表の完全性次第で 現存機関がここに一時的に入り得る)
     """
     OLD_MINISTRY = "OLD_MINISTRY"
     """
-    2001年の中央省庁再編以前の省庁名であるため、現存府省に解決できない (法令番号中の府省名が旧省庁名である場合など)
+    2001年の中央省庁再編で廃止された名称である(参照表`old-ministries.csv` に列挙。高信頼・出典あり。裁定B7でこの enum の意味をこの範囲に狭めた — それ以前に廃止された省庁は `OBSOLETE_ORGANIZATION` に分類する)
     """
 
 

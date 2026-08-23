@@ -249,7 +249,7 @@ def to_ministry_reference(ministries: Iterable[Ministry]) -> dict[str, list[Mini
 
 class UnresolvedJurisdiction(BaseModel):
     name: str  # 法令番号から抽出した名称(そのまま core:unresolved_key になる)
-    reason: str  # OLD_MINISTRY / NO_CANDIDATE / AMBIGUOUS
+    reason: str  # OLD_MINISTRY / OBSOLETE_ORGANIZATION / NO_CANDIDATE / AMBIGUOUS
 
 
 class JurisdictionResult(BaseModel):
@@ -278,12 +278,21 @@ def derive_jurisdiction(
       `unresolved` のどちらかに振り分ける(§8.2「解決できた分だけ返す」
       設計にしない — このタスクで踏みやすい欠陥の型の2番目)
 
-    分類の優先順位:
+    分類の優先順位(レビュー指摘3・裁定B7で3〜4を分割):
       1. 参照表に同名が正確に1件 → `resolved`(法人番号を積む)
       2. 参照表に同名が2件以上 → `AMBIGUOUS`(実行前スキャンで見つかった
          Step 3 の要求。反対に0件のときは3へ進む)
-      3. 旧省庁名の判定集合に載っている → `OLD_MINISTRY`
-      4. どちらでもない → `NO_CANDIDATE`
+      3. 旧省庁名の判定集合(`old-ministries.csv`。**2001年の中央省庁再編で
+         廃止された名称に限る**)に載っている → `OLD_MINISTRY`
+      4. 参照表にも旧省庁名の判定集合にも無いが、政府機関の形
+         (`_looks_like_government_organ`。省/府/庁/院/委員会で終わる、
+         または人事院/閣)をしている → `OBSOLETE_ORGANIZATION`
+         (2001年より前に廃止された省庁名など。列挙を増やさず形で導出する
+         — 明治以来の官庁は無限に近く、旧省庁の継承マッピングをPhase 2へ
+         送ったのと同じ理由で列挙をやめた)
+      5. どちらでもない → `NO_CANDIDATE`(政府機関の形にすら見えない。
+         抽出そのものを疑うべき警報。3・4に該当しないここに残るのは、
+         抽出段の誤りか、本当に未知の名称かのいずれか)
 
     `reference`(現存府省)と `old_ministries`(旧省庁名の判定集合)は、
     呼び出し側が事前に読み込んで**毎回渡す**。関数内で毎回ファイルを
@@ -311,6 +320,10 @@ def derive_jurisdiction(
             unresolved.append(UnresolvedJurisdiction(name=name, reason="AMBIGUOUS"))
         elif name in old_ministries:
             unresolved.append(UnresolvedJurisdiction(name=name, reason="OLD_MINISTRY"))
+        elif _looks_like_government_organ(name):
+            unresolved.append(
+                UnresolvedJurisdiction(name=name, reason="OBSOLETE_ORGANIZATION")
+            )
         else:
             unresolved.append(UnresolvedJurisdiction(name=name, reason="NO_CANDIDATE"))
 

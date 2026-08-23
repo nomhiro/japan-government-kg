@@ -225,19 +225,48 @@ def test_derive_jurisdiction_classifies_old_ministry():
     assert result.unresolved == [UnresolvedJurisdiction(name="大蔵省", reason="OLD_MINISTRY")]
 
 
-def test_derive_jurisdiction_classifies_no_candidate_when_absent_from_both():
-    """人事院が参照表にも旧省庁名リストにも無い場合は NO_CANDIDATE。
+def test_derive_jurisdiction_classifies_unlisted_organ_shaped_name_as_obsolete_organization():
+    """人事院が参照表にも旧省庁名リストにも無い場合は OBSOLETE_ORGANIZATION(裁定B7)。
 
     2026-08-23時点の data/reference/ministry-codes.csv は3行(総務省/財務省/
     厚生労働省)のみで、人事院はまだ載っていない(Task 5 で拡張予定)。ここでの
-    空の reference は合成した値ではなく、現在のリポジトリの実際の状態を表す
+    空の reference は合成した値ではなく、現在のリポジトリの実際の状態を表す。
+
+    **裁定B7による分類変更**: 人事院は現存する組織だが、政府機関の形
+    (「院」で終わる)をしていて参照表にも旧省庁名にも無いため、
+    `_looks_like_government_organ` に基づく判定では `OBSOLETE_ORGANIZATION`
+    になる(2001年より前に廃止された、という意味ではなく、あくまで
+    「政府機関の形をしていて現存府省の参照表に無い」という形からの導出)。
+    参照表がTask 5で拡張され人事院が載れば `resolved` に変わる — つまり
+    この分類の正しさは参照表の完全性に依存する(現存だが未収録の機関を
+    一時的に「廃止済み」と誤って呼ぶ副作用がある。裁定B7はこれを認識した
+    上で、列挙を増やさない設計を優先した)。
     """
     record = _law_record("999RS0000000001", "人事院規則一―四")
 
     result = derive_jurisdiction(record, reference={}, old_ministries=set())
 
     assert result.resolved == []
-    assert result.unresolved == [UnresolvedJurisdiction(name="人事院", reason="NO_CANDIDATE")]
+    assert result.unresolved == [
+        UnresolvedJurisdiction(name="人事院", reason="OBSOLETE_ORGANIZATION")
+    ]
+
+
+def test_derive_jurisdiction_classifies_non_organ_shaped_name_as_no_candidate():
+    """政府機関の形にすら見えない名称は NO_CANDIDATE のまま(裁定B7)。
+
+    `_RULE_RE` は規則名の形を検査しないため(指摘6。会計検査院規則等の
+    実在の形を壊さないため)、規則経由の名称は政府機関の形をしているとは
+    限らない。ここでは明らかに合成と分かる名称を使う(R45)
+    """
+    record = _law_record("999RS0000000002", "ダミー機関規則第一号")
+
+    result = derive_jurisdiction(record, reference={}, old_ministries=set())
+
+    assert result.resolved == []
+    assert result.unresolved == [
+        UnresolvedJurisdiction(name="ダミー機関", reason="NO_CANDIDATE")
+    ]
 
 
 def test_derive_jurisdiction_classifies_ambiguous_when_reference_has_duplicate_names():
@@ -300,16 +329,36 @@ def test_old_ministries_reference_file_classifies_2001_reorganization_names():
     Step 3 の「わざと壊す確認」はこのファイルを対象に行う(合成の
     old_ministries 集合を使うテストでは、ファイルを消しても何も変わらず
     確認が空振りになるため、少なくとも1つはファイルを実際に読むテストを持つ)。
+
+    **裁定B7でこのファイルの範囲を「2001年再編分のみ」に狭めた**ため、
+    「閣」(閣令。明治期の法形式で2001年より遥かに前)はもうここに載らない。
     """
     old_ministries = load_old_ministries(OLD_MINISTRIES_PATH)
     assert "大蔵省" in old_ministries
     assert "総理府" in old_ministries
-    assert "閣" in old_ministries
+    assert "閣" not in old_ministries, (
+        "「閣」は2001年再編より前(明治期)に廃止された名称なので、"
+        "2001年再編分に限定したこのファイルに載っていてはならない(裁定B7)"
+    )
 
     record = _law_record("326M50000400100", "昭和二十六年大蔵省令第百号")
     result = derive_jurisdiction(record, reference={}, old_ministries=old_ministries)
 
     assert result.unresolved == [UnresolvedJurisdiction(name="大蔵省", reason="OLD_MINISTRY")]
+
+
+def test_kaku_ordinance_reclassifies_as_obsolete_organization_after_leaving_the_csv():
+    """「閣」がold-ministries.csvから外れた後も、政府機関の形(literal)からの
+    導出でOBSOLETE_ORGANIZATIONになること(裁定B7。実際のファイルで確認)。
+    """
+    old_ministries = load_old_ministries(OLD_MINISTRIES_PATH)
+    record = _law_record("999XX0000000002", "明治二十二年閣令第十二号")
+
+    result = derive_jurisdiction(record, reference={}, old_ministries=old_ministries)
+
+    assert result.unresolved == [
+        UnresolvedJurisdiction(name="閣", reason="OBSOLETE_ORGANIZATION")
+    ]
 
 
 # =============================================================================
