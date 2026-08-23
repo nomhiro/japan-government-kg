@@ -35,14 +35,14 @@ def fixed_base(monkeypatch):
 
 
 def _org(bangou="6000012070001", name="厚生労働省", kind="101", updated_on="2018-04-02", **overrides):
-    defaults = dict(
-        uri=org_uri(bangou),
-        houjin_bangou=bangou,
-        name=name,
-        kind_code=kind,
-        is_government_organ=(kind == "101"),
-        updated_on=updated_on,
-    )
+    defaults = {
+        "uri": org_uri(bangou),
+        "houjin_bangou": bangou,
+        "name": name,
+        "kind_code": kind,
+        "is_government_organ": (kind == "101"),
+        "updated_on": updated_on,
+    }
     defaults.update(overrides)
     return Organization(**defaults)
 
@@ -393,7 +393,8 @@ def test_validate_stream_batched_result_matches_the_whole_graph_result_for_a_val
     assert len(batched) > 1, "batch_size=2が分割を起こしていない(テストの前提が崩れている)"
 
     whole = _whole_graph_conforms(nq_path)
-    assert all(r.conforms for r in batched) == whole == True  # noqa: E712 (意図的に明示比較)
+    assert whole, "全体一発の結果が合格のはずが不合格になっている(テストの前提が崩れている)"
+    assert all(r.conforms for r in batched), "バッチ検証の結果が全体一発(合格)と一致しない"
 
 
 def test_validate_stream_batched_result_matches_the_whole_graph_result_for_a_local_violation():

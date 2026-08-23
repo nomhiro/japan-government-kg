@@ -303,3 +303,139 @@ def test_run_fails_when_no_government_organ_is_found(tmp_path):
 def test_run_fails_when_snapshot_missing(tmp_path):
     with pytest.raises(FileNotFoundError):
         pipeline.run(FETCHED, tmp_path / "out")
+
+
+# =============================================================================
+# Task 8 Step 4: --include-all-corporations 相当のフラグ
+#
+# 全法人は`graph/houjin-bangou-all/{日付}`という別グラフに、kg.nqへの追記の
+# 形で足す(国の機関の既存グラフは変えない)。既定(フラグ未指定)では触らない。
+# =============================================================================
+
+
+def test_run_without_the_flag_leaves_all_corporations_untouched(seeded_lake, tmp_path):
+    """既定(フラグ未指定)では全法人グラフに触れないこと(§8.2の作法を裏側で守る:
+
+    新しい経路を追加しても、既存の縦スライスの振る舞いを変えない)。
+    """
+    from jgkg import uris
+
+    report = pipeline.run(FETCHED, tmp_path / "out")
+
+    assert report.corporations_all == 0
+    assert report.corporations_all_dedup_removed == 0
+    assert report.corporations_all_quarantined == 0
+    all_graph_uri = uris.graph_uri("houjin-bangou-all", DAY)
+    assert all_graph_uri not in report.graphs
+
+
+def test_run_with_the_flag_streams_all_corporations_into_a_separate_graph_appended_to_kg_nq(
+    seeded_lake, tmp_path
+):
+    """フラグON: houjin-bangou-allが別グラフとしてkg.nqに追記され、レポートに
+
+    corporations_all/dedup件数が乗ること。既存の国の機関グラフ(848件規模の
+    縦スライス)は変えない、という設計上の要求(task-8-brief.md)を、
+    「両方のグラフがkg.nqに存在する」ことで確認する。
+    """
+    from jgkg import uris
+
+    out = tmp_path / "out"
+    report = pipeline.run(FETCHED, out, include_all_corporations=True)
+
+    all_graph_uri = uris.graph_uri("houjin-bangou-all", DAY)
+    gov_graph_uri = uris.graph_uri("houjin-bangou", DAY)
+    assert all_graph_uri in report.graphs
+    assert gov_graph_uri in report.graphs, "国の機関の既存グラフが変わってしまっている"
+    # fixtureの全件数(現行40機関+株式会社1件。test_run_produces_nquads_and_reportと同じ数)
+    assert report.corporations_all == 41
+    assert report.corporations_all_dedup_removed == 0
+    assert report.corporations_all_quarantined == 0
+
+    kg_text = (out / "kg.nq").read_text(encoding="utf-8")
+    assert f"<{all_graph_uri}>" in kg_text, "houjin-bangou-allグラフがkg.nqに追記されていない"
+
+
+def test_run_with_the_flag_dedups_and_reports_the_removed_count(
+    lake_with_duplicate_label, tmp_path
+):
+    """全法人ストリームは法人番号の重複を後勝ちでdedupし、除いた件数を報告する。
+
+    使うフィクスチャ(`lake_with_duplicate_label`)は既存の国の機関パスでは
+    SHACL不合格(skos:prefLabelが2つ)→隔離を起こすもの(test_quarantine_stops_
+    the_release参照)。houjin-bangou-all側はdedupがSHACLより先に重複を解消
+    するため、**この部分は隔離されない**ことを対比として示す。
+    """
+    report = pipeline.run(FETCHED, tmp_path / "out", include_all_corporations=True)
+
+    assert report.corporations_all_dedup_removed == 1, (
+        "重複行がdedupされたことが報告されていない(消したことを黙らない)"
+    )
+    assert report.corporations_all_quarantined == 0, (
+        "dedupで解消されたはずの重複が、全法人グラフの隔離を引き起こしている"
+    )
+
+
+def test_run_with_the_flag_records_provenance_for_the_new_graph(seeded_lake, tmp_path):
+    """原則7(出典の無い事実をKGに入れない)。houjin-bangou-allグラフにも
+
+    PROV-O記述が存在すること(emit.pyの他の全グラフと同じ扱い)。
+    """
+    from rdflib import Dataset, URIRef
+    from rdflib.namespace import PROV
+
+    from jgkg import uris
+
+    out = tmp_path / "out"
+    pipeline.run(FETCHED, out, include_all_corporations=True)
+    all_graph_uri = uris.graph_uri("houjin-bangou-all", DAY)
+
+    ds = Dataset(default_union=True)
+    ds.parse(out / "kg.nq", format="nquads")
+    described = list(ds.objects(URIRef(all_graph_uri), PROV.wasDerivedFrom))
+    assert described, f"houjin-bangou-allグラフに出典の記述が無い: {all_graph_uri}"
+
+
+def test_run_with_the_flag_does_not_append_when_batch_validation_fails(
+    seeded_lake, tmp_path, monkeypatch
+):
+    """バッチ検証(validate_stream)が不合格なら、kg.nqへ追記しないこと。
+
+    **既定は止まる側**(enforce_release_gateの既存の哲学と同じ)。検証前に
+    本体へ混ぜてしまうと、壊れたデータが出荷されてから気づくことになる。
+    `validate_stream`をモンキーパッチして「不合格」を人為的に起こす
+    (実データでこの経路が落ちる具体的な入力を作るのは難しい —
+    houjinBangouのSHACL patternとCSVパース側の正規表現が同一で、
+    dedupが重複由来のmaxCount違反も解消するため。ここでは
+    ゲートの配線そのものを確認する)。
+    """
+    from jgkg import uris
+    from jgkg import validate as validate_mod
+
+    def _fake_validate_stream(nq_path, shapes_dir, batch_size=50_000):
+        return [
+            validate_mod.ValidationResult(
+                graph_uri=uris.graph_uri("houjin-bangou-all", DAY),
+                conforms=False,
+                report_text="FAKE VIOLATION(テスト用)",
+                batch_index=0,
+            )
+        ]
+
+    monkeypatch.setattr(pipeline.validate, "validate_stream", _fake_validate_stream)
+
+    out = tmp_path / "out"
+    report = pipeline.run(FETCHED, out, include_all_corporations=True)
+
+    assert report.corporations_all_quarantined == 1
+    all_graph_uri = uris.graph_uri("houjin-bangou-all", DAY)
+    assert all_graph_uri not in report.graphs
+
+    kg_text = (out / "kg.nq").read_text(encoding="utf-8")
+    assert f"<{all_graph_uri}>" not in kg_text, (
+        "不合格のグラフがkg.nqに追記されてしまっている(検証前に本体へ混ぜている疑いがある)"
+    )
+
+    with pytest.raises(pipeline.QuarantineNotEmptyError, match="全法人"):
+        pipeline.enforce_release_gate(report)
+    pipeline.enforce_release_gate(report, allow_partial=True)  # 明示指定時だけ続行

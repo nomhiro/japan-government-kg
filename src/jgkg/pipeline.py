@@ -3,18 +3,26 @@
 各段の件数を PipelineReport として返す。観測性は設計書§11.1の要件。
 """
 import datetime
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 
 from pydantic import BaseModel
-from rdflib import Dataset
+from rdflib import Dataset, URIRef
 
 from jgkg import lake, sources, uris, validate
 from jgkg.config import get_settings
 from jgkg.connectors import houjin_bangou
-from jgkg.rdf import emit
+from jgkg.rdf import emit, stream_emit
+from jgkg.rdf.provenance import provenance_graph
 from jgkg.transform import ministry as ministry_mod
 from jgkg.transform import organization as org_mod
+
+# 全法人の別グラフ(Task 8)のグラフID部分。「houjin-bangou」と同じ取得済み
+# スナップショットから作る別グラフなので、sources.pyに新しいソースを登録する
+# 必要はない — 出典(provenance_graph)は"houjin-bangou"のsource_idのまま、
+# グラフURIだけをこの名前にする(同じ一次資料から2つの異なる粒度のグラフを
+# 作っている、という事実をそのまま記録する)
+ALL_CORPORATIONS_GRAPH_ID = "houjin-bangou-all"
 
 MINISTRY_REFERENCE = Path("data/reference/ministry-codes.csv")
 SHAPES_DIR = Path("schema/generated")
@@ -61,6 +69,20 @@ class PipelineReport(BaseModel):
     # `clean`)に対して別途検査する。空でなければ enforce_release_gate が
     # quarantine と同じ扱いで止める
     reference_violations: list[str]
+    # Task 8: `--include-all-corporations`(相当のフラグ)が指定されたときだけ
+    # 意味を持つ。フラグ未指定なら3つとも既定値0のまま(全法人ストリームに
+    # 触れていないことがそのまま分かる)
+    #
+    # houjin-bangou-allグラフに実際に書き出したエンティティ数(dedup後)。
+    # 「全法人約581万件」の実測値がここに載る(Task 11が単価計算に使う)
+    corporations_all: int = 0
+    # 法人番号の重複により上流でdedupして弾いた行数。**消したことを黙らない**
+    # (stream_emit.StreamStats.dedup_removedがそのまま渡る)
+    corporations_all_dedup_removed: int = 0
+    # バッチSHACL検証(validate_stream)で不合格だったバッチ数。0でなければ
+    # houjin-bangou-allグラフはkg.nqに追記されない(検証前に本体へ混ぜない)。
+    # enforce_release_gateがこれも見て止める
+    corporations_all_quarantined: int = 0
 
 
 class QuarantineNotEmptyError(RuntimeError):
@@ -86,7 +108,11 @@ def enforce_release_gate(report: PipelineReport, *, allow_partial: bool = False)
     `allow_partial=True`(build.sh では `--allow-partial`)を明示的に渡す。
     「気づかずに出荷される」経路を無くすことが目的なので、既定を緩めてはならない。
     """
-    if report.graphs_quarantined == 0 and not report.reference_violations:
+    if (
+        report.graphs_quarantined == 0
+        and not report.reference_violations
+        and report.corporations_all_quarantined == 0
+    ):
         return
     parts = []
     if report.graphs_quarantined:
@@ -100,6 +126,11 @@ def enforce_release_gate(report: PipelineReport, *, allow_partial: bool = False)
         parts.append(
             f"参照整合ゲートで {len(report.reference_violations)} 件の違反"
             f"(例: {report.reference_violations[0]})"
+        )
+    if report.corporations_all_quarantined:
+        parts.append(
+            f"全法人のバッチSHACL検証で {report.corporations_all_quarantined} "
+            "バッチが不合格になった(houjin-bangou-allグラフはkg.nqに未反映)"
         )
     message = "。".join(parts) + (
         "。このままリリースすると、中身が無いか参照が壊れたKGが出荷される"
@@ -143,12 +174,25 @@ def _source_date(
     )
 
 
-def run(fetched_on: Mapping[str, datetime.date], out_dir: Path) -> PipelineReport:
+def run(
+    fetched_on: Mapping[str, datetime.date],
+    out_dir: Path,
+    *,
+    include_all_corporations: bool = False,
+) -> PipelineReport:
     """ソースIDごとの「いつ時点か」を受け取ってKGを1本作る。
 
     **単一の取得日を全ソースに仮定しない。** 設計書§6.4の更新頻度表は
     monthly/annual/ondemand とソースごとに異なるため、単一日付の仮定は
     Phase 1(e-Gov 月次 / 予算 年次)で必ず破綻する。
+
+    `include_all_corporations`(Task 8。`--include-all-corporations`相当の
+    フラグ): 指定すると、全法人(約581万件。国の機関だけでなく民間企業も含む)
+    を`graph/houjin-bangou-all/{取得日}`という別グラフとしてkg.nqに追記する。
+    **既存の国の機関グラフ(848件規模の縦スライス)は変えない**(task-8-brief.md)。
+    既定はFalse(触らない) — この規模のストリーミング投入・バッチ検証は
+    コストが軽くないため、必要なリリース(RS/支出データを含むもの)でだけ
+    明示的に有効にする。
     """
     settings = get_settings()
     if not fetched_on:
@@ -232,6 +276,52 @@ def run(fetched_on: Mapping[str, datetime.date], out_dir: Path) -> PipelineRepor
             " lake.save() がメタデータを書く前に中断された疑いがある(未コミット)"
         )
 
+    # =========================================================================
+    # Task 8: 全法人のストリーミング投入(フラグON時のみ)。
+    #
+    # rdflib の Dataset には載せない(全法人約3,500万トリプル規模はメモリが
+    # 破綻する — stream_emit.py モジュールdocstring参照)。国の機関グラフとは
+    # 完全に独立した経路で、別ファイルへストリーミングで書き、バッチSHACLで
+    # 検証してから**検証を通った場合だけ**kg.nqへ追記する(検証前に本体へ
+    # 混ぜない。enforce_release_gate の「既定は止まる側」をここでも守る)。
+    # =========================================================================
+    corporations_all = 0
+    corporations_all_dedup_removed = 0
+    corporations_all_quarantined = 0
+    all_corporations_graph_uri: str | None = None
+    all_corporations_nq_path: Path | None = None
+
+    if include_all_corporations:
+        all_corporations_graph_uri = uris.graph_uri(ALL_CORPORATIONS_GRAPH_ID, houjin_date)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        all_corporations_nq_path = out_dir / "houjin-bangou-all.nq"
+
+        def _all_corporations_source() -> Iterator[org_mod.Organization]:
+            # **ParseStatsを渡さない。** dedup_organizationsはこの関数(source)を
+            # 2回呼ぶ(2パス方式。stream_emit.dedup_organizationsのdocstring
+            # 参照)。同じParseStatsオブジェクトをここで束縛して2回分蓄積させると、
+            # rows_seen等の集計が二重になる(dedup_organizations側が注意している
+            # 罠と対になる、呼び出し側の責務)。列レイアウトの妥当性検査
+            # (_assert_layout_plausible)はstats無しでも内部で自動的に走るので、
+            # 渡さなくても安全装置は落ちない
+            return org_mod.parse_source(snapshot_path)
+
+        stream_stats = stream_emit.StreamStats()
+        deduped = stream_emit.dedup_organizations(_all_corporations_source, stream_stats)
+        # newline="\n"を明示する: Windowsの既定テキストモードは書き込み時に
+        # \nを\r\nへ変換するため、指定しないとstream_emit_organizationsが
+        # 保証する「1行=1トリプル」の物理行がずれ、validate_streamの行単位
+        # バッチ分割の前提を壊す
+        with all_corporations_nq_path.open("w", encoding="utf-8", newline="\n") as f:
+            stream_emit.stream_emit_organizations(
+                deduped, all_corporations_graph_uri, f, stats=stream_stats
+            )
+
+        batch_results = validate.validate_stream(all_corporations_nq_path, SHAPES_DIR)
+        corporations_all = stream_stats.entities
+        corporations_all_dedup_removed = stream_stats.dedup_removed
+        corporations_all_quarantined = sum(1 for r in batch_results if not r.conforms)
+
     ds = Dataset(default_union=True)
     _merge(
         ds,
@@ -258,17 +348,54 @@ def run(fetched_on: Mapping[str, datetime.date], out_dir: Path) -> PipelineRepor
 
     clean = validate.passing_dataset(ds, results)
 
+    # Task 8: バッチ検証を通った全法人グラフの出典をここで記録する(原則7:
+    # 出典を持たない事実をKGに入れない)。**検証に失敗していれば記録しない**
+    # — このグラフは実際にはkg.nqへ追記されないので、記録すると「出典だけ
+    # 存在するが本体が無い」という嘘になる。「houjin-bangou」と同じ
+    # 取得済みスナップショットから作る別グラフなので、source_idは新規登録
+    # せず既存の"houjin-bangou"のままにする(同じ一次資料から2つの異なる
+    # 粒度のグラフを作っている、という事実をそのまま記録する)
+    if include_all_corporations and corporations_all_quarantined == 0:
+        meta = clean.graph(URIRef(f"{settings.base_uri}/graph/provenance"))
+        for triple in provenance_graph(
+            all_corporations_graph_uri,
+            "houjin-bangou",
+            houjin_date,
+            sha256=houjin_snapshot.sha256,
+        ):
+            meta.add(triple)
+
     # **隔離を通過した `clean` に対して検査する(`ds` ではない)。** SHACLで
     # 隔離されたグラフへの参照は「壊れて当然」なのでここでも違反として拾って
     # しまうと、原因(SHACL側の隔離)と結果(参照切れ)が両方報告されて
     # ノイズになる。`clean` は`--allow-partial`時に実際に出荷される内容と
-    # 一致するので、そこでの参照切れこそがこのゲートが守るべきものである
+    # 一致するので、そこでの参照切れこそがこのゲートが守るべきものである。
+    # **houjin-bangou-allは`clean`に含まれない**(rdflibに載らない規模のため
+    # 意図的に別経路。validate.check_reference_integrityのexcludeパラメータは
+    # このゲートに和集合として merge する将来の呼び出し側のために用意した
+    # 機構であり、ここでは使わない — 除外は「載っているものを取り除く」
+    # 操作であって、そもそも載せていないものには不要)
     reference_violations = validate.check_reference_integrity(clean, SHAPES_DIR)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     emit.write_nquads(clean, out_dir / "kg.nq")
 
+    if include_all_corporations and corporations_all_quarantined == 0:
+        # 検証を通った場合だけ、別ファイルに書いたN-QuadsをそのままKg.nqへ
+        # 追記する(rdflibのDatasetを経由しない — 全法人規模を一度でも
+        # メモリに載せると破綻する、という制約をここでも一貫させる)
+        with (
+            all_corporations_nq_path.open("r", encoding="utf-8") as src,
+            (out_dir / "kg.nq").open("a", encoding="utf-8", newline="\n") as dst,
+        ):
+            for line in src:
+                dst.write(line)
+
     surviving_graphs = sorted(str(c.identifier) for c in clean.graphs() if len(c) > 0)
+    if include_all_corporations and corporations_all_quarantined == 0:
+        # `clean`(rdflib Dataset)には載っていないが、kg.nqには実際に
+        # 追記されたグラフなので、manifestが渡す一覧に手動で足す
+        surviving_graphs = sorted(surviving_graphs + [all_corporations_graph_uri])
     # **成果物に残ったソースだけを sources に載せる。** グラフが隔離されたのに
     # 「このソースはこの日付のデータを含む」と書くと、manifest が嘘をつく
     # (`--allow-partial` で出荷したときに実際に起きる)。落ちたことは
@@ -300,4 +427,7 @@ def run(fetched_on: Mapping[str, datetime.date], out_dir: Path) -> PipelineRepor
         sources=surviving_sources,
         quarantined_sources=quarantined_sources,
         reference_violations=[str(v) for v in reference_violations],
+        corporations_all=corporations_all,
+        corporations_all_dedup_removed=corporations_all_dedup_removed,
+        corporations_all_quarantined=corporations_all_quarantined,
     )
