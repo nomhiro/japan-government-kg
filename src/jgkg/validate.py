@@ -21,7 +21,6 @@ class ValidationResult:
 
 
 SHAPES_FILENAME = "all.shacl.ttl"
-ONTOLOGY_FILENAME = "all.owl.ttl"
 
 
 def _load_shapes(shapes_dir: Path) -> Graph:
@@ -41,54 +40,6 @@ def _load_shapes(shapes_dir: Path) -> Graph:
     shapes = Graph()
     shapes.parse(path, format="turtle")
     return shapes
-
-
-def _load_ontology(shapes_dir: Path) -> Graph:
-    """`sh:class` がスーパークラスの range を検証するのに必要な `rdfs:subClassOf` を読む。
-
-    `sh:class` の意味論は `rdf:type/rdfs:subClassOf*` で判定される(SHACL仕様)。
-    この階層知識(例: `org:Ministry rdfs:subClassOf org:Organization`)は
-    SHACLシェイプ(`all.shacl.ttl`)には無く、OWL(`all.owl.ttl`)にしか無い。
-    R1(上位クラスの `rdf:type` を実体化しない)により値ノードは最も具体的な
-    型しか持たないため、この `ont_graph` を渡さないと `sh:class` がスーパー
-    クラスを指すプロパティ(`law:jurisdiction` 等)は常に不合格になる(裁定B3)。
-
-    **`ont_graph` を渡すだけで、閉じたシェイプの多重ターゲティングは起きる。**
-    pySHACLは `sh:targetClass` のインスタンス判定を `rdf:type/rdfs:subClassOf*`
-    で行うため、`ont_graph` がクラス階層を提供した時点で `org:Organization`
-    の閉じたシェイプは `org:Ministry` 型のノードにも適用される(実測:
-    `sh:sourceShape` に `Organization`/`GovernmentOrgan`/`Agent`/`Ministry`
-    が並ぶ。`ont_graph` を渡さなければ `Ministry` のみ)。`inference` の
-    有無は無関係 — `inference='rdfs'` を追加してもこの集合は変わらない。
-    つまり「型の実体化が起きないから閉じたシェイプに影響しない」のではない。
-
-    それでも偽の違反(`ministryCode` が「宣言されていないプロパティ」になる、
-    Phase 0 の R24 と同種の二重シェイプ問題)は起きない。理由は事故ではなく、
-    LinkML の `gen-shacl` が閉じたNodeShapeごとに「既知の全サブクラスが持つ
-    追加プロパティ」を機械的に `sh:ignoredProperties` へ足しているため
-    (`org:Organization` の ignoredProperties に `org:ministryCode` が入っている
-    のを `all.shacl.ttl` で確認できる)。**この安全網はスキーマのクラス階層と
-    生成物が同期している間だけ効く。** 新しいサブクラスを追加したのに
-    `scripts/generate-schema.sh` を再実行していない場合、この吸収は効かず
-    偽の違反が出る(`test_closed_shapes_survive_ont_graph` /
-    `test_wrong_type_still_fails_the_class_constraint` で実測済み)。
-
-    **それでも `inference` を指定しない理由**: 多重ターゲティング自体は
-    `ont_graph` 単体で既に起きているので `inference='rdfs'` を足しても
-    それは増えない(実測で同一の `sourceShapes` 集合)。だが `inference='rdfs'`
-    はデータグラフに推論結果を実体化し、`subPropertyOf` 等の他のRDFS含意も
-    まとめて有効化する。ここで検証していない範囲まで安全性を広げる根拠が無い
-    ため、必要最小限の `ont_graph` のみに絞る。
-    """
-    path = shapes_dir / ONTOLOGY_FILENAME
-    if not path.exists():
-        raise FileNotFoundError(
-            f"OWLオントロジーが見つからない: {path}。"
-            " scripts/generate-schema.sh を実行する"
-        )
-    ontology = Graph()
-    ontology.parse(path, format="turtle")
-    return ontology
 
 
 def _shape_target_classes(shapes: Graph) -> set[URIRef]:
@@ -137,9 +88,14 @@ def _assert_shapes_cover(graph_uri: str, declared: set[URIRef], targets: set[URI
 
 
 def validate_dataset(ds: Dataset, shapes_dir: Path) -> list[ValidationResult]:
-    """名前付きグラフごとに検証する。グラフが置換の単位なので検証も同じ単位で行う。"""
+    """名前付きグラフごとに検証する。グラフが置換の単位なので検証も同じ単位で行う。
+
+    **`sh:class`はここでは検証しない(裁定B4)。** グラフを跨ぐ参照の型制約は
+    グラフ単位のSHACLでは原理的に検証できないため、`schema_lang`が生成時に
+    自名前空間への`sh:class`をシェイプから除去している。型の検証は
+    `check_reference_integrity`(和集合Dataset向け)が別途行う。
+    """
     shapes = _load_shapes(shapes_dir)
-    ontology = _load_ontology(shapes_dir)
     targets = _shape_target_classes(shapes)
     term_prefix = f"{get_settings().base_uri}/def/"
     results: list[ValidationResult] = []
@@ -160,7 +116,6 @@ def validate_dataset(ds: Dataset, shapes_dir: Path) -> list[ValidationResult]:
         conforms, _report_graph, report_text = shacl_validate(
             data_graph=target,
             shacl_graph=shapes,
-            ont_graph=ontology,
             advanced=True,
             inplace=False,
         )
