@@ -30,6 +30,129 @@
     skos:definition "この記述が真である期間の終わり"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
+<https://jgkg.norr-tech.com/def/law#Law> a owl:Class ;
+    rdfs:label "Law" ;
+    rdfs:subClassOf [ a owl:Restriction ;
+            owl:allValuesFrom xsd:date ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#promulgationDate> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#jurisdiction> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#repealStatus> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#promulgationDate> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#lawNum> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#abbrev> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#jurisdiction> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:string ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#repealStatus> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#repealStatus> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:string ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#lawNum> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#promulgationDate> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#lawNum> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom rdf:langString ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#abbrev> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom <https://jgkg.norr-tech.com/def/org#Organization> ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#jurisdiction> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#lawNumType> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#lawTitle> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:string ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#lawNumType> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#lawNumType> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom rdf:langString ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#lawTitle> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#lawTitle> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:string ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#lawId> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#lawId> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#lawId> ],
+        <https://jgkg.norr-tech.com/def/core#Work> ;
+    skos:definition "法令。版(LawRevision)とは独立に、法令IDで同一性を持つ"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/law> .
+
+<https://jgkg.norr-tech.com/def/law#LawRevision> a owl:Class ;
+    rdfs:label "LawRevision" ;
+    rdfs:subClassOf [ a owl:Restriction ;
+            owl:allValuesFrom xsd:date ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#amendmentEnforcementDate> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#amendmentLawNum> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#amendmentEnforcementDate> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#revisionStatus> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:string ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#amendmentLawNum> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#amendmentLawNum> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:string ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#revisionStatus> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#amendmentEnforcementDate> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#revisionStatus> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#lawId> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:string ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#lawId> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/law#lawId> ],
+        <https://jgkg.norr-tech.com/def/core#Event> ;
+    skos:definition "改正イベント。どの法令の・いつ施行の版かを表す(CQ8の器)"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/law> .
+
+<https://jgkg.norr-tech.com/def/law.owl.ttl> a owl:Ontology ;
+    rdfs:label "jgkg-law" ;
+    dcterms:license "https://creativecommons.org/licenses/by/4.0/" ;
+    dcterms:title "日本政府ナレッジグラフ 法令モジュール" ;
+    skos:definition "法令(Law)と、その改正イベント(LawRevision)を表すクラスとプロパティ。正準IDは 法令ID(e-Gov法令API が付与する)であり、法令番号や題名は改正で変わり得るため 同一性の根拠にしない。 このオントロジーは日本国政府が公開するデータを第三者が構造化したものであり、日本国政府による公式なデータセットではない。"@ja .
+
 <https://jgkg.norr-tech.com/def/org#Ministry> a owl:Class ;
     rdfs:label "Ministry" ;
     rdfs:subClassOf [ a owl:Restriction ;
@@ -45,42 +168,11 @@
     skos:definition "府省。府省コードで識別できる国の機関"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
-<https://jgkg.norr-tech.com/def/org.owl.ttl> a owl:Ontology ;
-    rdfs:label "jgkg-org" ;
-    dcterms:license "https://creativecommons.org/licenses/by/4.0/" ;
-    dcterms:title "日本政府ナレッジグラフ 組織モジュール" ;
-    skos:definition "組織(府省・法人)を表すクラスとプロパティ。正準IDは法人番号。 このオントロジーは日本国政府が公開するデータを第三者が構造化したものであり、日本国政府による公式なデータセットではない。"@ja .
-
 <https://jgkg.norr-tech.com/def/core#Concept> a owl:Class ;
     rdfs:label "Concept" ;
     rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#Entity> ;
     skos:definition "「何について」の軸。主題・指標・制度手続きの上位"@ja ;
     skos:exactMatch skos:Concept ;
-    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
-
-<https://jgkg.norr-tech.com/def/core#Event> a owl:Class ;
-    rdfs:label "Event" ;
-    rdfs:subClassOf [ a owl:Restriction ;
-            owl:allValuesFrom xsd:date ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#occurred_on> ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#occurred_on> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#occurred_on> ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#involves_agent> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#involves_agent> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom <https://jgkg.norr-tech.com/def/core#Agent> ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#involves_agent> ],
-        <https://jgkg.norr-tech.com/def/core#Entity> ;
-    skos:closeMatch prov:Activity ;
-    skos:definition "「いつ」の軸。時点を持つ出来事。関係を実体化するための中心クラス。 「AがBに影響した」を直接のエッジにせず、原則としてこのクラスを介す"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 <https://jgkg.norr-tech.com/def/core#MonetaryItem> a owl:Class ;
@@ -138,63 +230,36 @@
     skos:definition "正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず KGに残して計測できるようにするためのクラス"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
-<https://jgkg.norr-tech.com/def/core#Work> a owl:Class ;
-    rdfs:label "Work" ;
-    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#Entity> ;
-    skos:closeMatch <http://schema.org/CreativeWork> ;
-    skos:definition "「何を」の軸。法令・政策・事業・文書・司法判断の上位"@ja ;
-    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
-
 <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> a owl:Class ;
     rdfs:label "GovernmentOrgan" ;
     rdfs:subClassOf <https://jgkg.norr-tech.com/def/org#Organization> ;
     skos:definition "法人種別が国の機関である組織"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
-<https://jgkg.norr-tech.com/def/org#Organization> a owl:Class ;
-    rdfs:label "Organization" ;
+<https://jgkg.norr-tech.com/def/core#Event> a owl:Class ;
+    rdfs:label "Event" ;
     rdfs:subClassOf [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/org#cityName> ],
+            owl:allValuesFrom xsd:date ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#occurred_on> ],
         [ a owl:Restriction ;
             owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/org#houjinBangou> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom rdf:langString ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/org#cityName> ],
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#occurred_on> ],
         [ a owl:Restriction ;
             owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/org#cityName> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/org#houjinBangou> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom [ a rdfs:Datatype ;
-                    owl:onDatatype xsd:string ;
-                    owl:withRestrictions ( [ xsd:pattern "^\\d{13}$" ] ) ] ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/org#houjinBangou> ],
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#occurred_on> ],
         [ a owl:Restriction ;
             owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/org#prefectureName> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom rdf:langString ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/org#prefectureName> ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/org#organizationKindCode> ],
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#involves_agent> ],
         [ a owl:Restriction ;
             owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/org#prefectureName> ],
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#involves_agent> ],
         [ a owl:Restriction ;
-            owl:allValuesFrom xsd:string ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/org#organizationKindCode> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/org#organizationKindCode> ],
-        <https://jgkg.norr-tech.com/def/core#Agent> ;
-    skos:closeMatch <http://schema.org/Organization> ;
-    skos:definition "法人番号を持つ組織"@ja ;
-    skos:inScheme <https://jgkg.norr-tech.com/def/org> .
+            owl:allValuesFrom <https://jgkg.norr-tech.com/def/core#Agent> ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#involves_agent> ],
+        <https://jgkg.norr-tech.com/def/core#Entity> ;
+    skos:closeMatch prov:Activity ;
+    skos:definition "「いつ」の軸。時点を持つ出来事。関係を実体化するための中心クラス。 「AがBに影響した」を直接のエッジにせず、原則としてこのクラスを介す"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#AMBIGUOUS> a owl:Class ;
     rdfs:label "AMBIGUOUS" ;
@@ -215,6 +280,19 @@
     rdfs:label "OLD_MINISTRY" ;
     rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> ;
     skos:definition "2001年の中央省庁再編以前の省庁名であるため、現存府省に解決できない (法令番号中の府省名が旧省庁名である場合など)"@ja .
+
+<https://jgkg.norr-tech.com/def/core#Work> a owl:Class ;
+    rdfs:label "Work" ;
+    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#Entity> ;
+    skos:closeMatch <http://schema.org/CreativeWork> ;
+    skos:definition "「何を」の軸。法令・政策・事業・文書・司法判断の上位"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
+
+<https://jgkg.norr-tech.com/def/law#abbrev> a owl:DatatypeProperty ;
+    rdfs:label "abbrev" ;
+    rdfs:range rdf:langString ;
+    skos:definition "法令の略称。e-Gov法令APIでは0件以上の複数件があり得る"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/law> .
 
 skos:prefLabel a owl:DatatypeProperty ;
     rdfs:label "label" ;
@@ -263,6 +341,100 @@ skos:prefLabel a owl:DatatypeProperty ;
     skos:definition "正準IDに解決できなかった元の参照文字列"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
+<https://jgkg.norr-tech.com/def/law#amendmentEnforcementDate> a owl:DatatypeProperty ;
+    rdfs:label "amendmentEnforcementDate" ;
+    rdfs:range xsd:date ;
+    skos:definition "この改正版の施行日。CQ8(指定時点における版の取得)の基準になる"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/law> .
+
+<https://jgkg.norr-tech.com/def/law#amendmentLawNum> a owl:DatatypeProperty ;
+    rdfs:label "amendmentLawNum" ;
+    skos:definition "この改正を行った法令の番号(改正法令番号)"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/law> .
+
+<https://jgkg.norr-tech.com/def/law#jurisdiction> a owl:ObjectProperty ;
+    rdfs:label "jurisdiction" ;
+    rdfs:range <https://jgkg.norr-tech.com/def/org#Organization> ;
+    skos:definition "この法令を所管する府省等。法令番号からの解析(経路1)等で解決できた場合のみ設定する。 解決できない場合はこのスロットを設定せず、core:UnresolvedReference を別に立てて unresolved_reason(OLD_MINISTRY/NO_CANDIDATE/AMBIGUOUS)で理由を分類する (このスロット自体は未解決を表さない)"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/law> .
+
+<https://jgkg.norr-tech.com/def/law#lawNum> a owl:DatatypeProperty ;
+    rdfs:label "lawNum" ;
+    skos:definition "法令番号(例: 「令和七年厚生労働省令第十号」)。年号・法令種別・府省名等を 含む文字列で、法令番号からの府省導出(経路1)の入力になる"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/law> .
+
+<https://jgkg.norr-tech.com/def/law#lawNumType> a owl:DatatypeProperty ;
+    rdfs:label "lawNumType" ;
+    skos:definition "e-Gov法令APIが返す法令種別ラベル(Act/CabinetOrder/MinisterialOrdinance等)。 実データには例外がある(実測済み)ため、法令種別の判定は lawNum の文字列を正とし、 このスロットはAPIの生値をそのまま保持する"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/law> .
+
+<https://jgkg.norr-tech.com/def/law#lawTitle> a owl:DatatypeProperty ;
+    rdfs:label "lawTitle" ;
+    rdfs:range rdf:langString ;
+    skos:definition "法令の題名(現行の正式名称)。題名改正で変わり得るため同一性の根拠にはしない(lawIdを使う)"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/law> .
+
+<https://jgkg.norr-tech.com/def/law#promulgationDate> a owl:DatatypeProperty ;
+    rdfs:label "promulgationDate" ;
+    rdfs:range xsd:date ;
+    skos:definition "公布日"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/law> .
+
+<https://jgkg.norr-tech.com/def/law#repealStatus> a owl:DatatypeProperty ;
+    rdfs:label "repealStatus" ;
+    skos:definition "廃止状態(e-Gov法令APIの repeal_status に対応する分類文字列。現行・廃止等)"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/law> .
+
+<https://jgkg.norr-tech.com/def/law#revisionStatus> a owl:DatatypeProperty ;
+    rdfs:label "revisionStatus" ;
+    skos:definition "この改正版(LawRevision)時点での状態を表す文字列(e-Gov法令API由来)"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/law> .
+
+<https://jgkg.norr-tech.com/def/org#Organization> a owl:Class ;
+    rdfs:label "Organization" ;
+    rdfs:subClassOf [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#cityName> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#houjinBangou> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom rdf:langString ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#cityName> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#cityName> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#houjinBangou> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom [ a rdfs:Datatype ;
+                    owl:onDatatype xsd:string ;
+                    owl:withRestrictions ( [ xsd:pattern "^\\d{13}$" ] ) ] ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#houjinBangou> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#prefectureName> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom rdf:langString ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#prefectureName> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#organizationKindCode> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#prefectureName> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:string ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#organizationKindCode> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#organizationKindCode> ],
+        <https://jgkg.norr-tech.com/def/core#Agent> ;
+    skos:closeMatch <http://schema.org/Organization> ;
+    skos:definition "法人番号を持つ組織"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/org> .
+
 <https://jgkg.norr-tech.com/def/org#cityName> a owl:DatatypeProperty ;
     rdfs:label "cityName" ;
     rdfs:range rdf:langString ;
@@ -309,6 +481,11 @@ skos:prefLabel a owl:DatatypeProperty ;
         <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#NO_CANDIDATE>,
         <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#OBSOLETE_ORGANIZATION>,
         <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#OLD_MINISTRY> .
+
+<https://jgkg.norr-tech.com/def/law#lawId> a owl:DatatypeProperty ;
+    rdfs:label "lawId" ;
+    skos:definition "e-Gov法令APIが付与する法令ID。法令の正準識別子。法令番号(lawNum)や 題名(lawTitle)は改正で変わり得るため、同一性の根拠にはしない"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/law> .
 
 <https://jgkg.norr-tech.com/def/core#Entity> a owl:Class ;
     rdfs:label "Entity" ;

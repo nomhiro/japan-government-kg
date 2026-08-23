@@ -116,6 +116,10 @@ class UnresolvedReasonEnum(str, Enum):
     """
     旧省庁名など、現存しない組織を指している
     """
+    OLD_MINISTRY = "OLD_MINISTRY"
+    """
+    2001年の中央省庁再編以前の省庁名であるため、現存府省に解決できない (法令番号中の府省名が旧省庁名である場合など)
+    """
 
 
 

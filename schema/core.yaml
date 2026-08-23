@@ -88,6 +88,10 @@ enums:
         description: 候補が複数あり一意に決められなかった
       OBSOLETE_ORGANIZATION:
         description: 旧省庁名など、現存しない組織を指している
+      OLD_MINISTRY:
+        description: >-
+          2001年の中央省庁再編以前の省庁名であるため、現存府省に解決できない
+          (法令番号中の府省名が旧省庁名である場合など)
 
 classes:
   Entity:

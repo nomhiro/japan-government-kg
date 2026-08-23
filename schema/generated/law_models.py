@@ -66,23 +66,23 @@ class LinkMLMeta(RootModel):
         return key in self.root
 
 
-linkml_meta = LinkMLMeta({'default_prefix': 'jgkgall',
+linkml_meta = LinkMLMeta({'default_prefix': 'jgkglaw',
      'default_range': 'string',
-     'description': 'SHACL検証のために全モジュールを1つに束ねるだけのスキーマ。ここから生成した all.shacl.ttl '
-                    'を検証の唯一の入力にする。モジュール別に生成すると、import された '
-                    '上位モジュールのシェイプが各ファイルに重複して現れ、閉じたシェイプが同一クラスに 複数適用されて偽の違反になるため。 '
-                    '新しいドメインモジュールを追加したら、必ずここの imports にも追加する。 '
+     'description': '法令(Law)と、その改正イベント(LawRevision)を表すクラスとプロパティ。正準IDは '
+                    '法令ID(e-Gov法令API が付与する)であり、法令番号や題名は改正で変わり得るため 同一性の根拠にしない。 '
                     'このオントロジーは日本国政府が公開するデータを第三者が構造化したものであり、日本国政府による公式なデータセットではない。',
-     'id': 'https://jgkg.norr-tech.com/def/all',
-     'imports': ['linkml:types', 'core', 'org', 'law'],
+     'id': 'https://jgkg.norr-tech.com/def/law',
+     'imports': ['linkml:types', 'core', 'org'],
      'license': 'https://creativecommons.org/licenses/by/4.0/',
-     'name': 'jgkg-all',
-     'prefixes': {'jgkgall': {'prefix_prefix': 'jgkgall',
-                              'prefix_reference': 'https://jgkg.norr-tech.com/def/all#'},
+     'name': 'jgkg-law',
+     'prefixes': {'jgkgcore': {'prefix_prefix': 'jgkgcore',
+                               'prefix_reference': 'https://jgkg.norr-tech.com/def/core#'},
+                  'jgkglaw': {'prefix_prefix': 'jgkglaw',
+                              'prefix_reference': 'https://jgkg.norr-tech.com/def/law#'},
                   'linkml': {'prefix_prefix': 'linkml',
                              'prefix_reference': 'https://w3id.org/linkml/'}},
-     'source_file': 'schema/all.yaml',
-     'title': '日本政府ナレッジグラフ 全モジュール統合(検証用)'} )
+     'source_file': 'schema/law.yaml',
+     'title': '日本政府ナレッジグラフ 法令モジュール'} )
 
 class UnresolvedReasonEnum(str, Enum):
     """

@@ -112,7 +112,7 @@
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
     sh:property [ sh:description "解決できなかった理由"@ja ;
-            sh:in ( "AMBIGUOUS" "NO_CANDIDATE" "OBSOLETE_ORGANIZATION" ) ;
+            sh:in ( "AMBIGUOUS" "NO_CANDIDATE" "OBSOLETE_ORGANIZATION" "OLD_MINISTRY" ) ;
             sh:maxCount 1 ;
             sh:order 1 ;
             sh:path <https://jgkg.norr-tech.com/def/core#unresolved_reason> ],

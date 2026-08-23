@@ -49,10 +49,12 @@ DOMAIN_MODULES = [m for m in ALL_MODULES if m != AGGREGATE_MODULE]
 EXPECTED_CLASSES = {
     "core": ["Agent", "Work", "Place", "Event", "MonetaryItem", "Concept", "UnresolvedReference"],
     "org": ["Organization", "GovernmentOrgan", "Ministry"],
+    "law": ["Law", "LawRevision"],
 }
 EXPECTED_MODELS = {
     "core": ["Event", "UnresolvedReference"],
     "org": ["Organization", "GovernmentOrgan", "Ministry"],
+    "law": ["Law", "LawRevision"],
 }
 
 

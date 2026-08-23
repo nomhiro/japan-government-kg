@@ -145,6 +145,11 @@
     rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> ;
     skos:definition "旧省庁名など、現存しない組織を指している"@ja .
 
+<https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#OLD_MINISTRY> a owl:Class ;
+    rdfs:label "OLD_MINISTRY" ;
+    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> ;
+    skos:definition "2001年の中央省庁再編以前の省庁名であるため、現存府省に解決できない (法令番号中の府省名が旧省庁名である場合など)"@ja .
+
 skos:prefLabel a owl:DatatypeProperty ;
     rdfs:label "label" ;
     rdfs:range rdf:langString ;
@@ -203,12 +208,13 @@ rdf:langString a rdfs:Datatype .
 
 <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> a owl:Class ;
     rdfs:label "UnresolvedReasonEnum" ;
-    owl:unionOf ( <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#AMBIGUOUS> <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#NO_CANDIDATE> <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#OBSOLETE_ORGANIZATION> ) ;
+    owl:unionOf ( <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#AMBIGUOUS> <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#NO_CANDIDATE> <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#OBSOLETE_ORGANIZATION> <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#OLD_MINISTRY> ) ;
     skos:definition "参照が未解決である理由の分類"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> ;
     ns1:permissible_values <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#AMBIGUOUS>,
         <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#NO_CANDIDATE>,
-        <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#OBSOLETE_ORGANIZATION> .
+        <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#OBSOLETE_ORGANIZATION>,
+        <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#OLD_MINISTRY> .
 
 <https://jgkg.norr-tech.com/def/core#Entity> a owl:Class ;
     rdfs:label "Entity" ;

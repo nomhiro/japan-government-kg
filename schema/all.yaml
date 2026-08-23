@@ -19,3 +19,4 @@ imports:
   - linkml:types
   - core
   - org
+  - law
