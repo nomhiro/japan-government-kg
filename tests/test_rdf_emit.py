@@ -8,6 +8,7 @@ from jgkg.rdf import emit
 from jgkg.transform.law import JurisdictionResult, LawRecord, Revision, UnresolvedJurisdiction
 from jgkg.transform.ministry import Ministry, UnmatchedMinistry
 from jgkg.transform.organization import Organization
+from jgkg.uris import law_version_uri
 
 DAY = datetime.date(2026, 8, 1)
 
@@ -233,12 +234,53 @@ def test_emit_laws_records_a_revision_with_its_enforcement_date():
 
     ds = emit.emit_laws([record], {}, "egov-law", DAY)
 
-    rev_uri = URIRef("https://jgkg.norr-tech.com/id/law/323M60000100010/20260401")
+    # 改正法令番号も鍵に含む(指摘10)。日付だけの旧URIをハードコードしない
+    # (`law_version_uri` 自体が正しいURIを組み立てる責務を持つため、テスト側で
+    # 別に組み立てて二重管理にしない)
+    rev_uri = URIRef(
+        law_version_uri(
+            KOSEIROUDOU_LAW_ID, datetime.date(2026, 4, 1), "令和八年厚生労働省令第一号"
+        )
+    )
     law = emit.NS["law"]
     assert (rev_uri, RDF.type, law["LawRevision"]) in ds
     assert (rev_uri, law["lawId"], Literal(KOSEIROUDOU_LAW_ID)) in ds
     assert (rev_uri, law["amendmentLawNum"], Literal("令和八年厚生労働省令第一号")) in ds
     assert (rev_uri, law["revisionStatus"], Literal("CurrentEnforced")) in ds
+
+
+def test_emit_laws_distinguishes_revisions_sharing_the_same_enforcement_date():
+    """同一施行日の改正が2件あっても、別々のLawRevisionノードになること(レビュー指摘10)。
+
+    何があれば落ちるか: `law_version_uri` が施行日だけを鍵にしていると、
+    2件が1つのURIに合流し、`amendmentLawNum` が2値になって閉じたシェイプの
+    `sh:maxCount 1` に違反する(グラフ単位SHACL不合格。隔離の単位はグラフ
+    なので、その取得日の全法令が丸ごと落ちる)。
+    """
+    record = _law_record(
+        KOSEIROUDOU_LAW_ID,
+        "令和七年厚生労働省令第十号",
+        revisions=[
+            Revision(
+                amendment_law_num="令和八年厚生労働省令第一号",
+                amendment_enforcement_date="2026-04-01",
+                revision_status="CurrentEnforced",
+            ),
+            Revision(
+                amendment_law_num="令和八年厚生労働省令第二号",
+                amendment_enforcement_date="2026-04-01",
+                revision_status="CurrentEnforced",
+            ),
+        ],
+    )
+
+    ds = emit.emit_laws([record], {}, "egov-law", DAY)
+
+    law = emit.NS["law"]
+    rev_subjects = set(ds.subjects(RDF.type, law["LawRevision"]))
+    assert len(rev_subjects) == 2, (
+        f"同一施行日の改正2件が1ノードに合流している: {sorted(str(s) for s in rev_subjects)}"
+    )
 
 
 def test_emit_laws_skips_a_revision_without_an_enforcement_date():

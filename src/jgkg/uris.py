@@ -24,7 +24,20 @@ def law_uri(law_id: str) -> str:
     return f"{_base()}/id/law/{quote(law_id, safe='')}"
 
 
-def law_version_uri(law_id: str, date: datetime.date) -> str:
+def law_version_uri(
+    law_id: str, date: datetime.date, amendment_law_num: str | None = None
+) -> str:
+    """`law:LawRevision` のURI。
+
+    施行日だけを鍵にすると、同一施行日の改正が2件あれば1つのURIに合流し、
+    `amendmentLawNum` が2値になって閉じたシェイプの `sh:maxCount 1` に違反する
+    (レビュー指摘10。隔離の単位はグラフなので、その取得日の全法令が丸ごと
+    落ちる)。改正法令番号を追加の鍵にして区別する。`None`(改正法令番号が
+    無い行。現状のコネクタでは起こらないが型としてはあり得る)の場合は、
+    従来どおり日付のみのURIにする(鍵の材料が無いところへ無理に材料を作らない)。
+    """
+    if amendment_law_num:
+        return f"{law_uri(law_id)}/{date:%Y%m%d}_{quote(amendment_law_num, safe='')}"
     return f"{law_uri(law_id)}/{date:%Y%m%d}"
 
 

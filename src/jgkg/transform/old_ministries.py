@@ -20,7 +20,12 @@
 import csv
 from pathlib import Path
 
-DEFAULT_PATH = Path("data/reference/old-ministries.csv")
+# **cwdに依存させない。** リポジトリ直下以外から起動すると相対パスが解決できず
+# FileNotFoundErrorになる(tests/test_schema_consistency.py が同じ理由で
+# REPO_ROOT起点に直した前例がある。レビュー指摘11)。このモジュールの位置
+# (src/jgkg/transform/old_ministries.py)からリポジトリ直下を逆算する
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_PATH = _REPO_ROOT / "data" / "reference" / "old-ministries.csv"
 
 
 def load_old_ministries(path: Path = DEFAULT_PATH) -> set[str]:

@@ -195,6 +195,9 @@ def test_pure_shacl_no_longer_catches_a_wrong_reference_type():
 
     results = validate.validate_dataset(ds, SHAPES)
     data_results = [r for r in results if "provenance" not in r.graph_uri]
+    # レビュー指摘9: data_results が空だと all(...) が空振りで真になり、
+    # 何も検証していないのに合格したように見える(他の2本には既にあるガード)
+    assert data_results, "検証対象のグラフが無い"
     assert all(r.conforms for r in data_results), (
         "SHACL単体がまだ型不一致を検出している"
         "(sh:classの抽出漏れの疑いがある): "

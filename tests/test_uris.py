@@ -35,6 +35,30 @@ def test_law_uri_and_version_uri():
     )
 
 
+def test_law_version_uri_distinguishes_same_date_by_amendment_law_num():
+    """同一施行日の改正2件が、改正法令番号込みで別々のURIになること(レビュー指摘10)。
+
+    何があれば落ちるか: `amendment_law_num` を鍵に加え忘れると、この2つの
+    呼び出しが同じURIを返し、`emit_laws` が1ノードに2件の改正を合流させる。
+    """
+    day = datetime.date(2026, 4, 1)
+    first = uris.law_version_uri("507M60000100010", day, "令和八年厚生労働省令第一号")
+    second = uris.law_version_uri("507M60000100010", day, "令和八年厚生労働省令第二号")
+
+    assert first != second, "改正法令番号が違うのに同じURIになった"
+    assert first == (
+        f"{TEST_BASE}/id/law/507M60000100010/20260401_"
+        "%E4%BB%A4%E5%92%8C%E5%85%AB%E5%B9%B4%E5%8E%9A%E7%94%9F%E5%8A%B4%E5%83%8D%E7%9C%81%E4%BB%A4%E7%AC%AC%E4%B8%80%E5%8F%B7"
+    )
+
+
+def test_law_version_uri_falls_back_to_date_only_when_amendment_law_num_is_absent():
+    """改正法令番号が無い場合は従来どおり日付のみのURI(後方互換)。"""
+    assert uris.law_version_uri("507M60000100010", datetime.date(2026, 8, 1), None) == (
+        f"{TEST_BASE}/id/law/507M60000100010/20260801"
+    )
+
+
 def test_unresolved_jurisdiction_uri_is_keyed_by_law_id_and_name():
     """law_id と name の両方が材料になること。
 

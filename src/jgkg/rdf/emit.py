@@ -186,7 +186,9 @@ def emit_laws(
                 # この改正イベント1件だけを作れない)
                 continue
             rev_date = datetime.date.fromisoformat(rev.amendment_enforcement_date)
-            rs = URIRef(law_version_uri(record.law_id, rev_date))
+            # 改正法令番号も鍵に加える(指摘10。同一施行日の改正2件が1ノードに
+            # 合流してsh:maxCount 1に違反することを防ぐ)
+            rs = URIRef(law_version_uri(record.law_id, rev_date, rev.amendment_law_num))
             data.add((rs, RDF.type, ns["law"]["LawRevision"]))
             data.add((rs, ns["law"]["lawId"], Literal(record.law_id)))
             data.add(

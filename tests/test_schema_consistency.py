@@ -265,6 +265,12 @@ def test_all_shacl_covers_the_classes_emitted_by_the_pipeline():
         assert any(t.endswith(f"/def/org#{name}") for t in targets), (
             f"emit が出す org:{name} のシェイプが all.shacl.ttl に無い: {sorted(targets)}"
         )
+    # レビュー指摘8: emit_laws が出す law:Law / law:LawRevision もこのテストの
+    # 対象に含める(org# 限定のループとは別に、law# を明示的に確認する)
+    for name in ("Law", "LawRevision"):
+        assert any(t.endswith(f"/def/law#{name}") for t in targets), (
+            f"emit が出す law:{name} のシェイプが all.shacl.ttl に無い: {sorted(targets)}"
+        )
     assert any(t.endswith("/def/core#UnresolvedReference") for t in targets), (
         f"emit が出す core:UnresolvedReference のシェイプが無い: {sorted(targets)}"
     )
