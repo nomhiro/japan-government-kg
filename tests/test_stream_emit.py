@@ -180,6 +180,30 @@ def test_dedup_seen_set_memory_budget_is_within_the_phase1_budget():
     )
 
 
+def test_dedup_raises_when_source_returns_a_different_row_count_on_the_second_call():
+    """F-4(b): `source()`が2回とも同じ内容を返すという2パス方式の前提が
+
+    崩れたら例外にすること。**行数の一致は「鳴子」であって内容のハッシュ
+    ではない** — 同じ件数のまま内容が入れ替わるより巧妙な不一致までは
+    検出できないが、そのケースはvalidate_stream側の非隣接主語再出現の検査
+    (F-4b/O-8)が別途捕まえる(二段構え)。ここでは最も基本的な破れ
+    (件数そのものが変わる)を固定する。
+    """
+    call_count = 0
+
+    def flaky_source():
+        nonlocal call_count
+        call_count += 1
+        rows = [_org(bangou="6000012070001"), _org(bangou="2000012020001")]
+        if call_count >= 2:
+            rows.append(_org(bangou="8000012050001"))  # 2回目だけ1件増える
+        return iter(rows)
+
+    stats = stream_emit.StreamStats()
+    with pytest.raises(ValueError, match="件数が一致しない"):
+        list(stream_emit.dedup_organizations(flaky_source, stats))
+
+
 # =============================================================================
 # Step 2: stream_emit_organizations
 #
@@ -452,7 +476,7 @@ def test_validate_stream_batched_result_matches_the_whole_graph_result_for_a_loc
 def test_validate_stream_diverges_from_the_whole_graph_result_when_split_mid_subject(tmp_path):
     """**等価条件が実質であることの証明**: 主語の切れ目を無視して(=わざと
 
-    主語を跨いで)分割すると、全体一発の結果と一致しなくなること。
+    主語を跨いで)分割すると、全体一発の結果と一致しなくなる**危険がある**こと。
 
     同一主語(法人番号)の`skos:prefLabel`を2つ持つデータ(sh:maxCount 1
     違反)を作るが、その2つを**連続させずに**別の主語のブロックを挟んで書く
@@ -460,8 +484,15 @@ def test_validate_stream_diverges_from_the_whole_graph_result_when_split_mid_sub
     状況を人為的に再現する — dedup済みの正常な経路ではこの状態は作れない
     ため、手書きのN-Quadsで構成する)。batch_sizeを、ちょうど「主語が
     変わった直後」に流れ込むように選ぶと、同一主語の2つのブロックが別々の
-    バッチに分かれる。各バッチは単独ではprefLabelを1つしか見ないため
-    合格してしまうが、全体一発ではsh:maxCount 1違反として検出される。
+    バッチに分かれる。
+
+    **このテストの歴史(F-4b以前)**: 以前はこの分割を`validate_stream`が
+    無防備に受け入れ、各バッチが単独ではprefLabelを1つしか見ないため両方が
+    個別に合格し、全体一発(不合格)と結果が一致しないまま**沈黙して**
+    「合格」を返していた。F-4b(主語の非隣接再出現の検出)を追加した後は、
+    この状況そのものを検出して例外になる — 「結果が食い違う」のではなく
+    「食い違う恐れのある入力そのもので止まる」に変わった、という違いを
+    このテストで固定する。
     """
     from rdflib import URIRef
 
@@ -502,18 +533,135 @@ def test_validate_stream_diverges_from_the_whole_graph_result_when_split_mid_sub
     # 最後のバッチ、という3分割になる(主語の切れ目でのみ切る実装なら、
     # 「同じ主語が別バッチに分かれる」状況そのものは入力側の問題として
     # 再現できる)
-    batched = validate.validate_stream(
-        nq_path, _shapes_dir(), tmp_path / "quarantine", batch_size=4
-    )
-    assert len(batched) >= 2, "主語跨ぎの分割が起きていない(テストの前提が崩れている)"
-    assert all(r.conforms for r in batched), (
-        "各バッチが単独では合格するはず(それぞれ1つのprefLabelしか見ないため)"
-    )
-    # ここが本題: 全体一発は不合格、バッチ検証(この壊れた分割)は全合格。一致しない
-    assert whole != all(r.conforms for r in batched), (
-        "主語跨ぎの分割でも全体一発と結果が一致してしまった"
-        "(等価性が主語連続の仮定に依存していることを示せていない)"
-    )
+    with pytest.raises(ValueError, match="非連続で再出現"):
+        validate.validate_stream(
+            nq_path, _shapes_dir(), tmp_path / "quarantine", batch_size=4
+        )
+
+
+def test_validate_stream_raises_when_a_real_stream_lets_the_same_subject_reappear_non_adjacently(
+    tmp_path,
+):
+    """F-4b/O-8: 手書きN-Quadsではなく**実経路**(stream_emit_organizations)で
+
+    条件1/条件3破れを再現しても、非隣接再出現が検出されること。
+
+    上のテスト(`test_validate_stream_diverges_...`)は手書きのN-Quadsによる
+    実証だった。こちらはdedup_organizationsを意図的に経由させず(=上流の
+    dedup前提が崩れた状況を模す)、同一法人番号のOrganizationを2回、
+    その間に別法人を挟んでstream_emit_organizationsに流す。これにより、
+    O-8(条件3が崩れた場合の実経路での実証)がF-4bのこのテストによって
+    同時に閉じる — 手書きのN-Quadsではなく、実際のstream_emit_organizations
+    の出力を経由していることがこのテストの要点。
+    """
+    import io
+
+    from jgkg import validate
+
+    dup_a = _org(bangou="6000012070001", name="旧名称")
+    other = _org(bangou="2000012020001", name="総務省")
+    dup_b = _org(bangou="6000012070001", name="新名称")  # 同じ法人番号が非隣接に再出現
+
+    out = io.StringIO()
+    stream_emit.stream_emit_organizations(iter([dup_a, other, dup_b]), GRAPH_URI, out)
+    nq_path = tmp_path / "reappear.nq"
+    nq_path.write_text(out.getvalue(), encoding="utf-8")
+
+    # 各Organizationは4行(prefecture/cityを指定していないため)。batch_size=4で
+    # dup_aの4行→他法人の4行→dup_bの4行、という3バッチに分かれ、dup_aの主語が
+    # 3バッチ目に非隣接で再出現する
+    with pytest.raises(ValueError, match="非連続で再出現"):
+        validate.validate_stream(
+            nq_path, _shapes_dir(), tmp_path / "quarantine", batch_size=4
+        )
+
+
+def test_validate_stream_raises_when_a_single_subject_run_grows_without_bound(tmp_path):
+    """F-4(a): 主語が変わらないまま行数がバッファ上限を超えたら例外にすること。
+
+    バッチ境界は「主語が変わるまで待つ」ため、上流のdedupが効かずに同一
+    法人番号の行が延々と連続して書かれるような単一主語の暴走に対しては、
+    batch_sizeだけでは無防備になる。B-2/F-4bとは別の退行経路をここで塞ぐ。
+    """
+    from rdflib import URIRef
+
+    from jgkg import validate
+
+    graph_n3 = URIRef(GRAPH_URI).n3()
+    s = URIRef(org_uri("6000012070001")).n3()
+    rdf_type = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>"
+    org_ns = "https://jgkg.norr-tech.com/def/org#"
+    line = f'{s} {rdf_type} <{org_ns}Organization> {graph_n3} .\n'
+
+    nq_path = tmp_path / "runaway.nq"
+    nq_path.write_text(line * (validate._MAX_SUBJECT_RUN + 1), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="連続している"):
+        validate.validate_stream(nq_path, _shapes_dir(), tmp_path / "quarantine")
+
+
+def test_validate_stream_raises_when_a_batch_declares_no_classes_due_to_base_uri_drift(tmp_path):
+    """B-2(対象0件ガードの変種1): rdf:typeはあるが、その名前空間がterm_prefix
+
+    (現在のbase_uri)と一致しないバッチも、「対象0件で合格」に退化させず
+    例外にすること。
+
+    `validate_dataset`側の同種のガード(`_assert_shapes_cover`)は`declared`
+    が非空だが対象シェイプが無い場合しか捕まえない — `declared`自体が空に
+    なるケースは、出典グラフ(rdf:typeを持たない)との区別がつかないため
+    意図的に許容されている(test_provenance_only_graph_is_not_flagged_by_
+    the_coverage_guard参照)。しかし`validate_stream`のバッチは常に
+    Organizationのrdf:typeを持つはず(provenanceは`validate_stream`を
+    経由しない。pipeline.py参照)なので、ここでの「対象0件」は常に異常。
+    """
+    from rdflib import URIRef
+
+    from jgkg import validate
+
+    # ドリフト検査用の別ベースURI。**IRIを文字列リテラルで直接書かない**
+    # (test_validate.pyのDRIFT_BASEと同じ理由: tests/*.py 自体がjgkg.base_uri
+    # の整合検査(test_base_uri.py)の対象であり、`/def/`や`/id/`を含む完全な
+    # httpsリテラルを書くと「古いドメインが残っている」という誤検知になる)
+    drift_base = "https://example.test/drift-kg"
+    graph_n3 = URIRef(GRAPH_URI).n3()
+    rdf_type = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>"
+    # 現在のbase_uri(https://jgkg.norr-tech.com)ではない別ドメインの名前空間で
+    # rdf:typeを名指しする(.envのJGKG_BASE_URIを変えたが生成物を作り直して
+    # いない、という実運用の退行を模す)
+    drifted_ns = f"{drift_base}/def/org#"
+    s = URIRef(f"{drift_base}/id/org/6000012070001").n3()
+    line = f'{s} {rdf_type} <{drifted_ns}Organization> {graph_n3} .\n'
+
+    nq_path = tmp_path / "drift.nq"
+    nq_path.write_text(line, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="自オントロジーのクラスを1つも"):
+        validate.validate_stream(nq_path, _shapes_dir(), tmp_path / "quarantine")
+
+
+def test_validate_stream_raises_when_a_batch_has_no_rdf_type_triples_at_all(tmp_path):
+    """B-2(対象0件ガードの変種2): rdf:typeを1つも含まないバッチも同様に例外にすること。
+
+    stream_emit_organizationsの出力は常にrdf:type行を持つため、これが
+    起きるのは壊れた/手書きのN-Quadsに限られる。上のテスト(名前空間drift)
+    とは異なる入力形(rdf:type自体が無い)で、同じ「対象0件ガード」に
+    到達することを確認する。
+    """
+    from rdflib import URIRef
+
+    from jgkg import validate
+    from jgkg.config import get_settings
+
+    org_ns = f"{get_settings().base_uri}/def/org#"
+    graph_n3 = URIRef(GRAPH_URI).n3()
+    s = URIRef(org_uri("6000012070001")).n3()
+    line = f'{s} <{org_ns}houjinBangou> "6000012070001" {graph_n3} .\n'
+
+    nq_path = tmp_path / "no_type.nq"
+    nq_path.write_text(line, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="自オントロジーのクラスを1つも"):
+        validate.validate_stream(nq_path, _shapes_dir(), tmp_path / "quarantine")
 
 
 def test_validate_stream_never_cuts_a_single_contiguous_subject_block_even_past_batch_size(tmp_path):

@@ -222,6 +222,13 @@ def _split_nquads_line(line: str) -> tuple[str, str]:
     return nt_body, graph_term
 
 
+# 1エンティティが持つ最大トリプル数(このスキーマでは6: type/prefLabel/
+# houjinBangou/organizationKindCode/prefectureName/cityName)に十分な安全
+# 余裕を持たせた上限。**厳密な物理限界ではなく、退行の検出線。** 上流の
+# dedup_organizationsが効かず同一法人番号の行が延々と連続して書かれるような
+# 系統的な壊れ方を、バッファが無制限に伸びる前に止める(F-4a)
+_MAX_SUBJECT_RUN = 1000
+
 # validate_streamの要約(ValidationResult.report_text)の文字数上限。
 # pyshaclのreport_textは違反1件ごとにshapeの説明文まで複製するため件数に
 # 比例して伸びる(実測: 5件で4,117文字≒1件あたり約800文字)。先頭をこの
@@ -253,8 +260,27 @@ def validate_stream(
 
     **前提**: `nq_path`は`stream_emit.stream_emit_organizations`が書いた
     ファイルであること(1行=1トリプル・主語は常にIRI・1エンティティの全
-    トリプルが連続・上流でdedup済み)。この前提が崩れていると、バッチ検証の
-    結果が全体一発の結果と一致しなくなる(モジュールdocstring参照)。
+    トリプルが連続・上流でdedup済み)。この前提が崩れている場合、以下の
+    3つの防御のどれかが例外にする(沈黙して結果が全体一発の結果と食い違う
+    ことを許さない — レビューが実測で指摘した実際の退行経路):
+
+    1. **バッファ上限(F-4a)**: 同一主語が`_MAX_SUBJECT_RUN`行を超えて
+       連続したら例外。dedupが効かず同一法人番号の行が延々と書かれるような
+       系統的な壊れ方を検出する。
+    2. **主語の非隣接再出現(F-4b/O-8)**: 一度閉じた(検証済みの)バッチに
+       現れた主語が、後の別バッチに再出現したら例外。1エンティティ連続
+       書き(条件1)か上流dedup(条件3)のいずれかが崩れている状況そのもの
+       (`closed_subjects`という全主語文字列の集合を保持する — 5.8M件で
+       実測約683MiB。`dedup_organizations`の1パス目`seen`(int化した法人
+       番号のみ。実測約490MiB)とは**同時に生存しない**: dedupが完全に
+       終わり`seen`を解放した後に初めてstream_emit_organizationsの書き出しが
+       始まり、その書き出しが終わった後に初めてこの関数が読み始める逐次の
+       パイプラインなので、ピークメモリはどちらか大きい方であって合計では
+       ない)。
+    3. **対象0件ガード(B-2)**: バッチが自オントロジーのクラスを1つも
+       名指ししていない(=SHACLの対象が0件)なら例外。`validate_dataset`の
+       `_assert_shapes_cover`と同じ原則をバッチ単位でも適用する — これが
+       無いと、名前空間drift等でバッチが「対象0件で合格」に静かに退化する。
 
     **バッチ境界は主語の切れ目でのみ切る。** `batch_size`はバッチが到達する
     目安の行数であり、厳密な上限ではない — 主語が変わった行でだけ
@@ -283,14 +309,30 @@ def validate_stream(
     results: list[ValidationResult] = []
     batch_index = 0
     graph_uri: str | None = None
+    # 非隣接再出現(F-4b/O-8)の検出用。フル文字列で持つ理由・メモリの
+    # 逐次性の論証はこの関数のdocstring参照
+    closed_subjects: set[str] = set()
 
     def _flush(lines: list[str]) -> None:
         nonlocal batch_index, graph_uri
         if not lines:
             return
         nt_lines: list[str] = []
+        batch_subjects: set[str] = set()
         for line in lines:
             nt_body, graph_term = _split_nquads_line(line)
+            subject = nt_body.split(" ", 1)[0]
+            if subject in closed_subjects:
+                raise ValueError(
+                    f"主語 {subject} が、既に閉じた(検証済みの)バッチとは"
+                    f"別のバッチ({batch_index})に非連続で再出現した。"
+                    " stream_emit_organizationsが1エンティティの全トリプルを"
+                    "連続して書く前提(条件1)か、上流のdedup_organizationsが"
+                    "同一法人番号を1件に統合する前提(条件3)のいずれかが"
+                    "崩れている疑いがある。バッチ検証はどちらの前提にも"
+                    "依存しているため、沈黙せずここで例外にする(F-4b/O-8)"
+                )
+            batch_subjects.add(subject)
             this_graph = graph_term[1:-1] if graph_term.startswith("<") else graph_term
             if graph_uri is None:
                 graph_uri = this_graph
@@ -301,15 +343,22 @@ def validate_stream(
                     "1グラフしか書かない前提が崩れている"
                 )
             nt_lines.append(nt_body + " .\n")
+        closed_subjects.update(batch_subjects)
 
         batch_graph = Graph()
         batch_graph.parse(data="".join(nt_lines), format="nt")
 
-        _assert_shapes_cover(
-            graph_uri or "(unknown)",
-            _own_declared_classes(batch_graph, term_prefix),
-            targets,
-        )
+        declared = _own_declared_classes(batch_graph, term_prefix)
+        if not declared:
+            raise ValueError(
+                f"バッチ{batch_index}(グラフ {graph_uri!r})が自オントロジーの"
+                "クラスを1つも名指ししていない(rdf:typeが無いか、名前空間が"
+                "ずれている)。このまま検証すると対象0件で合格し、検証ゲートが"
+                "素通しになる。validate_datasetの_assert_shapes_coverと同じ"
+                "原則をここでも適用する(B-2)"
+            )
+        _assert_shapes_cover(graph_uri or "(unknown)", declared, targets)
+
         conforms, report_graph, report_text = shacl_validate(
             data_graph=batch_graph,
             shacl_graph=shapes,
@@ -341,12 +390,25 @@ def validate_stream(
 
     buffer: list[str] = []
     current_subject: str | None = None
+    same_subject_run = 0
     with nq_path.open("r", encoding="utf-8") as f:
         for line in f:
             subject = line.split(" ", 1)[0]
-            if subject != current_subject and len(buffer) >= batch_size:
-                _flush(buffer)
-                buffer = []
+            if subject != current_subject:
+                if len(buffer) >= batch_size:
+                    _flush(buffer)
+                    buffer = []
+                same_subject_run = 0
+            same_subject_run += 1
+            if same_subject_run > _MAX_SUBJECT_RUN:
+                raise ValueError(
+                    f"主語 {subject} が {same_subject_run} 行を超えて連続して"
+                    f"いる(上限 {_MAX_SUBJECT_RUN})。1エンティティが持つ"
+                    "トリプル数は通常一桁(このスキーマでは最大6行)なので、"
+                    "桁違いの連続は上流のdedup_organizationsが効かず同一"
+                    "法人番号の行が延々と書かれている疑いがある。バッファが"
+                    "無制限に伸びる前にここで止める(F-4a)"
+                )
             buffer.append(line)
             current_subject = subject
     _flush(buffer)

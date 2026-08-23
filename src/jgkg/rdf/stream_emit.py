@@ -96,7 +96,9 @@ def dedup_organizations(
     """
     seen: set[int] = set()
     duplicated: set[int] = set()
+    pass1_count = 0
     for org in source():
+        pass1_count += 1
         key = int(org.houjin_bangou)
         if key in seen:
             duplicated.add(key)
@@ -106,7 +108,9 @@ def dedup_organizations(
 
     pending: dict[int, Organization] = {}
     dup_occurrences = 0
+    pass2_count = 0
     for org in source():
+        pass2_count += 1
         stats.rows_in += 1
         key = int(org.houjin_bangou)
         if key not in duplicated:
@@ -116,6 +120,24 @@ def dedup_organizations(
         current = pending.get(key)
         if current is None or org.updated_on >= current.updated_on:
             pending[key] = org
+
+    # **F-4(b): source()が2回とも同じ内容を返すという2パス方式の前提を検査する。**
+    # 行数の一致は鳴子であって内容のハッシュではない — 同じ件数のまま内容が
+    # 入れ替わる、より巧妙な不一致(TOCTOU)まではここでは検出できないが、
+    # そのケースはvalidate_stream側の非隣接主語再出現の検査が別途捕まえる
+    # (二段構え)。ここでは最も基本的な破れ(件数そのものが変わる)を固定する。
+    # 2パス目の途中でこの不一致を検出することはできない(1パス目の総数は
+    # 2パス目が終わるまで意味を持たない)ため、両方のループを終えた後で
+    # まとめて検査する
+    if pass2_count != pass1_count:
+        raise ValueError(
+            f"dedup_organizationsの1パス目({pass1_count}件)と2パス目"
+            f"({pass2_count}件)で件数が一致しない。source()が呼び出しごとに"
+            "異なる内容を返している疑いがある — 2パス方式はsource()が2回とも"
+            "同じ内容を返すことを前提にしている(このモジュールのdocstring"
+            "参照)。件数が食い違うと、1パス目のduplicated判定が2パス目の"
+            "実データと食い違い、同一主語が非隣接に複数回yieldされる恐れがある"
+        )
 
     stats.dedup_removed += dup_occurrences - len(pending)
     yield from pending.values()
