@@ -356,22 +356,25 @@ def run(
         ),
     )
 
-    results = validate.validate_dataset(ds, SHAPES_DIR)
-    quarantined = [r for r in results if not r.conforms]
-    if quarantined:
-        validate.quarantine(ds, results, Path(settings.quarantine_dir))
-
-    clean = validate.passing_dataset(ds, results)
-
     # Task 8: バッチ検証を通った全法人グラフの出典をここで記録する(原則7:
     # 出典を持たない事実をKGに入れない)。**検証に失敗していれば記録しない**
     # — このグラフは実際にはkg.nqへ追記されないので、記録すると「出典だけ
     # 存在するが本体が無い」という嘘になる。「houjin-bangou」と同じ
     # 取得済みスナップショットから作る別グラフなので、source_idは新規登録
     # せず既存の"houjin-bangou"のままにする(同じ一次資料から2つの異なる
-    # 粒度のグラフを作っている、という事実をそのまま記録する)
+    # 粒度のグラフを作っている、という事実をそのまま記録する)。
+    #
+    # **`ds`に足す(`clean`ではない)。SHACLゲートより前にする(F-5)。**
+    # 以前は`passing_dataset`が返した`clean`に後から足していたため、この
+    # 出典グラフ自身が一度もSHACL検証を通らずにkg.nqへ出て行っていた
+    # (`validate_dataset`は`ds`をこの時点でしか見ないため、後から`clean`
+    # に足した内容はゲートの対象に一度も入らない)。`ds`に足せば、他の
+    # グラフと同じ扱いで`validate_dataset`→`passing_dataset`を通り、ゲートが
+    # 実際に見た内容だけが`clean`に残るという一貫性が保てる(出典グラフは
+    # `rdf:type`を持たないため`_assert_shapes_cover`の対象外になり実質的には
+    # 素通りするが、その素通りも含めてゲートの通り道に乗せておく)
     if include_all_corporations and corporations_all_quarantined == 0:
-        meta = clean.graph(URIRef(f"{settings.base_uri}/graph/provenance"))
+        meta = ds.graph(URIRef(f"{settings.base_uri}/graph/provenance"))
         for triple in provenance_graph(
             all_corporations_graph_uri,
             "houjin-bangou",
@@ -379,6 +382,13 @@ def run(
             sha256=houjin_snapshot.sha256,
         ):
             meta.add(triple)
+
+    results = validate.validate_dataset(ds, SHAPES_DIR)
+    quarantined = [r for r in results if not r.conforms]
+    if quarantined:
+        validate.quarantine(ds, results, Path(settings.quarantine_dir))
+
+    clean = validate.passing_dataset(ds, results)
 
     # **隔離を通過した `clean` に対して検査する(`ds` ではない)。** SHACLで
     # 隔離されたグラフへの参照は「壊れて当然」なのでここでも違反として拾って
@@ -405,6 +415,12 @@ def run(
         ):
             for line in src:
                 dst.write(line)
+        # O-10: 合格時は中間ファイルを削除する。内容はkg.nqへ追記済みで
+        # 二重に持つ理由が無く、581万件規模(約1GB)を毎回残すと成果物
+        # ディレクトリが肥大する。**不合格時はここに来ない**ため、
+        # houjin-bangou-all.nqは事実上の隔離物として残る(バッチ単位の
+        # 違反レポートとは別に、入力全体を再現できる状態を保つ意味がある)
+        all_corporations_nq_path.unlink()
 
     surviving_graphs = sorted(str(c.identifier) for c in clean.graphs() if len(c) > 0)
     if include_all_corporations and corporations_all_quarantined == 0:

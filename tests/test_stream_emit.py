@@ -107,6 +107,42 @@ def test_dedup_ties_on_equal_date_keep_the_last_occurrence_deterministically():
     assert [o.name for o in result] == ["行B"], "日付が同じ場合は出現順で後の行を残す"
 
 
+def test_dedup_treats_an_empty_updated_on_as_the_oldest_possible_value():
+    """O-9: `updated_on`が空文字(不明)の行の扱いを固定する。
+
+    特別扱いはしない(dedup_organizationsのdocstring参照) — 既定の文字列
+    比較(`>=`)に委ねるだけで、次の2つが自然に得られる:
+    (1) 空文字と実在の日付が競合すれば、出現順に関わらず実在の日付が勝つ
+    (空文字は辞書順で常に最小)。
+    (2) 重複が全件空文字なら、既存のタイブレーク規則どおり出現順で最後の
+    行が勝つ。
+    """
+    # (1): 空文字が先に出現しても、後から来た実在の日付に負ける
+    empty_first = _org(name="不明日付", updated_on="")
+    dated_second = _org(name="実在日付", updated_on="2018-04-02")
+    stats = stream_emit.StreamStats()
+    result = list(stream_emit.dedup_organizations(lambda: iter([empty_first, dated_second]), stats))
+    assert [o.name for o in result] == ["実在日付"], "空文字の日付が実在の日付に勝ってしまった"
+
+    # (1)の逆順: 実在の日付が先に出現しても、後から来た空文字には負けない
+    dated_first = _org(name="実在日付", updated_on="2018-04-02")
+    empty_second = _org(name="不明日付", updated_on="")
+    stats2 = stream_emit.StreamStats()
+    result2 = list(
+        stream_emit.dedup_organizations(lambda: iter([dated_first, empty_second]), stats2)
+    )
+    assert [o.name for o in result2] == ["実在日付"], "出現順が後というだけで空文字の日付が勝ってしまった"
+
+    # (2): 全件が空文字なら、通常のタイブレーク(出現順で最後)がそのまま働く
+    first_empty = _org(name="行A", updated_on="")
+    second_empty = _org(name="行B", updated_on="")
+    stats3 = stream_emit.StreamStats()
+    result3 = list(
+        stream_emit.dedup_organizations(lambda: iter([first_empty, second_empty]), stats3)
+    )
+    assert [o.name for o in result3] == ["行B"], "全件空文字のタイブレークが出現順の最後にならなかった"
+
+
 def test_dedup_passes_through_unique_organizations_unchanged():
     """重複が無い行はdedupの影響を受けず、件数もそのまま通ること(誤検出の否定的コントロール)。"""
     a = _org(bangou="6000012070001", name="厚生労働省")
@@ -142,41 +178,69 @@ def test_dedup_handles_three_occurrences_of_the_same_key():
 
 
 def test_dedup_seen_set_memory_budget_is_within_the_phase1_budget():
-    """見積り: 5.8M件の法人番号をintでsetに載せるメモリが上限内であること。
+    """見積り: `dedup_organizations`を実際に呼び、ピークメモリが上限内であること。
 
-    `dedup_organizations`の1パス目は、重複検出のためだけに全法人番号(int化)を
-    `set`に載せる(task-8-brief.md Step1の指示)。5.8M件の`Organization`本体
-    (名称・住所などの文字列を持つ)を保持するのはR19/R21が禁じる「全件蓄積」
-    だが、int化した法人番号だけの`set`はその対象外であることを実測で示す。
-    **この`set`は1パス目でのみ生存する**(2パス目に必要なのは実際に重複していた
-    キーの小さい集合だけなので、1パス目の`set`は使い終わったら破棄する —
-    `dedup_organizations`の実装コメント参照)。
+    **F-6(レビュー指摘)**: 以前のこのテストは裸の`set[int]`だけを測定し、
+    `dedup_organizations`自体を一度も呼んでいなかった(実装からの乖離 —
+    intでない何かをキーにする退行や、他の場所での余分な蓄積を検出できない)。
+    ここでは実際にジェネレータファクトリ(呼ぶたびに新しい`Organization`の列を
+    生成する。事前に`list`化しない)を`dedup_organizations`に渡し、フルの
+    実行(1パス目のint集合構築→解放→2パス目)を通したピークメモリを
+    `tracemalloc`で測る。重複を1件も作らない(2パス目の`pending`が空のまま
+    になる)ので、測ったピークは実質的に1パス目の`seen`が支配する。
 
-    実測(このテスト実行時、`tracemalloc`で計測): サンプル20万件のset追加コストを
-    実測し、5.8M件に線形外挿する。Phase 1の想定実行環境(2vCPU/8GiB。
+    **サンプルは`tracemalloc.start()`の前に構築してはならない**(サンプルの
+    構築コストがピークを支配してしまい、`dedup_organizations`自体ではなく
+    「20万件の`Organization`をメモリに置くコスト」を測ることになる)。`source`
+    をジェネレータ式のファクトリにして、`tracemalloc.start()`の**後**に
+    初めて各`Organization`が生成されるようにする。**出力も`list`化しない**
+    (同じ理由 — 5.8M件分を`list`で保持したら、ここでのテストの都合で
+    ピークを実際より大きく見せてしまう。`stream_emit_organizations`は
+    1件ずつ即座に書き出して捨てるので、実運用ではこの保持は起きない)。
+
+    実測(このテスト実行時、`tracemalloc`で計測): サンプル20万件を実行した
+    ピークメモリを5.8M件に線形外挿する。Phase 1の想定実行環境(2vCPU/8GiB。
     `organization.py`の`parse_file`docstring参照)に対して十分小さいことを
-    固定する(2026-08-24, CPython 3.12.11, Windows実測: 約70バイト/件 →
-    5.8M件で約385MiB。1GiBという緩い上限は実行環境差を吸収しつつ、
-    「Organization本体をsetに入れてしまう」ような桁違いの退行は確実に検出する)。
+    固定する(2026-08-24, CPython 3.13.5, Windows実測: 約88.2バイト/件 →
+    5.8M件で約487.7MiB。レビューが別途行った実測(200,000件・約88.6バイト/件・
+    約490MiB)と同水準で、int化した法人番号だけの集合であることが裏付けられる。
+    1GiBという緩い上限は実行環境差を吸収しつつ、「Organization本体を1パス目の
+    setに丸ごと入れてしまう」ような桁違いの退行は確実に検出する)。
     """
     import tracemalloc
 
     sample_size = 200_000
-    base = 6_000_000_000_000  # 13桁の法人番号レンジを模す
+    base = 6_000_000_000_000  # 13桁の法人番号レンジを模す(重複無し)
+
+    def _source():
+        return (
+            _org(
+                bangou=str(base + i),
+                name=f"サンプル法人{i}",
+                prefecture="東京都",
+                city="千代田区",
+            )
+            for i in range(sample_size)
+        )
+
     tracemalloc.start()
-    before = tracemalloc.get_traced_memory()[0]
-    seen: set[int] = set()
-    for i in range(sample_size):
-        seen.add(base + i)
-    after = tracemalloc.get_traced_memory()[0]
+    stats = stream_emit.StreamStats()
+    count = 0
+    for _ in stream_emit.dedup_organizations(_source, stats):
+        count += 1
+    peak = tracemalloc.get_traced_memory()[1]
     tracemalloc.stop()
 
-    per_entry_bytes = (after - before) / sample_size
+    assert count == sample_size, (
+        "重複無しのサンプルなのに件数が減っている(テストの前提が崩れている)"
+    )
+    per_entry_bytes = peak / sample_size
     estimated_total_mib = per_entry_bytes * 5_800_000 / (1024**2)
 
     assert estimated_total_mib < 1024, (
-        f"法人番号setの推定メモリが1GiBを超えた(1件あたり{per_entry_bytes:.1f}バイト、"
-        f"5.8M件で{estimated_total_mib:.1f}MiB)。int化を外した等の退行の疑いがある"
+        f"dedup_organizations実行のピークメモリが5.8M件換算で1GiBを超えた"
+        f"(1件あたり{per_entry_bytes:.1f}バイト、5.8M件で{estimated_total_mib:.1f}MiB)。"
+        "Organization本体を1パス目のsetに丸ごと入れてしまう等の退行の疑いがある"
     )
 
 
@@ -721,6 +785,31 @@ def test_validate_stream_never_cuts_a_single_contiguous_subject_block_even_past_
     )
 
 
+def test_validate_stream_gives_a_clear_error_for_a_blank_line_instead_of_unpacking_failure(
+    tmp_path,
+):
+    """O-12: ファイル中に空行が混入していたら、原因の分かるメッセージで落ちること。
+
+    何があれば落ちるか: `_split_nquads_line`のガードを外すと、
+    `body.rsplit(" ", 2)`が3要素を返せず`ValueError: not enough values to
+    unpack`という、空行が原因だと分からないメッセージに戻る。
+    """
+    import io
+
+    from jgkg import validate
+
+    org = _org()
+    out = io.StringIO()
+    stream_emit.stream_emit_organizations(iter([org]), GRAPH_URI, out)
+    text = out.getvalue() + "\n"  # 末尾に空行を1本混入させる
+
+    nq_path = tmp_path / "blank_line.nq"
+    nq_path.write_text(text, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="想定外の空行"):
+        validate.validate_stream(nq_path, _shapes_dir(), tmp_path / "quarantine")
+
+
 def test_validate_stream_raises_instead_of_treating_an_empty_file_as_conforming(tmp_path):
     """空ファイル(0バッチ)を「合格」として返さないこと(§8.2の作法)。
 
@@ -832,21 +921,22 @@ def test_validate_stream_keeps_the_result_summary_bounded_at_2000_violations(tmp
     assert full.count("Constraint Violation") == 2000
 
 
-_tmp_nq_counter = 0
-
-
 def tmp_nq_path():
     """テスト用の一時N-Quadsファイルパス(pytestのtmp_pathを使わない軽量版)。
 
     このファイル内の複数テストで使うヘルパーなので、pytestのtmp_path
-    フィクスチャを都度引き渡す代わりに、モジュール共通のtempディレクトリに
-    連番でファイルを作る。
+    フィクスチャを都度引き渡す代わりに使う。**O-12: 以前は共有ディレクトリに
+    手作りの連番でファイルを作っていた** — モジュールレベルのカウンタは
+    並行実行(pytest-xdist等の複数プロセス)では各プロセスが別々に0から
+    数えるため、同じ名前(`batch-1.nq`等)が競合する余地があった。
+    `tempfile.mkstemp`はOSレベルでアトミックに一意な名前を確保するので、
+    この競合を構造的に無くす。
     """
+    import os
     import tempfile
     from pathlib import Path
 
-    global _tmp_nq_counter
-    _tmp_nq_counter += 1
-    d = Path(tempfile.gettempdir()) / "jgkg-test-stream-emit"
-    d.mkdir(parents=True, exist_ok=True)
-    return d / f"batch-{_tmp_nq_counter}.nq"
+    fd, path = tempfile.mkstemp(suffix=".nq", prefix="jgkg-test-stream-emit-")
+    os.close(fd)  # 呼び出し側(各テスト)が自分でopen/write_textするので、
+    # ここでmkstempが開いたファイルディスクリプタは要らない
+    return Path(path)

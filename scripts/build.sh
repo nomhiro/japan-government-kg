@@ -15,16 +15,29 @@ if [ -f .env ]; then
 fi
 
 : "${JENA_VERSION:?JENA_VERSION を .env に設定する}"
-FETCHED_ON="${1:?使い方: scripts/build.sh YYYY-MM-DD [--allow-partial]}"
+FETCHED_ON="${1:?使い方: scripts/build.sh YYYY-MM-DD [--allow-partial] [--include-all-corporations]}"
+shift
 
 # 隔離が発生してもリリースを続けるか。既定は止まる(設計書§6.3のリリースゲート)
 ALLOW_PARTIAL=False
-if [ "${2:-}" = "--allow-partial" ]; then
-  ALLOW_PARTIAL=True
-elif [ -n "${2:-}" ]; then
-  echo "不明な引数: $2(使えるのは --allow-partial のみ)" >&2
-  exit 2
-fi
+# Task 8: 全法人(約581万件)をhoujin-bangou-allグラフとしてkg.nqに含めるか。
+# 既定はFalse(触らない) — pipeline.run の include_all_corporations と同じ
+# 既定値・同じ理由(O-11。Task 11がこのフラグを使う)
+INCLUDE_ALL_CORPORATIONS=False
+for arg in "$@"; do
+  case "$arg" in
+    --allow-partial)
+      ALLOW_PARTIAL=True
+      ;;
+    --include-all-corporations)
+      INCLUDE_ALL_CORPORATIONS=True
+      ;;
+    *)
+      echo "不明な引数: $arg(使えるのは --allow-partial / --include-all-corporations のみ)" >&2
+      exit 2
+      ;;
+  esac
+done
 
 OUT="data/artifact/${FETCHED_ON}"
 mkdir -p "$OUT"
@@ -46,6 +59,7 @@ from jgkg import pipeline
 report = pipeline.run(
     {'houjin-bangou': datetime.date.fromisoformat('${FETCHED_ON}')},
     pathlib.Path('${OUT}'),
+    include_all_corporations=${INCLUDE_ALL_CORPORATIONS},
 )
 pathlib.Path('${OUT}/pipeline-report.json').write_text(
     report.model_dump_json(indent=2), encoding='utf-8')

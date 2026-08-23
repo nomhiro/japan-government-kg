@@ -213,6 +213,15 @@ def _split_nquads_line(line: str) -> tuple[str, str]:
     は安全(`stream_emit_organizations`が書いた行にのみ通用する前提)。
     """
     body = line.rstrip("\n").rstrip("\r")
+    # O-12: 空行(または空白のみの行)は`rsplit(" ", 2)`が3要素を返せず
+    # `ValueError: not enough values to unpack`という、原因の分からない
+    # メッセージで落ちる。stream_emit_organizationsは空行を書かないため、
+    # ここに来るのは想定外の入力(手編集・破損)であり、その旨を先に言う
+    if not body.strip():
+        raise ValueError(
+            f"N-Quadsの行として想定外の空行が混入している: {line!r}。"
+            " stream_emit_organizations以外が書いたファイルの疑いがある"
+        )
     nt_body, graph_term, dot = body.rsplit(" ", 2)
     if dot != ".":
         raise ValueError(

@@ -355,6 +355,13 @@ def test_run_with_the_flag_streams_all_corporations_into_a_separate_graph_append
     kg_text = (out / "kg.nq").read_text(encoding="utf-8")
     assert f"<{all_graph_uri}>" in kg_text, "houjin-bangou-allグラフがkg.nqに追記されていない"
 
+    # O-10: 合格時は中間ファイル(houjin-bangou-all.nq)を削除すること。
+    # 内容はkg.nqへ追記済みで二重に持つ理由が無く、581万件規模(約1GB)を
+    # 毎回残すと成果物ディレクトリが肥大する
+    assert not (out / "houjin-bangou-all.nq").exists(), (
+        "合格したのに中間ファイルが残っている"
+    )
+
 
 def test_run_with_the_flag_dedups_and_reports_the_removed_count(
     lake_with_duplicate_label, tmp_path
@@ -396,6 +403,47 @@ def test_run_with_the_flag_records_provenance_for_the_new_graph(seeded_lake, tmp
     assert described, f"houjin-bangou-allグラフに出典の記述が無い: {all_graph_uri}"
 
 
+def test_run_with_the_flag_adds_the_new_graphs_provenance_before_the_shacl_gate_runs(
+    seeded_lake, tmp_path, monkeypatch
+):
+    """F-5: houjin-bangou-allの出典トリプルは、`validate_dataset`が呼ばれる
+
+    **前**に`ds`へ追加されていること(順序そのものを直接確認する)。
+
+    以前は`passing_dataset`が返した`clean`に後からこのグラフを足していたため、
+    `validate_dataset`はこの出典トリプルを一度も見ないまま素通りしていた。
+    出典グラフは`rdf:type`を持たずSHACLが何も制約しないため、この順序違いは
+    最終的なkg.nqの見た目(トリプル数やgraphs_validatedの値)には現れない
+    — houjin-bangou以外のソースの出典も同じ`/graph/provenance`という
+    1つの名前付きグラフに集約されるため、グラフの個数自体はフラグの有無で
+    変わらない。そのため、`validate_dataset`をラップして**呼ばれた瞬間の
+    dsの中身**を直接覗く(順序という観測しにくい性質を直接確認する)。
+    """
+    from rdflib import URIRef
+    from rdflib.namespace import PROV
+
+    from jgkg import uris
+    from jgkg import validate as validate_mod
+
+    all_graph_uri = uris.graph_uri("houjin-bangou-all", DAY)
+    real_validate_dataset = validate_mod.validate_dataset
+    seen_at_call_time: list[bool] = []
+
+    def _spy(ds, shapes_dir):
+        seen_at_call_time.append(
+            (URIRef(all_graph_uri), PROV.wasDerivedFrom, None) in ds
+        )
+        return real_validate_dataset(ds, shapes_dir)
+
+    monkeypatch.setattr(pipeline.validate, "validate_dataset", _spy)
+    pipeline.run(FETCHED, tmp_path / "out", include_all_corporations=True)
+
+    assert seen_at_call_time == [True], (
+        "validate_datasetが呼ばれた時点でhoujin-bangou-allの出典トリプルが"
+        "dsに入っていない(dsではなくcleanに後から足している疑いがある)"
+    )
+
+
 def test_run_with_the_flag_does_not_append_when_batch_validation_fails(
     seeded_lake, tmp_path, monkeypatch
 ):
@@ -412,13 +460,15 @@ def test_run_with_the_flag_does_not_append_when_batch_validation_fails(
     from jgkg import uris
     from jgkg import validate as validate_mod
 
-    def _fake_validate_stream(nq_path, shapes_dir, batch_size=50_000):
+    def _fake_validate_stream(nq_path, shapes_dir, quarantine_dir, batch_size=50_000):
         return [
             validate_mod.ValidationResult(
                 graph_uri=uris.graph_uri("houjin-bangou-all", DAY),
                 conforms=False,
                 report_text="FAKE VIOLATION(テスト用)",
                 batch_index=0,
+                violation_count=1,
+                report_path=str(quarantine_dir / "fake.report.txt"),
             )
         ]
 
@@ -430,6 +480,12 @@ def test_run_with_the_flag_does_not_append_when_batch_validation_fails(
     assert report.corporations_all_quarantined == 1
     all_graph_uri = uris.graph_uri("houjin-bangou-all", DAY)
     assert all_graph_uri not in report.graphs
+
+    # O-10: 不合格時は中間ファイル(houjin-bangou-all.nq)を削除しないこと。
+    # 事実上の隔離物として、入力全体を再現できる状態のまま残す
+    assert (out / "houjin-bangou-all.nq").exists(), (
+        "不合格なのに中間ファイルが削除されてしまっている"
+    )
 
     kg_text = (out / "kg.nq").read_text(encoding="utf-8")
     assert f"<{all_graph_uri}>" not in kg_text, (
