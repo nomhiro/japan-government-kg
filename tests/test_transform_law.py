@@ -228,7 +228,7 @@ def test_derive_jurisdiction_classifies_old_ministry():
 def test_derive_jurisdiction_classifies_unlisted_organ_shaped_name_as_obsolete_organization():
     """名称が参照表にも旧省庁名リストにも無い場合は OBSOLETE_ORGANIZATION(裁定B7)。
 
-    **Task 5(2026-08-23)で参照表は26行に拡張され、人事院は今は載っている**
+    **Task 5(2026-08-23)で参照表は40行(裁定B15)に拡張され、人事院は今は載っている**
     (`tests/test_reference_ministries.py` の同名シナリオが「拡張後は resolved
     になる」ことを固定している)。このテスト自身は `reference={}` を明示的に
     渡す合成シナリオであり、Task 5以降は「現在のリポジトリの実際の状態」では

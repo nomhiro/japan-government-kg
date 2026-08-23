@@ -132,12 +132,17 @@ def test_cq_p0_02_ministry_list(kg):
     持たない(OPTIONALでも0件になるのが今の正しい姿)。**主キーが名称に変わった
     ことそのものをここで固定する**——コードが無いことが「クエリの欠陥」ではなく
     「参照表の設計」であることの証拠にする
+
+    裁定B15でRSの[5][6]両列の和集合(37件)+法令経路3機関=40件に拡張された。
+    この40件には各府省の外局(気象庁・国税庁等)も含む——org:Ministryが
+    厳密な「府省」より広い範囲を指すことになった点はtask-5-report.mdの
+    懸念として記録している(このCQ自体の正しさとは別問題)
     """
     rows = _query(kg, "p0-02-ministry-list.rq")
     assert rows, "CQ P0-2 に答えられない"
     names = {str(r[1]) for r in rows}
     assert "厚生労働省" in names
-    assert len(rows) == 26, "参照表の26機関すべてが返るべき"
+    assert len(rows) == 40, "参照表の40機関すべてが返るべき"
     assert all(r[3] is None for r in rows), (
         "ministryCode列は現行コードの一次資料が無いため全行未束縛のはず"
     )

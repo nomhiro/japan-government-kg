@@ -1,8 +1,9 @@
 """府省名簿(data/reference/ministry-codes.csv)の拡張(計画B Task 5)。
 
 3行(総務省/財務省/厚生労働省、コード付き)から、RS(行政事業レビューシステム)
-実データの所管府省庁名23件 + 法令経路3機関の26行(名称主キー、裁定B12)へ
-拡張したことの検証。
+実データの所管府省庁名23件 + 法令経路3機関の26行(名称主キー、裁定B12)へ、
+さらにRSの[5][6]両列の和集合37件(裁定B15。[6]のみに現れる各府省の外局14件を
+追加) + 法令経路3機関の40行へ拡張したことの検証。
 
 `sources.py` の sha256/recorded_on が実ファイルと一致することは、既に
 `tests/test_pipeline.py::test_reference_table_digest_matches_the_registry`
@@ -64,11 +65,60 @@ def test_reference_has_no_verified_current_code():
     自体を持たず、統計局「利用機関コード」は5桁で旧来の013/017/020のいずれ
     とも不一致・内容も陳腐化していた)。**分からない値を書くより、無い方が
     公共財として正しい**という判断を、参照表の実データで固定する。
+
+    裁定B15でRSの[5][6]両列の和集合(37行)+法令経路3行=40行に拡張された
+    後も、この判断(ministry_code は全行None)自体は変わらない。
     """
     reference = load_reference(REFERENCE_PATH)
-    assert len(reference) == 26
+    assert len(reference) == 40
     assert all(code is None for code, _ in reference), (
         "現行コードの一次資料が無いのに ministry_code を持つ行がある"
+    )
+
+
+def test_reference_kensei_jun_column_does_not_leak_into_ministry_code():
+    """kensei_jun(建制順)列はCSVの列としてのみ存在し、ministry_codeに混入しないこと。
+
+    裁定B15の明示的な懸念そのもの: 建制順は儀典上の序列であり、複数の名称が
+    同じ値を共有しうる(例: 15=総務省/消防庁/公害等調整委員会。実データで
+    確認済み)ため、「府省コード」の意味論とは違う。もし将来誰かが誤って
+    kensei_jun を ministry_code の代わりに使ってしまうと、013/017/020と同じ
+    「実在しそうに見える偽の対応」が再発する。この境界をここで固定する。
+
+    ここでは意図的に `ministry.load_reference` を経由せず、CSVを直接読む
+    (kensei_jun はオントロジーのプロパティ化もしないので、Ministryモデルは
+    そもそもこの列を知らない。それ自体もこのテストの主張の一部)。
+    """
+    import csv as csv_module
+
+    with REFERENCE_PATH.open(encoding="utf-8") as f:
+        rows = [line for line in f if not line.lstrip().startswith("#")]
+    reader = list(csv_module.DictReader(rows))
+
+    assert "kensei_jun" in reader[0], "kensei_jun列がCSVに無い"
+    rs_derived = [r for r in reader if r["name"] not in {"人事院", "会計検査院", "国家公安委員会"}]
+    law_path = [r for r in reader if r["name"] in {"人事院", "会計検査院", "国家公安委員会"}]
+    assert len(rs_derived) == 37
+    assert all(r["kensei_jun"].strip().isdigit() for r in rs_derived), (
+        "RS由来の行はkensei_junが数値であるべき"
+    )
+    assert all((r["kensei_jun"] or "").strip() == "" for r in law_path), (
+        "法令経路3行はRSのdistinctに現れないのでkensei_junは空欄であるべき"
+    )
+    # 建制順は多対一(値→名称は単射でない)。名称→値が関数的であることだけを
+    # 主張する(単射性まで主張すると裁定B15が禁じた「意味論の取り違え」に
+    # なる。task-5-report.mdの実測記録を参照)
+    kensei_by_name: dict[str, set[str]] = {}
+    for r in rs_derived:
+        kensei_by_name.setdefault(r["name"], set()).add(r["kensei_jun"])
+    assert all(len(v) == 1 for v in kensei_by_name.values()), (
+        "同じ名称が複数のkensei_jun値を持つ行がある"
+    )
+
+    # 本題: Ministry/load_reference はこの列を一切知らない
+    ministries, _ = build([], load_reference(REFERENCE_PATH))
+    assert all(m.ministry_code is None for m in ministries), (
+        "kensei_junがministry_codeに混入している"
     )
 
 

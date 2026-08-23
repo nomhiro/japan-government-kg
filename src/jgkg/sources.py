@@ -70,14 +70,14 @@ SOURCES: dict[str, Source] = {
     ),
     "ministry-codes": Source(
         id="ministry-codes",
-        name="府省名簿(RS実データの所管府省庁名 + 法令経路3機関より作成)",
-        # 名簿の主要な出典はRS(23行)。法令経路3行(人事院・会計検査院・
+        name="府省名簿(RS実データの所管府省庁名+府省庁名の和集合 + 法令経路3機関より作成)",
+        # 名簿の主要な出典はRS(37行)。法令経路3行(人事院・会計検査院・
         # 国家公安委員会)はe-Gov法令API実データの法令番号が示す発令機関であり、
         # 単一のurlフィールドでは表現できないため、主要な出典をurlに置きnoteで
         # 補う(裁定B12。judgment call。詳細はtask-5-report.md)
         url="https://rssystem.go.jp",
         # RSのライセンスは政府標準利用規約ではなく「公共データ利用規約
-        # (第1.0版)」(rs-systemソースの note 参照)。名簿の23/26行はRS由来
+        # (第1.0版)」(rs-systemソースの note 参照)。名簿の37/40行はRS由来
         # なのでこちらを名簿全体の代表ライセンスとする。残り3行の出典
         # (e-Gov法令API)は政府標準利用規約(GOV_STANDARD_TERMS)
         license="公共データ利用規約(第1.0版)(PDL1.0)",
@@ -85,22 +85,26 @@ SOURCES: dict[str, Source] = {
         frequency="ondemand",
         access="bulk",
         note="小規模で安定した名簿のため data/reference/ にコミットして管理する。"
-             "23行はRS 2025年度分(project_summary/organization_informationの"
-             "所管府省庁列、取得日2026-08-23)のdistinct。残り3行(人事院・"
-             "会計検査院・国家公安委員会)はRSのdistinctに現れないが、e-Gov"
-             "法令APIの実在の法令番号(人事院規則一―四 等)が発令機関として指す"
-             "現存機関(§7.3経路1に必要。裁定B7のOBSOLETE_ORGANIZATION誤分類の"
-             "解消対象)。ministry_code列は現行コードの一次資料が見つかって"
-             "いないため全行空欄(裁定B12。旧来の013/017/020はGIF・統計局の"
-             "利用機関コードいずれとも一致せず削除した)。上流(RS)には取得日が"
-             "あるが、名簿自体はコミット済み参照表として扱うため、他の"
-             "コミット済み参照表と同じ規約で prov:generatedAtTime には"
+             "37行はRS 2025年度分、列を確認した5本すべて(取得日2026-08-23)の"
+             "[5]所管府省庁/政策所管府省庁列と[6]府省庁列のdistinctの和集合"
+             "(裁定B15。[5]⊆[6]で、[6]のみに現れる14行は各府省の外局)。"
+             "残り3行(人事院・会計検査院・国家公安委員会)はRSの[5][6]いずれの"
+             "distinctにも現れないが、e-Gov法令APIの実在の法令番号"
+             "(人事院規則一―四 等)が発令機関として指す現存機関(§7.3経路1に"
+             "必要。裁定B7のOBSOLETE_ORGANIZATION誤分類の解消対象)。"
+             "kensei_jun列はRS実データの[4]建制順(任意・裁定B15。府省コードの"
+             "意味論と異なるため ministry_code には入れない)。ministry_code列は"
+             "現行コードの一次資料が見つかっていないため全行空欄(裁定B12。"
+             "旧来の013/017/020はGIF・統計局の利用機関コードいずれとも一致せず"
+             "削除した)。上流(RS)には取得日があるが、名簿自体はコミット済み"
+             "参照表として扱うため、他のコミット済み参照表と同じ規約で"
+             "prov:generatedAtTime には"
              "『このリポジトリに記録した日』を入れる(取得日そのものではない)",
         local_path="data/reference/ministry-codes.csv",
-        # git log --diff-filter=AM で確認した、この版(B12: RS由来26行)を
-        # リポジトリに記録した日
+        # git log --diff-filter=AM で確認した、この版(B15: [5][6]和集合40行+
+        # kensei_jun列)をリポジトリに記録した日
         recorded_on=datetime.date(2026, 8, 23),
-        sha256="af2a5c1580410761859da80b3fc6f78622b1158f1964546e3aa60108dd37a84e",
+        sha256="6fe9f4ae5c1b446c5f53e57bc11c283087ab082fd0b1546ebb369b7cdbd415fd",
     ),
     "rs-system": Source(
         id="rs-system",
