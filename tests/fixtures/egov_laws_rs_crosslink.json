@@ -1,0 +1,47 @@
+{
+  "_comment": "task-7-review.md 指摘4向けの補助fixture。egov_laws_page1/2.jsonとは別ファイルにした(コネクタのページング系テスト(test_connector_egov.py)がpage1/2のcount/total_count/next_offsetに依存しており、そこを一切変更せずに済ませるため)。ここに載せた3法令(国家公務員法・デジタル庁設置法・デジタル社会形成基本法)は、いずれも実データのRS fixture(tests/fixtures/rs_law_sample.csv の project_id=1/4/26)が引用する実在の法令。e-Govを実際に取得したAPIレスポンスのキャプチャではない(このタスクはネットワークを使わず、このレイクにe-Govスナップショットは1件も取得されていない — task-7-report.md 懸念3参照)。値はtests/test_transform_rs.pyが既に使っている、独立に確認済みの実在の法令番号・公布日をもとに、law.parse_lawsが実際に読む最小限のフィールドだけで手作りした。abbrev・repeal_status・law_num_type/law_typeはすべて実在の事実(3法令とも略称なし、廃止されていない、法律)。",
+  "laws": [
+    {
+      "law_info": {
+        "law_id": "322AC0000000120",
+        "law_num": "昭和二十二年法律第百二十号",
+        "law_num_type": "Act",
+        "law_type": "Act",
+        "promulgation_date": "1947-10-21"
+      },
+      "current_revision_info": {
+        "law_title": "国家公務員法",
+        "abbrev": null,
+        "repeal_status": "None"
+      }
+    },
+    {
+      "law_info": {
+        "law_id": "503AC0000000036",
+        "law_num": "令和三年法律第三十六号",
+        "law_num_type": "Act",
+        "law_type": "Act",
+        "promulgation_date": "2021-05-19"
+      },
+      "current_revision_info": {
+        "law_title": "デジタル庁設置法",
+        "abbrev": null,
+        "repeal_status": "None"
+      }
+    },
+    {
+      "law_info": {
+        "law_id": "503AC0000000035",
+        "law_num": "令和三年法律第三十五号",
+        "law_num_type": "Act",
+        "law_type": "Act",
+        "promulgation_date": "2021-05-19"
+      },
+      "current_revision_info": {
+        "law_title": "デジタル社会形成基本法",
+        "abbrev": null,
+        "repeal_status": "None"
+      }
+    }
+  ]
+}

@@ -556,6 +556,53 @@ def test_emit_budget_bundled_expenditure_has_no_recipient_edge_and_no_unresolved
     )
 
 
+def test_emit_budget_sentinel_recipient_has_payee_label_and_no_recipient_edge():
+    """センチネル法人番号(B18・task-7-review.md指摘1)の行は`recipient`エッジも
+
+    `UnresolvedReference`も持たず、`payeeLabel`に表示名だけを残す。
+    """
+    exp = _expenditure(recipient_houjin_bangou=None, payee_label="個人Ａ", label="個人Ａ")
+    ds = emit.emit_budget([], [exp], [], "rs-system", DAY)
+
+    s = URIRef(uris.expenditure_uri("2025", "1", 0))
+    core = emit.NS["core"]
+    budget = emit.NS["budget"]
+    assert (s, budget["recipient"], None) not in ds
+    assert (s, budget["payeeLabel"], Literal("個人Ａ", lang="ja")) in ds
+    assert (s, SKOS.prefLabel, Literal("個人Ａ", lang="ja")) in ds
+    assert not list(ds.subjects(RDF.type, core["UnresolvedReference"])), (
+        "センチネルは照合すべき実体が無いのでUnresolvedReferenceの対象外"
+    )
+
+
+def test_emit_budget_omits_payee_label_when_not_a_sentinel_row():
+    """通常解決できた行(payee_label=None)にはpayeeLabelを書かない(重複防止)。"""
+    exp = _expenditure()
+    ds = emit.emit_budget([], [exp], [], "rs-system", DAY)
+    s = URIRef(uris.expenditure_uri("2025", "1", 0))
+    assert list(ds.objects(s, emit.NS["budget"]["payeeLabel"])) == []
+
+
+def test_emit_budget_writes_the_role_verbatim_without_a_language_tag():
+    """role(B20)はplain(LangStringではない)なので、langタグを付けずに書く。"""
+    exp = _expenditure(role="間接補助事業者")
+    ds = emit.emit_budget([], [exp], [], "rs-system", DAY)
+
+    s = URIRef(uris.expenditure_uri("2025", "1", 0))
+    assert (s, emit.NS["budget"]["role"], Literal("間接補助事業者")) in ds
+
+
+def test_emit_budget_omits_role_when_empty():
+    """role=''(ブロックの役割が記録されていない実データが多数ある)は
+
+    トリプル自体を出さない(§8.2「欠損を空文字列で表現しない」)。
+    """
+    exp = _expenditure()  # role未指定 -> 既定の""
+    ds = emit.emit_budget([], [exp], [], "rs-system", DAY)
+    s = URIRef(uris.expenditure_uri("2025", "1", 0))
+    assert list(ds.objects(s, emit.NS["budget"]["role"])) == []
+
+
 def test_emit_budget_unresolved_recipient_is_not_dropped():
     exp = _expenditure(recipient_houjin_bangou=None, is_bundled=False, label="実在しない架空商事株式会社")
     unresolved = [
@@ -612,9 +659,16 @@ def test_emit_budget_conforms_to_shacl():
     ]
     projects = [project, _project(project_id="828", fiscal_year="2025",
                                     ministry_houjin_bangou=None, budget_amount=0)]
-    expenditures = [_expenditure(), _expenditure(
-        project_id="11", seq=0, recipient_houjin_bangou=None, label="その他", is_bundled=True,
-    )]
+    expenditures = [
+        _expenditure(role="間接補助事業者"),
+        _expenditure(
+            project_id="11", seq=0, recipient_houjin_bangou=None, label="その他", is_bundled=True,
+        ),
+        _expenditure(
+            project_id="284", seq=0, recipient_houjin_bangou=None,
+            label="個人Ａ", payee_label="個人Ａ",
+        ),
+    ]
     ds = emit.emit_budget(projects, expenditures, unresolved, "rs-system", DAY, sha256="deadbeef")
 
     shapes_dir = Path("schema/generated")

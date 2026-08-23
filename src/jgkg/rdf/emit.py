@@ -303,6 +303,16 @@ def emit_budget(
         data.add((s, ns["budget"]["fiscalYear"], Literal(int(exp.fiscal_year))))
         if exp.recipient_houjin_bangou is not None:
             data.add((s, ns["budget"]["recipient"], URIRef(org_uri(exp.recipient_houjin_bangou))))
+        # センチネル法人番号の行(B18)だけがpayeeLabelを持つ。recipientが
+        # 無い他の行(束ね・未解決)と区別するため`is not None`で判定する
+        # (空文字を欠損と混同しないという§8.2と同じ判定形)
+        if exp.payee_label is not None:
+            data.add((s, ns["budget"]["payeeLabel"], Literal(exp.payee_label, lang="ja")))
+        # role(B20)はverbatim・plain(LangStringではない。budget.yaml参照)なので
+        # lang タグを付けない。空文字(役割が記録されていないブロック)は
+        # 書かない(§8.2「欠損を空文字列で表現しない」と同じ判断)
+        if exp.role:
+            data.add((s, ns["budget"]["role"], Literal(exp.role)))
 
         for u in unresolved_for_expenditure.get((exp.fiscal_year, exp.project_id, exp.seq), []):
             node = URIRef(unresolved_recipient_uri(u.fiscal_year, u.project_id, u.seq, u.key))

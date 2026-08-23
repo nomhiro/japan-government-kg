@@ -6,15 +6,23 @@ rs_columns.pyの照合記録と同一スナップショット)由来: 1(内閣�
 159(内閣府。特別会計detail行3件の実例)。法令IDは523AC…ではなく実在の
 503AC0000000036(デジタル庁設置法)・322AC0000000120(国家公務員法)を使う。
 法人番号は3010001137944(株式会社ウルフスタイル。実在)。
-架空にする必要があるケース(NO_CANDIDATE等の負例)は明らかに合成と分かる値
-(法人番号9999999999999、事業ID999999等)を使う。
+架空にする必要があるケース(AMBIGUOUS等の負例)は明らかに合成と分かる値
+(事業ID999999等)を使う。
+
+**`9999999999999`は本fixtureの一部では「明らかに合成」の負例として使うが、
+project_id=177/284の実データではRS自身が実際に書き込むセンチネル法人番号
+(個人・職員等の非法人支払先を表す。法人番号としては存在しない。
+task-7-review.md指摘1・`rs.SENTINEL_HOUJIN_BANGOU`参照)としてそのまま
+引用している。同じ文字列だが目的が異なる — 混同しないこと。**
 """
+import csv
+import json
 from pathlib import Path
 
 import pytest
 
 from jgkg.transform import rs
-from jgkg.transform.law import LawRecord
+from jgkg.transform.law import LawRecord, parse_laws
 from jgkg.transform.ministry import Ministry
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -325,6 +333,34 @@ def test_resolve_recipient_never_resolves_a_bundled_row():
     assert result.method is None
 
 
+def test_resolve_recipient_excludes_the_rs_sentinel_houjin_bangou():
+    """`9999999999999`(RSが個人・職員等の支払先に使うセンチネル。実データに
+    実在する値。task-7-review.md指摘1・B18)は、法人番号として非空であっても
+    直結しない。束ね行ではないので method/reason は None(未解決ではない
+    — 照合すべき実体がそもそも無い)。`is_sentinel` だけが立つ。
+    """
+    row = rs.ExpenditureLine(
+        recipient_name="個人Ａ", recipient_houjin_bangou="9999999999999",
+        is_bundled=False, amount=93000,
+    )
+    result = rs.resolve_recipient(row, name_index={})
+    assert result.houjin_bangou is None
+    assert result.method is None
+    assert result.reason is None
+    assert result.is_sentinel is True
+
+
+def test_resolve_recipient_a_real_houjin_bangou_is_not_flagged_as_sentinel():
+    """壊し確認の裏取り: 実在の法人番号(3010001137944)はis_sentinelにならない。"""
+    row = rs.ExpenditureLine(
+        recipient_name="株式会社ウルフスタイル", recipient_houjin_bangou="3010001137944",
+        is_bundled=False, amount=3025000,
+    )
+    result = rs.resolve_recipient(row, name_index={})
+    assert result.is_sentinel is False
+    assert result.method == "houjin_bangou"
+
+
 # =============================================================================
 # build_recipient_name_index(Step 3: RSの支出先名の集合に限定してストリーミング)
 # =============================================================================
@@ -415,7 +451,9 @@ def test_parse_rs_reports_basis_law_citations_deduplicated_by_law_id():
 def test_parse_rs_extracts_the_aggregate_row_recipient_and_ignores_the_block_row():
     """project_id=1の支出先(rs_sample.csv)。ブロック行(支出先名が空)は無視し、
 
-    支出先行から法人番号・金額を取ること。
+    支出先行から法人番号・金額を取ること。role([16])はブロック行にしか
+    現れない値なので、ブロック番号を介して伝播できていること(B20)も
+    ここで確認する。
     """
     paths = {
         "project_summary": FIXTURES / "rs_project_summary_sample.csv",
@@ -431,6 +469,32 @@ def test_parse_rs_extracts_the_aggregate_row_recipient_and_ignores_the_block_row
     assert line.recipient_houjin_bangou == "3010001137944"
     assert line.amount == 3025000
     assert line.is_bundled is False
+    assert line.role == "ウェブ会議システムを利用した研修の運営支援に関する業務"
+
+
+def test_parse_rs_role_uses_the_last_block_row_when_two_disagree_for_project_1409():
+    """project_id=1409(財務省)ブロックAは、[15]支出先の数/[16]役割が異なる
+
+    ブロック行を**2件**持つ(task-7-review.md 指摘8フォローアップの実データ調査で
+    発見した実例。全20,700ブロックのうち、複数のブロック行を持つのはこの1件
+    だけ)。単純な「後勝ち」(この1件のためだけの複雑な判定規則は作らない)で、
+    ファイル出現順で最後に読んだブロック行の役割が使われることを固定する。
+    """
+    paths = {
+        "project_summary": FIXTURES / "rs_project_summary_sample.csv",
+        "budget_summary": FIXTURES / "rs_budget_sample.csv",
+        "policy_measure_laws_and_regulations": FIXTURES / "rs_law_sample.csv",
+        "payee_payment_information": FIXTURES / "rs_sample.csv",
+    }
+    rows = {r.project_id: r for r in rs.parse_rs(paths)}
+    expenditures = rows["1409"].expenditures
+    assert len(expenditures) == 1
+    line = expenditures[0]
+    assert line.recipient_name == "株式会社日本政策金融公庫"
+    assert line.amount == 46600000000
+    assert line.role == (
+        "※信用保証協会が代位弁済を行った場合、代位弁済額にてん補率を乗じた金額を信用保証協会に支払う"
+    )
 
 
 def test_parse_rs_flags_the_other_bundled_row_for_project_11():
@@ -450,6 +514,51 @@ def test_parse_rs_flags_the_other_bundled_row_for_project_11():
     assert line.recipient_name == "その他"
     assert line.is_bundled is True
     assert line.amount == 1379101
+
+
+def test_parse_rs_flags_the_sonota_name_as_bundled_even_without_the_other_flag_for_project_177():
+    """project_id=177(内閣府)ブロックFの「その他」行。[22]その他支出先フラグは
+
+    'FALSE' だが [18]支出先名='その他'(task-7-review.md 指摘2。変異実験で
+    `_is_bundled_row` の名称半分を削除しても既存の79件が全部通ってしまうと
+    指摘された箇所 — フラグが立っている pid=11 の実例だけでは、フラグ・名称
+    どちらの判定が効いているのか区別できないため、名称だけが立っている実例を
+    別に固定する)。センチネル法人番号(9999999999999)も持つが、束ね行判定が
+    先に効くため is_bundled=True になり、`recipient_houjin_bangou` はNoneに
+    落とされる(束ね行は法人番号を見ない。§8.1と同じ順序)。
+    """
+    paths = {
+        "project_summary": FIXTURES / "rs_project_summary_sample.csv",
+        "budget_summary": FIXTURES / "rs_budget_sample.csv",
+        "policy_measure_laws_and_regulations": FIXTURES / "rs_law_sample.csv",
+        "payee_payment_information": FIXTURES / "rs_sample.csv",
+    }
+    rows = {r.project_id: r for r in rs.parse_rs(paths)}
+    expenditures = rows["177"].expenditures
+    assert len(expenditures) == 1
+    line = expenditures[0]
+    assert line.recipient_name == "その他"
+    assert line.is_bundled is True
+    assert line.recipient_houjin_bangou is None
+    assert line.amount == 55359000
+
+
+def test_parse_rs_treats_a_fiscal_year_mismatch_as_a_missing_budget_amount_for_project_159():
+    """project_id=159(内閣府)。budget_summary側の3行は全て予算年度[13]='2023'で、
+
+    spine側の事業年度(2025)と一致しない(task-7-review.md指摘3。Task 6指摘2
+    (C4級)が作った「予算年度でフィルタする」守衛に、これまでテストが無かった
+    — 変異実験でフィルタ条件を削除しても48件全部が通っていた)。正しい実装は
+    この事業年度の集計行が0件なので欠損(None)になる。
+    """
+    paths = {
+        "project_summary": FIXTURES / "rs_project_summary_sample.csv",
+        "budget_summary": FIXTURES / "rs_budget_sample.csv",
+        "policy_measure_laws_and_regulations": FIXTURES / "rs_law_sample.csv",
+        "payee_payment_information": FIXTURES / "rs_sample.csv",
+    }
+    rows = {r.project_id: r for r in rs.parse_rs(paths)}
+    assert rows["159"].budget_amount is None
 
 
 def test_parse_rs_resolves_the_current_fiscal_year_budget_aggregate_for_project_828():
@@ -655,6 +764,57 @@ def test_build_projects_creates_an_expenditure_for_a_bundled_row_without_a_recip
     assert result.stats.expenditures_bundled == 1
 
 
+def test_build_projects_excludes_the_sentinel_and_keeps_the_display_name_via_payee_label():
+    """センチネル法人番号(B18・task-7-review.md指摘1)の行はExpenditureは作るが
+
+    budget:recipientは張らず、payeeLabelに表示名を残し、
+    UnresolvedReferenceも作らない(束ね行ではないが「未解決」でもない —
+    照合すべき実体がそもそも存在しないため)。
+    """
+    expenditures = [
+        rs.ExpenditureLine(
+            recipient_name="個人Ａ", recipient_houjin_bangou="9999999999999",
+            is_bundled=False, amount=93000,
+        )
+    ]
+    result = rs.build_projects(
+        [_row(project_id="284", expenditures=expenditures)], MINISTRY_REF, LAWS_BY_ID, LAWS_BY_TITLE,
+    )
+    assert len(result.expenditures) == 1
+    exp = result.expenditures[0]
+    assert exp.recipient_houjin_bangou is None
+    assert exp.payee_label == "個人Ａ"
+    assert exp.label == "個人Ａ"
+    assert not [u for u in result.unresolved if u.kind == "recipient"], (
+        "センチネルは照合すべき実体が無いので「未解決」ではない"
+    )
+    assert result.stats.recipients_sentinel == 1
+    assert result.stats.recipients_unresolved == 0
+    assert result.stats.recipients_resolved_by_houjin_bangou == 0
+
+
+def test_parse_rs_and_build_projects_together_resolve_project_284s_sentinel_recipient_end_to_end():
+    """内閣府 project_id=284 ブロックF「個人Ａ」の実データ(parse_rsの実データ
+
+    テストとは別に、`build_projects`まで通した終端的な確認)。単体テスト
+    (上記)は手組みのExpenditureLineを使うが、ここは実データがparse_rsを
+    通ってもセンチネル除外が働くことを確認する。
+    """
+    paths = {
+        "project_summary": FIXTURES / "rs_project_summary_sample.csv",
+        "budget_summary": FIXTURES / "rs_budget_sample.csv",
+        "policy_measure_laws_and_regulations": FIXTURES / "rs_law_sample.csv",
+        "payee_payment_information": FIXTURES / "rs_sample.csv",
+    }
+    rows = list(rs.parse_rs(paths))
+    result = rs.build_projects(rows, MINISTRY_REF, LAWS_BY_ID, LAWS_BY_TITLE)
+    exp = next(e for e in result.expenditures if e.project_id == "284" and e.amount == 93000)
+    assert exp.recipient_houjin_bangou is None
+    assert exp.payee_label == "個人Ａ"
+    assert exp.role == "ワーキンググループにおける有識者、外国人向けクールジャパン審査会委員"
+    assert result.stats.recipients_sentinel >= 1
+
+
 def test_build_projects_reports_unresolved_recipient_when_neither_signal_matches():
     expenditures = [
         rs.ExpenditureLine(
@@ -715,3 +875,182 @@ def test_build_projects_counts_projects_seen():
     )
     assert result.stats.projects_seen == 2
     assert len(result.projects) == 2
+
+
+# =============================================================================
+# 経路2(1) law_id直結・経路2(2) 名称フォールバックのend-to-end確認
+# (task-7-review.md 指摘4: これまでの根拠法令解決テストはすべて手組みの
+# LawRecordを使い、e-Gov形式のfixtureをparse_lawsで実際にパースした結果を
+# rs.parse_rs/build_projectsに通す経路が1本もテストされていなかった)
+# =============================================================================
+
+
+def _laws_from_egov_fixture(tmp_path: Path) -> list[LawRecord]:
+    """`tests/fixtures/egov_laws_rs_crosslink.json`(実在の3法令。同fixtureの
+
+    _commentキー参照)を、test_transform_law.pyと同じ手順(「laws」配列を
+    JSONLに書き出してparse_lawsに通す)で実際にパースする。RSのfixtureが
+    引用する実在のlaw_idと、この関数が返すLawRecordのlaw_idが文字列一致
+    することで、経路1(egov-law)と経路2(RS)が独立に正しく実装されていることを
+    確認する(手組みのLawRecordだけでは、e-Gov側パーサの出力形とRS側の
+    law_id表記がずれていても誰も検知できない)。`tmp_path`(pytest標準
+    フィクスチャ)にJSONLを書く — tests/fixtures/配下に書かない
+    (テスト間で共有される追跡対象ディレクトリに一時ファイルを残さないため)。
+    """
+    fixture = json.loads(
+        (FIXTURES / "egov_laws_rs_crosslink.json").read_text(encoding="utf-8")
+    )
+    laws = fixture["laws"]
+    jsonl_path = tmp_path / "laws.jsonl"
+    jsonl_path.write_text(
+        "\n".join(json.dumps(law, ensure_ascii=False, sort_keys=True) for law in laws) + "\n",
+        encoding="utf-8",
+    )
+    return list(parse_laws(jsonl_path))
+
+
+def test_law_id_direct_link_resolves_end_to_end_through_real_parse_laws_and_parse_rs(tmp_path):
+    """project_id=1(内閣人事局経費)の国家公務員法引用(law_id=322AC0000000120)が、
+
+    `law.parse_laws`が実際にパースしたLawRecordと`rs.parse_rs`が実際に
+    パースしたRS実データを介して、B13(law_id直結が主)どおりに解決すること
+    (指摘4指摘の「end-to-endの正のコントロールが無い」を埋める)。
+    """
+    laws = _laws_from_egov_fixture(tmp_path)
+    laws_by_id = {r.law_id: r for r in laws}
+    laws_by_title = rs.laws_index_by_title(laws)
+
+    paths = {
+        "project_summary": FIXTURES / "rs_project_summary_sample.csv",
+        "budget_summary": FIXTURES / "rs_budget_sample.csv",
+        "policy_measure_laws_and_regulations": FIXTURES / "rs_law_sample.csv",
+        "payee_payment_information": FIXTURES / "rs_sample.csv",
+    }
+    rows = list(rs.parse_rs(paths))
+    result = rs.build_projects(rows, MINISTRY_REF, laws_by_id, laws_by_title)
+
+    project1 = next(p for p in result.projects if p.project_id == "1")
+    assert "322AC0000000120" in project1.basis_law_ids
+    assert result.stats.basis_law_resolved_by_id >= 1
+
+
+def test_title_fallback_with_parenthetical_stripping_resolves_end_to_end_for_project_26(tmp_path):
+    """project_id=26(デジタル庁「法人共通認証基盤」)の引用
+
+    'デジタル社会形成基本法（令和３年５月19日法律第35号）' はlaw_idが空
+    (rs_columns.py検証5の実例そのもの)。e-Govのlaw_titleは公布情報を含まない
+    ため、末尾の全角括弧書きを1回剥がして初めて一致する
+    (method="title_stripped")。この経路もこれまでhand-builtな
+    `BasisLawCitation`単体でしかテストされておらず、parse_rsを実際に通る
+    経路は無かった(指摘4)。
+    """
+    laws = _laws_from_egov_fixture(tmp_path)
+    laws_by_id = {r.law_id: r for r in laws}
+    laws_by_title = rs.laws_index_by_title(laws)
+
+    paths = {
+        "project_summary": FIXTURES / "rs_project_summary_sample.csv",
+        "budget_summary": FIXTURES / "rs_budget_sample.csv",
+        "policy_measure_laws_and_regulations": FIXTURES / "rs_law_sample.csv",
+        "payee_payment_information": FIXTURES / "rs_sample.csv",
+    }
+    rows = list(rs.parse_rs(paths))
+    result = rs.build_projects(rows, MINISTRY_REF, laws_by_id, laws_by_title)
+
+    project26 = next(p for p in result.projects if p.project_id == "26")
+    assert "503AC0000000035" in project26.basis_law_ids
+    assert result.stats.basis_law_resolved_by_title_stripped >= 1
+
+
+# =============================================================================
+# 恒等式(task-7-review.md「修正ラウンドの提案」完了条件・欠陥型4対策)。
+#
+# 元の指示「読んだ行数 = emit + 束ね + センチネル + 未解決 + 欠損 + ブロック行 +
+# spine重複」は次元が合わない(束ね・センチネル・未解決はemitの部分集合であり、
+# 別々に加算すると二重に数える。かつ構造上の明細行(欠陥型4以前から存在する
+# カテゴリ)が抜けている)ため、次の3つの入れ子の恒等式に直した(報告書に明記):
+#
+#   payee:        全行           = ブロック行 + 構造上の明細行 + 真の欠落 + Expenditure
+#   expenditures: Expenditure    = 束ね + センチネル + 法人番号直結 + 名称解決 + 未解決
+#   spine:        project_summary全行 = 事業数(distinct) + 重複行
+#
+# 数値はこのfixture全体(project_id=1/4/11/159/177/185/284/828/1409/5551/26の
+# 11事業)に対する実測。fixtureが増えても恒等式自体は保たれるはず(このテストの
+# 目的は「特定の数を覚える」ことではなく「3つの式が閉じている」ことの検算)。
+# =============================================================================
+
+
+def _full_fixture_paths() -> dict[str, Path]:
+    return {
+        "project_summary": FIXTURES / "rs_project_summary_sample.csv",
+        "budget_summary": FIXTURES / "rs_budget_sample.csv",
+        "policy_measure_laws_and_regulations": FIXTURES / "rs_law_sample.csv",
+        "payee_payment_information": FIXTURES / "rs_sample.csv",
+    }
+
+
+def _count_data_rows(path: Path) -> int:
+    """CSVのヘッダを除いた行数を、RS_COL経由ではなく素の`csv.reader`で数える
+
+    (`parse_rs`が数えた値と独立な、検算のための対抗計算)。
+    """
+    with path.open("r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.reader(f)
+        next(reader)
+        return sum(1 for _ in reader)
+
+
+def test_payee_row_accounting_identity_holds_across_the_full_fixture():
+    """payee_payment_informationの全行が、ブロック行・構造上の明細行・
+
+    真の欠落・Expenditureのいずれか1つに必ず属し、他のどれとも重複しない
+    (欠陥型4「消費者のいない記録」の最終的な検算)。
+    """
+    paths = _full_fixture_paths()
+    stats = rs.RsParseStats()
+    rows = list(rs.parse_rs(paths, stats=stats))
+    result = rs.build_projects(rows, {}, {}, {})
+
+    total = _count_data_rows(paths["payee_payment_information"])
+    assert total == 16
+    assert (
+        stats.payee_rows_block
+        + stats.payee_rows_contract_detail
+        + stats.payee_rows_missing_amount
+        + result.stats.expenditures_seen
+        == total
+    )
+
+
+def test_expenditure_resolution_accounting_identity_holds_across_the_full_fixture():
+    """emitされる全Expenditureが、束ね・センチネル・法人番号直結・名称解決・
+
+    未解決のいずれか1つに必ず属する(`resolve_recipient`の4分岐+束ね早期リターン
+    が全域を尽くしていることの検算)。
+    """
+    paths = _full_fixture_paths()
+    rows = list(rs.parse_rs(paths))
+    result = rs.build_projects(rows, {}, {}, {})
+
+    assert (
+        result.stats.expenditures_bundled
+        + result.stats.recipients_sentinel
+        + result.stats.recipients_resolved_by_houjin_bangou
+        + result.stats.recipients_resolved_by_name
+        + result.stats.recipients_unresolved
+        == result.stats.expenditures_seen
+    )
+
+
+def test_spine_row_accounting_identity_holds_across_the_full_fixture():
+    """project_summaryの全行が、採用された事業(distinct project_id)か
+
+    重複として捨てた行のいずれかに属する(task-7-review.md指摘5)。
+    """
+    paths = _full_fixture_paths()
+    stats = rs.RsParseStats()
+    rows = list(rs.parse_rs(paths, stats=stats))
+
+    total = _count_data_rows(paths["project_summary"])
+    assert total == 12
+    assert len(rows) + stats.project_summary_duplicate_rows == total

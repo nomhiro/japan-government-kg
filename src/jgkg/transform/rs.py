@@ -15,6 +15,12 @@ Task 6の分岐と同じ理由で、`parse_rs` も単一 `path` ではなく
   1. 決定的な直結(法人番号・法令ID) — 曖昧さが無い
   2. 正規化した上での一意一致(法人名・法令名/略称) — 「血縁のある正規化のみ」
   3. 一致しなければ UnresolvedReference(理由付き) — 沈黙させない(§8.2)
+
+**センチネル(B18)は上記3段の外にある第4の分類**: `resolve_recipient`が
+`SENTINEL_HOUJIN_BANGOU`を検出した場合、束ね行と同様にrecipientを設定
+しないが、UnresolvedReferenceも立てない — 束ね行(「意図的に複数を集約」)・
+未解決(「照合を試みたが一致しなかった」)のどちらでもなく、「そもそも
+照合すべき法人ではない」という別の事実を表すため(task-7-review.md指摘1)。
 """
 import csv
 import io
@@ -86,6 +92,34 @@ def normalize_corporate_name(name: str) -> str:
 
 
 # =============================================================================
+# センチネル法人番号(task-7-review.md 指摘1。B18)
+# =============================================================================
+
+SENTINEL_HOUJIN_BANGOU: frozenset[str] = frozenset({"9999999999999"})
+"""RSが「法人番号を持たない支払先」(個人・職員等)に使う13桁のセンチネル値。
+
+法人番号の検査数字(9 - (Σ Pn×Qn mod 9))は基礎番号12桁がすべて9でも
+満たされてしまう(Σ=162、162 mod 9=0、検査数字=9)ため、**検査数字では
+この値を検出できない**。法人番号全件データ(1.26GB全走査)にこの値の出現は
+0件(実在しない番号であることを確認済み)。実データでは13.6%の「支出先名・
+法人番号ともに非空の行」がこの値を持ち(157,729行中21,460行)、Expenditureと
+してemitされる行のうち9,922件(14.9%)がこの値を持つ(task-7-review.md指摘1)。
+
+この値を法人番号として`budget:recipient`に直結すると、互いに無関係な
+5,264通りの支払先名(個人Ａ〜、職員Ａ〜、その他 等)が単一のOrganization URIに
+融合し、CQ2/CQ3(「この府省はどの法人にいくら支出したか」)で実在しない1法人が
+6.27兆円で最大の支出先として首位に立つ(指摘1)。`resolve_recipient`はこの値を
+明示的に除外する(B18裁定)。
+
+**zenken fixture(houjin_bangou_sample.csv等)側で同じ文字列を「明らかに合成」
+の負例(R45)として使っているのとは意味が違う**(偶然の一致。統一を意図した
+ものではない) — zenken側は「テストがR45の負例として作った、実データには
+存在しない値」、RS側は「RS自身が実データにそのまま書き込む、実在するが
+法人ではない支払先を表すセンチネル」。
+"""
+
+
+# =============================================================================
 # 中間表現(parse_rsの出力・build_projectsの入力)
 # =============================================================================
 
@@ -110,12 +144,18 @@ class ExpenditureLine:
     ブロック行(支出先名が空)は既に除かれている前提。is_bundled は
     「その他」フラグ・表示名のいずれかで判定済み(rs_columns.py照合記録
     「検証7」)。
+
+    `role`([16]事業を行う上での役割。B20・task-7-review.md指摘8)は
+    **ブロック行にしか物理的に現れない**(この行自身の列16は常に空。
+    ブロック番号を介してブロック行から引く。§Task 7照合記録参照)。verbatim
+    (解釈しない) — 「一次/二次支出先」等の集計セマンティクスはTask 9が決める。
     """
 
     recipient_name: str
     recipient_houjin_bangou: str | None
     is_bundled: bool
     amount: int
+    role: str = ""
 
 
 @dataclass(frozen=True)
@@ -166,9 +206,20 @@ class RsParseStats:
     できる形を持たないため、`parse_rs`を抜けた後では誰も数えられなくなる
     (§8.2「欠損を0と混同しない」の対象なのに、渡す先が無い)。この件数だけは
     parse段階でここに数える。
+
+    task-7-review.md 指摘5・11(要記録・軽微)で、payee_payment_informationの
+    ブロック行([18]支出先名が空。20,701行)とproject_summaryの複数行構造
+    (241事業・267行)も同様に「渡す先が無いので数えるならここ」と判明した
+    ため追加した。恒等式(payee: 全行=ブロック行+構造上の明細行+真の欠落+
+    Expenditure。spine: 全行=事業数+重複行)がすべて閉じることをテストで
+    固定する(指摘の「読んだ行数=…」を、束ね・センチネル・未解決がExpenditureの
+    部分集合であることを踏まえて次元の合う形に直したもの。報告書に明記)。
     """
 
     payee_rows_missing_amount: int = 0
+    payee_rows_block: int = 0
+    payee_rows_contract_detail: int = 0
+    project_summary_duplicate_rows: int = 0
 
 
 def _group_rows(group_key: str, path: Path) -> Iterator[list[str]]:
@@ -215,31 +266,27 @@ def _current_year_budget_amount(
 ) -> int | None:
     """この事業年度の当初予算(合計)を取る。見つからなければ欠損として `None`。
 
-    `rs_columns.find_budget_aggregate_row` と**同じ選択規則**(予算年度が一致し
-    当初予算(合計)が非空の行を1件選ぶ)を使うが、**「この事業年度の行が1件も
-    無い」場合の扱いが違う**: `find_budget_aggregate_row` は「0件・2件以上は
-    実データの範囲では起きないはずの異常」として常に例外にするが、ここでは
-    「その事業がbudget_summaryに1行も無い/この事業年度の行が無い」を、まだ
-    実データで確認していないだけの正当な欠損として区別する(実測: 2026-08-23
-    取得の全5,794事業で0件のはずだが、将来のRS更新で起こり得るため、
-    ColumnLayoutErrorではなく欠損で受ける。2件以上(実データの範囲外の異常)は
-    `find_budget_aggregate_row` に委ねてColumnLayoutErrorにする)。
+    `rs_columns.find_budget_aggregate_row(..., allow_missing=True)` の
+    薄いラッパー(task-7-review.md指摘10)。以前はここで選択規則(予算年度が
+    一致し当初予算(合計)が非空の行を1件選ぶ)を逐語で複製し、
+    `len(matches) > 1` のときだけヘルパを呼びつつ**戻り値を捨てて**
+    ローカルの`matches[0]`を返していた — 2つの規則が同じ内容である限りは
+    等価だが、将来どちらか一方だけを直すとヘルパの選んだ行と違う値を
+    例外も出さずに返す経路になっていた(指摘3の変異実験がこの経路を
+    実際に露呈させた)。規則を1箇所(`find_budget_aggregate_row`)に集約し、
+    ここは`allow_missing=True`を渡して0件をNoneとして受けるだけにする
+    (「その事業がbudget_summaryに1行も無い/この事業年度の行が無い」は、
+    まだ実データで確認していないだけの正当な欠損として区別する。実測:
+    2026-08-23取得の全5,794事業で0件のはず。`rows_for_project`が空の場合も
+    `allow_missing=True`の下でNoneになるので、空チェックを別に持つ必要はない)。
     """
-    if not rows_for_project:
+    row = rs_columns.find_budget_aggregate_row(
+        rows_for_project, fiscal_year, allow_missing=True
+    )
+    if row is None:
         return None
-    spec = rs_columns.RS_FILES["budget_summary"]
-    idx_fy = spec.col["budget_fiscal_year"]
-    idx_amount = spec.col["budget_amount"]
-    matches = [
-        r for r in rows_for_project
-        if r[idx_fy] == fiscal_year and r[idx_amount].strip() != ""
-    ]
-    if not matches:
-        return None
-    if len(matches) > 1:
-        # 実データの範囲では起きないはずの異常。既存の検算済みルールに委ねる
-        rs_columns.find_budget_aggregate_row(rows_for_project, fiscal_year)
-    return normalize_amount(matches[0][idx_amount])
+    idx_amount = rs_columns.RS_FILES["budget_summary"].col["budget_amount"]
+    return normalize_amount(row[idx_amount])
 
 
 def _basis_law_citations_for(rows_for_project: list[list[str]]) -> tuple[BasisLawCitation, ...]:
@@ -263,6 +310,33 @@ def _is_bundled_row(row: list[str], idx_flag: int, idx_name: int) -> bool:
     return row[idx_flag].strip().upper() == "TRUE" or row[idx_name].strip() == "その他"
 
 
+def _block_roles_for(
+    rows_for_project: list[list[str]], idx_name: int, idx_block: int, idx_role: int
+) -> dict[str, str]:
+    """(ブロック番号 → [16]役割の文言)の対応を作る(B20)。
+
+    [16]は**ブロック行(支出先名が空の行)にしか物理的に現れない** — 支出先行
+    自身の[16]は常に空文字(実データ全193,912行で確認)。1ブロックの支出先は
+    複数の物理行に分かれる(検証6)ため、支出先行を作る前にブロック行だけを
+    1パス先取りして対応表を作る必要がある(1回のループで両方をこなそうとすると
+    「ブロック行が対応する支出先行より必ず先に現れる」という、検証していない
+    ファイル順序への依存が生まれるため、2パスにする)。
+
+    **1ブロックに物理行が2件以上ある実例が1件だけある**(project_id=1409・
+    ブロックA・株式会社日本政策金融公庫。[15]支出先の数='0'/役割='-'の行と、
+    [15]='1'/役割='※信用保証協会が代位弁済を行った場合...'の行が両方存在する。
+    全20,701ブロック行のうち、この1件だけが(project_id,ブロック番号)の
+    複合キーに対して2行を持つ)。**後に現れた行の役割で上書きする**(単純な
+    後勝ち。この1件のためだけに「どちらがより完全な記述か」を判定する規則を
+    作らない — 実害は最大1ブロック)。
+    """
+    out: dict[str, str] = {}
+    for r in rows_for_project:
+        if not r[idx_name].strip():  # ブロック行
+            out[r[idx_block]] = r[idx_role].strip()
+    return out
+
+
 def _expenditures_for(
     rows_for_project: list[list[str]], stats: RsParseStats
 ) -> tuple[ExpenditureLine, ...]:
@@ -273,11 +347,14 @@ def _expenditures_for(
     足りる(budget_summaryのようなfind_*_aggregate_rowは不要)。
 
     [23]が空の行には2種類ある(検証6追記): (a) [25]契約単位の内訳が非空の
-    構造上の明細行(想定内。黙って無視するのが正しい動作)、(b) [23]も[25]も
-    空で金額が本当に欠落している行(実測755行)。(b)だけを
-    `stats.payee_rows_missing_amount` に数える — ここで数えないと、
-    `RsRow.expenditures`が欠損行を表現できる形を持たないため、この関数を
-    抜けた時点で誰も数えられなくなる(「呼び出し側が計数する」は成立しない)。
+    構造上の明細行(想定内。黙って無視するのが正しい動作。
+    `stats.payee_rows_contract_detail` に数える)、(b) [23]も[25]も空で
+    金額が本当に欠落している行(実測755行。`stats.payee_rows_missing_amount`
+    に数える)。ブロック行(支出先名が空。実測20,701行。[23][25]とも
+    非空の行は0件=金額の喪失なし。指摘11)は `stats.payee_rows_block` に
+    数える。3つとも数えないと、`RsRow.expenditures`が該当行を表現できる形を
+    持たないため、この関数を抜けた時点で誰も数えられなくなる
+    (欠陥型4「消費者のいない記録」)。
     """
     spec = rs_columns.RS_FILES["payee_payment_information"]
     idx_name = spec.col["recipient_name"]
@@ -285,18 +362,25 @@ def _expenditures_for(
     idx_flag = spec.col["recipient_other_flag"]
     idx_amount = spec.col["expenditure_amount"]
     idx_contract_amount = spec.col["contract_amount"]
+    idx_block = spec.col["block_number"]
+    idx_role = spec.col["expenditure_role"]
+
+    block_role = _block_roles_for(rows_for_project, idx_name, idx_block, idx_role)
 
     out = []
     for r in rows_for_project:
         name = r[idx_name].strip()
         if not name:
-            continue  # ブロック行(支出先名が空)
+            stats.payee_rows_block += 1  # ブロック行(支出先名が空)
+            continue
         amount_raw = r[idx_amount]
         amount = normalize_amount(amount_raw)
         if amount is None:
             if normalize_amount(r[idx_contract_amount]) is None:
                 stats.payee_rows_missing_amount += 1  # (b) 本当に欠落
-            continue  # (a) の構造上の明細行は想定内なので数えない
+            else:
+                stats.payee_rows_contract_detail += 1  # (a) 構造上の明細行
+            continue
         bangou = r[idx_bangou].strip() or None
         is_bundled = _is_bundled_row(r, idx_flag, idx_name)
         out.append(
@@ -305,6 +389,7 @@ def _expenditures_for(
                 recipient_houjin_bangou=None if is_bundled else bangou,
                 is_bundled=is_bundled,
                 amount=amount,
+                role=block_role.get(r[idx_block], ""),
             )
         )
     return tuple(out)
@@ -346,6 +431,14 @@ def parse_rs(
         if pid not in spine:
             spine[pid] = (row[idx_name], row[idx_ministry], row[idx_fy])
             order.append(pid)
+        else:
+            # project_summaryも「1事業=複数行」構造を持つ(task-7-review.md
+            # 指摘5。241事業・267行。[22]主要経費のみ行間で異なり、採用する
+            # project_name/ministry_name/fiscal_yearは241事業全件で一致する
+            # ことを確認済み — rs_columns.py照合記録参照)。先頭行だけを採り、
+            # 以降を捨てるのは正しい動作だが、捨てた行数を数えないと「渡す先が
+            # 無いので誰も数えられない」記録になる(欠陥型4)
+            st.project_summary_duplicate_rows += 1
 
     budget_by_pid = _group_by_project_id(_group_rows("budget_summary", paths["budget_summary"]))
     law_by_pid = _group_by_project_id(
@@ -472,13 +565,21 @@ def build_recipient_name_index(
 
 @dataclass(frozen=True)
 class RecipientResolution:
-    """`resolve_recipient` の結果。束ね行は method/reason ともに `None`
+    """`resolve_recipient` の結果。
+
+    束ね行・センチネル行はどちらも method/reason ともに `None`
     (解決を試みていないことを型で表す — NO_CANDIDATEと紛れさせない)。
+    `is_sentinel` でこの2つを区別する: 束ね行は「複数の支払先を意図的に
+    集約した」行、センチネル行は「そもそも法人ではない支払先(個人・職員等)」
+    の行で、どちらも`budget:recipient`は張らないが、センチネル行は
+    **UnresolvedReferenceも作らない**(照合すべき実体がそもそも存在しない
+    ので「未解決」と呼ぶと嘘になる。B18・task-7-review.md指摘1)。
     """
 
     houjin_bangou: str | None
     method: Literal["houjin_bangou", "name"] | None
     reason: Literal["NO_CANDIDATE", "AMBIGUOUS"] | None
+    is_sentinel: bool = False
 
 
 def resolve_recipient(
@@ -489,9 +590,16 @@ def resolve_recipient(
     束ね行(is_bundled)は解決を試みない(B14: 「その他」への束ね行は名称解決の
     対象ではなく、束ね行として計数する。黙って落とさない — Expenditure自体は
     呼び出し側(build_projects)が作る)。
+
+    **センチネル法人番号(`SENTINEL_HOUJIN_BANGOU`。B18・指摘1)は法人番号直結
+    の対象から除外する** — 束ね行の判定の直後、法人番号直結の判定より前に
+    見る(法人番号が非空でもセンチネルなら直結しない。束ね行チェックを先に
+    置く理由は§8.1と同じ順序で、束ね行はそもそも法人番号を見ない設計だから)。
     """
     if line.is_bundled:
         return RecipientResolution(None, None, None)
+    if line.recipient_houjin_bangou in SENTINEL_HOUJIN_BANGOU:
+        return RecipientResolution(None, None, None, is_sentinel=True)
     if line.recipient_houjin_bangou:
         return RecipientResolution(line.recipient_houjin_bangou, "houjin_bangou", None)
 
@@ -529,6 +637,7 @@ class BuildStats:
     basis_law_unresolved: int = 0
     expenditures_seen: int = 0
     expenditures_bundled: int = 0
+    recipients_sentinel: int = 0
     recipients_resolved_by_houjin_bangou: int = 0
     recipients_resolved_by_name: int = 0
     recipients_unresolved: int = 0
@@ -553,6 +662,11 @@ class ExpenditureRecord:
     amount: int
     label: str
     is_bundled: bool
+    # センチネル行(B18)の表示名。`recipient_houjin_bangou`がNoneでも
+    # 「未解決」ではない行だけがこれを持つ(束ね行はlabelで足りるので持たない
+    # — budget.yaml Expenditureのdocstring参照)
+    payee_label: str | None = None
+    role: str = ""
 
 
 @dataclass(frozen=True)
@@ -686,9 +800,17 @@ def build_projects(
                     amount=line.amount,
                     label=line.recipient_name,
                     is_bundled=line.is_bundled,
+                    # センチネル行だけがpayeeLabelを持つ(B18)。束ね行は
+                    # labelで表示名を既に持つため、ここでは重複させない
+                    payee_label=line.recipient_name if recipient.is_sentinel else None,
+                    role=line.role,
                 )
             )
-            if recipient.method == "houjin_bangou":
+            if recipient.is_sentinel:
+                # B18: 法人でない支払先(センチネル)。「未解決」ではない
+                # (照合すべき実体が無い)ので UnresolvedReference は作らない
+                stats.recipients_sentinel += 1
+            elif recipient.method == "houjin_bangou":
                 stats.recipients_resolved_by_houjin_bangou += 1
             elif recipient.method == "name":
                 stats.recipients_resolved_by_name += 1
@@ -711,6 +833,7 @@ def build_projects(
 
 __all__ = [
     "REQUIRED_GROUPS",
+    "SENTINEL_HOUJIN_BANGOU",
     "BasisLawCitation",
     "BudgetProjectRecord",
     "BuildResult",

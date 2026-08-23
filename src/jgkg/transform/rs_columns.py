@@ -524,6 +524,13 @@ RS_FILES: dict[str, RSFileSpec] = {
             # 構造上の明細行(想定内)か本当の欠損(検証6追記参照)かを判別する
             # 内部専用の列。Task 7フォローアップ(2026-08-23)で追加
             "contract_amount": 25,
+            # 指摘8(B20)対応で追加(2026-08-23レビュー後)。[16]役割は
+            # **ブロック行にしか現れない**(支出先名が空の行。[13]ブロック番号を
+            # 介して支出先行に伝播させる必要がある)ため、[13]も内部専用列
+            # として追加する(RS_COLには昇格しない — recipient_*系と違い
+            # 支出先そのものの属性ではなくブロックの属性であるため)
+            "block_number": 13,
+            "expenditure_role": 16,
         },
     ),
 }
@@ -603,7 +610,9 @@ def verify_header(group_key: str, header_row: list[str] | tuple[str, ...]) -> No
 def find_budget_aggregate_row(
     rows: list[list[str]] | list[tuple[str, ...]],
     fiscal_year: str,
-) -> list[str] | tuple[str, ...]:
+    *,
+    allow_missing: bool = False,
+) -> list[str] | tuple[str, ...] | None:
     """budget_summaryの実データ行群(1事業分。project_idを揃えて渡すこと)から、
     指定した予算年度(`fiscal_year`。例 '2025')の「集計行」を一意に返す。
 
@@ -623,9 +632,18 @@ def find_budget_aggregate_row(
       - 「17」は別の集計(列14非空と会計区分空の不一致行数)の値で、この
         規則の正しさとは無関係(レビュー指摘により訂正)
 
-    予算年度が一致し当初予算（合計）が非空の行が1件でなければ
+    予算年度が一致し当初予算（合計）が非空の行が**2件以上**なら常に
     ColumnLayoutError にする(実データでは起きないはずの状態。列がずれた・
-    別の事業の行が混ざった等を示す)。
+    別の事業の行が混ざった等を示す)。**0件のときの扱いは `allow_missing` で
+    選ぶ**(task-7-review.md指摘10): 既定(`False`)は呼び出し側が「0件は
+    実データの範囲では起きないはずの異常」として扱う場合用にColumnLayoutError
+    にする。`allow_missing=True` を渡すと0件を `None`(欠損)として返す
+    (rs.py `_current_year_budget_amount` の唯一の呼び出し方 — 「その事業年度の
+    行が1件も無い」を、まだ実データで確認していないだけの正当な欠損として
+    区別するため。以前は`_current_year_budget_amount`がこの選択規則を
+    逐語で複製し、`len(matches) > 1`のときだけこの関数を呼びつつ戻り値を
+    捨てるという「2つの規則が将来ドリフトし得る」構造だったため、この引数を
+    足して規則を1箇所に集約した)。
     """
     spec = RS_FILES["budget_summary"]
     idx_fy = spec.col["budget_fiscal_year"]
@@ -635,6 +653,8 @@ def find_budget_aggregate_row(
         row for row in rows
         if row[idx_fy] == fiscal_year and row[idx_amount].strip() != ""
     ]
+    if len(matches) == 0 and allow_missing:
+        return None
     if len(matches) != 1:
         raise ColumnLayoutError(
             f"budget_summary: 予算年度={fiscal_year!r} の集計行が"

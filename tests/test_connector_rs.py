@@ -283,7 +283,17 @@ def test_fixture_rows_have_the_expected_recipient_houjin_bangou_presence():
 
 
 def test_fixture_law_rows_have_a_basis_law_with_egov_style_law_id():
-    """fixtureの根拠法令行が、e-Govと同形式のlaw_idを持つこと(検証1の根拠)。"""
+    """fixtureの根拠法令行が、e-Govと同形式のlaw_idを持つこと(検証1の根拠)。
+
+    全行がlaw_idを持つわけではない — task-7-review.md指摘4で、法令名は
+    非空だがlaw_idが空の正のコントロール行(project_id=26。検証5の実例
+    そのもの)を意図的に追加したため(検証4の実データ比率: 全15,821行中
+    law_id空・法令名非空が3.0%)。**law_idを持つ行についてのみ**形式を
+    検査し、少なくとも1件はe-Gov形式のlaw_idを持つこと(検証1の根拠が
+    空にならないこと)を別に確認する。法令名(basis_law_text)は全行が
+    非空であること(このfixtureは「引用そのものが無い」検証4の46.5%の
+    行は収録していない)は変わらず全行に要求する。
+    """
     reader = csv.reader(io.StringIO(LAW_SAMPLE.decode("utf-8-sig")))
     next(reader)  # header
     spec = rs_columns.RS_FILES["policy_measure_laws_and_regulations"]
@@ -292,8 +302,9 @@ def test_fixture_law_rows_have_a_basis_law_with_egov_style_law_id():
 
     rows = list(reader)
     assert all(row[idx_text] for row in rows), "法令名が空の行がある"
-    for row in rows:
-        law_id = row[idx_id]
+    law_ids_present = [row[idx_id] for row in rows if row[idx_id]]
+    assert law_ids_present, "law_idを持つ行が1件も無い(検証1の根拠が無くなる)"
+    for law_id in law_ids_present:
         # e-Gov law_id の実測形式(例: 322AC0000000120, 503AC0000000036):
         # 英数字15文字程度。厳密な文法検査ではなく、明らかに空・極端に短い値
         # (列がずれた場合に起きる)だけを弾く
@@ -341,10 +352,28 @@ def test_find_budget_aggregate_row_treats_the_string_zero_as_non_empty():
 
 
 def test_find_budget_aggregate_row_raises_when_the_fiscal_year_is_absent():
-    """指定した予算年度の行が無ければ、空を返さずColumnLayoutErrorにすること。"""
+    """指定した予算年度の行が無ければ、空を返さずColumnLayoutErrorにすること
+
+    (既定の`allow_missing=False`のとき)。
+    """
     rows = _budget_rows_for_project("828")
     with pytest.raises(rs_columns.ColumnLayoutError):
         rs_columns.find_budget_aggregate_row(rows, "1999")
+
+
+def test_find_budget_aggregate_row_allow_missing_returns_none_instead_of_raising():
+    """`allow_missing=True`(task-7-review.md指摘10。rs.py
+
+    `_current_year_budget_amount`の唯一の呼び出し方)は、0件のときに
+    ColumnLayoutErrorではなく`None`を返す。2件以上(実データの範囲外の異常)は
+    `allow_missing`の値に関わらず常に例外にする(これは変えていない)。
+    """
+    rows = _budget_rows_for_project("828")
+    assert rs_columns.find_budget_aggregate_row(rows, "1999", allow_missing=True) is None
+    # 2件以上は allow_missing=True でも例外のままであること
+    duplicated = list(rows) + list(rows)  # 同じ予算年度の集計行を人為的に2件にする
+    with pytest.raises(rs_columns.ColumnLayoutError):
+        rs_columns.find_budget_aggregate_row(duplicated, "2025", allow_missing=True)
 
 
 def test_ministry_name_uses_column_5_not_column_6_when_they_disagree():
