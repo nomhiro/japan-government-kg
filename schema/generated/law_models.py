@@ -295,7 +295,7 @@ class Law(Work):
     abbrev: Optional[list[str]] = Field(default=None, description="""法令の略称。e-Gov法令APIでは0件以上の複数件があり得る""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law']} })
     promulgationDate: Optional[date] = Field(default=None, description="""公布日""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law']} })
     repealStatus: Optional[str] = Field(default=None, description="""廃止状態(e-Gov法令APIの repeal_status に対応する分類文字列。現行・廃止等)""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law']} })
-    jurisdiction: Optional[str] = Field(default=None, description="""この法令を所管する府省等。法令番号からの解析(経路1)等で解決できた場合のみ設定する。 解決できない場合はこのスロットを設定せず、core:UnresolvedReference を別に立てて unresolved_reason(OLD_MINISTRY/NO_CANDIDATE/AMBIGUOUS)で理由を分類する (このスロット自体は未解決を表さない)""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law']} })
+    jurisdiction: Optional[list[str]] = Field(default=None, description="""この法令を所管する府省等。法令番号からの解析(経路1)等で解決できた場合のみ設定する。 共管(複数府省の並記。例:「総理府・大蔵省令」)は府省ごとに複数のエッジを張る (設計書§7.2)。解決できない場合はこのスロットを設定せず、 core:UnresolvedReference を別に立てて unresolved_reason(OLD_MINISTRY/NO_CANDIDATE/ AMBIGUOUS)で理由を分類する(このスロット自体は未解決を表さない)""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law']} })
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
 

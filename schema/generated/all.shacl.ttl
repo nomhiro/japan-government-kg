@@ -180,8 +180,7 @@
             sh:order 9 ;
             sh:path skos:prefLabel ],
         [ sh:class <https://jgkg.norr-tech.com/def/org#Organization> ;
-            sh:description "この法令を所管する府省等。法令番号からの解析(経路1)等で解決できた場合のみ設定する。 解決できない場合はこのスロットを設定せず、core:UnresolvedReference を別に立てて unresolved_reason(OLD_MINISTRY/NO_CANDIDATE/AMBIGUOUS)で理由を分類する (このスロット自体は未解決を表さない)"@ja ;
-            sh:maxCount 1 ;
+            sh:description "この法令を所管する府省等。法令番号からの解析(経路1)等で解決できた場合のみ設定する。 共管(複数府省の並記。例:「総理府・大蔵省令」)は府省ごとに複数のエッジを張る (設計書§7.2)。解決できない場合はこのスロットを設定せず、 core:UnresolvedReference を別に立てて unresolved_reason(OLD_MINISTRY/NO_CANDIDATE/ AMBIGUOUS)で理由を分類する(このスロット自体は未解決を表さない)"@ja ;
             sh:nodeKind sh:IRI ;
             sh:order 7 ;
             sh:path <https://jgkg.norr-tech.com/def/law#jurisdiction> ],

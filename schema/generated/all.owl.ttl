@@ -57,9 +57,6 @@
             owl:minCardinality 0 ;
             owl:onProperty <https://jgkg.norr-tech.com/def/law#abbrev> ],
         [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/law#jurisdiction> ],
-        [ a owl:Restriction ;
             owl:allValuesFrom xsd:string ;
             owl:onProperty <https://jgkg.norr-tech.com/def/law#repealStatus> ],
         [ a owl:Restriction ;
@@ -294,6 +291,12 @@
     skos:definition "法令の略称。e-Gov法令APIでは0件以上の複数件があり得る"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/law> .
 
+<https://jgkg.norr-tech.com/def/law#jurisdiction> a owl:ObjectProperty ;
+    rdfs:label "jurisdiction" ;
+    rdfs:range <https://jgkg.norr-tech.com/def/org#Organization> ;
+    skos:definition "この法令を所管する府省等。法令番号からの解析(経路1)等で解決できた場合のみ設定する。 共管(複数府省の並記。例:「総理府・大蔵省令」)は府省ごとに複数のエッジを張る (設計書§7.2)。解決できない場合はこのスロットを設定せず、 core:UnresolvedReference を別に立てて unresolved_reason(OLD_MINISTRY/NO_CANDIDATE/ AMBIGUOUS)で理由を分類する(このスロット自体は未解決を表さない)"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/law> .
+
 skos:prefLabel a owl:DatatypeProperty ;
     rdfs:label "label" ;
     rdfs:range rdf:langString ;
@@ -350,12 +353,6 @@ skos:prefLabel a owl:DatatypeProperty ;
 <https://jgkg.norr-tech.com/def/law#amendmentLawNum> a owl:DatatypeProperty ;
     rdfs:label "amendmentLawNum" ;
     skos:definition "この改正を行った法令の番号(改正法令番号)"@ja ;
-    skos:inScheme <https://jgkg.norr-tech.com/def/law> .
-
-<https://jgkg.norr-tech.com/def/law#jurisdiction> a owl:ObjectProperty ;
-    rdfs:label "jurisdiction" ;
-    rdfs:range <https://jgkg.norr-tech.com/def/org#Organization> ;
-    skos:definition "この法令を所管する府省等。法令番号からの解析(経路1)等で解決できた場合のみ設定する。 解決できない場合はこのスロットを設定せず、core:UnresolvedReference を別に立てて unresolved_reason(OLD_MINISTRY/NO_CANDIDATE/AMBIGUOUS)で理由を分類する (このスロット自体は未解決を表さない)"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/law> .
 
 <https://jgkg.norr-tech.com/def/law#lawNum> a owl:DatatypeProperty ;
