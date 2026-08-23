@@ -1,0 +1,24 @@
+# CQ7: ある関係(エッジ)は、どの一次資料の何日取得分に基づくか(P0-3の一般化)
+#
+# P0-3はorg:houjinBangouという1種類のエッジ・1つのソース(houjin-bangou)
+# だけで確認していた。ここでは別のエッジ種別(law:jurisdiction)・別のソース
+# (egov-law)でも同じ出典追跡の仕組みが働くことを確認し、「P0-3の仕組みが
+# 特定のプロパティに固有ではない」ことの一般化の証拠にする。
+#
+# **値の規約(B-S3)**: クエリに焼く固有値(法令ID)は、fixtureと実データの
+# 両方に存在する値を使う。実在確認できない値だけで書くとfixtureで空振りし
+# (実データにしか無い値をfixtureが持たない)、fixtureにしか無い値だけで
+# 書くと実データで0件になる(実在しない値を検証したことになる)、の両方を
+# 避ける。2026-08-24、レイクの実データ(policy_measure_laws_and_regulations、
+# RS project_id=1953の引用)を実際に走査して見つけた法令ID・法令番号・
+# 所管府省の組を使う(詳細はschema/competency-questions.md)。
+PREFIX prov:    <http://www.w3.org/ns/prov#>
+PREFIX dcterms: <http://purl.org/dc/terms/>
+PREFIX law:     <https://jgkg.norr-tech.com/def/law#>
+
+SELECT ?graph ?source ?fetchedOn ?license WHERE {
+  GRAPH ?graph { <https://jgkg.norr-tech.com/id/law/417M60000100021> law:jurisdiction ?ministry }
+  ?graph prov:wasDerivedFrom ?source ;
+         prov:generatedAtTime ?fetchedOn ;
+         dcterms:rights ?license .
+}

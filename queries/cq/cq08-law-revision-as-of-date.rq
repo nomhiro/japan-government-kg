@@ -1,0 +1,24 @@
+# CQ8: ある法令の、指定した時点における版はどれか
+#
+# law:LawRevisionを law:lawId(法令ID。文字列。法令間の同一性はこのリテラルの
+# 一致で決まる — LawRevisionはLawへのオブジェクトプロパティを持たない。
+# law.yaml参照)で絞り込んだ上で、施行日(amendmentEnforcementDate)が
+# 指定日以下の版の中から最新(DESC LIMIT 1)を返す。
+#
+# **正のコントロール(Task 2レビュー申し送り)**: fixtureには law:lawId を
+# 持たない LawRevision が1件ある(emit_lawsは常に親Lawのlaw_idを書くため、
+# 本番コードパスでは作れない状態。schema/generated/law.owl.ttlの
+# LawRevision.lawIdはminCardinality 0=任意であり、この状態はスキーマ上
+# 合法)。その版の施行日は、この法令の2版の間(2020-04-01 < 2022-06-01 <
+# 2024-04-01)にあるため、law:lawIdでの絞り込みが外れる/壊れると
+# 誤って選ばれる位置に置いている。
+PREFIX law: <https://jgkg.norr-tech.com/def/law#>
+
+SELECT ?revision ?d WHERE {
+  ?revision a law:LawRevision ;
+            law:lawId "417M60000100021" ;
+            law:amendmentEnforcementDate ?d .
+  FILTER (?d <= "2023-01-01"^^<http://www.w3.org/2001/XMLSchema#date>)
+}
+ORDER BY DESC(?d)
+LIMIT 1

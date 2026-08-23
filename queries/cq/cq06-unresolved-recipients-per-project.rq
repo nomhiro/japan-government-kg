@@ -1,0 +1,34 @@
+# CQ6: ある事業の支出先のうち、法人番号が解決できていないものはどれだけあるか
+#
+# **設計時点の骨子(`?e budget:recipient ?r . ?r a core:UnresolvedReference`)
+# は実装(jgkg.rdf.emit.emit_budget)と一致しない**(schema/competency-questions.md
+# ・task-9-report.mdに乖離として明記): 未解決の支出はbudget:recipientそのものを
+# 張らない。別ノードが core:unresolvedFor でその支出を逆参照する(Task 4のB8。
+# core:UnresolvedReferenceはドメイン固有プロパティを宣言せず、値の側に置くと
+# 閉じたシェイプに違反するため)。
+#
+# さらに「未解決」だけでは不十分(B20別項の裁定)。recipientが無い支出には
+# 3種類ある: **未解決**(照合を試みて失敗。core:UnresolvedReferenceを持つ)・
+# **束ね**(「その他」等への意図的な集約。そもそも1法人に帰属しない)・
+# **センチネル**(RSが個人・職員等に使う13桁のダミー法人番号9999999999999。
+# そもそも法人でない)。後の2つを「未解決」に数えると、実際には照合の失敗
+# ではないものを失敗として過大に報告してしまう(Task 7のBuildStatsが
+# recipients_sentinel/expenditures_bundled/recipients_unresolvedを別々に
+# 数えているのと整合させる)。事業単位(GROUP BY ?project)で4分類のCOUNTを返す。
+PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
+PREFIX core:   <https://jgkg.norr-tech.com/def/core#>
+
+SELECT ?project ?category (COUNT(?e) AS ?count) WHERE {
+  ?e a budget:Expenditure ;
+     budget:project ?project .
+  OPTIONAL { ?e budget:recipient ?recipient }
+  OPTIONAL { ?e budget:payeeLabel ?payeeLabel }
+  OPTIONAL { ?u core:unresolvedFor ?e }
+  BIND(
+    IF(BOUND(?recipient), "resolved",
+      IF(BOUND(?u), "unresolved",
+        IF(BOUND(?payeeLabel), "sentinel", "bundled")))
+    AS ?category)
+}
+GROUP BY ?project ?category
+ORDER BY ?project ?category

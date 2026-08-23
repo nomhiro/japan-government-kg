@@ -1,0 +1,35 @@
+# CQ9: この府省令は旧省庁名のため未解決か、現存府省に解決済みか
+#
+# ブリーフ本文の表現は「...を分けて数える」であり、固有名を焼き込む
+# 「あるXの」型ではなく分類集計として書く(呼び出し側/テストが特定の
+# 法令にフィルタして「この法令は」を確認する)。
+#
+# 法令ごとに、経路1(法令番号からの府省導出)の結果を3つに分類する:
+#   - resolved: 現存府省に解決済み
+#   - unresolved_old_or_obsolete_ministry: 旧省庁名(OLD_MINISTRY。
+#     2001年の中央省庁再編で廃止)・現存しない機関の形(OBSOLETE_ORGANIZATION)
+#     のため未解決 — 抽出自体は成功しており、「その名称の機関がもう無い」
+#     という事実を表す
+#   - unresolved_other: NO_CANDIDATE(政府機関の形にすら見えない。抽出段の
+#     誤りを疑うべき警報)・AMBIGUOUS(参照表に同名が複数)
+# core:unresolvedFor で未解決ノードから法令へ逆参照できることを使う
+# (Task 4のB8)。
+PREFIX law:  <https://jgkg.norr-tech.com/def/law#>
+PREFIX core: <https://jgkg.norr-tech.com/def/core#>
+
+SELECT ?law ?status ?detail WHERE {
+  {
+    ?law a law:Law ;
+         law:jurisdiction ?detail .
+    BIND("resolved" AS ?status)
+  } UNION {
+    ?law a law:Law .
+    ?u core:unresolvedFor ?law ;
+        core:unresolved_reason ?reason .
+    BIND(
+      IF(?reason IN ("OLD_MINISTRY", "OBSOLETE_ORGANIZATION"),
+         "unresolved_old_or_obsolete_ministry", "unresolved_other")
+      AS ?status)
+    BIND(?reason AS ?detail)
+  }
+}

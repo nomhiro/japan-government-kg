@@ -1,0 +1,19 @@
+# CQ10: KGのこのリリースは、各ソースについていつ時点のデータを含むか
+# (P0-4の全ソース版。egov-law・rs-systemを含む)
+#
+# クエリの本体はP0-4(p0-04-release-freshness.rq)と同一である —
+# `?graph prov:generatedAtTime`/`dcterms:source`のグラフ単位パターンは
+# 特定のソースに固有化していないため、ソースが2種(houjin-bangou/
+# ministry-codes)から4種(+egov-law/rs-system)に増えても変更なしに
+# 一般化する。これ自体が「特別扱いをしなくても済む設計」の証拠である。
+PREFIX prov:    <http://www.w3.org/ns/prov#>
+PREFIX dcterms: <http://purl.org/dc/terms/>
+PREFIX core:    <https://jgkg.norr-tech.com/def/core#>
+
+SELECT ?sourceName ?asOf ?dateKind WHERE {
+  ?graph prov:generatedAtTime ?asOf ;
+         dcterms:source ?sourceName .
+  OPTIONAL { ?graph core:recordedOn ?recordedOn }
+  BIND(IF(BOUND(?recordedOn), "記録日", "取得日") AS ?dateKind)
+}
+ORDER BY ?sourceName
