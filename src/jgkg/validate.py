@@ -3,14 +3,16 @@
 「一部が壊れていても入れてしまう」ことを許すと、公共財としての信頼性が
 最初に崩れる。ここは厳格側に倒す。
 """
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
 from pyshacl import validate as shacl_validate
-from rdflib import RDF, Dataset, Graph, URIRef
+from rdflib import RDF, RDFS, Dataset, Graph, URIRef
 from rdflib.namespace import SH
 
 from jgkg.config import get_settings
+from jgkg.schema_lang import REFERENCE_CLASSES_FILENAME
 
 
 @dataclass(frozen=True)
@@ -21,6 +23,7 @@ class ValidationResult:
 
 
 SHAPES_FILENAME = "all.shacl.ttl"
+ONTOLOGY_FILENAME = "all.owl.ttl"
 
 
 def _load_shapes(shapes_dir: Path) -> Graph:
@@ -127,6 +130,130 @@ def validate_dataset(ds: Dataset, shapes_dir: Path) -> list[ValidationResult]:
             )
         )
     return results
+
+
+# =============================================================================
+# 参照整合ゲート(裁定B4): グラフを跨ぐ参照の型制約を和集合Datasetで検証する
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class ReferenceViolation:
+    """`check_reference_integrity` が見つけた違反1件。"""
+
+    path: str
+    expected_class: str
+    subject: str
+    value: str
+    reason: str
+
+    def __str__(self) -> str:
+        return (
+            f"{self.subject} -{self.path}-> {self.value}: {self.reason}"
+            f"(期待クラス: {self.expected_class})"
+        )
+
+
+def _load_ontology(shapes_dir: Path) -> Graph:
+    """サブクラス閉包の計算に使う `rdfs:subClassOf` を読む(`all.owl.ttl`)。
+
+    **`sh:class`の値検証のためではない(それは裁定B4で自名前空間について
+    SHACLから除去済み)。** ここでの用途は`check_reference_integrity`が
+    `rdf:type/rdfs:subClassOf*`(SHACLの`sh:class`と同じ意味論)を
+    SHACLエンジンの外で自前で計算するための知識源。**データには混ぜない**
+    (R1: 上位クラスの`rdf:type`を実体化しない、を維持する。データグラフに
+    実体化するのではなく、このグラフを別途参照するだけ)。
+    """
+    path = shapes_dir / ONTOLOGY_FILENAME
+    if not path.exists():
+        raise FileNotFoundError(
+            f"OWLオントロジーが見つからない: {path}。"
+            " scripts/generate-schema.sh を実行する"
+        )
+    ontology = Graph()
+    ontology.parse(path, format="turtle")
+    return ontology
+
+
+def _load_reference_classes(shapes_dir: Path) -> list[dict[str, str]]:
+    """`schema_lang`が`sh:class`から抽出した参照制約(`reference-classes.json`)を読む。
+
+    **読めなかったら例外にする。** 空リストで素通りすると、`_assert_shapes_cover`
+    が閉じたシェイプで防いでいる「対象0件で合格」の退化と同じ形になる —
+    このファイルは消費者(このゲート)と同時に`scripts/generate-schema.sh`が
+    生成するので、無いのは生成し忘れである。ファイルの中身が`[]`(有効なJSON
+    だが0件)であること自体は不正ではない(自名前空間を指す`sh:class`が
+    スキーマに1つも無ければ、それが正しい状態)。
+    """
+    path = shapes_dir / REFERENCE_CLASSES_FILENAME
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} が無い。scripts/generate-schema.sh を実行する"
+            "(schema_lang が sh:class から参照制約を抽出してこのファイルに書く)"
+        )
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _subclass_closure(ontology: Graph, cls: URIRef) -> set[URIRef]:
+    """`cls`自身と、`rdfs:subClassOf*`で辿れるそのサブクラス全ての集合。
+
+    `sh:class`の意味論(`rdf:type/rdfs:subClassOf*`)をSHACLエンジンの外で
+    計算する部分(参照整合ゲートの中核)。
+    """
+    seen = {cls}
+    frontier = [cls]
+    while frontier:
+        current = frontier.pop()
+        for sub in ontology.subjects(RDFS.subClassOf, current):
+            if isinstance(sub, URIRef) and sub not in seen:
+                seen.add(sub)
+                frontier.append(sub)
+    return seen
+
+
+def check_reference_integrity(ds: Dataset, shapes_dir: Path) -> list[ReferenceViolation]:
+    """自名前空間クラスへの参照(`sh:class`から抽出したもの)を和集合で検査する。
+
+    **裁定B4(R2と同じ扱い)。** グラフを跨ぐ制約はグラフ単位のSHACL検証
+    (`validate_dataset`)では原理的に検証できない — `org:houjinBangou`の
+    必須制約がCQのSPARQLテストで担保されているのと同じ理由(設計書R2)。
+    法令(`law:jurisdiction`)とその参照先の府省の型が別々の名前付きグラフに
+    分かれる実運用(pipeline.pyの`source_id`別グラフ構成そのもの)では、
+    参照先の型がその名前付きグラフの中に存在しないため、グラフ単位の
+    `sh:class`は原理的に満たせない(Task 4 懸念1で発見したABox欠落)。
+    `ds`は`default_union=True`のDataset(全グラフの和集合)を渡すこと。
+
+    **houjin-all(Task 8の全法人グラフ)の内部参照はこのゲートの対象外
+    にする設計である。** 全法人約3,500万トリプル規模の和集合はrdflibに
+    載らないため、Task 8は自分のバッチ経路でこの検査を別途行う必要がある
+    (このゲート自体には除外機構をまだ作り込んでいない — 対象を広げる前に
+    Task 8側で規模に応じた方式を決める)。
+    """
+    reference_classes = _load_reference_classes(shapes_dir)
+    ontology = _load_ontology(shapes_dir)
+
+    violations: list[ReferenceViolation] = []
+    for entry in reference_classes:
+        path = URIRef(entry["path"])
+        expected_class = URIRef(entry["expected_class"])
+        allowed = _subclass_closure(ontology, expected_class)
+        for s, o in ds.subject_objects(path):
+            if not isinstance(o, URIRef):
+                continue  # sh:nodeKind sh:IRI がグラフ単位のSHACLで既に担保している
+            types = set(ds.objects(o, RDF.type))
+            if types & allowed:
+                continue
+            reason = "型が無い" if not types else "期待クラスのサブクラスでない"
+            violations.append(
+                ReferenceViolation(
+                    path=str(path),
+                    expected_class=str(expected_class),
+                    subject=str(s),
+                    value=str(o),
+                    reason=reason,
+                )
+            )
+    return violations
 
 
 # ファイル名に使えない文字。**Windowsでは `:` が致命的で、`名前:ストリーム名` は

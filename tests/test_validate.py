@@ -176,6 +176,92 @@ def test_pure_shacl_no_longer_catches_a_wrong_reference_type():
     )
 
 
+# =============================================================================
+# 裁定B4本体: check_reference_integrity(和集合ゲート)
+# =============================================================================
+
+
+def test_check_reference_integrity_passes_a_correct_cross_graph_reference():
+    """法令グラフと府省グラフが別々の名前付きグラフでも(実運用の形。
+    pipeline.pyのsource_id別グラフ構成そのもの)、和集合ゲートは合格すること。
+
+    **これはB3(SHACLのont_graph)では原理的に不合格だったケース**
+    (Task 4懸念1で発見したABox欠落)。B3のゲートテストは law/ministry を
+    「同じsource_id/fetched_on」にして同一グラフへ強制していたが、ここは
+    意図的に別々のsource_id・別々の日付にして、実運用の形を再現する。
+    """
+    law_id = "323M60000100010"
+    record = _law_record(law_id)
+    jr = JurisdictionResult(
+        law_id=law_id,
+        ministry_names=["厚生労働省"],
+        resolved=["6000012070001"],
+        unresolved=[],
+    )
+    ministry = Ministry(
+        uri="https://jgkg.norr-tech.com/id/org/6000012070001",
+        houjin_bangou="6000012070001",
+        ministry_code="020",
+        name="厚生労働省",
+    )
+
+    ds = Dataset(default_union=True)
+    _merge_into(ds, emit.emit_laws([record], {law_id: jr}, "egov-law", DAY))
+    _merge_into(
+        ds,
+        emit.emit_ministries(
+            [ministry], [], "ministry-codes", datetime.date(2026, 8, 22)
+        ),
+    )
+
+    violations = validate.check_reference_integrity(ds, SHAPES)
+    assert violations == [], violations
+
+
+def test_check_reference_integrity_catches_the_wrong_type():
+    """参照先の型を期待クラス(のサブクラス)以外に差し替えると、和集合ゲートが
+    違反を報告すること(裁定B4の本体。壊し確認)。
+
+    値ノードは`core:UnresolvedReference`として最小限に妥当なものにする —
+    そうしないと値ノード自身の閉じたシェイプ違反(グラフ単位のSHACL側)が
+    別に発生し、このテストが確認したい「参照整合ゲートが検出するか」から
+    焦点がずれる。
+    """
+    law_id = "999AC0000000001"
+    ds = emit.emit_laws([_law_record(law_id)], {}, "egov-law", DAY)
+    gid = URIRef("https://jgkg.norr-tech.com/graph/egov-law/2026-08-01")
+    g = ds.graph(gid)
+    core = emit.NS["core"]
+    law = emit.NS["law"]
+    wrong = URIRef(
+        "https://jgkg.norr-tech.com/id/unresolved/jurisdiction/999AC0000000001/dummy"
+    )
+    g.add((wrong, RDF.type, core["UnresolvedReference"]))
+    g.add((wrong, core["unresolved_text"], Literal("ダミー", lang="ja")))
+    g.add((wrong, core["unresolved_reason"], Literal("NO_CANDIDATE")))
+    g.add((wrong, core["unresolved_key"], Literal("ダミー")))
+    g.add((URIRef(f"https://jgkg.norr-tech.com/id/law/{law_id}"), law["jurisdiction"], wrong))
+
+    violations = validate.check_reference_integrity(ds, SHAPES)
+    assert violations, "型が違う参照が和集合ゲートを素通りしてしまった"
+    assert any(
+        v.path.endswith("/def/law#jurisdiction")
+        and v.expected_class.endswith("/def/org#Organization")
+        for v in violations
+    ), violations
+
+
+def test_check_reference_integrity_raises_if_reference_classes_json_is_missing(tmp_path):
+    """`reference-classes.json`が読めなかったら例外にする(空リストで素通ししない)。
+
+    `_assert_shapes_cover`が閉じたシェイプについて防いでいる「対象0件で合格」の
+    退化と同じ形の欠陥を、参照整合ゲート側でも防ぐ。
+    """
+    ds = emit.emit_organizations([_valid_org()], "houjin-bangou", DAY)
+    with pytest.raises(FileNotFoundError, match="reference-classes.json"):
+        validate.check_reference_integrity(ds, tmp_path)
+
+
 def test_malformed_houjin_bangou_fails_validation():
     """法人番号のパターン制約に違反するデータは不合格になること。"""
     ds = emit.emit_organizations([_valid_org()], "houjin-bangou", DAY)

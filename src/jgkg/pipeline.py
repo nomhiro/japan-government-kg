@@ -55,6 +55,12 @@ class PipelineReport(BaseModel):
     # 隔離されて成果物に入らなかったソース。**落ちたことを黙って消さない**ため、
     # sources から外す代わりにここに出す(設計書§8.2「未解決を無かったことにしない」)
     quarantined_sources: list[str]
+    # 参照整合ゲート(裁定B4)の違反。グラフを跨ぐ参照(law:jurisdiction等)の
+    # 型制約はグラフ単位のSHACLでは検証できないため、`validate.
+    # check_reference_integrity` が和集合Dataset(検証を通ったグラフのみ。
+    # `clean`)に対して別途検査する。空でなければ enforce_release_gate が
+    # quarantine と同じ扱いで止める
+    reference_violations: list[str]
 
 
 class QuarantineNotEmptyError(RuntimeError):
@@ -62,7 +68,7 @@ class QuarantineNotEmptyError(RuntimeError):
 
 
 def enforce_release_gate(report: PipelineReport, *, allow_partial: bool = False) -> None:
-    """隔離が起きていたらリリース処理を止める(設計書§6.3のリリースゲート)。
+    """隔離・参照整合違反のいずれかが起きていたらリリース処理を止める(設計書§6.3)。
 
     グラフ単位で隔離するため、**5百万行のうち1行の違反でそのソースのグラフ全体が
     落ちる。** そのとき残るのは出典グラフだけなので、KGは「2026-08-01時点の法人番号
@@ -70,18 +76,33 @@ def enforce_release_gate(report: PipelineReport, *, allow_partial: bool = False)
     「CIで検証を通った成果物だけが本番に出るという構造を強制する」と書いているが、
     この判定を行う場所がどのタスクにも割り当てられていなかった。
 
+    **参照整合ゲート(裁定B4)の違反も同じ扱いで止める。** グラフを跨ぐ参照の
+    型制約はSHACLの隔離では検出できない(グラフ単位でしか検証しないため)。
+    どちらのグラフが「悪い」かを一意に決められない違反(参照元と参照先が別の
+    グラフにある)なので、特定のグラフを隔離するのではなく、リリース全体を
+    同じゲートで止める。
+
     **既定は止まる側。** 部分的なリリースが必要な運用は、呼び出し側が
     `allow_partial=True`(build.sh では `--allow-partial`)を明示的に渡す。
     「気づかずに出荷される」経路を無くすことが目的なので、既定を緩めてはならない。
     """
-    if report.graphs_quarantined == 0:
+    if report.graphs_quarantined == 0 and not report.reference_violations:
         return
-    message = (
-        f"SHACL検証で {report.graphs_quarantined} グラフが隔離された"
-        f"(検証したグラフ数 {report.graphs_validated}、"
-        f"残ったグラフ {report.graphs})。"
-        f" 隔離内容は quarantine ディレクトリを見る。"
-        " このままリリースすると、中身が無いのに出典だけが残ったKGが出荷される"
+    parts = []
+    if report.graphs_quarantined:
+        parts.append(
+            f"SHACL検証で {report.graphs_quarantined} グラフが隔離された"
+            f"(検証したグラフ数 {report.graphs_validated}、"
+            f"残ったグラフ {report.graphs})。"
+            f" 隔離内容は quarantine ディレクトリを見る"
+        )
+    if report.reference_violations:
+        parts.append(
+            f"参照整合ゲートで {len(report.reference_violations)} 件の違反"
+            f"(例: {report.reference_violations[0]})"
+        )
+    message = "。".join(parts) + (
+        "。このままリリースすると、中身が無いか参照が壊れたKGが出荷される"
     )
     if allow_partial:
         print(f"警告: {message} — allow_partial が指定されているので続行する")
@@ -236,6 +257,14 @@ def run(fetched_on: Mapping[str, datetime.date], out_dir: Path) -> PipelineRepor
         validate.quarantine(ds, results, Path(settings.quarantine_dir))
 
     clean = validate.passing_dataset(ds, results)
+
+    # **隔離を通過した `clean` に対して検査する(`ds` ではない)。** SHACLで
+    # 隔離されたグラフへの参照は「壊れて当然」なのでここでも違反として拾って
+    # しまうと、原因(SHACL側の隔離)と結果(参照切れ)が両方報告されて
+    # ノイズになる。`clean` は`--allow-partial`時に実際に出荷される内容と
+    # 一致するので、そこでの参照切れこそがこのゲートが守るべきものである
+    reference_violations = validate.check_reference_integrity(clean, SHAPES_DIR)
+
     out_dir.mkdir(parents=True, exist_ok=True)
     emit.write_nquads(clean, out_dir / "kg.nq")
 
@@ -270,4 +299,5 @@ def run(fetched_on: Mapping[str, datetime.date], out_dir: Path) -> PipelineRepor
         graphs=surviving_graphs,
         sources=surviving_sources,
         quarantined_sources=quarantined_sources,
+        reference_violations=[str(v) for v in reference_violations],
     )

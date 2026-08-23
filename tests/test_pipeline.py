@@ -121,6 +121,49 @@ def test_release_gate_allows_a_clean_run(seeded_lake, tmp_path):
     pipeline.enforce_release_gate(report)
 
 
+def test_run_reports_no_reference_violations_for_current_pipeline_output(seeded_lake, tmp_path):
+    """裁定B4: 参照整合ゲートの結果がレポートに乗ること。
+
+    現状の`pipeline.run`はhoujin-bangou/ministry-codesしか流していないため、
+    参照制約(`law:jurisdiction`等)を持つデータはまだ無い。**空であること自体を
+    固定する**(フィールドの存在と、法令をまだ流していない現状での既定動作)。
+    法令を流すpipelineへの結線はTask 4の範囲外(Task 7/9/11)。
+    """
+    report = pipeline.run(FETCHED, tmp_path / "out")
+    assert report.reference_violations == []
+
+
+def test_enforce_release_gate_stops_on_reference_violations():
+    """参照整合ゲートの違反も、SHACL隔離と同じ扱いでリリースを止めること(裁定B4)。
+
+    `graphs_quarantined == 0` でも `reference_violations` が非空なら止まる
+    (どちらか一方だけを見る実装に戻ったら落ちる)。
+    """
+    report = pipeline.PipelineReport(
+        release="2026-08-01",
+        rows_seen=1,
+        rows_rejected=0,
+        rows_short=0,
+        organizations=1,
+        government_organs=1,
+        ministries=1,
+        unmatched_ministries=0,
+        graphs_validated=2,
+        graphs_quarantined=0,
+        graphs=["https://jgkg.norr-tech.com/graph/egov-law/2026-08-01"],
+        sources={},
+        quarantined_sources=[],
+        reference_violations=[
+            ".../id/law/1 -.../jurisdiction-> .../unresolved/x: 型が無い(期待クラス: .../Organization)"
+        ],
+    )
+    with pytest.raises(pipeline.QuarantineNotEmptyError, match="参照整合"):
+        pipeline.enforce_release_gate(report)
+
+    # 明示的に指定した場合だけ続行する(既定は止まる側。既存のSHACL隔離と同じ契約)
+    pipeline.enforce_release_gate(report, allow_partial=True)
+
+
 def test_run_reports_rejected_rows(tmp_path):
     """取り込まなかった行数がレポートに出ること。
 
