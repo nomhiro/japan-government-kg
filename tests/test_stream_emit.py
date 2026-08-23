@@ -178,3 +178,157 @@ def test_dedup_seen_set_memory_budget_is_within_the_phase1_budget():
         f"法人番号setの推定メモリが1GiBを超えた(1件あたり{per_entry_bytes:.1f}バイト、"
         f"5.8M件で{estimated_total_mib:.1f}MiB)。int化を外した等の退行の疑いがある"
     )
+
+
+# =============================================================================
+# Step 2: stream_emit_organizations
+#
+# rdflib の Dataset には貯めない。1行ずつ直接 out に書く。出力が
+# rdflib で再パース可能なN-Quadsであること・1エンティティの全トリプルが
+# 連続して書かれること・件数がStreamStatsに正しく報告されることを確認する。
+# =============================================================================
+
+GRAPH_URI = "https://jgkg.norr-tech.com/graph/houjin-bangou-all/2026-08-01"
+
+
+def test_stream_emit_output_is_reparsable_nquads_with_expected_triples():
+    """出力がrdflibで再パース可能なN-Quadsで、emit_organizationsと同じ述語集合を持つこと。
+
+    emit_organizations(emit.py)がDataset経由で書く述語(rdf:type/skos:prefLabel/
+    org:houjinBangou/org:organizationKindCode/org:prefectureName/org:cityName)を
+    N-Quadsの行として直接書けているかを、rdflib自身に再パースさせて確認する。
+    """
+    import io
+
+    from rdflib import RDF, Dataset, Literal, URIRef
+    from rdflib.namespace import SKOS
+
+    org = _org(prefecture="東京都", city="千代田区")
+    out = io.StringIO()
+    stats = stream_emit.stream_emit_organizations(iter([org]), GRAPH_URI, out)
+
+    reloaded = Dataset()
+    reloaded.parse(data=out.getvalue(), format="nquads")
+
+    s = URIRef(org.uri)
+    gid = URIRef(GRAPH_URI)
+    org_ns = "https://jgkg.norr-tech.com/def/org#"
+    assert (s, RDF.type, URIRef(org_ns + "GovernmentOrgan"), gid) in reloaded
+    assert (s, SKOS.prefLabel, Literal("厚生労働省", lang="ja"), gid) in reloaded
+    assert (s, URIRef(org_ns + "houjinBangou"), Literal("6000012070001"), gid) in reloaded
+    assert (s, URIRef(org_ns + "organizationKindCode"), Literal("101"), gid) in reloaded
+    assert (s, URIRef(org_ns + "prefectureName"), Literal("東京都", lang="ja"), gid) in reloaded
+    assert (s, URIRef(org_ns + "cityName"), Literal("千代田区", lang="ja"), gid) in reloaded
+    assert stats.triples == 6, "書き出したトリプル数の報告が一致しない"
+    assert stats.entities == 1
+
+
+def test_stream_emit_omits_prefecture_and_city_when_absent():
+    """空文字のprefecture/cityはトリプル自体を出さない(emit_organizationsと同じ作法)。"""
+    import io
+
+    from rdflib import Dataset, URIRef
+
+    org = _org(bangou="9999999999999", kind="301", prefecture="", city="")
+    out = io.StringIO()
+    stats = stream_emit.stream_emit_organizations(iter([org]), GRAPH_URI, out)
+
+    # default_union=True(名前付きグラフを跨いだ2引数クエリのため。emit.pyの
+    # _new_dataset と同じ理由)。この`reloaded.objects`が本当に名前付きグラフを
+    # 見ていることは、houjinBangouが実際に引ける(空にならない)ことで確認する
+    # — でなければ「クエリが常に空を返すから通る」という空振りのテストになる
+    reloaded = Dataset(default_union=True)
+    reloaded.parse(data=out.getvalue(), format="nquads")
+    s = URIRef(org.uri)
+    org_ns = "https://jgkg.norr-tech.com/def/org#"
+    assert list(reloaded.objects(s, URIRef(org_ns + "houjinBangou"))), (
+        "クエリが名前付きグラフを見ていない(default_unionの設定を確認)"
+    )
+    assert list(reloaded.objects(s, URIRef(org_ns + "prefectureName"))) == []
+    assert list(reloaded.objects(s, URIRef(org_ns + "cityName"))) == []
+    # type/prefLabel/houjinBangou/organizationKindCode の4本だけ
+    assert stats.triples == 4
+
+
+def test_stream_emit_a_non_government_organ_gets_the_plain_organization_type():
+    """is_government_organ=Falseは org:Organization(org:GovernmentOrganではない)であること。"""
+    import io
+
+    from rdflib import RDF, Dataset, URIRef
+
+    org = _org(bangou="9999999999999", name="株式会社サンプル", kind="301")
+    out = io.StringIO()
+    stream_emit.stream_emit_organizations(iter([org]), GRAPH_URI, out)
+
+    # default_union=True(名前付きグラフを跨いだ2引数クエリのため。emit.pyの
+    # _new_dataset と同じ理由 — 無いと .objects() は既定グラフだけを見て空になる)
+    reloaded = Dataset(default_union=True)
+    reloaded.parse(data=out.getvalue(), format="nquads")
+    s = URIRef(org.uri)
+    org_ns = "https://jgkg.norr-tech.com/def/org#"
+    types = set(reloaded.objects(s, RDF.type))
+    assert types == {URIRef(org_ns + "Organization")}
+
+
+def test_stream_emit_writes_each_entitys_triples_contiguously():
+    """1エンティティの全トリプルが連続して書かれること(バッチ=全体の等価性の条件1)。
+
+    何があれば落ちるか: 実装が全件をまず何らかの構造に集めてから主語で
+    ソートし直すような実装だと、この特定の入力順そのものは崩れて別の形に
+    なる(このテストは「入力順のまま連続」を固定する。決定性の要件と対)。
+    複数エンティティを混ぜて、同じ主語の行が別の主語の行に割り込まれていない
+    ことを確認する。
+    """
+    import io
+
+    a = _org(bangou="6000012070001", name="厚生労働省", prefecture="東京都", city="千代田区")
+    b = _org(bangou="2000012020001", name="総務省", prefecture="東京都", city="千代田区")
+    out = io.StringIO()
+    stream_emit.stream_emit_organizations(iter([a, b]), GRAPH_URI, out)
+
+    lines = out.getvalue().splitlines()
+    subjects = [line.split(" ", 1)[0] for line in lines]
+
+    # 「連続」= 同じ主語のブロックが1つだけ(一度出た主語が途切れて後で再開しない)
+    seen_blocks: list[str] = []
+    for subj in subjects:
+        if not seen_blocks or seen_blocks[-1] != subj:
+            seen_blocks.append(subj)
+    assert seen_blocks.count(f"<{org_uri('6000012070001')}>") == 1
+    assert seen_blocks.count(f"<{org_uri('2000012020001')}>") == 1
+    # 入力順(a→b)がそのまま出力順であること(決定性。ソートしない判断の確認)
+    assert seen_blocks == [f"<{org_uri('6000012070001')}>", f"<{org_uri('2000012020001')}>"]
+
+
+def test_stream_emit_entity_and_triple_counts_match_the_input():
+    import io
+
+    orgs = [
+        _org(bangou="6000012070001", prefecture="東京都", city=""),
+        _org(bangou="2000012020001", name="総務省", prefecture="", city=""),
+        _org(bangou="8000012050001", name="財務省", prefecture="東京都", city="千代田区"),
+    ]
+    out = io.StringIO()
+    stats = stream_emit.stream_emit_organizations(iter(orgs), GRAPH_URI, out)
+
+    assert stats.entities == 3
+    # 5本 + 4本 + 6本 = 15本
+    assert stats.triples == 15
+    assert len(out.getvalue().splitlines()) == 15
+
+
+def test_stream_emit_raises_on_an_embedded_newline_instead_of_corrupting_the_stream():
+    """名称等に生の改行が入っていたら、1行=1トリプルの前提が壊れる前に例外にする。
+
+    **何があれば落ちるか**: rdflibの`Literal.n3()`は改行を含む文字列に対して
+    複数行のトリプルクオート形式(`\"\"\"...\"\"\"`)を返すことがある
+    (実測で確認)。これはTurtle/N3としては妥当だが、N-Quadsの「1行=1トリプル」
+    という、validate_streamのバッチ分割が前提にしている性質を静かに破壊する。
+    ここで例外にすることで、データ起因の想定外を沈黙させない(§8.2の作法)。
+    """
+    import io
+
+    org = _org(name="改行\nを含む名称")
+    out = io.StringIO()
+    with pytest.raises(ValueError, match="改行"):
+        stream_emit.stream_emit_organizations(iter([org]), GRAPH_URI, out)

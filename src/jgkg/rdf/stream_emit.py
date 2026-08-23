@@ -24,7 +24,12 @@
 """
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from typing import IO
 
+from rdflib import RDF, Literal, URIRef
+from rdflib.namespace import SKOS
+
+from jgkg.config import get_settings
 from jgkg.transform.organization import Organization
 
 
@@ -114,3 +119,86 @@ def dedup_organizations(
 
     stats.dedup_removed += dup_occurrences - len(pending)
     yield from pending.values()
+
+
+def _org_ns() -> str:
+    return f"{get_settings().base_uri}/def/org#"
+
+
+def _n3_line(*terms: str) -> str:
+    """N-Quadsの1行を組み立てる。**改行を含む項があれば例外にする。**
+
+    rdflib の `Literal.n3()` は、値に生の改行が含まれると Turtle/N3 の
+    三重引用符による複数行リテラル形式(値の改行をエスケープせずそのまま
+    埋め込む表現)を返すことがある(実測で確認済み: 改行を含む文字列に
+    `Literal(...).n3()` を呼ぶと、閉じ引用符が3文字連続する複数行の文字列に
+    なる — Pythonオブジェクトとしては1個のstrだが、書き出すと実際に複数の
+    物理行になる)。これはN-Quads(1行=1トリプル)の文法ではなく、
+    `validate_stream` の「行単位でバッチに切る」実装が前提にする不変条件を
+    静かに破る。データにこの想定外が来たら、沈黙して壊れたストリームを
+    書くのではなく、ここで例外にする(§8.2「沈黙させない」)。
+    """
+    line = " ".join(terms) + " .\n"
+    if "\n" in line[:-1] or "\r" in line:
+        raise ValueError(
+            f"N-Quadsの1行に想定外の改行が入り込んだ(生データに改行文字がある疑い): {line!r}"
+        )
+    return line
+
+
+def _organization_lines(org: Organization, graph_n3: str) -> Iterator[str]:
+    """1件の`Organization`が持つ全トリプルをN-Quadsの行として順に返す。
+
+    `emit.emit_organizations`(Dataset経由)と**同じ述語集合・同じ条件**を
+    保つ(GovernmentOrgan/Organizationの型選択、prefecture/cityは値がある
+    ときだけ)。ここで1件のOrganizationの行を全部返し切ってから
+    `stream_emit_organizations`が次のOrganizationに進むループ構造そのものが、
+    「1エンティティの全トリプルを連続して書く」(等価性の条件1)を保証する。
+    """
+    s = URIRef(org.uri).n3()
+    ns = _org_ns()
+    most_specific = "GovernmentOrgan" if org.is_government_organ else "Organization"
+
+    yield _n3_line(s, RDF.type.n3(), URIRef(ns + most_specific).n3(), graph_n3)
+    yield _n3_line(s, SKOS.prefLabel.n3(), Literal(org.name, lang="ja").n3(), graph_n3)
+    yield _n3_line(s, URIRef(ns + "houjinBangou").n3(), Literal(org.houjin_bangou).n3(), graph_n3)
+    yield _n3_line(
+        s, URIRef(ns + "organizationKindCode").n3(), Literal(org.kind_code).n3(), graph_n3
+    )
+    if org.prefecture:
+        yield _n3_line(
+            s, URIRef(ns + "prefectureName").n3(), Literal(org.prefecture, lang="ja").n3(), graph_n3
+        )
+    if org.city:
+        yield _n3_line(
+            s, URIRef(ns + "cityName").n3(), Literal(org.city, lang="ja").n3(), graph_n3
+        )
+
+
+def stream_emit_organizations(
+    orgs: Iterator[Organization], graph_uri: str, out: IO[str], stats: StreamStats | None = None
+) -> StreamStats:
+    """`orgs` を`graph_uri`という名前付きグラフのN-Quadsとして`out`に直接書く。
+
+    **rdflib の Dataset/Graph に貯めない**(全法人規模でメモリが破綻する。
+    モジュールdocstring参照)。IRI/リテラルのエスケープだけ`URIRef.n3()`/
+    `Literal.n3()`を1行単位で借用する(`_organization_lines`)。
+
+    1件の`Organization`ごとに、その全トリプルを続けて`out.write()`してから
+    次の`Organization`に進む(このループ構造そのものが「1エンティティの
+    全トリプルを連続して書く」という、バッチ=全体の等価性の条件1を満たす)。
+
+    `stats`を渡すと(渡さなければ内部で新規に作る)、`entities`/`triples`を
+    この呼び出し分だけ加算して返す。`dedup_organizations`と同じ`StreamStats`
+    を渡せば、dedupの`rows_in`/`dedup_removed`と合流した1つの報告になる
+    (pipeline.py の結線)。
+    """
+    st = stats if stats is not None else StreamStats()
+    graph_n3 = URIRef(graph_uri).n3()
+
+    for org in orgs:
+        for line in _organization_lines(org, graph_n3):
+            out.write(line)
+            st.triples += 1
+        st.entities += 1
+    return st
