@@ -49,7 +49,7 @@ def test_reference_covers_current_ministries():
     という Interfaces の要求の下限をここで固定する(裁定B12で名簿の出典は
     RS実データそのものになった)。
     """
-    names = {n for _, n in load_reference(REFERENCE_PATH)}
+    names = {row.name for row in load_reference(REFERENCE_PATH)}
     for required in [
         "内閣府", "総務省", "法務省", "外務省", "財務省", "文部科学省",
         "厚生労働省", "農林水産省", "経済産業省", "国土交通省",
@@ -71,54 +71,76 @@ def test_reference_has_no_verified_current_code():
     """
     reference = load_reference(REFERENCE_PATH)
     assert len(reference) == 40
-    assert all(code is None for code, _ in reference), (
+    assert all(row.ministry_code is None for row in reference), (
         "現行コードの一次資料が無いのに ministry_code を持つ行がある"
     )
 
 
-def test_reference_kensei_jun_column_does_not_leak_into_ministry_code():
-    """kensei_jun(建制順)列はCSVの列としてのみ存在し、ministry_codeに混入しないこと。
+def test_reference_kensei_jun_column_is_loaded_and_does_not_leak_into_ministry_code():
+    """kensei_jun(建制順)列が load_reference で読める。ministry_codeには混入しない。
 
-    裁定B15の明示的な懸念そのもの: 建制順は儀典上の序列であり、複数の名称が
-    同じ値を共有しうる(例: 15=総務省/消防庁/公害等調整委員会。実データで
-    確認済み)ため、「府省コード」の意味論とは違う。もし将来誰かが誤って
-    kensei_jun を ministry_code の代わりに使ってしまうと、013/017/020と同じ
-    「実在しそうに見える偽の対応」が再発する。この境界をここで固定する。
+    レビュー指摘2(裁定B15「kensei_jun列として記録」が未実装。列自体が無く
+    行の並び順だけで表現されていた)を受けて、`load_reference` の戻り値
+    (`MinistryReferenceRow`)に第3要素として持たせた。**この訂正の前は
+    「Ministryモデルはそもそもこの列を知らない」ことをこのテストの主張の
+    一部にしていたが、それはCSVの列の有無とは別の話(loaderが持つかどうか)
+    であり、レビューが指摘した実装漏れを正当化する理由にはならなかった**
+    (誤った当初の解釈だったので訂正する)。
 
-    ここでは意図的に `ministry.load_reference` を経由せず、CSVを直接読む
-    (kensei_jun はオントロジーのプロパティ化もしないので、Ministryモデルは
-    そもそもこの列を知らない。それ自体もこのテストの主張の一部)。
+    正しい境界は: **loaderは持つ。Ministry/emit_ministriesは持たない**
+    (裁定B15: 建制順は儀典上の序列でministry_codeの意味論と違うため、
+    オントロジーのプロパティにもしない)。もし将来誰かが誤ってkensei_junを
+    ministry_codeの代わりに使ってしまうと、013/017/020と同じ「実在しそうに
+    見える偽の対応」が再発する。この境界をここで固定する。
     """
-    import csv as csv_module
+    reference = load_reference(REFERENCE_PATH)
 
-    with REFERENCE_PATH.open(encoding="utf-8") as f:
-        rows = [line for line in f if not line.lstrip().startswith("#")]
-    reader = list(csv_module.DictReader(rows))
-
-    assert "kensei_jun" in reader[0], "kensei_jun列がCSVに無い"
-    rs_derived = [r for r in reader if r["name"] not in {"人事院", "会計検査院", "国家公安委員会"}]
-    law_path = [r for r in reader if r["name"] in {"人事院", "会計検査院", "国家公安委員会"}]
+    rs_derived = [r for r in reference if r.name not in {"人事院", "会計検査院", "国家公安委員会"}]
+    law_path = [r for r in reference if r.name in {"人事院", "会計検査院", "国家公安委員会"}]
     assert len(rs_derived) == 37
-    assert all(r["kensei_jun"].strip().isdigit() for r in rs_derived), (
+    assert all((r.kensei_jun or "").isdigit() for r in rs_derived), (
         "RS由来の行はkensei_junが数値であるべき"
     )
-    assert all((r["kensei_jun"] or "").strip() == "" for r in law_path), (
-        "法令経路3行はRSのdistinctに現れないのでkensei_junは空欄であるべき"
+    assert all(r.kensei_jun is None for r in law_path), (
+        "法令経路3行はRSのdistinctに現れないのでkensei_junはNoneであるべき"
     )
     # 建制順は多対一(値→名称は単射でない)。名称→値が関数的であることだけを
     # 主張する(単射性まで主張すると裁定B15が禁じた「意味論の取り違え」に
     # なる。task-5-report.mdの実測記録を参照)
-    kensei_by_name: dict[str, set[str]] = {}
+    kensei_by_name: dict[str, set[str | None]] = {}
     for r in rs_derived:
-        kensei_by_name.setdefault(r["name"], set()).add(r["kensei_jun"])
+        kensei_by_name.setdefault(r.name, set()).add(r.kensei_jun)
     assert all(len(v) == 1 for v in kensei_by_name.values()), (
         "同じ名称が複数のkensei_jun値を持つ行がある"
     )
 
-    # 本題: Ministry/load_reference はこの列を一切知らない
-    ministries, _ = build([], load_reference(REFERENCE_PATH))
+    # 本題: kensei_junはloaderの戻り値には載るが、build()の出力(Ministry)には
+    # 伝播しない
+    ministries, _ = build([], reference)
     assert all(m.ministry_code is None for m in ministries), (
         "kensei_junがministry_codeに混入している"
+    )
+
+
+def test_reference_kensei_jun_survives_row_reordering():
+    """建制順の値が「行の並び順」ではなく列そのものに属すること(レビュー指摘2)。
+
+    指摘2が明示した懸念: 列が無く並び順だけで建制順を表していると、将来誰かが
+    CSVを読みやすさのために並べ替えても検出するテストが無い。ここでは実際に
+    行をシャッフルしてもなお名称→kensei_junの対応が変わらないことを固定し、
+    「並び順に依存しない」という性質そのものを検査する。
+    """
+    import random
+
+    reference = load_reference(REFERENCE_PATH)
+    by_name_before = {r.name: r.kensei_jun for r in reference}
+
+    shuffled = list(reference)
+    random.Random(42).shuffle(shuffled)
+    by_name_after = {r.name: r.kensei_jun for r in shuffled}
+
+    assert by_name_after == by_name_before, (
+        "行の並べ替えでkensei_junの対応が変わった(並び順に依存している)"
     )
 
 

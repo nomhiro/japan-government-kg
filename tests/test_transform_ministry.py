@@ -27,10 +27,10 @@ def _org(bangou: str, name: str, kind: str = "101") -> Organization:
 
 def test_load_reference_skips_comments():
     ref = load_reference(Path("data/reference/ministry-codes.csv"))
-    assert any(name == "厚生労働省" for _, name in ref), "参照表に厚生労働省が無い"
+    assert any(row.name == "厚生労働省" for row in ref), "参照表に厚生労働省が無い"
     # code は任意(裁定B12)なので None もあり得る。コメント行を data として
     # 取り込んでいないことの確認なので、値がある場合だけ形を検査すればよい
-    assert all(code is None or not code.startswith("#") for code, _ in ref)
+    assert all(row.ministry_code is None or not row.ministry_code.startswith("#") for row in ref)
 
 
 def test_load_reference_keeps_a_row_whose_ministry_code_is_blank(tmp_path):
@@ -46,8 +46,9 @@ def test_load_reference_keeps_a_row_whose_ministry_code_is_blank(tmp_path):
 
     ref = load_reference(path)
 
-    assert (None, "人事院") in ref, f"コード無しの行が消えている: {ref}"
-    assert ("999", "厚生労働省") in ref
+    # kensei_jun列が無いCSVなので、各行の第3要素(kensei_jun)はNoneになる
+    assert (None, "人事院", None) in ref, f"コード無しの行が消えている: {ref}"
+    assert ("999", "厚生労働省", None) in ref
 
 
 def test_build_matches_by_name():

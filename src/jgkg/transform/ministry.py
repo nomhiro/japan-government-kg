@@ -9,6 +9,7 @@
 import csv
 from collections.abc import Iterable
 from pathlib import Path
+from typing import NamedTuple
 
 from pydantic import BaseModel
 
@@ -30,33 +31,61 @@ class UnmatchedMinistry(BaseModel):
     ministry_code: str | None = None
 
 
-def load_reference(path: Path) -> list[tuple[str | None, str]]:
+class MinistryReferenceRow(NamedTuple):
+    """参照表(CSV)の1行。`load_reference` の戻り値の要素。
+
+    ミニストリーコード・名称の2要素はTask 5(裁定B12)以来。`kensei_jun`は
+    レビュー指摘2(裁定B15の実装漏れ)で追加した第3要素で、既定値Noneを
+    持つため、既存コードが2要素タプル `(code, name)` を渡す/受け取る箇所
+    (テスト内の手組みreference等)を書き換えずに済む(タプルの構造的な
+    互換性。`build()` 側は `*_` で吸収する)。**kensei_junはCSVの列としてのみ
+    存在し、Ministry/emit_ministriesへは伝播しない**(裁定B15: 建制順は
+    儀典上の序列でministry_codeの意味論と違うため、オントロジーのプロパティ
+    にもしない)。
+    """
+
+    ministry_code: str | None
+    name: str
+    kensei_jun: str | None = None
+
+
+def load_reference(path: Path) -> list[MinistryReferenceRow]:
     """府省コード参照表を読む。# で始まる行はコメントとして飛ばす。
 
     **name は必須、ministry_code は任意**(裁定B12)。コード列が空の行を
     黙って捨てない — 以前は `if code and name` で名称だけの行ごと消えていたが、
-    それは「主キーは名称」という今の設計と矛盾する
+    それは「主キーは名称」という今の設計と矛盾する。
+
+    **kensei_jun(建制順)列も読む**(裁定B15、レビュー指摘2)。列が無い/値が
+    空のCSVでもNoneになるので、v2形式(kensei_jun列無し)のCSVを渡す既存の
+    呼び出し・テストは変更なしに動く
     """
-    out: list[tuple[str | None, str]] = []
+    out: list[MinistryReferenceRow] = []
     with path.open(encoding="utf-8") as f:
         rows = [line for line in f if not line.lstrip().startswith("#")]
     reader = csv.DictReader(rows)
     for row in reader:
         code = (row.get("ministry_code") or "").strip() or None
         name = (row.get("name") or "").strip()
+        kensei_jun = (row.get("kensei_jun") or "").strip() or None
         if name:
-            out.append((code, name))
+            out.append(MinistryReferenceRow(code, name, kensei_jun))
     return out
 
 
 def build(
     orgs: Iterable[Organization],
-    reference: list[tuple[str | None, str]],
+    reference: Iterable[tuple[str | None, str] | MinistryReferenceRow],
 ) -> tuple[list[Ministry], list[UnmatchedMinistry]]:
     """国の機関のみを対象に、名称で府省コードと突合する。
 
     同名が複数ある場合は AMBIGUOUS として未解決にする。誤って1つを選ぶより、
     未解決として可視化する方が公共財として正しい。
+
+    `reference` の各行は2要素`(code, name)`・3要素(`MinistryReferenceRow`
+    互換、`kensei_jun`付き)のいずれでもよい(`*_`で余剰要素を吸収する)。
+    kensei_junは突合には使わず、Ministry/UnmatchedMinistryへも伝播しない
+    (裁定B15。上記`MinistryReferenceRow`のdocstring参照)
     """
     candidates: dict[str, list[Organization]] = {}
     for org in orgs:
@@ -67,7 +96,7 @@ def build(
     ministries: list[Ministry] = []
     unmatched: list[UnmatchedMinistry] = []
 
-    for code, name in reference:
+    for code, name, *_ in reference:
         matches = candidates.get(name, [])
         if len(matches) == 1:
             org = matches[0]
