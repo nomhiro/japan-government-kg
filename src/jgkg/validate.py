@@ -272,6 +272,20 @@ def validate_stream(
             current_subject = subject
     _flush(buffer)
 
+    # **0バッチ(空ファイル)を正常終了として返さない。** `all([])`はTrueに
+    # なるので、呼び出し側が`all(r.conforms for r in results)`のような
+    # 判定をすると「対象0件で合格」に退化する。validate_dataset側の
+    # `_assert_shapes_cover`と同じ原則(このモジュール一貫の作法)。
+    # pipeline.py経路では`total_organizations == 0`の既存ガードが先に落ちる
+    # ため実際には到達しないが、`validate_stream`は単体でも呼べる関数なので
+    # ここでも独立に防ぐ
+    if not results:
+        raise ValueError(
+            f"{nq_path} から1件も検証できなかった(空ファイルの疑いがある)。"
+            " 0バッチを「合格」として返すと、all(r.conforms for r in results)"
+            " のような判定が空振りで真になり、検証ゲートが素通しになる"
+        )
+
     return results
 
 

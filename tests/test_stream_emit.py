@@ -556,6 +556,26 @@ def test_validate_stream_never_cuts_a_single_contiguous_subject_block_even_past_
     )
 
 
+def test_validate_stream_raises_instead_of_treating_an_empty_file_as_conforming():
+    """空ファイル(0バッチ)を「合格」として返さないこと(§8.2の作法)。
+
+    何があれば落ちるか: `results=[]`をそのまま返す実装だと、呼び出し側が
+    `all(r.conforms for r in results)`のような判定をすれば空振りで真になり、
+    「対象0件で合格」という、このモジュールが`_assert_shapes_cover`等で
+    繰り返し防いでいる退化と同じ形になる。pipeline.py経路では
+    `total_organizations == 0`の既存ガードが先に落ちるため実際には
+    到達しないが、`validate_stream`は単体でも呼べる関数なので、ここでも
+    独立に防ぐ。
+    """
+    from jgkg import validate
+
+    nq_path = tmp_nq_path()
+    nq_path.write_text("", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="1件も検証できなかった"):
+        validate.validate_stream(nq_path, _shapes_dir())
+
+
 _tmp_nq_counter = 0
 
 
