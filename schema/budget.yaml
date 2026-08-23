@@ -1,0 +1,113 @@
+id: https://jgkg.norr-tech.com/def/budget
+name: jgkg-budget
+title: 日本政府ナレッジグラフ 予算モジュール
+description: >-
+  行政事業レビュー(RS)の予算事業(BudgetProject)と、そこからの支出(Expenditure)を
+  表すクラスとプロパティ。府省→予算事業→支出先法人という縦スライスの本体
+  (Task 7)。
+  このオントロジーは日本国政府が公開するデータを第三者が構造化したものであり、日本国政府による公式なデータセットではない。
+license: https://creativecommons.org/licenses/by/4.0/
+
+prefixes:
+  jgkgbudget: https://jgkg.norr-tech.com/def/budget#
+  jgkgcore: https://jgkg.norr-tech.com/def/core#
+  linkml: https://w3id.org/linkml/
+default_prefix: jgkgbudget
+default_range: string
+imports:
+  - linkml:types
+  - core
+  # ministry(range: Organization)・recipient(range: Agent。orgはAgentのサブタイプ)
+  # ・basisLaw(range: Law)がそれぞれ org / law のクラスを要求するため、両方を
+  # importする(law.yamlがorgをimportするのと同じ理由: gen-owl/gen-shacl/
+  # gen-pydanticはbudget.yamlを単独でも読むため、推移的importに頼らず明示する)
+  - org
+  - law
+
+slots:
+  projectId:
+    required: true
+    description: >-
+      行政事業レビュー(RS)の予算事業ID。**単独では一意でない** — 同じ
+      projectIdが複数の予算年度に渡って存在するため(RSは1シートに直近5年度分の
+      予算履歴を束ねて持つ)、BudgetProjectの実際の同一性は
+      (projectId, fiscalYear)の組で決まる(URIも両方を材料にする。
+      `uris.budget_uri`)。そのため law.yaml の lawId と違い、このスロットには
+      `identifier: true` を付けない — 付けると「projectIdだけでインスタンスが
+      一意に決まる」という誤った制約をスキーマに刻んでしまう。同じ複合的な
+      同一性を持つ law.yaml の LawRevision(lawId + amendmentEnforcementDate +
+      amendmentLawNum)も identifier を持たない、という既存の前例に揃える
+      (Task 7 報告書の逸脱台帳を参照。ブリーフ本文は project_id(identifier)と
+      書いているが、この点だけ意図的に外した)
+  projectName:
+    range: LangString
+    description: 予算事業名(RSのレビューシートに記載された事業名)
+  fiscalYear:
+    required: true
+    range: integer
+    description: >-
+      この記述が対応する事業年度(RSのレビューシート自体の年度)。
+      budgetAmountは同じ年度の当初予算(合計)を指す
+      (budget_summaryの「予算年度」列がこの値と一致する集計行)。RSは
+      1シートに直近5年度分の予算履歴を束ねて持つが、Task 7はレビューシート
+      自体の年度分のみを1つのBudgetProjectとしてモデル化する(過去4年度分の
+      履歴は対象外。Task 7報告書の逸脱台帳を参照)
+  ministry:
+    range: Organization
+    description: >-
+      所管府省庁。RSの政策所管府省庁欄(rs_columns.RS_COLのministry_name。
+      列5を採用する根拠はrs_columns.pyの照合記録)の名称で、Task 5の府省参照表と
+      突合する。突合できない場合はこのスロットを設定せず、
+      core:UnresolvedReference を別に立てる
+  budgetAmount:
+    range: integer
+    description: >-
+      当初予算(合計)。単位は円(RSのCSVヘッダに単位表記は無いが、実データの
+      最大値(約30.04兆円)から円であると確認済み。rs_columns.py照合記録
+      「検証8」参照)。'0'(ゼロ予算)は有効な値であり欠損ではない
+      (rs_columns.find_budget_aggregate_row のdocstring参照)
+  basisLaw:
+    range: Law
+    multivalued: true
+    description: >-
+      この予算事業の根拠法令。RSの政策・施策・法令等ファイルが持つ法令IDでの
+      直結を主とし(e-Govスナップショットに存在することを検査し、解決できた
+      場合のみ設定する)、法令IDが欠落した引用は法令名・略称の完全一致で
+      フォールバックする(曖昧照合はしない)。解決できない引用はこのスロットを
+      設定せず、core:UnresolvedReference を別に立てる。1つの法令を複数の
+      条項で引用しても、このスロットには法令単位で1エッジのみ張る
+      (rs_columns.py照合記録「検証4」参照)
+  project:
+    range: BudgetProject
+    description: この支出が属する予算事業
+  recipient:
+    range: Agent
+    description: >-
+      この支出の支払先。法人番号による直結を主とし、無い場合は名称正規化の
+      一意一致でフォールバックする。「その他」等への束ね行(RSの
+      その他支出先フラグ、またはその他支出先名)は名称解決の対象ではないため、
+      このスロットを設定しない(黙って支出自体を落とすわけではない —
+      core:label に表示名を残す。rs_columns.py照合記録「検証7」参照)。
+      解決を試みて失敗した場合(束ね行ではないのに一致しない)は
+      core:UnresolvedReference を別に立てる
+
+classes:
+  BudgetProject:
+    is_a: Work
+    description: >-
+      行政事業レビュー(RS)の予算事業。projectIdとfiscalYearの組で同一性を持つ
+      (URIも両方を材料にする。上記projectIdのdocstring参照)
+    slots: [projectId, projectName, fiscalYear, ministry, budgetAmount, basisLaw]
+
+  Expenditure:
+    is_a: MonetaryItem
+    description: >-
+      予算事業からの1件の支出(支出先1件分)。金額(amount_jpy)はMonetaryItemから
+      継承する(core.yamlに既存の「金額(円)」スロットがあるため、budget独自の
+      amountスロットは追加しない。Task 7報告書の逸脱台帳を参照)。支出先の
+      表示名(束ね行なら「その他」等の集約ラベル)はEntityから継承する
+      core:label(skos:prefLabel)に持たせる(recipientLabel等の専用スロットは
+      追加しない。理由は同上)
+    slots: [project, recipient, fiscalYear]
+    slot_usage:
+      project: { required: true }

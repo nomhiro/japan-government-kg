@@ -50,11 +50,13 @@ EXPECTED_CLASSES = {
     "core": ["Agent", "Work", "Place", "Event", "MonetaryItem", "Concept", "UnresolvedReference"],
     "org": ["Organization", "GovernmentOrgan", "Ministry"],
     "law": ["Law", "LawRevision"],
+    "budget": ["BudgetProject", "Expenditure"],
 }
 EXPECTED_MODELS = {
     "core": ["Event", "UnresolvedReference"],
     "org": ["Organization", "GovernmentOrgan", "Ministry"],
     "law": ["Law", "LawRevision"],
+    "budget": ["BudgetProject", "Expenditure"],
 }
 
 
@@ -274,6 +276,12 @@ def test_all_shacl_covers_the_classes_emitted_by_the_pipeline():
     assert any(t.endswith("/def/core#UnresolvedReference") for t in targets), (
         f"emit が出す core:UnresolvedReference のシェイプが無い: {sorted(targets)}"
     )
+    # Task 7: emit_budget が出す budget:BudgetProject / budget:Expenditure も
+    # 同じ理由(org#限定のループでは拾えない)で明示的に確認する
+    for name in ("BudgetProject", "Expenditure"):
+        assert any(t.endswith(f"/def/budget#{name}") for t in targets), (
+            f"emit が出す budget:{name} のシェイプが all.shacl.ttl に無い: {sorted(targets)}"
+        )
 
 
 OVERLAY = SCHEMA / "overlay"
@@ -399,6 +407,32 @@ def test_reference_classes_json_contains_the_jurisdiction_pair():
         "https://jgkg.norr-tech.com/def/law#jurisdiction",
         "https://jgkg.norr-tech.com/def/org#Organization",
     ) in pairs, f"jurisdiction→Organizationの対が無い: {sorted(pairs)}"
+
+
+def test_reference_classes_json_contains_the_budget_pairs():
+    """`reference-classes.json` に budget の参照制約(Task 7)が入っていること。
+
+    **何があれば落ちるか**: `schema/budget.yaml` を足して `schema/all.yaml` の
+    imports に追加し忘れた、あるいは再生成し忘れたら落ちる(このタスク以前は
+    jurisdiction→Organizationの1組しか自名前空間参照が無く、reference-classes
+    のゲートは実質「対象0件」で合格していた — Task 7 brief 引き継ぐ決定参照)。
+    """
+    import json
+
+    entries = json.loads(REFERENCE_CLASSES.read_text(encoding="utf-8"))
+    pairs = {(e["path"], e["expected_class"]) for e in entries}
+    expected = {
+        ("https://jgkg.norr-tech.com/def/budget#ministry",
+         "https://jgkg.norr-tech.com/def/org#Organization"),
+        ("https://jgkg.norr-tech.com/def/budget#basisLaw",
+         "https://jgkg.norr-tech.com/def/law#Law"),
+        ("https://jgkg.norr-tech.com/def/budget#recipient",
+         "https://jgkg.norr-tech.com/def/core#Agent"),
+        ("https://jgkg.norr-tech.com/def/budget#project",
+         "https://jgkg.norr-tech.com/def/budget#BudgetProject"),
+    }
+    missing = expected - pairs
+    assert not missing, f"budgetの参照制約の対が足りない: {missing}(検出済み: {sorted(pairs)})"
 
 
 def test_enum_has_a_single_iri_across_generated_owl():

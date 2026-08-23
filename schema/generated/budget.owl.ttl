@@ -7,12 +7,6 @@
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-<https://jgkg.norr-tech.com/def/all.owl.ttl> a owl:Ontology ;
-    rdfs:label "jgkg-all" ;
-    dcterms:license "https://creativecommons.org/licenses/by/4.0/" ;
-    dcterms:title "日本政府ナレッジグラフ 全モジュール統合(検証用)" ;
-    skos:definition "SHACL検証のために全モジュールを1つに束ねるだけのスキーマ。ここから生成した all.shacl.ttl を検証の唯一の入力にする。モジュール別に生成すると、import された 上位モジュールのシェイプが各ファイルに重複して現れ、閉じたシェイプが同一クラスに 複数適用されて偽の違反になるため。 新しいドメインモジュールを追加したら、必ずここの imports にも追加する。 このオントロジーは日本国政府が公開するデータを第三者が構造化したものであり、日本国政府による公式なデータセットではない。"@ja .
-
 <https://jgkg.norr-tech.com/def/budget#Expenditure> a owl:Class ;
     rdfs:label "Expenditure" ;
     rdfs:subClassOf [ a owl:Restriction ;
@@ -45,6 +39,12 @@
         <https://jgkg.norr-tech.com/def/core#MonetaryItem> ;
     skos:definition "予算事業からの1件の支出(支出先1件分)。金額(amount_jpy)はMonetaryItemから 継承する(core.yamlに既存の「金額(円)」スロットがあるため、budget独自の amountスロットは追加しない。Task 7報告書の逸脱台帳を参照)。支出先の 表示名(束ね行なら「その他」等の集約ラベル)はEntityから継承する core:label(skos:prefLabel)に持たせる(recipientLabel等の専用スロットは 追加しない。理由は同上)"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
+
+<https://jgkg.norr-tech.com/def/budget.owl.ttl> a owl:Ontology ;
+    rdfs:label "jgkg-budget" ;
+    dcterms:license "https://creativecommons.org/licenses/by/4.0/" ;
+    dcterms:title "日本政府ナレッジグラフ 予算モジュール" ;
+    skos:definition "行政事業レビュー(RS)の予算事業(BudgetProject)と、そこからの支出(Expenditure)を 表すクラスとプロパティ。府省→予算事業→支出先法人という縦スライスの本体 (Task 7)。 このオントロジーは日本国政府が公開するデータを第三者が構造化したものであり、日本国政府による公式なデータセットではない。"@ja .
 
 <https://jgkg.norr-tech.com/def/core#recordedOn> a owl:DatatypeProperty ;
     rdfs:label "recordedOn" ;

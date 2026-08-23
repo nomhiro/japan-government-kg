@@ -1,5 +1,21 @@
 [
   {
+    "expected_class": "https://jgkg.norr-tech.com/def/law#Law",
+    "path": "https://jgkg.norr-tech.com/def/budget#basisLaw"
+  },
+  {
+    "expected_class": "https://jgkg.norr-tech.com/def/org#Organization",
+    "path": "https://jgkg.norr-tech.com/def/budget#ministry"
+  },
+  {
+    "expected_class": "https://jgkg.norr-tech.com/def/budget#BudgetProject",
+    "path": "https://jgkg.norr-tech.com/def/budget#project"
+  },
+  {
+    "expected_class": "https://jgkg.norr-tech.com/def/core#Agent",
+    "path": "https://jgkg.norr-tech.com/def/budget#recipient"
+  },
+  {
     "expected_class": "https://jgkg.norr-tech.com/def/core#Agent",
     "path": "https://jgkg.norr-tech.com/def/core#involves_agent"
   },
