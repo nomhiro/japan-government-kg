@@ -145,6 +145,34 @@ def test_houjin_bangou_sha256_ignores_a_decoy_file_in_the_same_date_dir(tmp_path
     )
 
 
+def test_provenance_graph_accepts_multiple_sha256_without_splitting_a_single_string():
+    """複数件のsha256を受け、単一文字列は1文字ずつに分解しないこと(Task 7)。
+
+    `str` は `Iterable[str]` の一種なので、`isinstance` で分岐しないと
+    単一文字列呼び出しが1文字ごとにトリプルを書く、という静かな破損になる。
+    RSは1つのグラフが5本の物理ファイルから作られるため、複数件を渡す経路が
+    実在する(emit_budget)。
+    """
+    from jgkg.rdf.provenance import provenance_graph
+
+    g_single = provenance_graph(
+        f"{BASE}/graph/rs-system/2026-08-23", "rs-system", DAY, sha256="abc123"
+    )
+    shas_single = {str(o) for o in g_single.objects(None, CORE.sourceSha256)}
+    assert shas_single == {"abc123"}, (
+        f"単一文字列が1文字ずつに分解されている: {shas_single}"
+    )
+
+    g_multi = provenance_graph(
+        f"{BASE}/graph/rs-system/2026-08-23",
+        "rs-system",
+        DAY,
+        sha256=["hash-a", "hash-b", "hash-c"],
+    )
+    shas_multi = {str(o) for o in g_multi.objects(None, CORE.sourceSha256)}
+    assert shas_multi == {"hash-a", "hash-b", "hash-c"}
+
+
 def test_recorded_on_is_present_only_for_the_reference_table(kg_dataset):
     """recordedOn は『取得の無いソース』(ministry-codes)だけが持つこと。
 

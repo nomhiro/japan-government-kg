@@ -15,13 +15,19 @@ from jgkg.rdf.provenance import provenance_graph
 from jgkg.transform.law import JurisdictionResult, LawRecord
 from jgkg.transform.ministry import Ministry, UnmatchedMinistry
 from jgkg.transform.organization import Organization
+from jgkg.transform.rs import BudgetProjectRecord, ExpenditureRecord, UnresolvedBudgetReference
 from jgkg.uris import (
+    budget_uri,
+    expenditure_uri,
     graph_uri,
     law_uri,
     law_version_uri,
     org_uri,
+    unresolved_basis_law_uri,
+    unresolved_budget_ministry_uri,
     unresolved_jurisdiction_uri,
     unresolved_ministry_uri,
+    unresolved_recipient_uri,
 )
 
 
@@ -31,6 +37,7 @@ def _ns() -> dict[str, Namespace]:
         "core": Namespace(f"{base}/def/core#"),
         "org": Namespace(f"{base}/def/org#"),
         "law": Namespace(f"{base}/def/law#"),
+        "budget": Namespace(f"{base}/def/budget#"),
     }
 
 
@@ -51,7 +58,7 @@ def _metadata_graph_uri() -> str:
 def _new_dataset(
     source_id: str,
     fetched_on: datetime.date,
-    sha256: str | None,
+    sha256: str | Iterable[str] | None,
     recorded_on: datetime.date | None = None,
 ) -> tuple[Dataset, Graph]:
     # default_union=True にしないと、rdflib の Dataset は既定でクエリを
@@ -211,6 +218,99 @@ def emit_laws(
             if rev.amendment_law_num:
                 data.add((rs, ns["law"]["amendmentLawNum"], Literal(rev.amendment_law_num)))
             data.add((rs, ns["law"]["revisionStatus"], Literal(rev.revision_status)))
+
+    return ds
+
+
+def emit_budget(
+    projects: Iterable[BudgetProjectRecord],
+    expenditures: Iterable[ExpenditureRecord],
+    unresolved: Iterable[UnresolvedBudgetReference],
+    source_id: str,
+    fetched_on: datetime.date,
+    sha256: str | Iterable[str] | None = None,
+    recorded_on: datetime.date | None = None,
+) -> Dataset:
+    """`rs.build_projects` の出力を `budget:BudgetProject` / `budget:Expenditure`
+
+    として書く(Task 7 brief Step 5)。`emit_laws`/`emit_organizations` と同じ、
+    変換とemitの分離(emit自身は解決ロジックを持たない)。
+
+    `sha256` は複数件を受ける(RSは1つのグラフが project_summary/budget_summary/
+    policy_measure_laws_and_regulations/payee_payment_information の4本の
+    物理ファイルから作られるため。`provenance_graph` の複数件対応を実際に使う
+    唯一の呼び出し元)。
+
+    `unresolved` は3種類が混在する(`UnresolvedBudgetReference.kind`)。
+    ministry/basis_law は主体がBudgetProject、recipientは主体がExpenditureで、
+    それぞれ別のURI関数(`uris.unresolved_budget_ministry_uri` 等)を使う
+    (law.pyのunresolved_jurisdiction_uriと同じ理由 — 同じ未解決の名称/IDを
+    指す事業が複数あっても1ノードに収束させない)。
+    """
+    ns = _ns()
+    ds, data = _new_dataset(source_id, fetched_on, sha256, recorded_on)
+
+    unresolved_for_project: dict[tuple[str, str], list[UnresolvedBudgetReference]] = {}
+    unresolved_for_expenditure: dict[tuple[str, str, int], list[UnresolvedBudgetReference]] = {}
+    for u in unresolved:
+        if u.kind == "recipient":
+            unresolved_for_expenditure.setdefault(
+                (u.fiscal_year, u.project_id, u.seq), []
+            ).append(u)
+        else:
+            unresolved_for_project.setdefault((u.fiscal_year, u.project_id), []).append(u)
+
+    for project in projects:
+        s = URIRef(budget_uri(project.fiscal_year, project.project_id))
+        # 型は最も具体的な1つだけ(emit_organizations/emit_laws と同じ理由。R1)
+        data.add((s, RDF.type, ns["budget"]["BudgetProject"]))
+        data.add((s, SKOS.prefLabel, Literal(project.project_name, lang="ja")))
+        data.add((s, ns["budget"]["projectId"], Literal(project.project_id)))
+        data.add((s, ns["budget"]["projectName"], Literal(project.project_name, lang="ja")))
+        data.add((s, ns["budget"]["fiscalYear"], Literal(int(project.fiscal_year))))
+        # **ゼロ予算は有効な値**(rs_columns.py参照)。`if project.budget_amount:` は
+        # 0を欠損と誤認して省略してしまうため、`is not None` で判定する
+        if project.budget_amount is not None:
+            data.add((s, ns["budget"]["budgetAmount"], Literal(project.budget_amount)))
+        if project.ministry_houjin_bangou is not None:
+            data.add((s, ns["budget"]["ministry"], URIRef(org_uri(project.ministry_houjin_bangou))))
+        for law_id in project.basis_law_ids:
+            data.add((s, ns["budget"]["basisLaw"], URIRef(law_uri(law_id))))
+
+        for u in unresolved_for_project.get((project.fiscal_year, project.project_id), []):
+            if u.kind == "ministry":
+                node = URIRef(unresolved_budget_ministry_uri(u.fiscal_year, u.project_id, u.key))
+            else:
+                node = URIRef(unresolved_basis_law_uri(u.fiscal_year, u.project_id, u.key))
+            data.add((node, RDF.type, ns["core"]["UnresolvedReference"]))
+            data.add((node, ns["core"]["unresolved_text"], Literal(u.key, lang="ja")))
+            data.add((node, ns["core"]["unresolved_reason"], Literal(u.reason)))
+            data.add((node, ns["core"]["unresolved_key"], Literal(u.key)))
+            data.add((node, ns["core"]["unresolvedFor"], s))
+
+    for exp in expenditures:
+        s = URIRef(expenditure_uri(exp.fiscal_year, exp.project_id, exp.seq))
+        data.add((s, RDF.type, ns["budget"]["Expenditure"]))
+        # 支出先の表示名(束ね行なら「その他」等)は解決状態に関わらず常に持つ
+        # (core:label。RDF上の実際の述語はskos:prefLabel — core.yamlの
+        # `label`スロットが `slot_uri: skos:prefLabel` で対応付けている。
+        # `ns["core"]["label"]` という独自述語を書くと閉じたシェイプに
+        # 存在しない述語になり違反する。budget.yamlのExpenditureのdocstring
+        # 参照。専用のrecipientLabelスロットは追加しない)
+        data.add((s, SKOS.prefLabel, Literal(exp.label, lang="ja")))
+        data.add((s, ns["core"]["amount_jpy"], Literal(exp.amount)))
+        data.add((s, ns["budget"]["project"], URIRef(budget_uri(exp.fiscal_year, exp.project_id))))
+        data.add((s, ns["budget"]["fiscalYear"], Literal(int(exp.fiscal_year))))
+        if exp.recipient_houjin_bangou is not None:
+            data.add((s, ns["budget"]["recipient"], URIRef(org_uri(exp.recipient_houjin_bangou))))
+
+        for u in unresolved_for_expenditure.get((exp.fiscal_year, exp.project_id, exp.seq), []):
+            node = URIRef(unresolved_recipient_uri(u.fiscal_year, u.project_id, u.seq, u.key))
+            data.add((node, RDF.type, ns["core"]["UnresolvedReference"]))
+            data.add((node, ns["core"]["unresolved_text"], Literal(u.key, lang="ja")))
+            data.add((node, ns["core"]["unresolved_reason"], Literal(u.reason)))
+            data.add((node, ns["core"]["unresolved_key"], Literal(u.key)))
+            data.add((node, ns["core"]["unresolvedFor"], s))
 
     return ds
 

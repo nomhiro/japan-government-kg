@@ -280,6 +280,115 @@ def test_check_reference_integrity_catches_the_wrong_type():
     ), violations
 
 
+# =============================================================================
+# Task 7 Step 6: budgetが入ったことで参照整合ゲートの検査対象が0件でなくなること
+#
+# Task 7以前は、pipeline.pyがhoujin-bangou/ministry-codesしか流していなかった
+# ため、自名前空間への参照述語(law:jurisdiction等)を実際に使うトリプルは
+# 生成物に1件も無かった。`check_reference_integrity` はreference-classes.json
+# の各エントリについて `ds.subject_objects(path)` を試すが、predicateが
+# 1件も無ければ0件のまま「合格」する(空振り。test_pipeline.py
+# test_run_reports_no_reference_violations_for_current_pipeline_outputが
+# この状態を固定していた)。budgetのministry/recipient/basisLawがこのゲートの
+# 初めての実消費者になることを、否定的コントロール(解決済み・違反なし)と
+# 肯定的コントロール(型を持たない対象・違反を検出)の対で示す。
+# =============================================================================
+
+
+def _project_record(**overrides):
+    from jgkg.transform.rs import BudgetProjectRecord
+
+    defaults = {
+        "project_id": "1", "fiscal_year": "2025", "project_name": "内閣人事局経費（研修事業）",
+        "ministry_houjin_bangou": "5000012010023", "budget_amount": 34482000, "basis_law_ids": (),
+    }
+    defaults.update(overrides)
+    return BudgetProjectRecord(**defaults)
+
+
+def _expenditure_record(**overrides):
+    from jgkg.transform.rs import ExpenditureRecord
+
+    defaults = {
+        "project_id": "1", "fiscal_year": "2025", "seq": 0, "recipient_houjin_bangou": "3010001137944",
+        "amount": 3025000, "label": "株式会社ウルフスタイル", "is_bundled": False,
+    }
+    defaults.update(overrides)
+    return ExpenditureRecord(**defaults)
+
+
+def test_check_reference_integrity_examines_a_resolved_budget_ministry_reference():
+    """否定的コントロール: budget:ministryが実際に検査対象になり、解決済みなら
+
+    違反が出ないこと。**検査対象になっていること自体**(ds.subject_objectsが
+    空でないこと)を先にassertする — 実装がministry edgeを1本も出さない
+    退行をしても`violations == []`だけでは検出できないため。
+    """
+    ministry = Ministry(
+        uri="https://jgkg.norr-tech.com/id/org/5000012010023",
+        houjin_bangou="5000012010023", name="内閣官房",
+    )
+    ds = Dataset(default_union=True)
+    _merge_into(ds, emit.emit_ministries([ministry], [], "ministry-codes", datetime.date(2026, 8, 22)))
+    _merge_into(ds, emit.emit_budget([_project_record()], [], [], "rs-system", DAY))
+
+    ministry_path = URIRef("https://jgkg.norr-tech.com/def/budget#ministry")
+    examined = list(ds.subject_objects(ministry_path))
+    assert examined, "budget:ministryのトリプルが1件も無い(検査対象が0件のまま)"
+
+    violations = validate.check_reference_integrity(ds, SHAPES)
+    assert violations == [], violations
+
+
+def test_check_reference_integrity_examines_unresolved_budget_references_via_entity():
+    """否定的コントロール: 未解決のbasis_law/ministryが core:unresolvedFor 経由で
+
+    Entityの検査対象を実際に増やし、違反にならないこと(BudgetProjectは
+    core:Entityのサブクラスなので、`unresolvedFor`の期待クラスを満たす)。
+    """
+    from jgkg.transform.rs import UnresolvedBudgetReference
+
+    unresolved = [
+        UnresolvedBudgetReference(
+            kind="basis_law", fiscal_year="2025", project_id="1", seq=None,
+            key="存在しない法令", reason="NO_CANDIDATE",
+        )
+    ]
+    ds = emit.emit_budget([_project_record(ministry_houjin_bangou=None)], [], unresolved, "rs-system", DAY)
+
+    unresolved_for_path = URIRef("https://jgkg.norr-tech.com/def/core#unresolvedFor")
+    assert list(ds.subject_objects(unresolved_for_path)), (
+        "core:unresolvedForのトリプルが1件も無い(検査対象が0件のまま)"
+    )
+    violations = validate.check_reference_integrity(ds, SHAPES)
+    assert violations == [], violations
+
+
+def test_check_reference_integrity_catches_a_budget_recipient_pointing_at_a_typeless_organization():
+    """肯定的コントロール(壊し確認): budget:recipientが指すOrganizationに
+
+    rdf:type が1つも無い場合、和集合ゲートが違反として検出すること。
+
+    **これは今のPhase 0/1の実運用で実際に起こり得る状態そのものである**:
+    houjin-bangouの取り込みは国の機関(kind_code=101)だけをOrganizationとして
+    emitする(pipeline.pyのメモリ制約。全法人はTask 8の別グラフの担当)ため、
+    支出先の多くを占める民間企業はOrganization型のトリプルを持たない。
+    budgetがこのゲートに接続されて初めて、この既知の欠落を機械的に検出できる
+    ようになる(Task 7報告書の懸念として記載する対象そのもの)。
+    """
+    # 意図的にOrganizationの型トリプルを一切emitしない(民間企業は
+    # emit_organizationsの対象外という実際のPhase 0/1の状態を再現する)
+    ds = emit.emit_budget([], [_expenditure_record()], [], "rs-system", DAY)
+
+    violations = validate.check_reference_integrity(ds, SHAPES)
+    assert violations, "型を持たない支出先への参照が和集合ゲートを素通りしてしまった"
+    assert any(
+        v.path.endswith("/def/budget#recipient")
+        and v.expected_class.endswith("/def/core#Agent")
+        for v in violations
+    ), violations
+
+
 def test_check_reference_integrity_raises_if_reference_classes_json_is_missing(tmp_path):
     """`reference-classes.json`が読めなかったら例外にする(空リストで素通ししない)。
 

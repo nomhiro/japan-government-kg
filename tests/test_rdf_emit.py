@@ -351,6 +351,15 @@ def test_emit_laws_skips_a_revision_without_an_enforcement_date():
     )
 
 
+def test_provenance_graph_of_emit_laws_accepts_multiple_sha256():
+    """emit_laws経由でも複数sha256を渡せること(provenance_graphの拡張の伝播確認)。"""
+    ds = emit.emit_laws([], {}, "egov-law", DAY, sha256=["h1", "h2"])
+    core = emit.NS["core"]
+    gid = URIRef("https://jgkg.norr-tech.com/graph/egov-law/2026-08-01")
+    shas = {str(o) for o in ds.objects(gid, core["sourceSha256"])}
+    assert shas == {"h1", "h2"}
+
+
 def test_emit_laws_out_of_scope_law_has_no_jurisdiction_edge_or_unresolved_node():
     """`jurisdictions` に key が無い(derive_jurisdictionがNoneを返した)法令は、
 
@@ -367,3 +376,248 @@ def test_emit_laws_out_of_scope_law_has_no_jurisdiction_edge_or_unresolved_node(
     assert (s, RDF.type, law["Law"]) in ds
     assert (s, law["jurisdiction"], None) not in ds
     assert not list(ds.subjects(RDF.type, core["UnresolvedReference"]))
+
+
+# =============================================================================
+# emit_budget(Task 7 brief Step 5)
+# =============================================================================
+
+from pathlib import Path
+
+from jgkg import uris
+from jgkg.transform import rs
+
+# 実在のRS project_id/法令ID/法人番号(R45)。project_id=1(内閣人事局経費・
+# 内閣官房)/828(消防庁・総務省)。デジタル庁設置法=503AC0000000036、
+# 株式会社ウルフスタイル=3010001137944(rs_columns.py照合記録と同じ引用)
+NAIKAKUKANBOU_BANGOU = "5000012010023"
+DIGITAL_AGENCY_LAW_ID = "503AC0000000036"
+WOLFSTYLE_BANGOU = "3010001137944"
+
+
+def _project(**overrides) -> rs.BudgetProjectRecord:
+    defaults = {
+        "project_id": "1", "fiscal_year": "2025", "project_name": "内閣人事局経費（研修事業）",
+        "ministry_houjin_bangou": NAIKAKUKANBOU_BANGOU, "budget_amount": 34482000,
+        "basis_law_ids": (),
+    }
+    defaults.update(overrides)
+    return rs.BudgetProjectRecord(**defaults)
+
+
+def _expenditure(**overrides) -> rs.ExpenditureRecord:
+    defaults = {
+        "project_id": "1", "fiscal_year": "2025", "seq": 0,
+        "recipient_houjin_bangou": WOLFSTYLE_BANGOU, "amount": 3025000,
+        "label": "株式会社ウルフスタイル", "is_bundled": False,
+    }
+    defaults.update(overrides)
+    return rs.ExpenditureRecord(**defaults)
+
+
+def test_emit_budget_writes_the_project_entity_with_its_fields():
+    project = _project()
+    ds = emit.emit_budget([project], [], [], "rs-system", DAY)
+
+    s = URIRef(uris.budget_uri("2025", "1"))
+    budget = emit.NS["budget"]
+    assert (s, RDF.type, budget["BudgetProject"]) in ds
+    assert (s, budget["projectId"], Literal("1")) in ds
+    assert (s, budget["projectName"], Literal("内閣人事局経費（研修事業）", lang="ja")) in ds
+    assert (s, budget["fiscalYear"], Literal(2025)) in ds
+    assert (s, budget["budgetAmount"], Literal(34482000)) in ds
+    labels = [str(o) for o in ds.objects(s, SKOS.prefLabel)]
+    assert "内閣人事局経費（研修事業）" in labels
+
+
+def test_emit_budget_resolved_ministry_points_at_the_organization_uri():
+    project = _project()
+    ds = emit.emit_budget([project], [], [], "rs-system", DAY)
+
+    s = URIRef(uris.budget_uri("2025", "1"))
+    org = URIRef(f"https://jgkg.norr-tech.com/id/org/{NAIKAKUKANBOU_BANGOU}")
+    assert (s, emit.NS["budget"]["ministry"], org) in ds
+
+
+def test_emit_budget_zero_amount_is_emitted_not_treated_as_absent():
+    """'0'(ゼロ予算)は有効な値であり、Noneと同じ扱いで省略してはならない。
+
+    `if amount:` のような真偽値チェックでゼロを弾く実装だと、このテストだけが
+    落ちる(rs_columns.pyの「ゼロ予算は有効値」を参照)。
+    """
+    project = _project(project_id="5551", budget_amount=0)
+    ds = emit.emit_budget([project], [], [], "rs-system", DAY)
+
+    s = URIRef(uris.budget_uri("2025", "5551"))
+    assert (s, emit.NS["budget"]["budgetAmount"], Literal(0)) in ds
+
+
+def test_emit_budget_omits_budget_amount_when_missing():
+    """budget_amount=None(欠損)は `Literal(None)` を書かず、トリプル自体を出さない
+
+    (裁定B12のministry_codeと同じ「欠落の表現として最悪の形」を避ける作法)。
+    """
+    project = _project(budget_amount=None)
+    ds = emit.emit_budget([project], [], [], "rs-system", DAY)
+
+    s = URIRef(uris.budget_uri("2025", "1"))
+    assert list(ds.objects(s, emit.NS["budget"]["budgetAmount"])) == []
+
+
+def test_emit_budget_unresolved_ministry_is_not_dropped():
+    project = _project(ministry_houjin_bangou=None)
+    unresolved = [
+        rs.UnresolvedBudgetReference(
+            kind="ministry", fiscal_year="2025", project_id="1", seq=None,
+            key="存在しない省", reason="NO_CANDIDATE",
+        )
+    ]
+    ds = emit.emit_budget([project], [], unresolved, "rs-system", DAY)
+
+    s = URIRef(uris.budget_uri("2025", "1"))
+    core = emit.NS["core"]
+    assert (s, emit.NS["budget"]["ministry"], None) not in ds
+    node = URIRef(uris.unresolved_budget_ministry_uri("2025", "1", "存在しない省"))
+    assert (node, RDF.type, core["UnresolvedReference"]) in ds
+    assert (node, core["unresolved_text"], Literal("存在しない省", lang="ja")) in ds
+    assert (node, core["unresolved_reason"], Literal("NO_CANDIDATE")) in ds
+    assert (node, core["unresolved_key"], Literal("存在しない省")) in ds
+    assert (node, core["unresolvedFor"], s) in ds
+
+
+def test_emit_budget_basis_law_points_at_the_law_uri_and_is_multivalued():
+    project = _project(basis_law_ids=(DIGITAL_AGENCY_LAW_ID, "322AC0000000120"))
+    ds = emit.emit_budget([project], [], [], "rs-system", DAY)
+
+    s = URIRef(uris.budget_uri("2025", "1"))
+    budget = emit.NS["budget"]
+    edges = set(ds.objects(s, budget["basisLaw"]))
+    assert edges == {
+        URIRef("https://jgkg.norr-tech.com/id/law/503AC0000000036"),
+        URIRef("https://jgkg.norr-tech.com/id/law/322AC0000000120"),
+    }
+
+
+def test_emit_budget_unresolved_basis_law_is_not_dropped():
+    project = _project(basis_law_ids=())
+    unresolved = [
+        rs.UnresolvedBudgetReference(
+            kind="basis_law", fiscal_year="2025", project_id="1", seq=None,
+            key="存在しない法令", reason="NO_CANDIDATE",
+        )
+    ]
+    ds = emit.emit_budget([project], [], unresolved, "rs-system", DAY)
+
+    core = emit.NS["core"]
+    node = URIRef(uris.unresolved_basis_law_uri("2025", "1", "存在しない法令"))
+    assert (node, RDF.type, core["UnresolvedReference"]) in ds
+    assert (node, core["unresolvedFor"], URIRef(uris.budget_uri("2025", "1"))) in ds
+
+
+def test_emit_budget_writes_the_expenditure_entity_with_amount_and_label():
+    exp = _expenditure()
+    ds = emit.emit_budget([], [exp], [], "rs-system", DAY)
+
+    s = URIRef(uris.expenditure_uri("2025", "1", 0))
+    core = emit.NS["core"]
+    budget = emit.NS["budget"]
+    assert (s, RDF.type, budget["Expenditure"]) in ds
+    assert (s, core["amount_jpy"], Literal(3025000)) in ds
+    assert (s, SKOS.prefLabel, Literal("株式会社ウルフスタイル", lang="ja")) in ds
+    assert (s, budget["project"], URIRef(uris.budget_uri("2025", "1"))) in ds
+    assert (s, budget["fiscalYear"], Literal(2025)) in ds
+
+
+def test_emit_budget_resolved_recipient_points_at_the_organization_uri():
+    exp = _expenditure()
+    ds = emit.emit_budget([], [exp], [], "rs-system", DAY)
+
+    s = URIRef(uris.expenditure_uri("2025", "1", 0))
+    org = URIRef(f"https://jgkg.norr-tech.com/id/org/{WOLFSTYLE_BANGOU}")
+    assert (s, emit.NS["budget"]["recipient"], org) in ds
+
+
+def test_emit_budget_bundled_expenditure_has_no_recipient_edge_and_no_unresolved_node():
+    """束ね行(B14)はrecipientを設定せず、かつUnresolvedReferenceも立てない
+
+    (解決を試みていないので「未解決」ではない。§8.2の意図的な非対象)。
+    """
+    exp = _expenditure(project_id="11", seq=0, recipient_houjin_bangou=None,
+                        amount=1379101, label="その他", is_bundled=True)
+    ds = emit.emit_budget([], [exp], [], "rs-system", DAY)
+
+    s = URIRef(uris.expenditure_uri("2025", "11", 0))
+    core = emit.NS["core"]
+    budget = emit.NS["budget"]
+    assert (s, budget["recipient"], None) not in ds
+    assert (s, SKOS.prefLabel, Literal("その他", lang="ja")) in ds
+    assert not list(ds.subjects(RDF.type, core["UnresolvedReference"])), (
+        "束ね行なのにUnresolvedReferenceが出力されている(解決を試みていないはず)"
+    )
+
+
+def test_emit_budget_unresolved_recipient_is_not_dropped():
+    exp = _expenditure(recipient_houjin_bangou=None, is_bundled=False, label="実在しない架空商事株式会社")
+    unresolved = [
+        rs.UnresolvedBudgetReference(
+            kind="recipient", fiscal_year="2025", project_id="1", seq=0,
+            key="実在しない架空商事株式会社", reason="NO_CANDIDATE",
+        )
+    ]
+    ds = emit.emit_budget([], [exp], unresolved, "rs-system", DAY)
+
+    s = URIRef(uris.expenditure_uri("2025", "1", 0))
+    core = emit.NS["core"]
+    node = URIRef(uris.unresolved_recipient_uri("2025", "1", 0, "実在しない架空商事株式会社"))
+    assert (node, RDF.type, core["UnresolvedReference"]) in ds
+    assert (node, core["unresolved_reason"], Literal("NO_CANDIDATE")) in ds
+    assert (node, core["unresolvedFor"], s) in ds
+
+
+def test_emit_budget_lands_in_the_rs_system_graph_for_the_fetch_date():
+    ds = emit.emit_budget([_project()], [_expenditure()], [], "rs-system", DAY)
+    expected_graph = URIRef("https://jgkg.norr-tech.com/graph/rs-system/2026-08-01")
+    contexts = {g.identifier for g in ds.graphs() if len(g) > 0}
+    assert expected_graph in contexts
+
+
+def test_emit_budget_records_every_source_files_sha256():
+    """RSは1グラフが複数の物理ファイルから作られるため、複数sha256を記録できること
+
+    (Task 1の出典規約。provenance_graphの複数件対応の実際の消費者)。
+    """
+    ds = emit.emit_budget(
+        [_project()], [], [], "rs-system", DAY,
+        sha256=["hash-project-summary", "hash-budget-summary", "hash-law", "hash-payee"],
+    )
+    core = emit.NS["core"]
+    shas = {str(o) for o in ds.objects(None, core["sourceSha256"])}
+    assert shas == {"hash-project-summary", "hash-budget-summary", "hash-law", "hash-payee"}
+
+
+def test_emit_budget_conforms_to_shacl():
+    """Step 5: 閉じたシェイプで全域が通ることをSHACLで確認する。"""
+    from jgkg import validate
+
+    project = _project(basis_law_ids=(DIGITAL_AGENCY_LAW_ID,))
+    unresolved = [
+        rs.UnresolvedBudgetReference(
+            kind="ministry", fiscal_year="2025", project_id="828", seq=None,
+            key="存在しない省", reason="NO_CANDIDATE",
+        ),
+        rs.UnresolvedBudgetReference(
+            kind="recipient", fiscal_year="2025", project_id="11", seq=0,
+            key="その他", reason="NO_CANDIDATE",
+        ),
+    ]
+    projects = [project, _project(project_id="828", fiscal_year="2025",
+                                    ministry_houjin_bangou=None, budget_amount=0)]
+    expenditures = [_expenditure(), _expenditure(
+        project_id="11", seq=0, recipient_houjin_bangou=None, label="その他", is_bundled=True,
+    )]
+    ds = emit.emit_budget(projects, expenditures, unresolved, "rs-system", DAY, sha256="deadbeef")
+
+    shapes_dir = Path("schema/generated")
+    results = validate.validate_dataset(ds, shapes_dir)
+    failing = [r for r in results if not r.conforms]
+    assert not failing, f"SHACL違反: {[r.report_text for r in failing]}"
