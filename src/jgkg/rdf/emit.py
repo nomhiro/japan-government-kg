@@ -174,6 +174,9 @@ def emit_laws(
                 data.add((node, ns["core"]["unresolved_text"], Literal(u.name, lang="ja")))
                 data.add((node, ns["core"]["unresolved_reason"], Literal(u.reason)))
                 data.add((node, ns["core"]["unresolved_key"], Literal(u.name)))
+                # 未解決ノード→法令(裁定B8)。CQ9等が未解決ノードから主体へ
+                # グラフパターンで辿れるようにする(URIの再構成を要しない)
+                data.add((node, ns["core"]["unresolvedFor"], s))
 
         for rev in record.revisions:
             if not rev.amendment_enforcement_date:

@@ -6,7 +6,7 @@ from rdflib import RDF, Dataset, Literal, URIRef
 
 from jgkg import validate
 from jgkg.rdf import emit
-from jgkg.transform.law import JurisdictionResult, LawRecord
+from jgkg.transform.law import JurisdictionResult, LawRecord, UnresolvedJurisdiction
 from jgkg.transform.ministry import Ministry
 from jgkg.transform.organization import Organization
 
@@ -130,6 +130,32 @@ def test_closed_shapes_still_conform_after_sh_class_extraction():
         name="厚生労働省",
     )
     ds = emit.emit_ministries([ministry], [], "ministry-codes", DAY)
+
+    results = validate.validate_dataset(ds, SHAPES)
+    data_results = [r for r in results if "provenance" not in r.graph_uri]
+    assert data_results, "検証対象のグラフが無い"
+    assert all(r.conforms for r in data_results), [
+        r.report_text for r in data_results if not r.conforms
+    ]
+
+
+def test_emit_laws_unresolved_jurisdiction_validates_with_unresolved_for(): # 裁定B8
+    """未解決の管轄(`core:unresolvedFor`付き)がグラフ単位SHACLに合格すること。
+
+    何があれば落ちるか: `schema/core.yaml` に `unresolvedFor` を足したのに
+    `scripts/generate-schema.sh` を再実行し忘れると、`UnresolvedReference` の
+    閉じたシェイプが `unresolvedFor` を「宣言されていないプロパティ」として
+    不合格にする(このテストが再生成忘れを検出する)。
+    """
+    law_id = "326M50000400100"
+    record = _law_record(law_id, law_num="昭和二十六年大蔵省令第百号")
+    jr = JurisdictionResult(
+        law_id=law_id,
+        ministry_names=["大蔵省"],
+        resolved=[],
+        unresolved=[UnresolvedJurisdiction(name="大蔵省", reason="OLD_MINISTRY")],
+    )
+    ds = emit.emit_laws([record], {law_id: jr}, "egov-law", DAY)
 
     results = validate.validate_dataset(ds, SHAPES)
     data_results = [r for r in results if "provenance" not in r.graph_uri]

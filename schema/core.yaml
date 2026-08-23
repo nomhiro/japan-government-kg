@@ -65,6 +65,17 @@ slots:
       解決できなかった参照の、ソース側のキー(府省コード等)。ドメイン固有の
       プロパティを UnresolvedReference に足すと閉じたSHACLシェイプに違反するため、
       汎用のキーとしてここで受ける
+  unresolvedFor:
+    description: >-
+      この未解決参照が生じた主体(参照元のエンティティ)。CQ9等が未解決ノード
+      からその主体へグラフパターンで辿れるようにするための辺(URIの再構成を
+      要しない。裁定B8)。方向はUnresolvedReference→主体(逆向きにすると、
+      未解決を持ち得る全クラスがこのプロパティを宣言する必要が生じ、閉じた
+      シェイプが増殖する。unresolved_keyを汎用スロットとしてUnresolvedReference
+      側に置いたのと同じ設計)。**必須にしない** — 主体を特定できない未解決
+      (例: emit_ministriesの未解決府省。参照表の1行がどの組織にも対応しない
+      だけで、特定の「この記述の主体」が無い)を壊さないため
+    range: Entity
   # 以下2つは出典グラフ(graph/provenance)の語彙。どのクラスの slots にも
   # 加えない(UnresolvedReference 等の閉じたシェイプに違反するため)。
   sourceSha256:
@@ -145,4 +156,4 @@ classes:
     description: >-
       正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず
       KGに残して計測できるようにするためのクラス
-    slots: [unresolved_text, unresolved_reason, unresolved_key]
+    slots: [unresolved_text, unresolved_reason, unresolved_key, unresolvedFor]

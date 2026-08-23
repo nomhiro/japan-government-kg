@@ -119,6 +119,15 @@
         [ a owl:Restriction ;
             owl:maxCardinality 1 ;
             owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_key> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolvedFor> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolvedFor> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom <https://jgkg.norr-tech.com/def/core#Entity> ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolvedFor> ],
         <https://jgkg.norr-tech.com/def/core#Entity> ;
     skos:definition "正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず KGに残して計測できるようにするためのクラス"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
@@ -185,6 +194,12 @@ skos:prefLabel a owl:DatatypeProperty ;
     rdfs:label "occurred_on" ;
     rdfs:range xsd:date ;
     skos:definition "この出来事が起きた日"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
+
+<https://jgkg.norr-tech.com/def/core#unresolvedFor> a owl:ObjectProperty ;
+    rdfs:label "unresolvedFor" ;
+    rdfs:range <https://jgkg.norr-tech.com/def/core#Entity> ;
+    skos:definition "この未解決参照が生じた主体(参照元のエンティティ)。CQ9等が未解決ノード からその主体へグラフパターンで辿れるようにするための辺(URIの再構成を 要しない。裁定B8)。方向はUnresolvedReference→主体(逆向きにすると、 未解決を持ち得る全クラスがこのプロパティを宣言する必要が生じ、閉じた シェイプが増殖する。unresolved_keyを汎用スロットとしてUnresolvedReference 側に置いたのと同じ設計)。**必須にしない** — 主体を特定できない未解決 (例: emit_ministriesの未解決府省。参照表の1行がどの組織にも対応しない だけで、特定の「この記述の主体」が無い)を壊さないため"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 <https://jgkg.norr-tech.com/def/core#unresolved_key> a owl:DatatypeProperty ;

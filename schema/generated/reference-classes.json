@@ -4,6 +4,10 @@
     "path": "https://jgkg.norr-tech.com/def/core#involves_agent"
   },
   {
+    "expected_class": "https://jgkg.norr-tech.com/def/core#Entity",
+    "path": "https://jgkg.norr-tech.com/def/core#unresolvedFor"
+  },
+  {
     "expected_class": "https://jgkg.norr-tech.com/def/org#Organization",
     "path": "https://jgkg.norr-tech.com/def/law#jurisdiction"
   }

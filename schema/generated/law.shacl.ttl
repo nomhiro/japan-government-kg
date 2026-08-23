@@ -41,7 +41,7 @@
 <https://jgkg.norr-tech.com/def/core#Entity> a sh:NodeShape ;
     rdfs:comment "本KGが扱うすべての事物の基底" ;
     sh:closed false ;
-    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/core#amount_jpy> <https://jgkg.norr-tech.com/def/core#involves_agent> <https://jgkg.norr-tech.com/def/core#occurred_on> <https://jgkg.norr-tech.com/def/core#unresolved_key> <https://jgkg.norr-tech.com/def/core#unresolved_reason> <https://jgkg.norr-tech.com/def/core#unresolved_text> <https://jgkg.norr-tech.com/def/law#abbrev> <https://jgkg.norr-tech.com/def/law#amendmentEnforcementDate> <https://jgkg.norr-tech.com/def/law#amendmentLawNum> <https://jgkg.norr-tech.com/def/law#jurisdiction> <https://jgkg.norr-tech.com/def/law#lawId> <https://jgkg.norr-tech.com/def/law#lawNum> <https://jgkg.norr-tech.com/def/law#lawNumType> <https://jgkg.norr-tech.com/def/law#lawTitle> <https://jgkg.norr-tech.com/def/law#promulgationDate> <https://jgkg.norr-tech.com/def/law#repealStatus> <https://jgkg.norr-tech.com/def/law#revisionStatus> <https://jgkg.norr-tech.com/def/org#cityName> <https://jgkg.norr-tech.com/def/org#houjinBangou> <https://jgkg.norr-tech.com/def/org#ministryCode> <https://jgkg.norr-tech.com/def/org#organizationKindCode> <https://jgkg.norr-tech.com/def/org#prefectureName> ) ;
+    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/core#amount_jpy> <https://jgkg.norr-tech.com/def/core#involves_agent> <https://jgkg.norr-tech.com/def/core#occurred_on> <https://jgkg.norr-tech.com/def/core#unresolvedFor> <https://jgkg.norr-tech.com/def/core#unresolved_key> <https://jgkg.norr-tech.com/def/core#unresolved_reason> <https://jgkg.norr-tech.com/def/core#unresolved_text> <https://jgkg.norr-tech.com/def/law#abbrev> <https://jgkg.norr-tech.com/def/law#amendmentEnforcementDate> <https://jgkg.norr-tech.com/def/law#amendmentLawNum> <https://jgkg.norr-tech.com/def/law#jurisdiction> <https://jgkg.norr-tech.com/def/law#lawId> <https://jgkg.norr-tech.com/def/law#lawNum> <https://jgkg.norr-tech.com/def/law#lawNumType> <https://jgkg.norr-tech.com/def/law#lawTitle> <https://jgkg.norr-tech.com/def/law#promulgationDate> <https://jgkg.norr-tech.com/def/law#repealStatus> <https://jgkg.norr-tech.com/def/law#revisionStatus> <https://jgkg.norr-tech.com/def/org#cityName> <https://jgkg.norr-tech.com/def/org#houjinBangou> <https://jgkg.norr-tech.com/def/org#ministryCode> <https://jgkg.norr-tech.com/def/org#organizationKindCode> <https://jgkg.norr-tech.com/def/org#prefectureName> ) ;
     sh:property [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
@@ -127,13 +127,7 @@
     rdfs:comment "正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず KGに残して計測できるようにするためのクラス" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
-    sh:property [ sh:datatype rdf:langString ;
-            sh:description "人間が読む名称"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 4 ;
-            sh:path skos:prefLabel ],
-        [ sh:datatype xsd:string ;
+    sh:property [ sh:datatype xsd:string ;
             sh:description "解決できなかった参照の、ソース側のキー(府省コード等)。ドメイン固有の プロパティを UnresolvedReference に足すと閉じたSHACLシェイプに違反するため、 汎用のキーとしてここで受ける"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
@@ -145,6 +139,12 @@
             sh:order 1 ;
             sh:path <https://jgkg.norr-tech.com/def/core#unresolved_reason> ],
         [ sh:datatype rdf:langString ;
+            sh:description "人間が読む名称"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 5 ;
+            sh:path skos:prefLabel ],
+        [ sh:datatype rdf:langString ;
             sh:description "正準IDに解決できなかった元の参照文字列"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
@@ -153,8 +153,13 @@
         [ sh:description "このリソースのURI"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
+            sh:order 4 ;
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ],
+        [ sh:description "この未解決参照が生じた主体(参照元のエンティティ)。CQ9等が未解決ノード からその主体へグラフパターンで辿れるようにするための辺(URIの再構成を 要しない。裁定B8)。方向はUnresolvedReference→主体(逆向きにすると、 未解決を持ち得る全クラスがこのプロパティを宣言する必要が生じ、閉じた シェイプが増殖する。unresolved_keyを汎用スロットとしてUnresolvedReference 側に置いたのと同じ設計)。**必須にしない** — 主体を特定できない未解決 (例: emit_ministriesの未解決府省。参照表の1行がどの組織にも対応しない だけで、特定の「この記述の主体」が無い)を壊さないため"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
             sh:order 3 ;
-            sh:path <https://jgkg.norr-tech.com/def/core#id> ] ;
+            sh:path <https://jgkg.norr-tech.com/def/core#unresolvedFor> ] ;
     sh:targetClass <https://jgkg.norr-tech.com/def/core#UnresolvedReference> .
 
 <https://jgkg.norr-tech.com/def/core#Work> a sh:NodeShape ;
