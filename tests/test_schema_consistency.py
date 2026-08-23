@@ -341,6 +341,60 @@ def test_overlay_declares_all_axis_disjointness_pairs():
     assert not missing, f"disjointの宣言が無いペアがある({len(missing)}件): {missing}"
 
 
+# =============================================================================
+# 裁定B4: sh:class を自名前空間について除去し、reference-classes.json に移す
+# =============================================================================
+
+REFERENCE_CLASSES = GENERATED / "reference-classes.json"
+
+
+def test_no_self_namespace_sh_class_remains_in_generated_shacl():
+    """自名前空間のクラスを指す `sh:class` が、生成された全SHACLから除去
+    されていること(裁定B4)。`schema_lang.extract_reference_classes` が
+    `reference-classes.json` へ移す。
+
+    **全shapesを走査する。手でプロパティ名をリストしない** — 個々の名前を
+    書くと、新しい参照プロパティ(例: 将来の `budget:basisLaw`)が追加された
+    ときに検査対象から漏れて、除去し忘れに気づけない。
+    """
+    base = "https://jgkg.norr-tech.com/def/"
+    offending: dict[str, list[str]] = {}
+    for path in sorted(GENERATED.glob("*.shacl.ttl")):
+        g = _load(path)
+        self_ns = {
+            str(o)
+            for o in g.objects(None, SH["class"])
+            if isinstance(o, URIRef) and str(o).startswith(base)
+        }
+        if self_ns:
+            offending[path.name] = sorted(self_ns)
+    assert not offending, (
+        f"自名前空間へのsh:classが残っているファイルがある: {offending}"
+    )
+
+
+def test_reference_classes_json_contains_the_jurisdiction_pair():
+    """`reference-classes.json` に `law:jurisdiction` → `org:Organization` の対が
+    入っていること(空でないことも合わせて固定する)。
+
+    **何があれば落ちるか**: `schema_lang` の抽出漏れ、`scripts/generate-schema.sh`
+    の再実行忘れ、あるいはファイルが空のまま(「対象0件で合格」の型の退化)で落ちる。
+    """
+    import json
+
+    assert REFERENCE_CLASSES.exists(), (
+        f"{REFERENCE_CLASSES} が無い。scripts/generate-schema.sh を実行する"
+    )
+    entries = json.loads(REFERENCE_CLASSES.read_text(encoding="utf-8"))
+    assert entries, f"{REFERENCE_CLASSES} が空である"
+
+    pairs = {(e["path"], e["expected_class"]) for e in entries}
+    assert (
+        "https://jgkg.norr-tech.com/def/law#jurisdiction",
+        "https://jgkg.norr-tech.com/def/org#Organization",
+    ) in pairs, f"jurisdiction→Organizationの対が無い: {sorted(pairs)}"
+
+
 def test_enum_has_a_single_iri_across_generated_owl():
     """同一の enum が複数のIRIで宣言されていないこと。
 

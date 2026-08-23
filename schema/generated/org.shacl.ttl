@@ -4,6 +4,23 @@
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
+<https://jgkg.norr-tech.com/def/core#Agent> a sh:NodeShape ;
+    rdfs:comment "「誰が」の軸。行為の主体。組織と人の上位" ;
+    sh:closed true ;
+    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/org#cityName> <https://jgkg.norr-tech.com/def/org#houjinBangou> <https://jgkg.norr-tech.com/def/org#ministryCode> <https://jgkg.norr-tech.com/def/org#organizationKindCode> <https://jgkg.norr-tech.com/def/org#prefectureName> ) ;
+    sh:property [ sh:datatype rdf:langString ;
+            sh:description "人間が読む名称"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 1 ;
+            sh:path skos:prefLabel ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 0 ;
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ] ;
+    sh:targetClass <https://jgkg.norr-tech.com/def/core#Agent> .
+
 <https://jgkg.norr-tech.com/def/core#Concept> a sh:NodeShape ;
     rdfs:comment "「何について」の軸。主題・指標・制度手続きの上位" ;
     sh:closed true ;
@@ -59,8 +76,7 @@
             sh:nodeKind sh:IRI ;
             sh:order 2 ;
             sh:path <https://jgkg.norr-tech.com/def/core#id> ],
-        [ sh:class <https://jgkg.norr-tech.com/def/core#Agent> ;
-            sh:description "この出来事に関与した主体"@ja ;
+        [ sh:description "この出来事に関与した主体"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
             sh:order 1 ;
@@ -289,21 +305,4 @@
             sh:path <https://jgkg.norr-tech.com/def/org#houjinBangou> ;
             sh:pattern "^\\d{13}$" ] ;
     sh:targetClass <https://jgkg.norr-tech.com/def/org#Organization> .
-
-<https://jgkg.norr-tech.com/def/core#Agent> a sh:NodeShape ;
-    rdfs:comment "「誰が」の軸。行為の主体。組織と人の上位" ;
-    sh:closed true ;
-    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/org#cityName> <https://jgkg.norr-tech.com/def/org#houjinBangou> <https://jgkg.norr-tech.com/def/org#ministryCode> <https://jgkg.norr-tech.com/def/org#organizationKindCode> <https://jgkg.norr-tech.com/def/org#prefectureName> ) ;
-    sh:property [ sh:datatype rdf:langString ;
-            sh:description "人間が読む名称"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 1 ;
-            sh:path skos:prefLabel ],
-        [ sh:description "このリソースのURI"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:IRI ;
-            sh:order 0 ;
-            sh:path <https://jgkg.norr-tech.com/def/core#id> ] ;
-    sh:targetClass <https://jgkg.norr-tech.com/def/core#Agent> .
 

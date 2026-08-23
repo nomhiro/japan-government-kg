@@ -74,21 +74,22 @@ def test_valid_dataset_conforms():
 
 
 # =============================================================================
-# 裁定B3: ont_graph(inferenceなし)でも sh:class がサブクラスを辿れること
+# 裁定B4: sh:class をSHACLから除去し、参照の型検証はpipelineの和集合ゲートに
+# 移す(R2と同じ扱い)。以下3本は裁定B3のゲートテストを裁定B4に合わせて
+# 置き換えたもの(履歴は task-4-report.md 参照)。
 # =============================================================================
 
 
-def test_subclass_value_satisfies_superclass_range():
-    """`law:jurisdiction`(range: Organization)の値がMinistry型でも通ること(B3の本体)。
+def test_pure_shacl_no_longer_constrains_the_jurisdiction_class():
+    """裁定B4後: `law:jurisdiction`にsh:classが無いので、値がMinistry型でも
+    SHACL単体(`validate_dataset`)は普通に合格すること。
 
-    Ministryの型トリプルとjurisdictionのトリプルを**同一グラフ**に置く
-    (source_id/fetched_onを揃えて強制する)。`org:Ministry`は`org:Organization`の
-    サブクラスだが、その`rdfs:subClassOf`知識はデータグラフにはなく
-    `all.owl.ttl`にしかない。
-
-    何があれば落ちるか: `validate_dataset`が`ont_graph`を渡していない
-    (または渡していても機能していない)と、値ノードの型が`org:Ministry`
-    としか分からず`sh:class org:Organization`に違反し続ける。
+    旧テスト`test_subclass_value_satisfies_superclass_range`(裁定B3)の
+    データ構成をそのまま使う。**合格する理由が変わった**: B3期は
+    「ont_graphがサブクラスを辿れたから」、B4後は「sh:classそのものが
+    もうSHACLに無いから」。型が本当にOrganizationの一種であることの検証は
+    `test_check_reference_integrity_passes_a_correct_cross_graph_reference`
+    (和集合ゲート)側に移した。
     """
     law_id = "323M60000100010"
     record = _law_record(law_id)
@@ -106,7 +107,6 @@ def test_subclass_value_satisfies_superclass_range():
     )
 
     ds = Dataset(default_union=True)
-    # 同じsource_id/fetched_onにして、law と ministry を強制的に同一グラフへ入れる
     _merge_into(ds, emit.emit_laws([record], {law_id: jr}, "egov-law", DAY))
     _merge_into(ds, emit.emit_ministries([ministry], [], "egov-law", DAY))
 
@@ -118,15 +118,10 @@ def test_subclass_value_satisfies_superclass_range():
     ]
 
 
-def test_closed_shapes_survive_ont_graph():
-    """`ont_graph`を渡しても、Ministry自身の閉じたシェイプが偽の違反を出さないこと。
-
-    何があれば落ちるか: `ont_graph`の導入で`org:Organization`の閉じたシェイプが
-    (サブクラスだからという理由で)`org:Ministry`型のノードにも適用される
-    ようになると、Ministry固有の`ministryCode`が「宣言されていないプロパティ」
-    として誤って違反になる(Phase 0のR24と同種の、推論経由の二重シェイプ問題)。
-    このテストは既存の`test_valid_dataset_conforms`が`org:Organization`しか
-    検証していない(`org:Ministry`を検証していない)穴を塞ぐ。
+def test_closed_shapes_still_conform_after_sh_class_extraction():
+    """裁定B4でsh:classを抽出・除去した後処理が、Ministry自身の閉じたシェイプに
+    無関係な副作用を起こしていないこと(旧`test_closed_shapes_survive_ont_graph`
+    の改題。ont_graphはもう無いので、その観点のテストは意味を失った)。
     """
     ministry = Ministry(
         uri="https://jgkg.norr-tech.com/id/org/6000012070001",
@@ -144,14 +139,17 @@ def test_closed_shapes_survive_ont_graph():
     ]
 
 
-def test_wrong_type_still_fails_the_class_constraint():
-    """`org:Organization`のどのサブクラスでもない値は、`ont_graph`を渡しても
-    `sh:class`に違反し続けること(`sh:class`が死んでいない証拠)。
+def test_pure_shacl_no_longer_catches_a_wrong_reference_type():
+    """裁定B4: `sh:class`をSHACLから抽出済みなので、型が違う参照値でも
+    SHACL単体(`validate_dataset`)はもう検出しないこと。
 
-    値ノード自身は`core:UnresolvedReference`として最小限に妥当なものにする
-    (閉じたシェイプの必須プロパティを満たす)。**そうしないと、値ノード自身の
-    閉じたシェイプ違反がconforms=Falseの原因になり、sh:classが実際に発火した
-    かどうかが分からなくなる**(何があれば落ちるか、を測るテスト自体の穴)。
+    旧`test_wrong_type_still_fails_the_class_constraint`(裁定B3)は
+    「sh:classがまだ効いている」ことを確認していたが、B4はその逆(sh:classが
+    もうSHACLに残っていないこと)を確認する必要がある。**このテストが
+    落ちたら、schema_lang の抽出漏れでsh:classがまだSHACLに残っている疑いが
+    ある**(test_no_self_namespace_sh_class_remains_in_generated_shaclと
+    同じ懸念を、データを流して確かめる形)。型を実際に検出する側は
+    `test_check_reference_integrity_catches_the_wrong_type` で固定する。
     """
     law_id = "999AC0000000001"
     ds = emit.emit_laws([_law_record(law_id)], {}, "egov-law", DAY)
@@ -163,21 +161,18 @@ def test_wrong_type_still_fails_the_class_constraint():
     wrong = URIRef(
         "https://jgkg.norr-tech.com/id/unresolved/jurisdiction/999AC0000000001/dummy"
     )
-    # core:UnresolvedReference として最小限に妥当(必須プロパティを埋める)
     g.add((wrong, RDF.type, core["UnresolvedReference"]))
     g.add((wrong, core["unresolved_text"], Literal("ダミー", lang="ja")))
     g.add((wrong, core["unresolved_reason"], Literal("NO_CANDIDATE")))
     g.add((wrong, core["unresolved_key"], Literal("ダミー")))
-    # law:jurisdiction を、Organizationでも何のサブクラスでもないこのノードへ張る
     g.add((URIRef(f"https://jgkg.norr-tech.com/id/law/{law_id}"), law["jurisdiction"], wrong))
 
     results = validate.validate_dataset(ds, SHAPES)
     data_results = [r for r in results if "provenance" not in r.graph_uri]
-    failing = [r for r in data_results if not r.conforms]
-    assert failing, "Organizationでない値がsh:classを素通りしてしまった"
-    assert any("ClassConstraintComponent" in r.report_text for r in failing), (
-        "落ちてはいるが、sh:classではない別の理由で落ちている可能性がある: "
-        f"{[r.report_text for r in failing]}"
+    assert all(r.conforms for r in data_results), (
+        "SHACL単体がまだ型不一致を検出している"
+        "(sh:classの抽出漏れの疑いがある): "
+        f"{[r.report_text for r in data_results if not r.conforms]}"
     )
 
 

@@ -1,4 +1,4 @@
-"""生成されたOWL/SHACLの後処理: 日本語タグ付けと出力の正準化。
+"""生成されたOWL/SHACLの後処理: 日本語タグ付け・出力の正準化・参照制約の抽出。
 
 linkml==1.11.1 の gen-owl / gen-shacl には言語タグを付けるCLIオプションが無い
 (公式ドキュメントには記載があるが、どのリリース版にも未実装)。設計書§5.7が
@@ -32,14 +32,29 @@ gen-owl / gen-shacl は入力(schema/*.yaml)を一切変えずに再実行する
 これを避けるため、順序に意味が無いと確認済みの述語だけを対象にし、未知の
 述語がリストを持っていたらビルドを落とす。未解決の参照を沈黙させずに残す
 (設計書§8.2)のと同じ思想である。
+
+**裁定B4: 自名前空間のクラスを指す `sh:class` をSHACLから除去し、
+`reference-classes.json` に移す。** `sh:class` の制約はグラフを跨ぐ参照の
+型を要求するが、`validate.validate_dataset` は名前付きグラフ単位で検証する
+(グラフが置換の単位。設計書§6.4)。参照先が別グラフにあるという実運用の
+形では `sh:class` は原理的に満たせない(`org:houjinBangou` の必須制約を
+グラフ単位のSHACLでは検証できず、CQのSPARQLテストで担保しているのと同じ
+理由。R2)。そこで `sh:class` はスキーマ生成時に外し、`(path, expected_class)`
+の対を `reference-classes.json` に書き出す。実際の型検査は
+`validate.check_reference_integrity` が和集合Datasetに対して行う
+(Task 4 裁定B3→B4の経緯)。`sh:nodeKind sh:IRI` は残す — 値がIRIである
+ことまではグラフ単位のSHACLで検証できる。
 """
+import json
 import sys
 from pathlib import Path
 
-from rdflib import OWL, RDF, BNode, Graph, Literal
+from rdflib import OWL, RDF, BNode, Graph, Literal, URIRef
 from rdflib.collection import Collection
 from rdflib.compare import to_canonical_graph
 from rdflib.namespace import SH, SKOS
+
+from jgkg.config import get_settings
 
 LANG = "ja"
 # 日本語の散文が入る述語だけを対象にする
@@ -56,6 +71,16 @@ ORDER_INSENSITIVE_LIST_PREDICATES = {
     SH.ignoredProperties,
     SH["in"],
 }
+
+# 参照制約(裁定B4)の書き出し先。全モジュールを束ねたSHACLだけが完全な集合を
+# 持つ(`all.yaml` が他の全モジュールを import する。この網羅性自体は
+# tests/test_schema_consistency.py::test_all_shacl_covers_every_module が
+# 別途保証している)ため、このファイル名のときだけ書く。`jgkg.validate` の
+# `SHAPES_FILENAME` からではなくここで直接定数にする — validate側から
+# import すると schema_lang → validate → schema_lang の循環import になる
+# (validate側がこの定数を import する、逆向きだけにする)
+AGGREGATE_SHACL_FILENAME = "all.shacl.ttl"
+REFERENCE_CLASSES_FILENAME = "reference-classes.json"
 
 
 def tag_language(g: Graph, lang: str = LANG) -> int:
@@ -133,8 +158,49 @@ def sort_rdf_lists(g: Graph) -> int:
     return changed
 
 
+def extract_reference_classes(g: Graph, base_uri: str) -> list[dict[str, str]]:
+    """自名前空間のクラスを指す `sh:class` を `g` から除去し、(path, expected_class) の対で返す。
+
+    裁定B4(モジュールdocstring参照)。**外部語彙のクラスへの `sh:class` は対象外。**
+    現時点でこのスキーマに外部クラスへの `sh:class` は無いが、将来 `prov:Agent` 等を
+    参照するようになったとき、無条件に全部剥がすと外部語彙相手の検証まで失う。
+    自分の名前空間(`{base_uri}/def/`)かどうかで判定する。
+
+    `sh:nodeKind sh:IRI` を含む他のトリプルはそのまま残す(値がIRIであることは
+    グラフ単位のSHACLで検証を続ける。剥がすのは`sh:class`だけ)。
+
+    件数ではなく対のリストを返す理由: 呼び出し側(`process`)がファイルをまたいで
+    重複を消すため、`{path: expected_class}` の情報自体が要る。
+    """
+    prefix = f"{base_uri}/def/"
+    pairs: set[tuple[str, str]] = set()
+    for shape, cls in list(g.subject_objects(SH["class"])):
+        if not isinstance(cls, URIRef) or not str(cls).startswith(prefix):
+            continue
+        path = g.value(shape, SH.path)
+        if path is None:
+            # sh:path が無い sh:class は想定していない(LinkMLのgen-shaclが
+            # 出す形はsh:propertyの中だけ)。黙って無視すると抽出漏れが
+            # 静かに残るので、想定外の形に気づけるようにする
+            raise ValueError(f"sh:path が無い sh:class が見つかった: {shape}")
+        pairs.add((str(path), str(cls)))
+        g.remove((shape, SH["class"], cls))
+    return [{"path": p, "expected_class": c} for p, c in sorted(pairs)]
+
+
 def process(path: Path, lang: str = LANG) -> int:
-    """言語タグ付け・リスト順の正規化・ブランクノードの正準化を行い書き戻す。
+    """言語タグ付け・リスト順の正規化・参照制約の抽出・ブランクノードの正準化を行い書き戻す。
+
+    **`sh:class`の抽出はどの`*.shacl.ttl`にも(素通りする`*.owl.ttl`にも)適用する。**
+    OWLには`sh:class`が無いので実質no-op。SHACLの側は、モジュール別ファイル
+    (`core.shacl.ttl`等)にも束ねファイル(`all.shacl.ttl`)にも同じ対が現れる
+    (`all.yaml`が他モジュールをimportするため)。**`reference-classes.json`を
+    書くのは`all.shacl.ttl`のときだけ。** 束ねファイルが全モジュールの対の
+    superset であることは`tests/test_schema_consistency.py::
+    test_all_shacl_covers_every_module`が別途保証しているので、モジュール別
+    ファイルの分だけ何度も書いて集計する必要がない(プロセスをまたいで状態を
+    持たない設計を保てる — `scripts/generate-schema.sh`はモジュールごとに
+    このスクリプトを別プロセスで呼ぶ)。
 
     タグ付けした件数を返す(呼び出し側のログ用途。既存の戻り値契約を維持する)。
     """
@@ -143,6 +209,16 @@ def process(path: Path, lang: str = LANG) -> int:
 
     retagged = tag_language(g, lang)
     sort_rdf_lists(g)
+    extracted = extract_reference_classes(g, get_settings().base_uri)
+
+    if path.name == AGGREGATE_SHACL_FILENAME:
+        ref_path = path.parent / REFERENCE_CLASSES_FILENAME
+        ref_path.write_text(
+            json.dumps(extracted, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        print(f"extracted {len(extracted)} reference class constraint(s) to {ref_path}")
+
     canonical = to_canonical_graph(g)
 
     canonical.serialize(destination=str(path), format="turtle", encoding="utf-8")

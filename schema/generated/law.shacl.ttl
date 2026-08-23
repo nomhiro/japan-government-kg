@@ -4,6 +4,23 @@
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
+<https://jgkg.norr-tech.com/def/core#Agent> a sh:NodeShape ;
+    rdfs:comment "「誰が」の軸。行為の主体。組織と人の上位" ;
+    sh:closed true ;
+    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/org#cityName> <https://jgkg.norr-tech.com/def/org#houjinBangou> <https://jgkg.norr-tech.com/def/org#ministryCode> <https://jgkg.norr-tech.com/def/org#organizationKindCode> <https://jgkg.norr-tech.com/def/org#prefectureName> ) ;
+    sh:property [ sh:datatype rdf:langString ;
+            sh:description "人間が読む名称"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 1 ;
+            sh:path skos:prefLabel ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 0 ;
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ] ;
+    sh:targetClass <https://jgkg.norr-tech.com/def/core#Agent> .
+
 <https://jgkg.norr-tech.com/def/core#Concept> a sh:NodeShape ;
     rdfs:comment "「何について」の軸。主題・指標・制度手続きの上位" ;
     sh:closed true ;
@@ -59,8 +76,7 @@
             sh:nodeKind sh:IRI ;
             sh:order 2 ;
             sh:path <https://jgkg.norr-tech.com/def/core#id> ],
-        [ sh:class <https://jgkg.norr-tech.com/def/core#Agent> ;
-            sh:description "この出来事に関与した主体"@ja ;
+        [ sh:description "この出来事に関与した主体"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
             sh:order 1 ;
@@ -179,8 +195,7 @@
             sh:nodeKind sh:Literal ;
             sh:order 9 ;
             sh:path skos:prefLabel ],
-        [ sh:class <https://jgkg.norr-tech.com/def/org#Organization> ;
-            sh:description "この法令を所管する府省等。法令番号からの解析(経路1)等で解決できた場合のみ設定する。 共管(複数府省の並記。例:「総理府・大蔵省令」)は府省ごとに複数のエッジを張る (設計書§7.2)。解決できない場合はこのスロットを設定せず、 core:UnresolvedReference を別に立てて unresolved_reason(OLD_MINISTRY/NO_CANDIDATE/ AMBIGUOUS)で理由を分類する(このスロット自体は未解決を表さない)"@ja ;
+        [ sh:description "この法令を所管する府省等。法令番号からの解析(経路1)等で解決できた場合のみ設定する。 共管(複数府省の並記。例:「総理府・大蔵省令」)は府省ごとに複数のエッジを張る (設計書§7.2)。解決できない場合はこのスロットを設定せず、 core:UnresolvedReference を別に立てて unresolved_reason(OLD_MINISTRY/NO_CANDIDATE/ AMBIGUOUS)で理由を分類する(このスロット自体は未解決を表さない)"@ja ;
             sh:nodeKind sh:IRI ;
             sh:order 7 ;
             sh:path <https://jgkg.norr-tech.com/def/law#jurisdiction> ],
@@ -260,8 +275,7 @@
             sh:nodeKind sh:IRI ;
             sh:order 6 ;
             sh:path <https://jgkg.norr-tech.com/def/core#id> ],
-        [ sh:class <https://jgkg.norr-tech.com/def/core#Agent> ;
-            sh:description "この出来事に関与した主体"@ja ;
+        [ sh:description "この出来事に関与した主体"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
             sh:order 5 ;
@@ -405,21 +419,4 @@
             sh:path <https://jgkg.norr-tech.com/def/org#houjinBangou> ;
             sh:pattern "^\\d{13}$" ] ;
     sh:targetClass <https://jgkg.norr-tech.com/def/org#Organization> .
-
-<https://jgkg.norr-tech.com/def/core#Agent> a sh:NodeShape ;
-    rdfs:comment "「誰が」の軸。行為の主体。組織と人の上位" ;
-    sh:closed true ;
-    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/org#cityName> <https://jgkg.norr-tech.com/def/org#houjinBangou> <https://jgkg.norr-tech.com/def/org#ministryCode> <https://jgkg.norr-tech.com/def/org#organizationKindCode> <https://jgkg.norr-tech.com/def/org#prefectureName> ) ;
-    sh:property [ sh:datatype rdf:langString ;
-            sh:description "人間が読む名称"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 1 ;
-            sh:path skos:prefLabel ],
-        [ sh:description "このリソースのURI"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:IRI ;
-            sh:order 0 ;
-            sh:path <https://jgkg.norr-tech.com/def/core#id> ] ;
-    sh:targetClass <https://jgkg.norr-tech.com/def/core#Agent> .
 
