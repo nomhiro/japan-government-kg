@@ -140,6 +140,38 @@ def test_lines_are_sorted_keys_for_determinism(monkeypatch):
         assert law_info_keys == sorted(law_info_keys), line
 
 
+def test_sort_keys_actually_sorts_a_deliberately_unordered_object(monkeypatch):
+    """`sort_keys=True`を外しても検出できてしまう空振りを塞ぐ(レビュー指摘#1)。
+
+    fixtureは手作業で書いた時点で既にキーがアルファベット順だったため、
+    `test_lines_are_sorted_keys_for_determinism`はfixtureの偶然の整列に
+    支えられており、`sort_keys=True`を削除しても検出できなかった(実測済み)。
+    ここでは挿入順が辞書順とは逆になるオブジェクトを経路に流し、
+    出力のキー順が実際にソートされた結果であることを直接検証する。
+
+    ここで使うオブジェクトは実在の法令ではない合成データ(law_idも実在しない
+    ダミー値)。この1テストが検証するのは実装のシリアライズ順序という
+    技術的性質のみであり、fixtureのR45(実在の法令を使う)適合とは無関係
+    (既存fixtureは変更しない)。
+    """
+    monkeypatch.setattr(egov_law, "PAGE_INTERVAL_SECONDS", 0)
+    # 挿入順(z_dummy → law_id → a_dummy)はアルファベット順の逆に近い。
+    # 辞書は挿入順を保持するため、sort_keysが無ければこの順のまま出力される
+    unsorted_law = {"z_dummy": 1, "law_id": "not-a-real-law", "a_dummy": 2}
+    page = {"total_count": 1, "count": 1, "next_offset": None, "laws": [unsorted_law]}
+    client = client_returning({0: page})
+
+    egov_law.fetch(DAY, client=client)
+
+    saved_line = lake.path_of("egov-law", DAY, egov_law.FILENAME).read_text(
+        encoding="utf-8"
+    ).strip()
+    pairs = json.loads(saved_line, object_pairs_hook=list)
+    keys = [k for k, _ in pairs]
+    # sort_keys=Trueなら常にこの順になる。無ければ挿入順["z_dummy","law_id","a_dummy"]のまま
+    assert keys == ["a_dummy", "law_id", "z_dummy"]
+
+
 def test_fetch_is_idempotent(monkeypatch):
     """同じ取得日に2度呼んでも例外にならず、2度目はネットワークに触れずスキップされる。
 
