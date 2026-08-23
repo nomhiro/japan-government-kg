@@ -4,6 +4,7 @@
 最初に崩れる。ここは厳格側に倒す。
 """
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,20 +21,39 @@ class ValidationResult:
     graph_uri: str
     conforms: bool
     report_text: str
+    # バッチ検証(validate_stream)の結果にのみ設定される(0起点)。
+    # validate_datasetの結果は常にNone(グラフ単位=バッチという概念が無い)。
+    # Task 11がどのバッチで違反が起きたかを特定できるようにするための追加情報
+    # (task-8-brief.md「消費者のいない記録」を避ける)
+    batch_index: int | None = None
 
 
 SHAPES_FILENAME = "all.shacl.ttl"
 ONTOLOGY_FILENAME = "all.owl.ttl"
 
+# **モジュールレベルの単純キャッシュ(Task 4の申し送り)。** validate_streamは
+# 581万件÷batch_sizeの回数だけ_load_shapesを呼ぶ(バッチごとに検証するため)。
+# キャッシュが無いと、そのたびに all.shacl.ttl(500行超)を再パースし、実測で
+# 全体の25〜30%のコストになる。shapes_dirの解決済みパスをキーにする —
+# 同じディレクトリを指す相対/絶対パスの表記違いを同一視するため。
+# **返り値のGraphは呼び出し側で変更しないことが前提**(validate_dataset/
+# validate_streamのどちらも読み取りにしか使わない。共有しても安全)
+_shapes_cache: dict[str, Graph] = {}
+
 
 def _load_shapes(shapes_dir: Path) -> Graph:
-    """検証用のSHACLシェイプを読む。
+    """検証用のSHACLシェイプを読む(モジュールレベルでキャッシュする)。
 
     **モジュール別のSHACLをマージしてはならない。** `org.yaml` は `core` を import する
     ため `org.shacl.ttl` にも core のクラスのNodeShapeが生成される。両方を読むと同一
     クラスに閉じたシェイプが2つ適用され、許可プロパティ集合の積になって偽の違反を
     起こす。全モジュールを束ねた `all.yaml` から生成した単一ファイルだけを読む。
     """
+    key = str(Path(shapes_dir).resolve())
+    cached = _shapes_cache.get(key)
+    if cached is not None:
+        return cached
+
     path = shapes_dir / SHAPES_FILENAME
     if not path.exists():
         raise FileNotFoundError(
@@ -42,6 +62,7 @@ def _load_shapes(shapes_dir: Path) -> Graph:
         )
     shapes = Graph()
     shapes.parse(path, format="turtle")
+    _shapes_cache[key] = shapes
     return shapes
 
 
@@ -229,7 +250,9 @@ def _subclass_closure(ontology: Graph, cls: URIRef) -> set[URIRef]:
     return seen
 
 
-def check_reference_integrity(ds: Dataset, shapes_dir: Path) -> list[ReferenceViolation]:
+def check_reference_integrity(
+    ds: Dataset, shapes_dir: Path, exclude: Mapping[str, str] | None = None
+) -> list[ReferenceViolation]:
     """自名前空間クラスへの参照(`sh:class`から抽出したもの)を和集合で検査する。
 
     **裁定B4(R2と同じ扱い)。** グラフを跨ぐ制約はグラフ単位のSHACL検証
@@ -241,24 +264,50 @@ def check_reference_integrity(ds: Dataset, shapes_dir: Path) -> list[ReferenceVi
     `sh:class`は原理的に満たせない(Task 4 懸念1で発見したABox欠落)。
     `ds`は`default_union=True`のDataset(全グラフの和集合)を渡すこと。
 
-    **houjin-all(Task 8の全法人グラフ)の内部参照はこのゲートの対象外
-    にする設計である。** 全法人約3,500万トリプル規模の和集合はrdflibに
-    載らないため、Task 8は自分のバッチ経路でこの検査を別途行う必要がある
-    (このゲート自体には除外機構をまだ作り込んでいない — 対象を広げる前に
-    Task 8側で規模に応じた方式を決める)。
+    **`exclude`(Task 8所有: houjin-bangou-allの除外機構)**: グラフURI→
+    除外理由の対応。全法人約3,500万トリプル規模の和集合はrdflibに載らない
+    ため、houjin-bangou-allグラフはこのゲートの対象から明示的に外せる
+    必要がある(Task 8のバッチ検証がその範囲を別途担う)。**指定したグラフは
+    「和集合に存在しないもの」として扱う** — そのグラフが持つ参照元トリプル
+    (`path`の主語・値)も、そのグラフが持つ型情報(参照先の`rdf:type`)も、
+    両方から取り除く。片方だけ除外すると、除外したグラフの外にある正しい
+    参照が「型が無い」という偽の違反になる(型情報も一緒に消えるため)。
+
+    **既定は除外なし**(`exclude=None`/`{}`)。呼び出し側(pipeline.py)が
+    明示的にグラフURIを渡したときだけ除外する — 黙って除外しない
+    (task-8-brief.md 引き継ぐ決定)。除外を使った場合、除外したグラフと
+    理由をレポートに残すのは呼び出し側の責務。
     """
+    exclude = exclude or {}
     reference_classes = _load_reference_classes(shapes_dir)
     ontology = _load_ontology(shapes_dir)
+
+    def _live_type_closure(node: URIRef) -> set[URIRef]:
+        # `ds.quads()`の第4要素は実測でグラフ識別子(URIRef)そのもの
+        # (rdflib 7.x。Graph/コンテキストオブジェクトではない)
+        return {
+            t
+            for _s, _p, t, g in ds.quads((node, RDF.type, None, None))
+            if str(g) not in exclude and isinstance(t, URIRef)
+        }
 
     violations: list[ReferenceViolation] = []
     for entry in reference_classes:
         path = URIRef(entry["path"])
         expected_class = URIRef(entry["expected_class"])
         allowed = _subclass_closure(ontology, expected_class)
-        for s, o in ds.subject_objects(path):
+
+        seen_pairs: set[tuple[URIRef, URIRef]] = set()
+        for s, _p, o, g in ds.quads((None, path, None, None)):
+            if str(g) in exclude:
+                continue
             if not isinstance(o, URIRef):
                 continue  # sh:nodeKind sh:IRI がグラフ単位のSHACLで既に担保している
-            types = set(ds.objects(o, RDF.type))
+            if (s, o) in seen_pairs:
+                continue  # 同じ参照が複数グラフに現れても1件として数える(旧実装と同じ)
+            seen_pairs.add((s, o))
+
+            types = _live_type_closure(o)
             if types & allowed:
                 continue
             reason = "型が無い" if not types else "期待クラスのサブクラスでない"

@@ -281,6 +281,120 @@ def test_check_reference_integrity_catches_the_wrong_type():
 
 
 # =============================================================================
+# Task 8: houjin-bangou-all除外機構(裁定B4の拡張。Task 8所有)
+#
+# 全法人約3,500万トリプル規模の和集合はrdflibに載らないため、
+# houjin-bangou-allグラフはこのゲートの対象から明示的に除外できる必要がある
+# (Task 8のバッチ検証がその範囲を別途担う)。既定は除外なし(黙って除外しない)。
+# =============================================================================
+
+
+def test_check_reference_integrity_reports_a_violation_inside_a_graph_without_exclusion():
+    """否定的コントロール: 除外しなければ、houjin-bangou-all風のグラフ内の
+    参照違反もいつもどおり検出されること(除外機構が既定でOFFであることの確認)。
+    """
+    law_id = "999AC0000000001"
+    ds = emit.emit_laws([_law_record(law_id)], {}, "egov-law", DAY)
+    all_graph = URIRef("https://jgkg.norr-tech.com/graph/houjin-bangou-all/2026-08-01")
+    g = ds.graph(all_graph)
+    law = emit.NS["law"]
+    typeless = URIRef("https://jgkg.norr-tech.com/id/org/1234567890123")
+    g.add((URIRef(f"https://jgkg.norr-tech.com/id/law/{law_id}"), law["jurisdiction"], typeless))
+
+    violations = validate.check_reference_integrity(ds, SHAPES)
+    assert violations, "除外していないのに違反が検出されない"
+    assert any(v.value.endswith("1234567890123") for v in violations)
+
+
+def test_check_reference_integrity_exclude_suppresses_violations_inside_that_graph():
+    """`exclude`にグラフURIを渡すと、そのグラフ内の参照はこのゲートの対象外になる。
+
+    何があれば落ちるか: `exclude`が参照元トリプルだけ、または型情報だけの
+    片方しか除外しない実装だと、除外したはずのグラフの参照が別の形の違反
+    (例: 「型が無い」への化け)として残ってしまう。
+    """
+    law_id = "999AC0000000001"
+    ds = emit.emit_laws([_law_record(law_id)], {}, "egov-law", DAY)
+    all_graph_uri = "https://jgkg.norr-tech.com/graph/houjin-bangou-all/2026-08-01"
+    g = ds.graph(URIRef(all_graph_uri))
+    law = emit.NS["law"]
+    typeless = URIRef("https://jgkg.norr-tech.com/id/org/1234567890123")
+    g.add((URIRef(f"https://jgkg.norr-tech.com/id/law/{law_id}"), law["jurisdiction"], typeless))
+
+    violations = validate.check_reference_integrity(
+        ds, SHAPES, exclude={all_graph_uri: "全法人規模のため和集合ゲートの対象外(Task 8)"}
+    )
+    assert violations == [], violations
+
+
+def test_check_reference_integrity_exclude_also_removes_the_type_evidence_from_that_graph():
+    """除外したグラフが提供する型情報も一緒に取り除かれること(片側除外の禁止)。
+
+    参照元は除外対象グラフの外にあり、参照先の型だけが除外対象グラフの中に
+    ある構成にする。**exclude無し(型が見える)では合格するはずのケース**が、
+    「グラフごと存在しないものとして扱う」なら型情報も消えるので、
+    「型が無い」という違反に化けることを確認する。
+    """
+    law_id = "323M60000100010"
+    record = _law_record(law_id)
+    jr = JurisdictionResult(
+        law_id=law_id, ministry_names=["厚生労働省"], resolved=["6000012070001"], unresolved=[],
+    )
+    all_graph_uri = "https://jgkg.norr-tech.com/graph/houjin-bangou-all/2026-08-01"
+
+    ds = Dataset(default_union=True)
+    _merge_into(ds, emit.emit_laws([record], {law_id: jr}, "egov-law", DAY))
+    # 型情報(org:Organization)を通常のministry-codesグラフではなく、
+    # houjin-bangou-all風のグラフに直接置く(emit_ministriesは"houjin-bangou-all"
+    # というsource_idの出典登録を要求するため、ここでは検査対象の型トリプルだけを
+    # 直接addする既存テストの作法(test_malformed_houjin_bangou_fails_validation
+    # 等と同じ)を使う)
+    all_graph = ds.graph(URIRef(all_graph_uri))
+    all_graph.add(
+        (
+            URIRef("https://jgkg.norr-tech.com/id/org/6000012070001"),
+            RDF.type,
+            URIRef("https://jgkg.norr-tech.com/def/org#Organization"),
+        )
+    )
+
+    # 除外なしでは、型がどこかのグラフに実在するので合格する(前提の確認)
+    assert validate.check_reference_integrity(ds, SHAPES) == []
+
+    violations = validate.check_reference_integrity(
+        ds, SHAPES, exclude={all_graph_uri: "型情報の提供元を除外(テスト)"}
+    )
+    assert violations, "除外したグラフの型情報が別経路(和集合)から見えてしまっている"
+    assert any(v.reason == "型が無い" for v in violations), violations
+
+
+# =============================================================================
+# Task 4の申し送り: _load_shapes のモジュールレベルキャッシュ
+# =============================================================================
+
+
+def test_load_shapes_is_cached_across_calls_for_the_same_directory():
+    """同じshapes_dirへの2回目の呼び出しは、同じGraphオブジェクトを再利用すること。
+
+    validate_streamは581万件÷batch_sizeの回数だけ_load_shapesを呼ぶため、
+    キャッシュが無いとバッチ数に比例してall.shacl.ttlを再パースし続ける
+    (実測+25〜30%のコスト。Task 4の申し送り)。
+    """
+    validate._shapes_cache.clear()
+    first = validate._load_shapes(SHAPES)
+    second = validate._load_shapes(SHAPES)
+    assert first is second, "2回目の呼び出しで再パースが起きている(キャッシュが効いていない)"
+
+
+def test_load_shapes_cache_key_is_insensitive_to_relative_vs_resolved_path():
+    """同じディレクトリを指す表記(相対/絶対)が違っても同じキャッシュ実体を返すこと。"""
+    validate._shapes_cache.clear()
+    first = validate._load_shapes(SHAPES)
+    second = validate._load_shapes(SHAPES.resolve())
+    assert first is second
+
+
+# =============================================================================
 # Task 7 Step 6: budgetが入ったことで参照整合ゲートの検査対象が0件でなくなること
 #
 # Task 7以前は、pipeline.pyがhoujin-bangou/ministry-codesしか流していなかった
