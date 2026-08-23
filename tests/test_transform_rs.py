@@ -494,6 +494,30 @@ def test_parse_rs_reports_no_basis_law_citations_when_the_project_has_none():
     assert rows["828"].basis_law_citations == ()
 
 
+def test_parse_rs_counts_a_genuinely_missing_payee_amount_without_creating_an_expenditure():
+    """project_id=284(内閣府「クールジャパン戦略推進経費」)ブロックF・個人Ｊの実例
+    (rs_columns.py照合記録「検証6追記」)。[23]支出先の合計支出額と[25]契約単位の
+    内訳が2物理行ともに空(金額が本当に欠落している)。Expenditureは作らず、
+    `RsParseStats.payee_rows_missing_amount` に2行分を数える(欠陥型4対策 —
+    `stats`を渡さなければ誰にも見えなくなる件数)。同じブロックの個人Ａ(正常に
+    [23]/[25]どちらかから金額が取れる)は数えず、通常どおりExpenditureになる
+    ことも確認する。
+    """
+    paths = {
+        "project_summary": FIXTURES / "rs_project_summary_sample.csv",
+        "budget_summary": FIXTURES / "rs_budget_sample.csv",
+        "policy_measure_laws_and_regulations": FIXTURES / "rs_law_sample.csv",
+        "payee_payment_information": FIXTURES / "rs_sample.csv",
+    }
+    stats = rs.RsParseStats()
+    rows = {r.project_id: r for r in rs.parse_rs(paths, stats=stats)}
+    expenditures = rows["284"].expenditures
+    assert len(expenditures) == 1
+    assert expenditures[0].recipient_name == "個人Ａ"
+    assert expenditures[0].amount == 93000
+    assert stats.payee_rows_missing_amount == 2  # 個人Ｊの2物理行
+
+
 # =============================================================================
 # build_projects(rows, ministry_ref, laws_by_id, laws_by_title)
 # =============================================================================

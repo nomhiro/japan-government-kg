@@ -154,6 +154,23 @@ REQUIRED_GROUPS: tuple[str, ...] = (
 )
 
 
+@dataclass
+class RsParseStats:
+    """`parse_rs` が解析中に判明した、`build_projects` に渡らない件数(欠陥型4対策)。
+
+    organization.ParseStatsと同じ設計 — **判定に使って捨てるのではなく、
+    呼び出し側に返す。** payee_payment_informationの明細行(集計行[23]が空で
+    契約単位の内訳[25]が非空)は構造として毎回無視するのが正しい動作だが、
+    [23]も[25]も空の行(rs_columns.py照合記録「検証6追記」。実測755行。
+    金額が本当に欠落している)は`RsRow.expenditures`がそもそも欠損行を表現
+    できる形を持たないため、`parse_rs`を抜けた後では誰も数えられなくなる
+    (§8.2「欠損を0と混同しない」の対象なのに、渡す先が無い)。この件数だけは
+    parse段階でここに数える。
+    """
+
+    payee_rows_missing_amount: int = 0
+
+
 def _group_rows(group_key: str, path: Path) -> Iterator[list[str]]:
     """指定した group_key のCSV(配布形態のzip、またはfixtureの生CSV)を読み、
 
@@ -246,18 +263,28 @@ def _is_bundled_row(row: list[str], idx_flag: int, idx_name: int) -> bool:
     return row[idx_flag].strip().upper() == "TRUE" or row[idx_name].strip() == "その他"
 
 
-def _expenditures_for(rows_for_project: list[list[str]]) -> tuple[ExpenditureLine, ...]:
+def _expenditures_for(
+    rows_for_project: list[list[str]], stats: RsParseStats
+) -> tuple[ExpenditureLine, ...]:
     """支出先の集計行だけを取り、明細行(契約単位の内訳)は無視する。
 
     rs_columns.py照合記録「検証6」: 1支出先につき[23]支出先の合計支出額が
     非空の行はちょうど1件(実データ74,291組全件で確認済み)。単純な行フィルタで
     足りる(budget_summaryのようなfind_*_aggregate_rowは不要)。
+
+    [23]が空の行には2種類ある(検証6追記): (a) [25]契約単位の内訳が非空の
+    構造上の明細行(想定内。黙って無視するのが正しい動作)、(b) [23]も[25]も
+    空で金額が本当に欠落している行(実測755行)。(b)だけを
+    `stats.payee_rows_missing_amount` に数える — ここで数えないと、
+    `RsRow.expenditures`が欠損行を表現できる形を持たないため、この関数を
+    抜けた時点で誰も数えられなくなる(「呼び出し側が計数する」は成立しない)。
     """
     spec = rs_columns.RS_FILES["payee_payment_information"]
     idx_name = spec.col["recipient_name"]
     idx_bangou = spec.col["recipient_houjin_bangou"]
     idx_flag = spec.col["recipient_other_flag"]
     idx_amount = spec.col["expenditure_amount"]
+    idx_contract_amount = spec.col["contract_amount"]
 
     out = []
     for r in rows_for_project:
@@ -267,7 +294,9 @@ def _expenditures_for(rows_for_project: list[list[str]]) -> tuple[ExpenditureLin
         amount_raw = r[idx_amount]
         amount = normalize_amount(amount_raw)
         if amount is None:
-            continue  # 集計額が本当に欠落している明細行(検証6の「374組」)。呼び出し側が計数する
+            if normalize_amount(r[idx_contract_amount]) is None:
+                stats.payee_rows_missing_amount += 1  # (b) 本当に欠落
+            continue  # (a) の構造上の明細行は想定内なので数えない
         bangou = r[idx_bangou].strip() or None
         is_bundled = _is_bundled_row(r, idx_flag, idx_name)
         out.append(
@@ -281,7 +310,9 @@ def _expenditures_for(rows_for_project: list[list[str]]) -> tuple[ExpenditureLin
     return tuple(out)
 
 
-def parse_rs(paths: Mapping[str, Path]) -> Iterator[RsRow]:
+def parse_rs(
+    paths: Mapping[str, Path], stats: RsParseStats | None = None
+) -> Iterator[RsRow]:
     """RSの複数ファイルを読み、project_idで結合した `RsRow` を生成する。
 
     `paths` は group_key(rs_columns.RS_FILESのキー) → ファイルパス(配布形態の
@@ -290,10 +321,17 @@ def parse_rs(paths: Mapping[str, Path]) -> Iterator[RsRow]:
     project_id の集合は project_summary を正準の出典とする(RS_COLの設計。
     他の3ファイルも実データでは同じ集合を持つが、project_summaryが「この
     事業年度のレビューシートに載っている事業」の正の出典)。
+
+    `stats` に `RsParseStats` を渡すと、`build_projects` が受け取れない
+    parse段階の欠損件数(`payee_rows_missing_amount`)がそこに書き込まれる
+    (organization.parse_fileのstats引数と同じ設計)。渡さなければ内部で
+    使い捨てる(件数を要らない呼び出し元(単発テスト等)を壊さないため)。
     """
     missing = [g for g in REQUIRED_GROUPS if g not in paths]
     if missing:
         raise ValueError(f"paths に必須のグループが無い: {missing}")
+
+    st = stats if stats is not None else RsParseStats()
 
     project_spec = rs_columns.RS_FILES["project_summary"]
     idx_pid = project_spec.col["project_id"]
@@ -326,7 +364,7 @@ def parse_rs(paths: Mapping[str, Path]) -> Iterator[RsRow]:
             ministry_name=ministry_name,
             budget_amount=_current_year_budget_amount(budget_by_pid.get(pid, []), fiscal_year),
             basis_law_citations=_basis_law_citations_for(law_by_pid.get(pid, [])),
-            expenditures=_expenditures_for(payee_by_pid.get(pid, [])),
+            expenditures=_expenditures_for(payee_by_pid.get(pid, []), st),
         )
 
 
@@ -681,6 +719,7 @@ __all__ = [
     "ExpenditureRecord",
     "LawResolution",
     "RecipientResolution",
+    "RsParseStats",
     "RsRow",
     "UnresolvedBudgetReference",
     "build_projects",
