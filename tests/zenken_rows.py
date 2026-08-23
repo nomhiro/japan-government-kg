@@ -35,13 +35,14 @@ def zenken_row(
     city: str = "千代田区",
     street: str = "霞が関1-2-2",
     seq: str = "1",
+    updated_on: str = "2018-04-02",
 ) -> str:
     r = [""] * EXPECTED_COLUMNS
     r[0] = seq
     r[1] = houjin_bangou
     r[2] = "01"
     r[3] = "1"
-    r[4] = "2018-04-02"  # 更新年月日
+    r[4] = updated_on  # 更新年月日(Task 8のdedup鍵。既定値は既存呼び出し元と同じ)
     r[5] = "2015-10-05"  # 変更年月日
     r[6] = name
     r[8] = kind

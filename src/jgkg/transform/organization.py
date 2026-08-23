@@ -40,6 +40,7 @@ from jgkg.uris import HOUJIN_BANGOU_RE, org_uri
 # 全件CSVの列位置(0起点)。仕様変更時はここだけを直す。
 COL = {
     "houjin_bangou": 1,
+    "updated_on": 4,
     "name": 6,
     "kind_code": 8,
     "prefecture": 9,
@@ -106,6 +107,12 @@ class Organization(BaseModel):
     city: str = ""
     street: str = ""
     is_government_organ: bool = False
+    # 更新年月日(列[4]、ISO形式 "YYYY-MM-DD")。Task 8の全法人dedupが
+    # 「同一法人番号の重複は後勝ち」を判定する鍵(task-8-brief.md 引き継ぐ決定)。
+    # RDFには出さない(schema/org.yamlにスロットが無い。emit側の対象外)。
+    # 既定の空文字は「不明」であって「最古」ではない — 空文字どうしの比較は
+    # 文字列比較として安定するが、意味上の日付ではないことに注意
+    updated_on: str = ""
 
 
 def _cell(row: list[str], key: str) -> str:
@@ -222,6 +229,7 @@ def _parse_reader(
             city=_cell(row, "city"),
             street=_cell(row, "street"),
             is_government_organ=(kind == GOVERNMENT_ORGAN_KIND),
+            updated_on=_cell(row, "updated_on"),
         )
 
     _assert_layout_plausible(st)
