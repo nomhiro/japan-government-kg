@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from jgkg.transform.law import (
+    EXTRACTION_FAILED,
     JurisdictionResult,
     LawRecord,
     UnresolvedJurisdiction,
@@ -58,6 +59,92 @@ def test_extract_ministry_names_none_cases_are_asserted_individually():
 
 
 # =============================================================================
+# レビュー指摘1・2・6(修正ラウンド3): 抽出段の取りこぼし
+# =============================================================================
+
+# 元年表記。「平成元年」等は法令番号の公式表記(「平成一年」とは書かない)。
+# ただしこの特定の組み合わせ(府省・号数)が実在するかはローカルでは確認できない
+# ため、CASES(実在確認済み)には入れず、表記パターンの検査として別に置く
+# (レビュー指摘1が実測した3例そのもの。Task 11で実データを確認する)
+GANNEN_CASES = [
+    ("令和元年厚生労働省令第一号", ["厚生労働省"]),
+    ("平成元年大蔵省令第一号", ["大蔵省"]),
+    ("昭和元年内務省令第一号", ["内務省"]),
+]
+
+
+@pytest.mark.parametrize("law_num,expected", GANNEN_CASES)
+def test_extract_ministry_names_handles_gannen_year(law_num, expected):
+    """`_KANJI_NUM` に「元」が無いと元年の府省令が抽出できない(指摘1)。
+
+    何があれば落ちるか: `_KANJI_NUM` から「元」を外すと、この3例すべてが
+    (resolvedでもunresolvedでもない)対象外の`None`に落ちて、経路1の
+    計数から静かに消える。
+    """
+    assert extract_ministry_names(law_num) == expected
+
+
+def test_extract_ministry_names_recovers_co_jurisdiction_with_committee_or_inspectorate():
+    """共管の1区分が「委員会」「院」で終わる場合も、共管全体を捨てずに抽出できること(指摘2-1)。
+
+    修正前は`_looks_like_ministry_segment`が省/府/庁でしか終端を認めず、
+    国家公安委員会・会計検査院のような区分1つが原因で共管全体(解決できる
+    総務省・大蔵省まで)が`None`に落ちていた(レビューの実測そのもの)。
+    """
+    assert extract_ministry_names("昭和四十七年国家公安委員会・総務省令第一号") == [
+        "国家公安委員会",
+        "総務省",
+    ]
+    assert extract_ministry_names("平成十二年会計検査院・大蔵省令第一号") == [
+        "会計検査院",
+        "大蔵省",
+    ]
+
+
+def test_extract_ministry_names_flags_unrecognized_co_jurisdiction_segment_as_extraction_failed():
+    """共管の1区分が政府機関の形(省/府/庁/院/委員会で終わる)をしていない場合、
+    `None`(対象外)ではなく`EXTRACTION_FAILED`(抽出失敗)を返すこと(指摘2)。
+
+    `令令第一号`のような1文字だけの区分(政令の「政」等、既知の非府省令)は
+    `None`のままだが、複数区分の共管で明らかに機関名らしくない区分が混ざる
+    場合は「見た目は府省令だが抽出できなかった」として計測対象に残す。
+    法人名は明らかに合成と分かる文字列にする(R45)
+    """
+    result = extract_ministry_names("令和五年ダミー機関・厚生労働省令第一号")
+    assert result is EXTRACTION_FAILED, f"抽出失敗として区別されず {result!r} になった"
+
+
+def test_extract_ministry_names_flags_bare_rule_form_as_extraction_failed():
+    """年号の直後に「規則」が続き、機関名が無い場合は`EXTRACTION_FAILED`にすること(指摘6)。
+
+    修正前は年号任意群の後戻りにより、年号そのもの(`平成十二年`)が機関名として
+    誤って抽出されていた(実測)。年号を先に剥がしてから規則名を取る設計に
+    したため、機関名が空になるこの形は「規則の形をしているのに名称が無い」
+    という抽出失敗になる(対象外の`None`ではない)。
+    """
+    result = extract_ministry_names("平成十二年規則第一号")
+    assert result is EXTRACTION_FAILED, f"抽出失敗として区別されず {result!r} になった"
+
+
+def test_extract_ministry_names_handles_branch_suffix_after_ordinance_number():
+    """`第…号の二`のような分岐番号が付いても抽出できること(指摘2-2)。
+
+    レビューが実測に使った例そのもの(実在するかはローカルで確認できないため、
+    表記パターンの検査として置く。Task 11で確認)。修正前は`号$`で終端を
+    固定していたため`None`に落ちていた。
+    """
+    assert extract_ministry_names("昭和二十五年建設省令第四十号の二") == ["建設省"]
+
+
+def test_extract_ministry_names_still_treats_known_non_ministry_ordinance_forms_as_out_of_scope():
+    """政令のように、1文字区分で政府機関の形をしていない場合は
+    引き続き`None`(対象外)であること(指摘2対応の副作用が無いことの固定。
+    CASESの既存ケースと同じ入力をここでも明示的に固定する)。
+    """
+    assert extract_ministry_names("平成九年政令第二百七号") is None
+
+
+# =============================================================================
 # Step 3: 解決
 # =============================================================================
 
@@ -94,6 +181,25 @@ def test_derive_jurisdiction_returns_none_for_out_of_scope_records():
     """法令番号に府省名を含まない法律・政令などは経路1の対象外(None)。"""
     record = _law_record("999AC0000000001", "令和三年法律第三十六号")
     assert derive_jurisdiction(record, reference={}, old_ministries=set()) is None
+
+
+def test_derive_jurisdiction_propagates_extraction_failed_without_downgrading_to_none():
+    """`extract_ministry_names`が`EXTRACTION_FAILED`を返したら、`derive_jurisdiction`も
+    そのまま`EXTRACTION_FAILED`を返すこと(対象外の`None`に落とさない)。
+
+    件数を集計する側(将来のTask 7の`PipelineReport`)は`is EXTRACTION_FAILED`で
+    判定するため、ここで`None`に丸められると指摘2の欠陥(抽出失敗が対象外と
+    区別できない)が`derive_jurisdiction`の境界で再発する。`extract_ministry_names`
+    単体のテストとは別に、この伝播そのものを固定する。
+
+    何があれば落ちるか: 誰かが`derive_jurisdiction`を単純化して
+    `if names is None or names is EXTRACTION_FAILED: return None`のような
+    実装に変えると、このテストだけが落ちる(extract_ministry_names側の
+    テストは無傷のまま)。
+    """
+    record = _law_record("999AC0000000002", "令和五年ダミー機関・厚生労働省令第一号")
+    result = derive_jurisdiction(record, reference={}, old_ministries=set())
+    assert result is EXTRACTION_FAILED, f"EXTRACTION_FAILEDが伝播せず {result!r} になった"
 
 
 def test_derive_jurisdiction_resolves_a_current_ministry():

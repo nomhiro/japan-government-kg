@@ -23,61 +23,116 @@ from jgkg.transform.ministry import Ministry
 # =============================================================================
 
 _ERA = "令和|平成|昭和|大正|明治"
-_KANJI_NUM = r"[〇一二三四五六七八九十百千]+"
+# 「元」(元年)を含む。無いと「令和元年○○省令」のような表記が年を認識できず
+# 経路1の対象から静かに消える(レビュー指摘1)
+_KANJI_NUM = r"[〇一二三四五六七八九十百千元]+"
 
 # (元号)(漢数字)年(X)令第…号 の X を取り出す。共管(総理府・大蔵省令 等)は
 # X の中に「・」を含む。X が本当に府省(等)の名称かどうかは、この場では
 # 判定せず(貪欲/非貪欲の選び方だけで済ませず)、抽出したあとに
-# `_looks_like_ministry_segment` で1区分ずつ検査する。これにより
+# `_looks_like_government_organ` で1区分ずつ検査する。これにより
 # 「政令」の X="政"、「省令」という語自体、のような偽陽性を、
-# 末尾の形(…省/…府/…庁、または「人事院」「閣」そのもの)で弾ける
-_ORDINANCE_RE = re.compile(rf"^(?:{_ERA}){_KANJI_NUM}年(.+?)令第.+号$")
+# 末尾の形(…省/…府/…庁/…院/…委員会、または「人事院」「閣」そのもの)で弾ける。
+# 末尾は `号第…号の二` のような分岐番号にも備える(レビュー指摘2-2。
+# 「の」+漢数字の繰り返しを許す)
+_ORDINANCE_RE = re.compile(rf"^(?:{_ERA}){_KANJI_NUM}年(.+?)令第.+号(?:の{_KANJI_NUM})*$")
 
-# 「(元号)(漢数字)年」を伴わない規則(人事院規則・会計検査院規則 等)。
-# 先頭に元号年が付く表記(例:「昭和二十三年人事院規則一―四」のような形)にも
-# 備えて、年の部分は任意にする(CASESには無いが、無くても損の無い保守的な拡張)
-_RULE_RE = re.compile(rf"^(?:(?:{_ERA}){_KANJI_NUM}年)?(.+?)規則")
+# 先頭の元号年接頭辞(あれば)だけを剥がすための式。「規則」を伴う本体の
+# パターンとは別に持つ理由は下記 `extract_ministry_names` のコメント参照
+_ERA_YEAR_PREFIX_RE = re.compile(rf"^(?:{_ERA}){_KANJI_NUM}年")
 
-_MINISTRY_SUFFIX_RE = re.compile(r".+(?:省|府|庁)$")
+# 元号年接頭辞を剥がした**あとの**文字列に対して「(機関名)規則…」を取る
+# (人事院規則・会計検査院規則 等。先頭の機関名をそのまま1件として返す)
+_RULE_RE = re.compile(r"^(.+?)規則")
+
+# 政府機関(等)の名称らしい形。「省/府/庁」だけでは国家公安委員会・会計検査院
+# のような合議体・検査機関を機関名と認識できず、共管の一部にこれらが混ざると
+# 共管全体(解決できる区分まで)が抽出失敗になっていた(レビュー指摘2-1)。
+# B7(旧省庁→OLD_MINISTRY/OBSOLETE_ORGANIZATION/NO_CANDIDATEの3分類)の
+# 「政府機関の形」判定もこの関数を共有する
+_GOVERNMENT_ORGAN_SUFFIX_RE = re.compile(r".+(?:省|府|庁|院|委員会)$")
 _MINISTRY_LITERAL_SEGMENTS = frozenset({"人事院", "閣"})
 
 
-def _looks_like_ministry_segment(segment: str) -> bool:
-    """共管の1区分が府省(等)の名称らしい形をしているか。
+def _looks_like_government_organ(segment: str) -> bool:
+    """文字列が政府機関(等)の名称らしい形をしているか。
 
     「政令」の X="政" や、万一の空文字列を弾く。人事院・閣は末尾の形が
-    共通しない(語そのものが1つの機関名)ので、集合の完全一致で見る。
+    共通しない(語そのものが1つの機関名)ので、集合の完全一致で見る
+    (「人事院」は「院」で終わるため実質的には末尾一致でも拾えるが、
+    「閣」は単独字でこの判定にしか乗らない)。
     """
     if not segment:
         return False
-    return segment in _MINISTRY_LITERAL_SEGMENTS or bool(_MINISTRY_SUFFIX_RE.match(segment))
+    return (
+        segment in _MINISTRY_LITERAL_SEGMENTS
+        or bool(_GOVERNMENT_ORGAN_SUFFIX_RE.match(segment))
+    )
 
 
-def extract_ministry_names(law_num: str) -> list[str] | None:
-    """法令番号の文字列から府省(等)の名称を抜き出す。対象外なら `None`。
+class ExtractionFailed:
+    """`extract_ministry_names` が「府省令・規則の形をしているのに名称を
+    抽出できなかった」ことを表す番兵(レビュー指摘2)。
+
+    `None`(経路1の対象外。法律・政令など)と衝突しない、明確に区別できる
+    第3の値が必要だったため、単純な`bool`や文字列ではなく専用の型にした。
+    件数の集計は呼び出し側(将来のTask 7でpipelineに法令を繋いだ時点)が
+    `is EXTRACTION_FAILED` で判定して行う。
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "EXTRACTION_FAILED"
+
+
+EXTRACTION_FAILED = ExtractionFailed()
+
+
+def extract_ministry_names(law_num: str) -> list[str] | None | ExtractionFailed:
+    """法令番号の文字列から府省(等)の名称を抜き出す。
 
     **`law_num_type` ではなく、この文字列だけを正とする**(実測で
     `law_num_type=CabinetOrder` に太政官布告が入る例がある)。
 
+    戻り値は3値(レビュー指摘2で`None`の二義性を解消した):
+
+    - `list[str]`: 抽出に成功した名称(共管は複数件)
+    - `None`: 経路1の対象外(法律・政令など)。「(元号)年+1文字の区分+
+      令第…号」の形は、政令(区分="政")のように**既知の非府省令が
+      たまたま同じ正規表現に一致する**唯一のパターンなので、区分が
+      1文字かつ政府機関の形をしていない場合だけ`None`にする
+      (実測で確認できたのは政令のみ。Task 11の実データで他の形が
+      現れないか確認する)
+    - `ExtractionFailed`(`EXTRACTION_FAILED`): 「(元号)年+…+令第…号」
+      または「規則」の形をしているのに、名称が政府機関らしい形を
+      していない(2文字以上)、または規則の直前に名称が無い場合。
+      未知の表記で静かに`None`へ吸収されるのを防ぐための状態
+
     対象になるのは「(元号)(漢数字)年(X)令第…号」の形(共管は `X` を「・」で
     区切って複数名称を返す)と、「(機関名)規則…」の形(人事院規則・
-    会計検査院規則 等。先頭の機関名をそのまま1件として返す)。どちらにも
-    当たらない、または `X` が府省(等)の名称らしい形をしていない場合は
-    `None`(法律・政令など、経路1の対象外)。
+    会計検査院規則 等。先頭の機関名をそのまま1件として返す。元号年の
+    接頭辞が付く表記にも備え、その接頭辞を先に剥がしてから名称を取る —
+    剥がさずに`(?:年接頭辞)?(.+?)規則`と書くと、接頭辞が任意である
+    ことの正規表現の後戻りにより、年号そのものが名称として誤って
+    採用される。レビュー指摘6の実測で確認済み)。
     """
     m = _ORDINANCE_RE.match(law_num)
     if m:
         segments = m.group(1).split("・")
-        if all(_looks_like_ministry_segment(s) for s in segments):
+        if all(_looks_like_government_organ(s) for s in segments):
             return segments
-        return None
+        if len(segments) == 1 and len(segments[0]) == 1:
+            return None
+        return EXTRACTION_FAILED
 
-    m = _RULE_RE.match(law_num)
+    remainder = _ERA_YEAR_PREFIX_RE.sub("", law_num, count=1)
+    m = _RULE_RE.match(remainder)
     if m:
-        name = m.group(1)
-        if name:
-            return [name]
-        return None
+        return [m.group(1)]
+    if remainder.startswith("規則"):
+        # 元号年接頭辞(あれば剥がした)の直後に「規則」が続き、名称が無い
+        return EXTRACTION_FAILED
 
     return None
 
@@ -208,13 +263,20 @@ def derive_jurisdiction(
     record: LawRecord,
     reference: Mapping[str, list[Ministry]],
     old_ministries: set[str],
-) -> JurisdictionResult | None:
+) -> JurisdictionResult | None | ExtractionFailed:
     """法令番号から府省を導く(経路1)。
 
-    `None` は経路1の対象外(法令番号に府省名を含まない法律・政令など)。
-    対象内であれば、抽出した名称は**必ず** `resolved` か `unresolved` の
-    どちらかに振り分ける(§8.2「解決できた分だけ返す」設計にしない —
-    このタスクで踏みやすい欠陥の型の2番目)。
+    戻り値は3値(`extract_ministry_names` の3値をそのまま引き継ぐ):
+
+    - `None`: 経路1の対象外(法令番号に府省名を含まない法律・政令など)
+    - `ExtractionFailed`(`EXTRACTION_FAILED`): 府省令・規則の形をしているのに
+      名称を抽出できなかった(レビュー指摘2)。件数の集計は呼び出し側が
+      `is EXTRACTION_FAILED` で判定して行う(Task 7でpipelineに法令を
+      繋いだ時点で`PipelineReport`に載せる。現時点ではlawはpipeline未結線
+      のため、ここでは戻り値を区別できる形にするところまでを行う)
+    - `JurisdictionResult`: 対象内。抽出した名称は**必ず** `resolved` か
+      `unresolved` のどちらかに振り分ける(§8.2「解決できた分だけ返す」
+      設計にしない — このタスクで踏みやすい欠陥の型の2番目)
 
     分類の優先順位:
       1. 参照表に同名が正確に1件 → `resolved`(法人番号を積む)
@@ -235,6 +297,8 @@ def derive_jurisdiction(
     names = extract_ministry_names(record.law_num)
     if names is None:
         return None
+    if names is EXTRACTION_FAILED:
+        return EXTRACTION_FAILED
 
     resolved: list[str] = []
     unresolved: list[UnresolvedJurisdiction] = []
@@ -259,6 +323,8 @@ def derive_jurisdiction(
 
 
 __all__ = [
+    "EXTRACTION_FAILED",
+    "ExtractionFailed",
     "JurisdictionResult",
     "LawRecord",
     "Revision",
