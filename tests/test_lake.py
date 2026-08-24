@@ -93,3 +93,54 @@ def test_path_of_matches_saved_location():
     day = datetime.date(2026, 8, 1)
     snap = lake.save("houjin-bangou", day, "sample.csv", b"x")
     assert lake.path_of("houjin-bangou", day, "sample.csv") == snap.path
+
+
+# =============================================================================
+# Task 10: latest_before(差分検出「前リリース時点でこのソースはどの版か」)
+# =============================================================================
+
+
+def test_latest_before_returns_the_snapshot_exactly_on_the_boundary_date():
+    """`before` と同じ日付のスナップショットも対象に入ること(閉区間)。
+
+    何があれば落ちるか: `fetched_on < before` (厳密未満)にすると、単一ソースの
+    リリースでは release==fetched_on になるため、前リリース当日に取得した版が
+    「1つ古い版」だと誤認され None または別の版が返る。
+    """
+    day = datetime.date(2026, 8, 1)
+    snap = lake.save("houjin-bangou", day, "a.csv", b"x")
+    assert lake.latest_before("houjin-bangou", before=day) == snap
+
+
+def test_latest_before_picks_the_most_recent_snapshot_not_after_the_boundary():
+    lake.save("houjin-bangou", datetime.date(2026, 6, 1), "a.csv", b"old")
+    mid = lake.save("houjin-bangou", datetime.date(2026, 7, 1), "a.csv", b"mid")
+    lake.save("houjin-bangou", datetime.date(2026, 8, 1), "a.csv", b"new")
+
+    assert lake.latest_before("houjin-bangou", before=datetime.date(2026, 7, 15)) == mid
+
+
+def test_latest_before_returns_none_when_no_snapshot_exists_yet():
+    assert lake.latest_before("houjin-bangou", before=datetime.date(2026, 8, 1)) is None
+
+
+def test_latest_before_returns_none_when_all_snapshots_are_after_the_boundary():
+    lake.save("houjin-bangou", datetime.date(2026, 9, 1), "a.csv", b"future")
+    assert lake.latest_before("houjin-bangou", before=datetime.date(2026, 8, 1)) is None
+
+
+# =============================================================================
+# Task 10: sources.py の expected_cadence_days(鮮度監視。src/jgkg/freshness.py)
+# =============================================================================
+
+
+def test_cadence_tracked_sources_have_the_documented_values():
+    """3ソースにcadenceが設定され、値が仕様(brief)どおりであること。"""
+    assert sources.get_source("houjin-bangou").expected_cadence_days == 31
+    assert sources.get_source("egov-law").expected_cadence_days == 31
+    assert sources.get_source("rs-system").expected_cadence_days == 366
+
+
+def test_ministry_codes_has_no_cadence_expectation():
+    """参照表(手動更新のみ)には鮮度の概念を適用しないこと(無期限=None)。"""
+    assert sources.get_source("ministry-codes").expected_cadence_days is None

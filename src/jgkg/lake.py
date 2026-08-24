@@ -101,3 +101,26 @@ def list_snapshots(source_id: str) -> list[Snapshot]:
 def latest(source_id: str) -> datetime.date | None:
     snaps = list_snapshots(source_id)
     return max((s.fetched_on for s in snaps), default=None)
+
+
+def latest_before(source_id: str, before: datetime.date) -> Snapshot | None:
+    """`before` 以前(**閉区間。`fetched_on <= before` を含む**)の最新スナップショットを返す。
+
+    Task 10の差分検出(更新の一巡)が「前リリース時点でこのソースはどの版
+    だったか」を調べるために使う。**閉区間にする理由**: `previous_release`
+    (前リリースの日付)そのものと同じ日に取得されたスナップショットは、
+    その前リリースで実際に使われた版である可能性が高い(単一ソースの
+    リリースでは`release`は`fetched_on`と一致する)。厳密未満(`<`)にすると、
+    「前リリースの当日に取得した版」を1つ古い版だと取り違え、まだ存在しない
+    中間スナップショットを引き継ごうとして縁に落ちる。
+
+    ソース1件が複数ファイルに分かれる場合(rs-systemの事業年度ごと15本)は、
+    `list_snapshots` が返す複数件のうち**どれか1件**を返す(全件が同じ日付
+    ディレクトリに属するため、`fetched_on` を知るには十分だが、ファイル集合
+    全体の比較が必要な呼び出し側は、この関数が返す `.fetched_on` で
+    `list_snapshots` を絞り込んで全件を取り直すこと)。
+    """
+    candidates = [s for s in list_snapshots(source_id) if s.fetched_on <= before]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda s: (s.fetched_on, s.path.name))

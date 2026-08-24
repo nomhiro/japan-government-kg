@@ -32,6 +32,17 @@ class Source:
     access: str     # api / bulk / scrape
     encoding: str = "utf-8"
     note: str = ""
+    # 鮮度監視(Task 10。src/jgkg/freshness.py)が「最終取得日からこの日数を
+    # 超えたら陳腐化」と判定する基準。**Noneは「無期限(監視対象外)」であって
+    # 「毎日更新」ではない** — コミット済み参照表(ministry-codes)は手動更新
+    # のみで、上流に定期的な取得元が存在しないため、鮮度の概念自体が適用でき
+    # ない(Task 5の非追従3行の性質と整合。data/reference/ministry-codes.csv
+    # の note 参照)。値を持つ3ソースはいずれも`frequency`と対応するが、
+    # `frequency`自体は人間向けの分類でしきい値を持たないため、機械判定用に
+    # 別フィールドとして持つ(houjin-bangou=frequency"monthly"→31日、
+    # egov-law=frequency"monthly"→31日、rs-system=frequency"annual"→366日
+    # (閏年を跨いでも「年1回」を陳腐化と誤検知しないよう365ではなく366))
+    expected_cadence_days: int | None = None
     # --- リポジトリにコミットして管理する参照表だけが持つ事実 ---
     # これらのソースには「取得日」が存在しない(レイクにスナップショットが無く、
     # 上流から取得した日付も記録されていない)。**分からない日付を書く代わりに、
@@ -55,6 +66,7 @@ SOURCES: dict[str, Source] = {
         encoding="utf-8",
         note="全件データは月次(前月末時点)。差分は日次。商用・再配布可。"
              "Shift_JIS版とUnicode版の両方が配布されているため、Unicode(UTF-8)版を取得すること",
+        expected_cadence_days=31,
     ),
     "egov-law": Source(
         id="egov-law",
@@ -67,6 +79,7 @@ SOURCES: dict[str, Source] = {
         encoding="utf-8",
         note="limit/offsetのページングで全法令のメタデータ(law_info/revision_info等)を取得する。"
              "所管府省を示すフィールドは存在しない(実測済み)。条文本文(all_xml.zip)は対象外",
+        expected_cadence_days=31,
     ),
     "ministry-codes": Source(
         id="ministry-codes",
@@ -108,6 +121,10 @@ SOURCES: dict[str, Source] = {
         # kensei_jun列)をリポジトリに記録した日
         recorded_on=datetime.date(2026, 8, 23),
         sha256="5818790d921bc903cd121d4d7faf0f7c2d3b0d73212a01db62b7e835c0bee7b7",
+        # expected_cadence_days は既定のNoneのまま(無期限。手動更新のみ)。
+        # 上流の定期取得元が無い参照表に「陳腐化」の概念を適用すると、
+        # 誰も更新していないだけの安定運用を誤って警報にする(Task 5が
+        # 記録した、法令経路3行がRSの年度更新に自動追従しない性質とも整合する)
     ),
     "rs-system": Source(
         id="rs-system",
@@ -130,6 +147,9 @@ SOURCES: dict[str, Source] = {
              "ある(取得日の記録が重要になる理由)。ダウンロードページはSPAで専用APIは"
              "無く、実体は https://rssystem.go.jp/files/<year>/rs/<ファイル名>.zip "
              "への直接GET(認証不要、2026-08-23実測)",
+        # 年1回(事業年度ごと)。365ではなく366にするのは、閏年を跨ぐ実運用で
+        # 「年1回の更新」を1日差で陳腐化と誤検知させないため
+        expected_cadence_days=366,
     ),
 }
 
