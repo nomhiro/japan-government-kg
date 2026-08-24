@@ -11,6 +11,7 @@
 #                    --corporations-scope payees \
 #                    [--previous-release 2026-08-23] \
 #                    [--out-dir data/artifact/2026-08-24-payees] \
+#                    [--allow-overwrite] \
 #                    [--allow-partial] [--fail-on-stale]
 #
 # **以前は位置引数1つ(取得日)しか受けず、その日付を houjin-bangou の取得日
@@ -33,6 +34,16 @@ if [ -f .env ]; then
   set +a
 fi
 
+# Task 11修正ラウンド3(項目2)。付けずにWindows上で直接実行すると、
+# 標準出力の日本語(鮮度監視・スキーマ生成・パイプラインの各段の出力)が
+# プラットフォームの既定コードページ(UTF-8でない)で解釈されて文字化けする
+# (動作自体には影響しないが、運用時にログが読めない。scripts/serve.shの
+# 同種の修正〔修正ラウンド2〕で「build.shは対応済み」と誤って記載していたが、
+# 実際には対応していなかった——このスクリプトの中の複数の`uv run python`
+# 呼び出し全てに効かせるため、個別のコマンドに付けるのではなくここで
+# exportする)
+export PYTHONUTF8=1
+
 : "${JENA_VERSION:?JENA_VERSION を .env に設定する}"
 
 usage() {
@@ -41,7 +52,11 @@ usage() {
 
   --source ID=YYYY-MM-DD     ソースと取得日。**複数回指定する。** 少なくとも
                              houjin-bangou は必要(縦スライスの土台)
-  --previous-release DATE    前リリースの日付。差分検出(carry-over)を有効にする
+  --previous-release NAME    前リリースの識別子(成果物ディレクトリのbasename。
+                             例: 2026-08-24、または2026-08-24-payeesのような
+                             非ISO形式の名前も可。Ruling B31修正ラウンド3で
+                             日付形式限定を解消した)。差分検出(carry-over)を
+                             有効にする
   --include-all-corporations 法人グラフを含める(範囲は --corporations-scope で選ぶ)。
                              **rs-system を含むなら必須**(裁定B17懸念2/B18)
   --corporations-scope SCOPE all(既定)または payees。payeesは支出先として実際に
@@ -55,17 +70,21 @@ usage() {
   --allow-partial            隔離が起きてもリリースを続ける(既定は止まる)
   --fail-on-stale            鮮度監視で陳腐化があればビルドを始めずに止める
   --out-dir PATH             成果物の出力先。既定は data/artifact/<最新の取得日>。
-                             **既定を使う場合、そこに既存リリース(manifest.json)が
-                             あると拒否する**(Ruling B31。異なるリリースを
-                             上書きする事故を防ぐ)。同日に複数リリースを作る
-                             ときや、既定に既存リリースがあるときは明示的に渡す
+  --allow-overwrite          出力先(既定・明示のいずれも)に既に何らかのファイルが
+                             あっても続行する(Ruling B31修正ラウンド3・項目3)。
+                             **既定ではこのガードは--out-dirの明示有無を問わず
+                             常に効く**——省略すると出力先に既存の何かがあるとき
+                             拒否する。失敗したビルドのやり直し(kg.nqだけが
+                             残った中途半端な出力先への再実行)も、このフラグの
+                             明示が必要になる(意図的なコスト。「意図的な
+                             バイパス」ではなく「意図の表明」を要求する)
 USAGE
 }
 
 SOURCE_ARGS=()
 PIPELINE_FLAGS=()
 OUT=""
-OUT_EXPLICIT=0
+ALLOW_OVERWRITE=0
 FAIL_ON_STALE=0
 LATEST_DATE=""
 
@@ -97,8 +116,11 @@ while [ $# -gt 0 ]; do
     --out-dir)
       [ $# -ge 2 ] || { echo "--out-dir に値が無い" >&2; usage; exit 2; }
       OUT="$2"
-      OUT_EXPLICIT=1
       shift 2
+      ;;
+    --allow-overwrite)
+      ALLOW_OVERWRITE=1
+      shift
       ;;
     --include-all-corporations)
       PIPELINE_FLAGS+=(--include-all-corporations)
@@ -139,24 +161,36 @@ if [ -z "$OUT" ]; then
   OUT="data/artifact/${LATEST_DATE}"
 fi
 
-# **Ruling B31: 既定の出力先(--out-dirを省略した場合)が既に何か持っていたら
-# 拒否する。** `LATEST_DATE`(最新のソース取得日)は「それらしいディレクトリ名」
-# ではあるが、リリースの同一性そのものではない(上記コメント参照) — 同じ日に
+# **Ruling B31: 出力先が既に何か持っていたら拒否する。**
+# `LATEST_DATE`(最新のソース取得日)は「それらしいディレクトリ名」では
+# あるが、リリースの同一性そのものではない(上記コメント参照) — 同じ日に
 # 別構成(全法人/支出先限定など)のリリースを作ると、既定の出力先が既存の
-# 全法人13.8GiB証拠と衝突しうる(Task 11修正ラウンドで実際に踏んだ危険。
-# 当時は`--out-dir`を明示して避けたが、既定そのものは無防備だった)。
+# 全法人13.8GiB証拠と衝突しうる(Task 11修正ラウンドで実際に踏んだ危険)。
 # **`manifest.json`の有無だけでは判定しない**——保護対象の全法人証拠
 # (`data/artifact/2026-08-24/`)は`kg.nq`/`pipeline-report.json`はあるが
 # `manifest.json`が無い(このディレクトリを作った当時のbuild.shはmanifest
 # 生成に対応していなかった)。manifest.jsonの有無だけで判定すると、
 # **まさに保護すべき対象そのものを検出できない。** ディレクトリが空でない
 # (何らかのファイルが既にある)ことを検出条件にする。
-# **`--out-dir`を明示した場合はこのガードを適用しない**——明示は利用者が
-# 対象を選んだという意思表示であり、それ以上は止めない
-if [ "$OUT_EXPLICIT" -eq 0 ] && [ -d "$OUT" ] && [ -n "$(ls -A "$OUT" 2>/dev/null)" ]; then
-  echo "エラー: 既定の出力先 ${OUT} には既に何らかのファイルがある" \
-       "(既存リリースの疑い)。既定(--out-dir省略)のまま実行すると上書きしてしまうため" \
-       "停止した。別のリリースとして残すなら --out-dir で別のパスを明示すること" >&2
+#
+# **Ruling B31修正ラウンド3(項目3)**: 以前は`--out-dir`を明示した場合に
+# このガードを完全にバイパスしていた(「明示は利用者の意思表示」という
+# 判断)。しかし`--out-dir data/artifact/2026-08-25`と打つだけで完了条件Aの
+# 証拠(非コミットで代替が無い)が消えてしまう——**「明示」と「上書きの
+# 承知」は別のことだった。** ガードは`--out-dir`の明示有無を問わず常に
+# 効かせ、上書きしたいときだけ`--allow-overwrite`を別途要求する
+# (「意図的なバイパス」を「意図の表明」に変える)。
+#
+# **副作用として、失敗したビルドのやり直しにもこのフラグが必要になる**
+# (パイプラインが途中で落ちるとkg.nqだけが残った非空の出力先ができるため)。
+# これは意図的なコスト——「前回失敗したビルドの残骸」と「保護すべき既存
+# リリース」を、ディレクトリの中身だけからは区別できないため、いずれの場合も
+# 利用者に確認を要求する
+if [ "$ALLOW_OVERWRITE" -eq 0 ] && [ -d "$OUT" ] && [ -n "$(ls -A "$OUT" 2>/dev/null)" ]; then
+  echo "エラー: 出力先 ${OUT} には既に何らかのファイルがある(既存リリース" \
+       "または失敗したビルドの残骸の疑い)。上書きするなら --allow-overwrite を" \
+       "明示すること。失敗したビルドのやり直しも --allow-overwrite を明示する" \
+       "(既存リリースとの区別をディレクトリの中身だけでは判定できないため)" >&2
   exit 1
 fi
 mkdir -p "$OUT"
