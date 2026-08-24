@@ -1541,6 +1541,27 @@ law_num_type 別:
   504M60000001003  令和四年内閣官房令第三号  国家公務員退職手当法附則第十二項、第十四項及び第十六項の規定による退職手当の基本額の特例等に関する内閣官房令
 ```
 
+**最終レビュー⚠️A(阻害扱い): 上記「名称単位」の小計(1465〜1469行)と、
+未解決の名称一覧中の1498行目は2026-08-25時点(要修正3の修正前)の実測
+である。** 要修正3(裁定B41。「規則」経路も共管を「・」で分割)の修正後に
+`uv run python scripts/measure_jurisdiction_resolution.py`を再実行して
+確認した(2026-08-26。以下は実測、pipeline-reportからの推測ではない):
+
+~~resolved 4243 / unresolved 2274(OLD_MINISTRY 1995・
+OBSOLETE_ORGANIZATION 276・NO_CANDIDATE 3)~~ → **再実行後: resolved 4269
+(+26) / unresolved 2272(−2)(OLD_MINISTRY 1995・OBSOLETE_ORGANIZATION 274
+(−2)・NO_CANDIDATE 3。後の2つは不変)。要修正3の修正により変化した。**
+
+~~1498行目「2 OBSOLETE_ORGANIZATION 内閣府・公正取引委員会・…・
+原子力規制委員会」(共管規則2件)~~ → **再実行後の出力にこの行は存在しない
+(13機関×2件=26本の`law:jurisdiction`が個別に解決されたため)。**
+
+(「名称単位…pipeline-report.json の law_jurisdiction_* と一致する」という
+ラベル自体は今も正しい。再実行した出力の数字が実際に
+`data/artifact/2026-08-26-law-jurisdiction-check/pipeline-report.json`の
+`law_jurisdiction_*`と一致することを確認済み。詳細は`final-fix-report.md`
+要修正3・5節)
+
 **結論(項目9)**: `EXTRACTION_FAILED`(13件)は**全件`MinisterialOrdinance`
 (府省令の形式)**。内訳を見ると原因は「単独の府省令ではない」パターン
 (内閣官房令単独・複数府省の共同省令・委員会規則との共同)であり、
