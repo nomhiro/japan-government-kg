@@ -26,6 +26,8 @@ STRAY_GRAPH = f"{BASE}/graph/test-compare-releases-g-stray"
 LINE_1 = f'<{BASE}/id/test/s1> <{BASE}/def/test/p> "v1" <{G1}> .'
 LINE_2 = f'<{BASE}/id/test/s2> <{BASE}/def/test/p> "v2" <{G1}> .'
 LINE_3 = f'<{BASE}/id/test/s3> <{BASE}/def/test/p> "v3" <{G1}> .'
+# LINE_1と同じ主語・述語・グラフだが値が違う(最終レビュー要修正7)
+LINE_1_CHANGED = f'<{BASE}/id/test/s1> <{BASE}/def/test/p> "v1-changed" <{G1}> .'
 STRAY_LINE = f'<{BASE}/id/test/s4> <{BASE}/def/test/p> "stray" <{STRAY_GRAPH}> .'
 
 
@@ -91,5 +93,32 @@ def test_a_residual_line_outside_any_declared_graph_fails_nonzero(tmp_path):
     release_b = tmp_path / "release-b"
     _write_release(release_a, [LINE_1, LINE_2, LINE_3])
     _write_release(release_b, [LINE_1, LINE_2, LINE_3, STRAY_LINE])
+
+    assert COMPARE_RELEASES.main([str(release_a), str(release_b)]) == 1
+
+
+def test_a_changed_value_within_a_declared_graph_fails_nonzero(tmp_path):
+    """最終レビュー要修正7(裁定)。**スクリプトの中核主張(グラフ別ソート済み
+
+    sha256の一致判定)そのものを守る**——グラフ数も宣言済みグラフの集合も
+    残余行も同一のまま、宣言済みグラフ`G1`の中の1行だけ値が違う2リリースは
+    非0終了すること。
+
+    上の2本(並び順違い→SAME、残余行→非0)だけでは、`_sorted_sha256`
+    (グラフ別ソート済みsha256の比較そのもの)を検査していない——レビュアが
+    変異試験(`same = sha_a == sha_b`を`same = True`に固定)で実証した
+    とおり、この2本は`same`の値を一度も`False`にする入力を含んでいない
+    ため、`same`を無条件`True`に変異させても両方green のままだった
+    (`docs/measurements-phase1.md`または報告書の変異試験の記録参照)。
+
+    何があれば落ちるか: `main()`内の`same = sha_a == sha_b`を
+    `same = True`に書き換えると、内容が違う2リリースでも「全グラフの
+    内容が一致」と誤判定されるようになり、このテストの`== 1`アサーションが
+    落ちる。
+    """
+    release_a = tmp_path / "release-a"
+    release_b = tmp_path / "release-b"
+    _write_release(release_a, [LINE_1, LINE_2, LINE_3])
+    _write_release(release_b, [LINE_1_CHANGED, LINE_2, LINE_3])  # G1内の1行だけ値が違う
 
     assert COMPARE_RELEASES.main([str(release_a), str(release_b)]) == 1
