@@ -21,10 +21,14 @@
 **失敗する**(黙って照合を飛ばさない)。意図的に飛ばすには `--skip-jena-check` を
 明示する。
 
-**やっていないこと(設計書§6.3の未達分。レビューI7)**: 差し替えはアトミックでは
-ない(symlink切り替え/blue-greenは未実装)。稼働中のFusekiが同じディレクトリを
-mmapしている状態での差し替えは安全ではないので、**Fusekiを止めてから実行する。**
-Dockerでの起動確認も未実施。
+**Task 10: アトミック切替。** `data/artifact/current/` をディレクトリごと
+入れ替える(以前は `tdb2/` だけを入れ替えていたが、切替の単位を「現在
+配信中の世代」全体に揃えた)。**稼働中のmmapディレクトリを上書きしない**
+(TDB2はメモリマップドファイルを使うため)— `scripts/serve.sh` がこの関数を
+呼ぶ**前に**Fusekiを止める(先に停止→退避→配置→起動の順を維持する。この
+関数自身はファイルシステム側の退避・配置だけを担う)。前世代は必ず
+`data/artifact/previous/` に残す(§6.3の「過去N世代を保持」の最低限。
+N=1)。
 """
 import argparse
 import os
@@ -38,8 +42,9 @@ MANIFEST_NAME = "manifest.json"
 TARBALL_NAME = "tdb2.tar.gz"
 # tar の中身のトップディレクトリ(build.sh の `tar -C "$OUT" tdb2`)
 DB_DIRNAME = "tdb2"
-# docker-compose.yml が :ro でマウントする場所
-DEFAULT_TARGET = Path("data/artifact") / DB_DIRNAME
+# docker-compose.yml が読み取り専用でマウントする場所(Task 10:
+# `data/artifact/current/` がアトミック切替の単位そのもの)
+DEFAULT_TARGET = Path("data/artifact") / "current" / DB_DIRNAME
 
 
 def stage_release(
@@ -48,7 +53,7 @@ def stage_release(
     *,
     expected_jena_version: str | None,
 ) -> Path:
-    """成果物を照合してから target に展開する。返り値は配置先。
+    """成果物を照合してから target に展開する。返り値は配置先(`target`そのもの)。
 
     **照合は展開より先に行う。** 壊れた成果物やバージョンの合わない成果物で
     既存の配置を上書きしてはならない(例外を投げた時点で target は無変更)。
@@ -57,6 +62,14 @@ def stage_release(
     照合を飛ばせるが、それは呼び出し側が明示的に選ぶ行為でなければならない。
     既定で飛ばせるようにすると、Ruling 35 が問題にした「記録の演技」に戻る
     (照合する経路を作っても、その照合が省略可能なら意味がない)。
+
+    **Task 10: 切替の単位は`target.parent`(「現在配信中の世代」ディレクトリ
+    全体。既定では`data/artifact/current/`)。** `tdb2/`だけを入れ替える
+    従来の実装では、`current/`直下に将来manifest等の付随ファイルを置いても
+    切替の対象外になってしまう(半端な入れ替え)。展開先(`incoming`)・
+    退避先(`previous`)はいずれも`target.parent`の**兄弟ディレクトリ**
+    (`target.parent.parent`直下)に置く — `target.parent`自身をリネームで
+    退避するため、退避先が`target.parent`の**内側**にあってはならない。
     """
     manifest_path = artifact_dir / MANIFEST_NAME
     tarball = artifact_dir / TARBALL_NAME
@@ -69,31 +82,36 @@ def stage_release(
         manifest_path, tarball, expected_jena_version=expected_jena_version
     )
 
-    incoming = target.with_name(f"{target.name}.incoming")
-    if incoming.exists():
-        shutil.rmtree(incoming)
-    incoming.mkdir(parents=True)
+    current_dir = target.parent
+    incoming_dir = current_dir.with_name("incoming")
+    previous_dir = current_dir.with_name("previous")
+
+    if incoming_dir.exists():
+        shutil.rmtree(incoming_dir)
+    incoming_dir.mkdir(parents=True)
     with tarfile.open(tarball, "r:gz") as tf:
         # filter="data" は Python 3.12 の既定に合わせた明示。tar内の絶対パスや
         # `..` による外部への書き出しを拒否する
-        tf.extractall(incoming, filter="data")
+        tf.extractall(incoming_dir, filter="data")
 
-    extracted = incoming / DB_DIRNAME
+    extracted = incoming_dir / DB_DIRNAME
     if not extracted.is_dir():
-        shutil.rmtree(incoming)
+        shutil.rmtree(incoming_dir)
         raise ValueError(
             f"成果物の中に {DB_DIRNAME}/ が無い: {tarball}。"
             " scripts/build.sh が作ったtarballか確認する"
         )
 
-    # 前世代を残す(切り戻しの最低限。§6.3の「過去N世代を保持」は未実装)
-    previous = target.with_name(f"{target.name}.previous")
-    if previous.exists():
-        shutil.rmtree(previous)
-    if target.exists():
-        target.replace(previous)
-    extracted.replace(target)
-    shutil.rmtree(incoming)
+    # 前世代を残す(切り戻しの最低限。§6.3の「過去N世代を保持」は未実装。N=1)。
+    # **退避(current→previous)→配置(incoming→current)の順を守る**
+    # (このスクリプトが呼ばれる時点でFusekiは既に停止済みという前提 —
+    # scripts/serve.sh参照。停止済みなら、稼働中のmmapディレクトリを
+    # 上書きする心配はここには無い)
+    if previous_dir.exists():
+        shutil.rmtree(previous_dir)
+    if current_dir.exists():
+        current_dir.replace(previous_dir)
+    incoming_dir.replace(current_dir)
     return target
 
 

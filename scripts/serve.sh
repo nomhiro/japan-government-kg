@@ -6,8 +6,13 @@
 # 照合しない記録は記録の演技にすぎない(レビューI3)。
 #
 # 注意: TDB2はメモリマップを使うため、稼働中のディレクトリを上書きしてはならない。
-# 差し替えはまだアトミックではない(§6.3のsymlink切り替え/blue-greenは未実装。
-# レビューI7)。**先にFusekiを止める。**
+# **Task 10でアトミック切替を実装した**: `jgkg.serve`が`data/artifact/current/`を
+# ディレクトリごと入れ替える(`data/artifact/incoming/`に展開してから
+# リネームで差し替える。前世代は必ず`data/artifact/previous/`に残る)。
+# **それでも先にFusekiを止める**(停止→退避→配置→起動の順を維持する。
+# ディレクトリの差し替え自体はファイルシステム上は瞬時だが、稼働中のFuseki
+# プロセスが同じディレクトリをmmapしたまま配下のファイルが差し替わる状態を
+# 作らないため、停止は省略できない)。
 set -euo pipefail
 
 # .env を読み込む。**エラーメッセージが「.env に設定する」と案内しているのに、
@@ -36,5 +41,5 @@ uv run python -m jgkg.serve "$ART" --jena-version "${JENA_VERSION}"
 echo "== Fusekiを起動 =="
 docker compose up -d fuseki
 
-echo "完了: ${ART} を配置した。CQを1本流して確認すること"
+echo "完了: ${ART} を配置した(data/artifact/current/ に切替。前世代は data/artifact/previous/)。CQを1本流して確認すること"
 echo "  例: curl -s --data-urlencode query@queries/cq/p0-02-ministry-list.rq http://localhost:3030/kg/sparql"

@@ -36,7 +36,13 @@ services:
       #   (2) 成果物は content-addressed で、配置前に serve.sh が sha256 と
       #       Jenaバージョンを照合する。差し替えは成果物の入れ替えでのみ行う
       # 設定ファイル側は本当に読み取り専用にできるので `:ro` を維持している(上のマウント)。
-      - ./data/artifact/tdb2:/fuseki/databases/kg
+      #
+      # Task 10: `current/` を挟むのはアトミック切替のため。`jgkg.serve`
+      # (scripts/serve.sh経由)は`data/artifact/current/`をディレクトリごと
+      # 入れ替え、前世代を`data/artifact/previous/`に必ず残す。このマウント先
+      # (`current/tdb2`)自体は変わらないため、切替はホスト側のディレクトリ
+      # 入れ替えだけで完結し、docker-compose.yml側の変更は不要になる
+      - ./data/artifact/current/tdb2:/fuseki/databases/kg
     restart: unless-stopped
 
   jena-tools:
