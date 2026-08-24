@@ -97,9 +97,16 @@ ROGUE_REVISION_URI = URIRef(
 `emit_laws`は常に親Lawのlaw_idをコピーするため、この状態は本番コードパスでは
 作れない(schemaがminCardinality 0で許容している状態を、意図的に手で作る)。
 CQ8がlawIdでの絞り込みを外すと、この版が誤って「最新版」に選ばれる日付
-(2022-06-01。KOUSEIROUDOU_LAW_IDの2版の間)にしている。
+(2026-02-01。KOUSEIROUDOU_LAW_IDの2版の間)にしている。
+
+**Task 11修正ラウンド: 2022-06-01から2026-02-01へ平行移動した。** CQ8の
+カットオフを実データ(法令417M60000100021の実際の改正が2026-04-01の1件
+しかない)に合わせて2023-01-01→2026-04-01に変えたため、この正のコントロール
+一式(KOUSEIROUDOU_LAW_IDの2版・この野良版)も同じカットオフを挟む配置へ
+平行移動した(相対的な前後関係は不変。queries/cq/cq08-law-revision-as-of-date.rq
+参照)。
 """
-ROGUE_REVISION_DATE = datetime.date(2022, 6, 1)
+ROGUE_REVISION_DATE = datetime.date(2026, 2, 1)
 
 
 def _merge_into(target: Dataset, source: Dataset) -> None:
@@ -137,15 +144,18 @@ def _law_records_and_jurisdictions() -> tuple[list[LawRecord], dict[str, Jurisdi
         repeal_status="None",
         revisions=[
             # 改正2版(ブリーフStep1)。日付以外は架空(RS/e-Govいずれも改正履歴の
-            # 実データをこのタスクは持たない)
+            # 実データをこのタスクは持たない)。
+            # Task 11修正ラウンド: 2020-04-01/2024-04-01から2026-01-01/
+            # 2026-05-01へ平行移動(CQ8のカットオフを実データに合わせて
+            # 2026-04-01にしたため。queries/cq/cq08-law-revision-as-of-date.rq参照)
             Revision(
                 amendment_law_num="令和二年厚生労働省令第一号",
-                amendment_enforcement_date="2020-04-01",
+                amendment_enforcement_date="2026-01-01",
                 revision_status="Enforced",
             ),
             Revision(
                 amendment_law_num="令和六年厚生労働省令第一号",
-                amendment_enforcement_date="2024-04-01",
+                amendment_enforcement_date="2026-05-01",
                 revision_status="Enforced",
             ),
         ],

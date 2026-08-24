@@ -272,19 +272,25 @@ def test_cq7_provenance_of_a_law_jurisdiction_edge(kg):
 
 
 def test_cq8_revision_as_of_date_skips_the_rogue_revision_without_law_id(kg):
-    """2023-01-01時点の版は2020-04-01施行のものであり、lawIdを持たない
-    2022-06-01の野良LawRevision(Task 2レビュー申し送りの正のコントロール)
+    """2026-04-01時点の版は2026-01-01施行のものであり、lawIdを持たない
+    2026-02-01の野良LawRevision(Task 2レビュー申し送りの正のコントロール)
     が誤って選ばれないこと。
 
+    **Task 11修正ラウンド: 日付を2023-01-01/2020-04-01/2022-06-01から
+    2026-04-01/2026-01-01/2026-02-01へ平行移動した**(CQ8のカットオフを
+    実データ(法令417M60000100021の実際の改正が2026-04-01の1件のみ)に
+    合わせたため。相対的な前後関係は不変。
+    queries/cq/cq08-law-revision-as-of-date.rq参照)。
+
     何があれば落ちるか: law:lawIdでの絞り込みが外れたら、日付だけで見て
-    2022-06-01(野良)が「指定日以下の最新」として選ばれてしまう。
+    2026-02-01(野良)が「指定日以下の最新」として選ばれてしまう。
     """
     rows = _query(kg, "cq08-law-revision-as-of-date.rq")
     assert rows, "CQ8に答えられない"
     assert len(rows) == 1
     revision, d = rows[0]
-    assert str(d) == "2020-04-01", (
-        f"野良LawRevision(lawId無し、2022-06-01)が紛れ込んだ疑いがある: {revision} {d}"
+    assert str(d) == "2026-01-01", (
+        f"野良LawRevision(lawId無し、2026-02-01)が紛れ込んだ疑いがある: {revision} {d}"
     )
     assert revision != fx.ROGUE_REVISION_URI
 
