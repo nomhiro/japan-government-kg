@@ -620,6 +620,44 @@ https://jgkg.norr-tech.com/id/budget/2025/1016 | resolved | 17
 https://jgkg.norr-tech.com/id/budget/2025/1016 | sentinel | 42
 ... 以下 8131 行省略
 
+**追記(最終レビュー要修正4。裁定B42)。** 上記の`sentinel`という分類名は
+嘘だった: `budget:payeeLabel`はセンチネル行(B18)と実在しない法人番号の
+行(Ruling B27)の**両方**に付き、グラフ上この2つを区別するトリプルが
+無い(`emit.py`/`rs.py`参照)。pipeline-reportは9,922(センチネル)と
+60(実在しない法人番号)を分けて記録しているのに、CQ6は合算した9,982を
+「そもそも法人でない(センチネル)」1categoryとして報告していた——
+**照合の失敗を照合すべき対象が無いこととして報告する**過大な単純化。
+
+クエリを`sentinel_or_nonexistent_houjin_bangou`に改称した上で
+(`queries/cq/cq06-unresolved-recipients-per-project.rq`。クエリ側だけでは
+2つを分けられないため、合算であることが名前から分かる形にした。分ける
+にはemit側に理由トリプルを足す必要があり、それはPhase 2に送った)、
+**実Fusekiで再実行し、8151行全量を集計して実測した**(修正前にこの数字
+自体を実際にクエリで確認したことは無かった——上の転記は先頭20行だけで、
+9,982という数字はpipeline-reportの2欄から**導出**しただけだった):
+
+```
+$ scripts/serve.sh 2026-08-26   # data/artifact/2026-08-26 を配置(B: carry-over。
+                                 # budget系グラフは2026-08-25から変更無く据え置き)
+$ uv run python scripts/run_cq.py --pattern "cq06*.rq" --save-dir <tmp> \
+    --endpoint http://localhost:3030/kg/sparql
+行数: 8151 / 158.594 秒(上記の152.890秒の実行と同じ行数・同じデータ——
+carry-overによりbudget系グラフの内容が2026-08-25から変わっていないため)
+
+# 保存されたJSON(8151行全量)をcategoryごとに集計:
+bundled                                  7326
+resolved                                56607
+sentinel_or_nonexistent_houjin_bangou     9982
+unresolved                                  4
+grand total                             73919
+```
+
+**`sentinel_or_nonexistent_houjin_bangou`の実測値は9,982**——
+`data/artifact/2026-08-25/pipeline-report.json`の
+`budget_recipients_sentinel`(9,922)+`budget_recipients_nonexistent_houjin_bangou`
+(60)の合計と**完全に一致した**(実測して初めて確認。レビューが指摘した
+とおり、修正前はこの一致自体が未検証だった)。
+
 ------------------------------------------------------------------------------
 ### cq07-provenance-of-edge.rq
 形式: SELECT / 変数: ['graph', 'source', 'fetchedOn', 'license']
