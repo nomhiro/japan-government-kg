@@ -491,7 +491,20 @@ def _previous_release_manifest(previous_release: str) -> build.Manifest:
     ディレクトリのbasename(日付である保証がない)。以前は`.isoformat()`を
     呼んでパスを組んでいたが、basenameはそのまま文字列としてパスに使う。
     """
-    if "/" in previous_release or "\\" in previous_release:
+    if "/" in previous_release or "\\" in previous_release or ":" in previous_release:
+        # 最終レビュー観察O11: `/`・`\`だけでは、Windowsのドライブ相対パス
+        # (`"C:foo"`)を弾けない。`artifact_dir`の既定値`"data/artifact"`
+        # (相対パス。config.py)を使う実運用の構成では、
+        # `Path("data/artifact") / "C:foo"`は結合を無視して
+        # `WindowsPath('C:foo')`になり(`is_absolute()`もFalseのまま)、
+        # `artifact_dir`の外(カレントドライブの相対位置)を指す
+        # (実行して確認済み)。**`artifact_dir`が既に絶対パスの場合は
+        # 同一ドライブなら結合先が`artifact_dir`配下に留まる**(pathlibの
+        # 挙動。テストのtmp_pathベースのartifact_dirがこちらに当たるため、
+        # テスト側の壊し確認は「素通りしてFileNotFoundErrorになる」形で
+        # 現れる——本来のエスケープを再現するものではない。実運用の相対
+        # パス構成に対する脆弱性そのものは変わらないため、設定に関わらず
+        # `:`を区切り文字として拒否する。
         raise ValueError(
             f"previous_release にはディレクトリの区切り文字を含めない"
             f"(成果物ディレクトリのbasenameだけを渡す): {previous_release!r}"

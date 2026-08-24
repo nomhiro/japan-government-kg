@@ -300,6 +300,38 @@ def test_carry_over_rejects_a_previous_release_name_containing_a_path_separator(
         )
 
 
+def test_carry_over_rejects_a_previous_release_name_containing_a_windows_drive_relative_colon():
+    """最終レビュー観察O11。`previous_release`にコロン(`:`)が含まれる場合も
+
+    `ValueError`にすること——`/`・`\\`だけではWindowsのドライブ相対パス
+    (`"C:foo"`)を弾けない。
+
+    `artifact_dir`の既定値`"data/artifact"`(相対パス)を使う実運用の
+    構成では、`Path("data/artifact") / "C:foo"`はWindowsでは結合を無視
+    して`WindowsPath('C:foo')`になり、`artifact_dir`の外を指してしまう
+    (スタンドアロンで実行して確認済み)。**このテスト自身の`tmp_env`
+    フィクスチャは`artifact_dir`にtmp_pathベースの絶対パスを使うため
+    (テストの分離のため)、同一ドライブの絶対パス同士の結合になり実際の
+    エスケープは再現しない**——ガード無効時は`artifact_dir`配下の
+    存在しない`foo`サブディレクトリへの`FileNotFoundError`という
+    地味な形で素通りが露見する(実運用の相対パス構成での脆弱性そのものは
+    これとは別に実在する。上記コメント参照)。
+
+    何があれば落ちるか: ガードの条件から`":" in previous_release`を外すと、
+    `"C:foo"`は`/`も`\\`も含まないため素通りし、この呼び出しは
+    `ValueError`(`match="区切り文字"`)ではなく
+    `FileNotFoundError`(前リリースのmanifest.jsonが見つからない)で
+    落ちるようになる。
+    """
+    lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
+    with pytest.raises(ValueError, match="区切り文字"):
+        pipeline.run(
+            {"houjin-bangou": DAY2},
+            _artifact_dir(DAY2),
+            previous_release="C:foo",
+        )
+
+
 def test_carry_over_rejects_a_previous_release_whose_manifest_sources_date_is_not_parseable():
     """前リリースの`manifest.sources`の値がISO日付として読めない場合、
 
