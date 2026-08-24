@@ -39,6 +39,13 @@ SOURCE_GLOBS: tuple[str, ...] = (
     "tests/*.py",
     "scripts/*.py",
     ".env.example",
+    # 最終レビュー要修正6(裁定): site/robots.txtがドメインを直書きしており、
+    # SOURCE_GLOBSがsite/**を含まなかったため、`--check`は緑のまま配信物が
+    # 旧ドメインのsitemapを指し続ける穴があった(過去に踏んだ「1箇所だけの
+    # はずが実は複数あり、検査が一部しか見ていなかった」と同じ型)。
+    # `site/def/`・`site/_headers`はどちらも生成物(要修正1)で
+    # このglobは非再帰(直下のファイルのみ)なので二重検査にはならない。
+    "site/*",
 )
 
 # 検査の対象に生成物も含める。**ここを外すと「差し替えたが再生成していない」状態が
@@ -46,6 +53,10 @@ SOURCE_GLOBS: tuple[str, ...] = (
 GENERATED_GLOBS: tuple[str, ...] = (
     "schema/generated/*.ttl",
     "schema/generated/*.py",
+    # 最終レビュー要修正6: reference-classes.jsonも生成物のベースURI配下
+    # IRIを持つが*.jsonが対象外だった(実害は無い。.ttl/.py側が差し替え
+    # 忘れを検出するため単独では露見しないが、検査対象の一覧としては穴)。
+    "schema/generated/*.json",
 )
 
 # 自分のベースURI以外に現れてよい外部ホスト。**許可リスト方式**にしてある。

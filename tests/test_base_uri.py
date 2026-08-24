@@ -62,6 +62,20 @@ def test_generated_files_are_actually_scanned():
     assert any(n.endswith(".rq") for n in scanned), "CQクエリが検査対象に入っていない"
 
 
+def test_site_static_files_are_scanned():
+    """最終レビュー要修正6(裁定)。`site/robots.txt`が検査対象に入っていること。
+
+    `site/robots.txt:8`がドメインを直書きしていたが、`SOURCE_GLOBS`が
+    `site/**`を含んでいなかったため、`--check`は緑のまま配信物が旧ドメインの
+    sitemapを指し続ける穴があった(ドメイン移行の場面で発覚する)。
+
+    何があれば落ちるか: `SOURCE_GLOBS`から`"site/*"`を外すと、
+    `checked_paths(ROOT)`に`robots.txt`が現れなくなり落ちる。
+    """
+    scanned = {p.name for p in base_uri.checked_paths(ROOT)}
+    assert "robots.txt" in scanned, "site/robots.txt が検査対象に入っていない"
+
+
 def test_check_detects_a_stale_domain_even_on_an_allowed_host(tmp_path):
     """許可済みホスト上に古いベースURIが残っていても検出できること。
 
@@ -113,6 +127,31 @@ def test_rewrite_replaces_every_occurrence(tmp_path):
     changed = base_uri.rewrite(tmp_path, NEW, old_base_uri=OLD)
     assert len(changed) == 4, [str(p) for p in changed]
     assert not base_uri.find_inconsistencies(tmp_path, base_uri=NEW)
+
+
+def test_rewrite_replaces_the_domain_in_site_robots_txt(tmp_path):
+    """最終レビュー要修正6。ドメイン移行の`rewrite()`が`site/robots.txt`も
+
+    書き換えること(裁定)。
+
+    何があれば落ちるか: `SOURCE_GLOBS`から`"site/*"`を外すと、
+    `rewrite()`が`site/robots.txt`を対象にせず、`changed`にこのファイルが
+    含まれなくなる。ファイルの中身も古いドメインのまま残り、
+    `find_inconsistencies`が(`site/*`が検査対象からも外れているため)
+    それを検出できないまま`--check`が緑になる——`site/robots.txt`が
+    もう保有していないドメインのsitemapを指し続けるのに気づけない。
+    """
+    (tmp_path / "site").mkdir()
+    robots = tmp_path / "site" / "robots.txt"
+    robots.write_text(
+        f"User-agent: *\nAllow: /\nSitemap: {OLD}/sitemap.txt\n", encoding="utf-8"
+    )
+
+    changed = base_uri.rewrite(tmp_path, NEW, old_base_uri=OLD)
+
+    assert robots in changed, [str(p) for p in changed]
+    assert OLD not in robots.read_text(encoding="utf-8")
+    assert f"{NEW}/sitemap.txt" in robots.read_text(encoding="utf-8")
 
 
 def test_rewrite_preserves_crlf(tmp_path):
