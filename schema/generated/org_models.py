@@ -261,7 +261,7 @@ class GovernmentOrgan(Organization):
 
 class Ministry(GovernmentOrgan):
     """
-    府省及び外局等、行政事業レビューシステム(RS)実データの所管府省庁欄・ 府省庁欄に現れる国の行政機関(裁定B12・B16。名称が主キーで、 府省コードは分かる場合のみ持つ)
+    府省及び外局等、行政事業レビューシステム(RS)実データの所管府省庁欄・ 府省庁欄に現れるか、又は法令(府省令・規則)の発令機関としてe-Gov法令API 実データに現れる国の行政機関(裁定B12・B16。Task 12で文言修正 — B16の 初版は前半のみでRSに現れない法令経路の3機関(人事院・会計検査院・ 国家公安委員会)を字義上除外していた。名称が主キーで、府省コードは 分かる場合のみ持つ)
     """
     linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/org'})
 
