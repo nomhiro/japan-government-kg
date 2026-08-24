@@ -19,6 +19,13 @@ for src in schema/*.yaml; do
   [ -f "$src" ] || continue
   module="$(basename "$src" .yaml)"
   echo "generating from ${src}"
+  # **--no-mergeimports を足さないこと(観察O5・設計書§5.5決定44)。**
+  # children_are_mutually_disjoint(core.yaml の Entity)はそのモジュールが
+  # 直接importする範囲内でしか直接の子クラスを集めない。--no-mergeimports を
+  # 付けると core 以外の4モジュールでは子が0件になり公理が黙って抑止される。
+  # 21ペアの検査(tests/test_schema_consistency.py)は生成物5ファイルを
+  # 合流させてから見るため、core.owl.ttl だけに公理が残っていればテストは
+  # 緑のままこの欠落を見逃す
   uv run gen-owl --no-use-native-uris "$src" > "${OUT}/${module}.owl.ttl"
   uv run gen-shacl "$src" > "${OUT}/${module}.shacl.ttl"
   uv run gen-pydantic "$src" > "${OUT}/${module}_models.py"
