@@ -336,12 +336,14 @@ def _carry_over_source_date(
     return result
 
 
-def _load_previous_release_dataset(previous_release: datetime.date) -> Dataset:
-    """前リリースのkg.nqを読む。
+def _previous_release_kg_nq_path(previous_release: datetime.date) -> Path:
+    """前リリースのkg.nqのパスを返す。**存在確認のみ行い、内容は読まない。**
 
-    **存在しなければ例外にする**(呼び出し側が`previous_release`を渡した
+    存在しなければ例外にする(呼び出し側が`previous_release`を渡した
     時点で「前リリースが存在する」という明示の主張になるため、黙って
-    据え置きを諦めるのではなく矛盾として止める)。
+    据え置きを諦めるのではなく矛盾として止める) — この確認は、carry-over
+    候補が結果的に1件も無い呼び出しでも行う(「前リリースが実在する」と
+    いう主張そのものは、carry-overが実際に起きるかどうかとは独立している)。
     """
     path = Path(get_settings().artifact_dir) / previous_release.isoformat() / "kg.nq"
     if not path.exists():
@@ -350,25 +352,73 @@ def _load_previous_release_dataset(previous_release: datetime.date) -> Dataset:
             " previous_release を渡す呼び出しは、そのリリースのkg.nqが"
             "実在することを前提にする"
         )
-    ds = Dataset(default_union=True)
-    ds.parse(path, format="nquads")
-    return ds
+    return path
 
 
-def _extract_graph(previous_ds: Dataset, graph_uri_str: str) -> Graph | None:
-    """前リリースのDatasetから、指定した名前付きグラフの内容だけを取り出す。
+def _split_nquads_line_lenient(line: str) -> tuple[str, str] | None:
+    """1行のN-Quadsを`(N-Triples本体, グラフURI文字列(角括弧を外した生の値))`に分ける。
 
-    存在しない(または隔離されていて中身が無い)場合は`None`。**呼び出し側
-    はこれを「据え置きを諦めて通常どおり再生成する」契機にする**(黙って
-    空のグラフを引き継がない。task-10-brief.md「踏みやすい欠陥の型」2番)。
+    `validate._split_nquads_line`と同じ論証(グラフ項はIRIで生の空白を
+    含まないため、末尾から`rsplit(" ", 2)`で安全に切り出せる)を使うが、
+    **想定外の行(空行・終端が`.`でない行)では例外にせず`None`を返す**。
+    `validate._split_nquads_line`は「stream_emit_organizations以外が書いた
+    ファイルの疑いがある」という前提の逸脱を例外にする設計だが、この関数は
+    kg.nq全体(`emit.write_nquads`のrdflibシリアライザ出力+
+    `stream_emit_organizations`の手書き出力が**同じファイルに混在する**
+    ——`run()`のhoujin-bangou-all追記処理参照)を、対象行だけを拾う
+    ための走査に使うので、想定外の行(ファイル末尾の空行など。rdflibの
+    `NQuadsSerializer`は末尾に空行を1つ書く)は無視して先に進めばよい。
     """
-    ctx = previous_ds.graph(URIRef(graph_uri_str))
-    if len(ctx) == 0:
+    body = line.rstrip("\n").rstrip("\r")
+    if not body.strip():
         return None
-    g = Graph()
-    for triple in ctx:
-        g.add(triple)
-    return g
+    try:
+        nt_body, graph_term, dot = body.rsplit(" ", 2)
+    except ValueError:
+        return None
+    if dot != ".":
+        return None
+    graph_uri_str = graph_term[1:-1] if graph_term.startswith("<") else graph_term
+    return nt_body, graph_uri_str
+
+
+def _extract_graphs_from_kg_nq(path: Path, wanted: set[str]) -> dict[str, Graph]:
+    """`path`(前リリースのkg.nq)から、`wanted`に含まれるグラフURIの内容だけを
+
+    1回のストリーム走査で取り出す。**ファイル全体をrdflibの`Dataset`に
+    ロードしない。** RS入りの前リリースのkg.nqには、houjin-bangou-allの
+    約3,500万行が末尾に追記されている(`run()`の`include_all_corporations`
+    処理を参照)。それを`Dataset.parse()`で丸ごと読むと、rdflibが全法人
+    規模のterm/tripleオブジェクトをメモリに構築してしまい、
+    stream_emit.py/validate.pyのモジュールdocstringが明示的に禁じている
+    規模のメモリ使用になる(R19/R21)。carry-over候補は縦スライスグラフ
+    (houjin-bangou/egov-law/rs-system)最大3件なので、`wanted`は常に小さく、
+    蓄積される行数もそれらのグラフの実サイズに収まる(houjin-bangou-allの
+    グラフURIは`wanted`に入り得ない——`run()`のcarry-over対象は
+    `_GRAPH_DEPENDENCIES`の3ソースのみで、houjin-bangou-allはそこに含まれない)。
+
+    戻り値に無いURIは「前リリースに存在しない(隔離されていた等)」を意味する。
+    **呼び出し側はこれを「据え置きを諦めて通常どおり再生成する」契機にする**
+    (黙って空のグラフを引き継がない。task-10-brief.md「踏みやすい欠陥の型」2番)。
+    """
+    buffers: dict[str, list[str]] = {w: [] for w in wanted}
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            parsed = _split_nquads_line_lenient(line)
+            if parsed is None:
+                continue
+            nt_body, graph_uri_str = parsed
+            buf = buffers.get(graph_uri_str)
+            if buf is not None:
+                buf.append(nt_body + " .\n")
+    graphs: dict[str, Graph] = {}
+    for uri, lines in buffers.items():
+        if not lines:
+            continue
+        g = Graph()
+        g.parse(data="".join(lines), format="nt")
+        graphs[uri] = g
+    return graphs
 
 
 def _append_carried_graph(
@@ -518,12 +568,6 @@ def run(
     houjin_date = _source_date("houjin-bangou", fetched_on)
     ministry_date = _source_date("ministry-codes", fetched_on)
 
-    # Task 10: 前リリースのDatasetは、carry-overを試す全ソースで共有する
-    # (kg.nqの再パースを複数回行わない)
-    previous_ds: Dataset | None = None
-    if previous_release is not None:
-        previous_ds = _load_previous_release_dataset(previous_release)
-
     # ファイルパスを渡してストリームで解析する。bytes で読むと実データ(約1GB)で
     # メモリが破綻する(§Task 6 の説明を参照)
     snapshot_path = lake.path_of("houjin-bangou", houjin_date, houjin_bangou.FILENAME)
@@ -605,17 +649,57 @@ def run(
             " lake.save() がメタデータを書く前に中断された疑いがある(未コミット)"
         )
 
-    # Task 10: houjin-bangou自身のグラフのcarry-over判定。前リリースに該当
-    # グラフが無ければ(隔離されていた等)、黙って空にせず据え置きを諦める
+    # Task 10: 3ソースの据え置き候補日をまとめて先に確定する(いずれも
+    # fetched_on/レイクメタデータだけで判定できるため、egov-law/rs-systemの
+    # 実ファイル解析より前に決められる——`_carry_over_source_date`は
+    # `own_source_id`が`fetched_on`に無ければ`None`を返すので、無条件に
+    # 呼んでよい)。**前リリースへの実際の存在確認はここで1回だけ行う**
+    # (advisorレビュー指摘: ソースごとに前リリースのkg.nqを何度も読むと、
+    # RS入りの前リリースではhoujin-bangou-allの約3,500万行を含むため、
+    # `rs_carry_date`の判定を後段(rs-systemブロック内)まで遅らせたまま
+    # `Dataset`へ丸ごとパースする実装はR19/R21に反する規模のメモリを使う。
+    # 3件の据え置き候補のうちrs-systemだけは後段の「解析そのものを省略する」
+    # 分岐(後述)がこの値を直接使うため、その分岐より前に確定させる必要がある)
     houjin_carry_date = _carry_over_source_date("houjin-bangou", fetched_on, previous_release)
+    egov_carry_date = _carry_over_source_date("egov-law", fetched_on, previous_release)
+    rs_carry_date = _carry_over_source_date("rs-system", fetched_on, previous_release)
+
+    carried_graphs: dict[str, Graph] = {}
+    if previous_release is not None:
+        # wanted_urisが空でも存在確認だけは行う(「前リリースが実在する」
+        # という呼び出し側の明示の主張は、carry-over候補の有無と無関係)
+        previous_kg_path = _previous_release_kg_nq_path(previous_release)
+        wanted_uris: set[str] = set()
+        if houjin_carry_date is not None:
+            wanted_uris.add(uris.graph_uri("houjin-bangou", houjin_carry_date))
+        if egov_carry_date is not None:
+            wanted_uris.add(uris.graph_uri("egov-law", egov_carry_date))
+        if rs_carry_date is not None:
+            wanted_uris.add(uris.graph_uri("rs-system", rs_carry_date))
+        if wanted_uris:
+            carried_graphs = _extract_graphs_from_kg_nq(previous_kg_path, wanted_uris)
+
+    # Task 10: 前リリースに該当グラフが無ければ(隔離されていた等)、
+    # 黙って空にせず据え置きを諦める(task-10-brief.md「踏みやすい欠陥の型」2番)
     carried_houjin_graph: Graph | None = None
     if houjin_carry_date is not None:
-        assert previous_ds is not None
-        carried_houjin_graph = _extract_graph(
-            previous_ds, uris.graph_uri("houjin-bangou", houjin_carry_date)
+        carried_houjin_graph = carried_graphs.get(
+            uris.graph_uri("houjin-bangou", houjin_carry_date)
         )
         if carried_houjin_graph is None:
             houjin_carry_date = None
+
+    carried_egov_graph: Graph | None = None
+    if egov_carry_date is not None:
+        carried_egov_graph = carried_graphs.get(uris.graph_uri("egov-law", egov_carry_date))
+        if carried_egov_graph is None:
+            egov_carry_date = None
+
+    carried_rs_graph: Graph | None = None
+    if rs_carry_date is not None:
+        carried_rs_graph = carried_graphs.get(uris.graph_uri("rs-system", rs_carry_date))
+        if carried_rs_graph is None:
+            rs_carry_date = None
 
     # =========================================================================
     # Task 10: egov-law結線(任意ソース)。
@@ -632,8 +716,6 @@ def run(
     law_jurisdiction_extraction_failed = 0
     egov_date: datetime.date | None = None
     egov_snapshot = None
-    egov_carry_date: datetime.date | None = None
-    carried_egov_graph: Graph | None = None
 
     if "egov-law" in fetched_on:
         egov_date = _source_date("egov-law", fetched_on)
@@ -669,22 +751,14 @@ def run(
             law_jurisdiction_resolved += len(jr.resolved)
             law_jurisdiction_unresolved += len(jr.unresolved)
 
-        egov_carry_date = _carry_over_source_date("egov-law", fetched_on, previous_release)
-        if egov_carry_date is not None:
-            assert previous_ds is not None
-            carried_egov_graph = _extract_graph(
-                previous_ds, uris.graph_uri("egov-law", egov_carry_date)
-            )
-            if carried_egov_graph is None:
-                egov_carry_date = None
-
     # =========================================================================
     # Task 10: rs-system結線(任意ソース)。
     #
     # **据え置き(carry-over)対象なら、パース・解決処理そのものを省略する**
     # (houjin-bangou/egov-lawと異なり、rs-systemの解決結果を必要とする
     # 下流の消費者がpipeline内に無いため、省略しても他の処理に影響しない —
-    # これがcarry-overの実際の計算コスト削減になる部分)
+    # これがcarry-overの実際の計算コスト削減になる部分。`rs_carry_date`は
+    # 既にファイル冒頭で確定・存在確認済みなので、ここでは再計算しない)
     # =========================================================================
     budget_projects_all: tuple[rs_mod.BudgetProjectRecord, ...] = ()
     budget_expenditures_all: tuple[rs_mod.ExpenditureRecord, ...] = ()
@@ -692,8 +766,6 @@ def run(
     budget_stats = rs_mod.BuildStats()
     rs_date: datetime.date | None = None
     rs_snapshot_sha256s: list[str] = []
-    rs_carry_date: datetime.date | None = None
-    carried_rs_graph: Graph | None = None
 
     if "rs-system" in fetched_on:
         rs_date = _source_date("rs-system", fetched_on)
@@ -707,15 +779,6 @@ def run(
             for s in lake.list_snapshots("rs-system")
             if s.fetched_on == rs_date and s.path in rs_paths.values()
         ]
-
-        rs_carry_date = _carry_over_source_date("rs-system", fetched_on, previous_release)
-        if rs_carry_date is not None:
-            assert previous_ds is not None
-            carried_rs_graph = _extract_graph(
-                previous_ds, uris.graph_uri("rs-system", rs_carry_date)
-            )
-            if carried_rs_graph is None:
-                rs_carry_date = None
 
         if rs_carry_date is None:
             laws_by_id = {r.law_id: r for r in law_records}

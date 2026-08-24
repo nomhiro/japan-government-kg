@@ -239,6 +239,67 @@ def test_carry_over_falls_back_to_regeneration_when_the_previous_graph_is_absent
     )
 
 
+def test_carry_over_ignores_unrelated_graphs_present_in_the_previous_kg_nq():
+    """前リリースのkg.nqに、carry-over対象ではない別グラフ(全法人グラフ相当)
+
+    が混在していても、(a) 本来の据え置き対象(houjin-bangou)は正しく機能し、
+    (b) その無関係なグラフの内容は新リリースに復活しないこと。
+
+    advisorレビュー指摘: 前リリースのkg.nqを丸ごとrdflibの`Dataset`にロード
+    する実装だと、RS入りの前リリースに実際に含まれるhoujin-bangou-all
+    (約3,500万行。`run()`の`include_all_corporations`処理がkg.nqの末尾に
+    そのまま連結する)を読み込んでメモリが破綻する(R19/R21)。修正後は
+    対象グラフだけを1パスの行フィルタで拾うため規模に強いが、**この規模を
+    テストで再現するのは重すぎる**。代わりに、対象外のグラフが混在した
+    小さいkg.nqで、carry-overの結線そのもの(a)と、無関係な内容が新
+    リリースに残らないこと(b)を直接固定する。
+
+    **何があれば落ちるか(壊し確認済み)**: (a)は、`run()`内の抽出呼び出し
+    (`_extract_graphs_from_kg_nq`の呼び出し)を外すと落ちる(carry-overの
+    結線が本当に効いているかを確認する)。(b)は現在の実装では`run()`側が
+    グラフURIを指定した個別取得(`carried_graphs.get(exact_uri)`)しか
+    しないため、`_extract_graphs_from_kg_nq`単体のフィルタを壊しても
+    (a)(b)いずれも失敗しない(=多重の防御になっている。実際に3パターン
+    壊して確認した)。それでも(b)は、将来`run()`側が`carried_graphs`を
+    キー指定せず丸ごと使う書き方に変わった場合の回帰を検知する——導入前は
+    どのテストも保証していなかった性質という点に変わりはない。
+    """
+    lake.save("houjin-bangou", DAY1, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
+    out1 = _artifact_dir(DAY1)
+    pipeline.run({"houjin-bangou": DAY1}, out1)
+
+    # 前リリースのkg.nqに、carry-over対象外の別グラフ(全法人グラフ相当)を
+    # 手動で追記する。run()が実際に行っている追記(houjin-bangou-all.nqを
+    # kg.nqの末尾にそのまま連結する)を模す
+    unrelated_graph = uris.graph_uri("houjin-bangou-all", DAY1)
+    unrelated_org = uris.org_uri("9000000000001")
+    with (out1 / "kg.nq").open("a", encoding="utf-8", newline="\n") as f:
+        f.write(f'<{unrelated_org}> <{SKOS.prefLabel}> "無関係法人" <{unrelated_graph}> .\n')
+
+    lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
+    r2 = pipeline.run(
+        {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1
+    )
+
+    # (a) 本来の据え置き対象は無関係グラフの混在に関わらず正しく機能する
+    assert uris.graph_uri("houjin-bangou", DAY1) in r2.carried_over
+    ds = _load(_artifact_dir(DAY2) / "kg.nq")
+    uri_a = URIRef(uris.org_uri(NUM_A))
+    assert {str(o) for o in ds.objects(uri_a, SKOS.prefLabel)} == {"厚生労働省"}
+
+    # (b) 無関係グラフの内容は新リリースに復活しない(carry-over対象の
+    # 範囲を超えて何でも引き継ぐ実装になっていないことの確認)。
+    # **グラフを指定せず主語で見る**(`ds.graph(URIRef(unrelated_graph))`
+    # だけだと、無関係な内容が誤って別のグラフURI——例えばhoujin-bangou自身
+    # の据え置きグラフ——に取り込まれて残るような壊れ方を見逃す)
+    assert (URIRef(unrelated_org), None, None) not in ds, (
+        "carry-over対象外のグラフの内容が(どのグラフかを問わず)新リリースに残っている"
+    )
+    assert len(ds.graph(URIRef(unrelated_graph))) == 0, (
+        "carry-over対象外のグラフが新リリースに復活している"
+    )
+
+
 # =============================================================================
 # 依存関係つきcarry-over(advisorレビュー指摘: 自ソースのsha256だけでは
 # 不健全。他ソースへの依存を経由して変化が伝播することを固定する)
