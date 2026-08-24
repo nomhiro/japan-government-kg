@@ -48,7 +48,13 @@ ALL_CORPORATIONS_GRAPH_ID = "houjin-bangou-all"
 # TDB2実サイズ13.8GiBで§6.3の8GiB上限を超える。Phase 1のCQがどれも参照
 # しないデータのために全法人を積む理由が無い(「消費者のいない取込みを
 # 作らない」— B-1/B-2と同じ原則)。支出先(budget:recipientの参照先)として
-# 実際に登場する法人番号(distinct 18,994件)だけに絞った別グラフ。
+# 実際に登場し、かつ実在が確認できた法人番号(corporations_all相当・
+# distinct 18,941件)だけに絞った別グラフ(実測: docs/measurements-phase1.md
+# §2)。**支出先として名指しされた番号の総数(payee_houjin_bangou。
+# distinct 18,995件。センチネル1件を含む)とは別の数**——実在しない53件・
+# センチネル1件は法人として解決できないため、このグラフには入らない
+# (修正ラウンド2 要修正4で「18,994件」という古い記載がこの区別を欠いていた
+# ことが判明。docs/measurements-phase1.md「恒等式」節参照)。
 # **「全法人」と誤読されないグラフ名にする**(fix-brief指示。manifestと
 # CQの読み手がhoujin-bangou-allと混同しないため)
 PAYEE_CORPORATIONS_GRAPH_ID = "houjin-bangou-payees"
@@ -1462,10 +1468,18 @@ def run(
     rs_resolution_ran = "rs-system" in fetched_on and rs_carry_date is None
 
     return PipelineReport(
-        # リリース名は**呼び出し側が渡した取得日**のうち最も新しいもの。
-        # 参照表の recorded_on を混ぜないのは、成果物ディレクトリ名や manifest の
-        # release と食い違わせないため
-        release=max(fetched_on.values()).isoformat(),
+        # リリース名は**成果物ディレクトリのbasename**(Ruling B31)。
+        # 以前は`max(fetched_on.values())`(=最も新しいソース取得日)だったが、
+        # これは「リリースの同一性」ではなく「ソースの鮮度」であり、同じ日に
+        # 複数のリリース(例: 支出先限定リリースAとcarry-over検証用リリースB。
+        # どちらもegov-law取得日が同じ)を作るとreleaseフィールドが衝突し、
+        # manifest.jsonだけでは区別できなくなる(§6.3の配布契約が嘘をつく)。
+        # `--previous-release`は既に成果物ディレクトリのbasenameをキーにして
+        # 前リリースを探しており(`_previous_release_kg_nq_path`)、de facto の
+        # 同一性は元々basenameだった。ソースごとの鮮度は`sources`欄に残るため、
+        # `max(fetched_on.values())`は必要なら`sources`から導出できる
+        # (情報は失われない)。
+        release=out_dir.name,
         rows_seen=stats.rows_seen,
         rows_rejected=stats.rows_rejected,
         rows_short=stats.rows_short,

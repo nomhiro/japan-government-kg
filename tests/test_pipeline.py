@@ -233,8 +233,35 @@ def test_run_records_a_date_per_source(seeded_lake, tmp_path):
     assert report.sources["houjin-bangou"] != report.sources["ministry-codes"], (
         "参照表の日付が法人番号の取得日と同じになっている(流用の再発)"
     )
-    # リリース名は呼び出し側が渡した取得日から決まる(recorded_on を混ぜない)
-    assert report.release == DAY.isoformat()
+    # リリース名は成果物ディレクトリのbasenameから決まる(Ruling B31。
+    # 取得日やrecorded_onを混ぜない——同じ日に複数リリースを作ると
+    # 取得日ベースの同一性は衝突するため)
+    assert report.release == "out", (
+        f"リリース名がout_dirのbasenameになっていない: {report.release!r}"
+    )
+
+
+def test_run_same_day_releases_are_distinguishable_by_release_field(seeded_lake, tmp_path):
+    """Ruling B31の判定基準(a): 同日に作った2つのリリースがmanifestだけで
+
+    区別できること。取得日を全く変えずに`out_dir`だけを変えた2回の`run()`が、
+    異なる`release`を報告することを確認する(以前の`max(fetched_on.values())`
+    方式では、取得日が同じなら両方とも同じ`release`になり、manifest.jsonだけを
+    見ても区別できなかった——Task 11で実際に踏んだ不具合)。
+
+    何があれば落ちるか: `release`を再び`max(fetched_on.values())`のような
+    取得日由来の値に戻すと、releaseAとreleaseBが同じ文字列になり、
+    このテストの`!=`アサーションが落ちる。
+    """
+    release_a = pipeline.run(FETCHED, tmp_path / "2026-08-25")
+    release_b = pipeline.run(FETCHED, tmp_path / "2026-08-26")
+
+    assert release_a.release != release_b.release, (
+        "取得日が同じ2つのリリースのreleaseフィールドが衝突している"
+        "(manifestだけではリリースを区別できない。Ruling B31違反)"
+    )
+    assert release_a.release == "2026-08-25"
+    assert release_b.release == "2026-08-26"
 
 
 def test_run_refuses_to_guess_a_missing_fetch_date(seeded_lake, tmp_path):
@@ -916,8 +943,11 @@ def test_run_payees_scope_writes_a_distinctly_named_graph_with_only_recipient_co
         "houjin-bangou-allという「全法人」グラフ名が出現している"
         "(payeesスコープなのに全法人と誤読される名前になっている)"
     )
-    # fix-brief: フィルタ対象は18,994件相当のごく少数になるはず。この
-    # fixtureでは支出先1件のみなので、法人グラフに書き出すのはその1件だけ
+    # fix-brief: フィルタ対象は実データでは18,941件相当(修正ラウンド2で
+    # 判明。実在する支出先法人の数——「18,994」はセンチネルの扱いを欠いた
+    # 古い数値。docs/measurements-phase1.md「恒等式」節参照)のごく少数に
+    # なるはず。このfixtureでは支出先1件のみなので、法人グラフに書き出す
+    # のはその1件だけ
     assert report.corporations_all == 1
     assert report.reference_violations == [], report.reference_violations
 
@@ -1154,7 +1184,8 @@ def test_cli_accepts_multiple_sources_and_writes_report(seeded_lake, tmp_path):
     ]) == 0
 
     report = _json.loads((out / pipeline.REPORT_NAME).read_text(encoding="utf-8"))
-    assert report["release"] == DAY.isoformat()
+    # リリース名はout_dirのbasename(Ruling B31。取得日から決まらない)
+    assert report["release"] == "out"
     assert set(report["sources"]) == {"houjin-bangou", "ministry-codes", "egov-law"}
     assert report["law_records"] == 3, "egov-lawが実際に結線されている"
     assert (out / "kg.nq").exists()

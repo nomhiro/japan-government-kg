@@ -57,13 +57,19 @@ class Manifest(BaseModel):
     quarantined_sources: list[str] = []
     # 成果物のmanifest形式そのものの版。この欄自体を計画B Task 1で追加したため、
     # それ以前に作られた manifest.json には欄が無い。`Manifest(...)` を直接構築する
-    # (=新規に作る)場合の既定はこの 2。**旧manifestを読むときに 1 とみなす処理は
+    # (=新規に作る)場合の既定は、この欄を追加した当時は2だった(現在は下記の
+    # 変遷を経て5)。**旧manifestを読むときに 1 とみなす処理は
     # ここではなく read_manifest() 側に置く**(pydanticのフィールド既定だけでは
     # 「新規構築で省略した」のか「旧ファイルに欄が無い」のかを区別できないため)
     # Task 10修正ラウンド: `nquads_sha256`を追加したのでこの欄自体は再度3に上げた
     # (計画B Task 1がmanifest_version欄自体の追加で2に上げたのと同じ作法)。
     # Task 11修正ラウンド: `tdb2_expanded_bytes`を追加したので4に上げる
-    manifest_version: int = 4
+    # Task 11修正ラウンド2(Ruling B31): `release`/`created_on`の意味を
+    # 「最新ソース取得日」から「成果物ディレクトリのbasename」に変えたため
+    # (同日に作った複数リリースがmanifestだけで区別できなかった不具合の修正)、
+    # manifestの読み手が旧versionと新versionで`release`の意味を区別できるように
+    # 5に上げる
+    manifest_version: int = 5
 
 
 def file_sha256(path: Path) -> str:
@@ -154,8 +160,8 @@ def read_manifest(path: Path) -> Manifest:
 
     **`manifest_version` が無い旧 manifest は 1 とみなす。** この欄自体を
     計画B Task 1 で追加したため、それ以前の manifest には存在しない。
-    `Manifest` フィールドの既定値(2、新規構築時の版)をそのまま使うと、
-    旧ファイルも「欄を省略した新規構築」と区別できず誤って2とみなされる
+    `Manifest` フィールドの既定値(5、新規構築時の版)をそのまま使うと、
+    旧ファイルも「欄を省略した新規構築」と区別できず誤って5とみなされる
     ため、読み込み時だけここで明示的に補う。
     """
     data = json.loads(path.read_text(encoding="utf-8"))

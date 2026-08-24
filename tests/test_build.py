@@ -192,12 +192,15 @@ def test_triple_count_handles_tricky_literals(tmp_path):
     assert "http://example.test/o" not in m.graphs
 
 
-def test_build_manifest_produces_version_4(tmp_path):
-    """新規に構築した manifest は manifest_version=4 を持つこと。
+def test_build_manifest_produces_version_5(tmp_path):
+    """新規に構築した manifest は manifest_version=5 を持つこと。
 
     計画B Task 1がmanifest_version欄自体の追加で2に上げ、Task 10修正ラウンド1が
     `nquads_sha256`欄の追加で3に上げ、Task 11修正ラウンドが`tdb2_expanded_bytes`
-    欄の追加で4に上げた(同じ「欄を追加したら版を上げる」作法)。
+    欄の追加で4に上げ、Task 11修正ラウンド2(Ruling B31)が`release`/`created_on`
+    の意味変更(最新ソース取得日→成果物ディレクトリのbasename)で5に上げた
+    (欄追加ではないが、既存欄の意味が変わるのも読み手には破壊的変更なので
+    同じ「版を上げる」作法に従う)。
     """
     nq = tmp_path / "kg.nq"
     nq.write_text("", encoding="utf-8")
@@ -206,15 +209,15 @@ def test_build_manifest_produces_version_4(tmp_path):
 
     m = build.build_manifest(nquads=nq, tarball=tarball, jena_version="5.0.0",
                              release="r", sources={}, graphs=[], tdb2_expanded_bytes=1)
-    assert m.manifest_version == 4
+    assert m.manifest_version == 5
 
 
 def test_read_manifest_treats_a_missing_version_field_as_1(tmp_path):
     """`manifest_version` 欄が無い旧 manifest.json を読むと 1 とみなすこと。
 
     この欄自体を計画B Task 1 で追加したため、それ以前に作られた manifest には
-    存在しない。**何があれば落ちるか**: `Manifest` フィールドの既定値(4)を
-    そのまま使う実装に戻すと、旧ファイルも4と誤判定されて落ちる。
+    存在しない。**何があれば落ちるか**: `Manifest` フィールドの既定値(5)を
+    そのまま使う実装に戻すと、旧ファイルも5と誤判定されて落ちる。
     """
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(
@@ -236,7 +239,7 @@ def test_read_manifest_treats_a_missing_version_field_as_1(tmp_path):
 
 
 def test_manifest_version_roundtrips_through_write_and_read(tmp_path):
-    """新規 manifest を書いて読み直しても版(4)が保たれること。"""
+    """新規 manifest を書いて読み直しても版(5)が保たれること。"""
     nq = tmp_path / "kg.nq"
     nq.write_text("", encoding="utf-8")
     tarball = tmp_path / "kg.tar.gz"
@@ -248,7 +251,7 @@ def test_manifest_version_roundtrips_through_write_and_read(tmp_path):
     build.write_manifest(m, manifest_path)
 
     reloaded = build.read_manifest(manifest_path)
-    assert reloaded.manifest_version == 4
+    assert reloaded.manifest_version == 5
     assert reloaded.nquads_sha256 == m.nquads_sha256
     assert reloaded.tdb2_expanded_bytes == m.tdb2_expanded_bytes
 

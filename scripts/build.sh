@@ -45,21 +45,27 @@ usage() {
   --include-all-corporations 法人グラフを含める(範囲は --corporations-scope で選ぶ)。
                              **rs-system を含むなら必須**(裁定B17懸念2/B18)
   --corporations-scope SCOPE all(既定)または payees。payeesは支出先として実際に
-                             登場する法人に限る(Ruling B30。約19,000件・232MiB。
+                             登場する法人に限る(Ruling B30。約19,000件・
+                             TDB2実サイズ429MiB=8GiBの5.2%。修正ラウンド2で
+                             旧「232MiB」という数字が別の見積り(選択肢A、
+                             未使用)からの混入だったと判明し訂正した——
+                             docs/measurements-phase1.md参照。
                              all=全法人約581万件・13.8GiB。rs-systemを含む
                              リリースでのみ payees を指定できる)
   --allow-partial            隔離が起きてもリリースを続ける(既定は止まる)
   --fail-on-stale            鮮度監視で陳腐化があればビルドを始めずに止める
-  --out-dir PATH             成果物の出力先。既定は data/artifact/<最新の取得日>
-                             (= pipeline が付けるリリースIDと同じ)。全ソース
-                             据え置きの検証のように、リリースIDが前リリースと
-                             同じになる実行を別ディレクトリへ出すときだけ渡す
+  --out-dir PATH             成果物の出力先。既定は data/artifact/<最新の取得日>。
+                             **既定を使う場合、そこに既存リリース(manifest.json)が
+                             あると拒否する**(Ruling B31。異なるリリースを
+                             上書きする事故を防ぐ)。同日に複数リリースを作る
+                             ときや、既定に既存リリースがあるときは明示的に渡す
 USAGE
 }
 
 SOURCE_ARGS=()
 PIPELINE_FLAGS=()
 OUT=""
+OUT_EXPLICIT=0
 FAIL_ON_STALE=0
 LATEST_DATE=""
 
@@ -69,9 +75,11 @@ while [ $# -gt 0 ]; do
       [ $# -ge 2 ] || { echo "--source に値が無い" >&2; usage; exit 2; }
       SOURCE_ARGS+=(--source "$2")
       # 出力先の既定値に使う「最新の取得日」。ISO 8601 は辞書順=日付順なので
-      # 文字列比較で足りる(pipeline 側の release=max(fetched_on.values()) と
-      # 同じ値になる。ズレると manifest の release と成果物ディレクトリ名が
-      # 食い違うため、ここは推測ではなく同じ規則に揃える)
+      # 文字列比較で足りる。**この値がリリースの同一性(pipeline側のrelease)
+      # と一致するとは限らない**(Ruling B31以降、releaseは成果物ディレクトリの
+      # basenameであり、取得日から決まらない)。ここでは単に「出力先が未指定の
+      # ときに使う、それらしいディレクトリ名」の既定値として使うだけであり、
+      # 既存リリースへの上書きは下記のガードで別途防ぐ
       case "$2" in
         *=*) d="${2#*=}" ;;
         *) echo "--source の形式が違う: $2(<ID>=<YYYY-MM-DD>)" >&2; exit 2 ;;
@@ -89,6 +97,7 @@ while [ $# -gt 0 ]; do
     --out-dir)
       [ $# -ge 2 ] || { echo "--out-dir に値が無い" >&2; usage; exit 2; }
       OUT="$2"
+      OUT_EXPLICIT=1
       shift 2
       ;;
     --include-all-corporations)
@@ -128,6 +137,27 @@ fi
 
 if [ -z "$OUT" ]; then
   OUT="data/artifact/${LATEST_DATE}"
+fi
+
+# **Ruling B31: 既定の出力先(--out-dirを省略した場合)が既に何か持っていたら
+# 拒否する。** `LATEST_DATE`(最新のソース取得日)は「それらしいディレクトリ名」
+# ではあるが、リリースの同一性そのものではない(上記コメント参照) — 同じ日に
+# 別構成(全法人/支出先限定など)のリリースを作ると、既定の出力先が既存の
+# 全法人13.8GiB証拠と衝突しうる(Task 11修正ラウンドで実際に踏んだ危険。
+# 当時は`--out-dir`を明示して避けたが、既定そのものは無防備だった)。
+# **`manifest.json`の有無だけでは判定しない**——保護対象の全法人証拠
+# (`data/artifact/2026-08-24/`)は`kg.nq`/`pipeline-report.json`はあるが
+# `manifest.json`が無い(このディレクトリを作った当時のbuild.shはmanifest
+# 生成に対応していなかった)。manifest.jsonの有無だけで判定すると、
+# **まさに保護すべき対象そのものを検出できない。** ディレクトリが空でない
+# (何らかのファイルが既にある)ことを検出条件にする。
+# **`--out-dir`を明示した場合はこのガードを適用しない**——明示は利用者が
+# 対象を選んだという意思表示であり、それ以上は止めない
+if [ "$OUT_EXPLICIT" -eq 0 ] && [ -d "$OUT" ] && [ -n "$(ls -A "$OUT" 2>/dev/null)" ]; then
+  echo "エラー: 既定の出力先 ${OUT} には既に何らかのファイルがある" \
+       "(既存リリースの疑い)。既定(--out-dir省略)のまま実行すると上書きしてしまうため" \
+       "停止した。別のリリースとして残すなら --out-dir で別のパスを明示すること" >&2
+  exit 1
 fi
 mkdir -p "$OUT"
 
@@ -324,8 +354,9 @@ m = build.build_manifest(
     # 隔離されたソースは sources に載らない代わりにここに出る(--allow-partial 時)
     quarantined_sources=report['quarantined_sources'],
     # Task 11修正ラウンド(fix-brief §3): du -sb で実測したTDB2展開後サイズ。
-    # §6.3の8GiB判定(全法人13.8GiB/支出先限定232MiB台)をリリースごとに
-    # manifestから読めるようにする
+    # §6.3の8GiB判定(全法人13.8GiB/支出先限定429MiB。修正ラウンド2で旧
+    # 「232MiB」表記を実測値に訂正——docs/measurements-phase1.md参照)を
+    # リリースごとにmanifestから読めるようにする
     tdb2_expanded_bytes=int(os.environ['JGKG_TDB2_EXPANDED_BYTES']),
 )
 build.write_manifest(m, out / 'manifest.json')
