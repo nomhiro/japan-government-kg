@@ -3,19 +3,22 @@
 各段の件数を PipelineReport として返す。観測性は設計書§11.1の要件。
 """
 import datetime
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
 
 from pydantic import BaseModel
-from rdflib import Dataset, URIRef
+from rdflib import Dataset, Graph, URIRef
 
 from jgkg import lake, sources, uris, validate
 from jgkg.config import get_settings
-from jgkg.connectors import houjin_bangou
+from jgkg.connectors import egov_law, houjin_bangou, rs_system
 from jgkg.rdf import emit, stream_emit
 from jgkg.rdf.provenance import provenance_graph
+from jgkg.transform import law as law_mod
 from jgkg.transform import ministry as ministry_mod
+from jgkg.transform import old_ministries
 from jgkg.transform import organization as org_mod
+from jgkg.transform import rs as rs_mod
 
 # 全法人の別グラフ(Task 8)のグラフID部分。「houjin-bangou」と同じ取得済み
 # スナップショットから作る別グラフなので、sources.pyに新しいソースを登録する
@@ -26,6 +29,29 @@ ALL_CORPORATIONS_GRAPH_ID = "houjin-bangou-all"
 
 MINISTRY_REFERENCE = Path("data/reference/ministry-codes.csv")
 SHAPES_DIR = Path("schema/generated")
+
+# =============================================================================
+# Task 10: 更新の一巡(差分検出・carry-over)
+#
+# 各ソース固有グラフが実際に依存する入力ソースの集合(自分自身を含む)。
+# carry-over(据え置き)は、そのグラフを作るのに使う**全ての**依存元が前
+# リリースから不変であることを要求する。houjin-bangou自体のバイト列が
+# 不変でも、egov-law(jurisdiction解決)・rs-system(ministry/recipient解決)
+# のグラフ内容はhoujin-bangou由来のministriesに依存するため、自ソースの
+# sha256だけを見る判定は不健全(advisorレビュー指摘。実測はしていないが、
+# houjin-bangouが変わればministriesの突合結果が変わりうるという構造上の
+# 事実から導かれる)。
+#
+# ministry-codesはここに登場しない — 40行規模で毎回再計算する前提
+# (下記 run() 参照。再計算コストが自明に軽いため、carry-overの対象に
+# する理由が無い)だが、他ソースの依存集合には含める(そのグラフが
+# ministry-codesの内容にも依存するため)。
+# =============================================================================
+_GRAPH_DEPENDENCIES: dict[str, tuple[str, ...]] = {
+    "houjin-bangou": ("houjin-bangou",),
+    "egov-law": ("houjin-bangou", "ministry-codes", "egov-law"),
+    "rs-system": ("houjin-bangou", "ministry-codes", "egov-law", "rs-system"),
+}
 
 
 class PipelineReport(BaseModel):
@@ -52,13 +78,16 @@ class PipelineReport(BaseModel):
     graphs_quarantined: int
     # 検証を通ったグラフのURI一覧。manifest に渡すため正確な値をここで持つ
     # (N-Quadsのテキストから推測すると、リテラルに含まれる `>` や3項行の
-    #  オブジェクトIRIを誤認する。実測で確認済み)
+    #  オブジェクトIRIを誤認する。実測で確認済み)。**Task 10以降はcarry-over
+    # で引き継いだグラフのURIも含む**(clean.graphs()から導出するため自然に含まれる)
     graphs: list[str]
     # ソースIDごとの「いつ時点か」。**単一の取得日でリリース全体を語らない。**
     # 設計書§6.4の更新頻度表は monthly/annual/ondemand とソースごとに異なる。
     # manifest はこれをそのまま使う(build.sh で手書きしない)。
     # **KGに実際に残ったソースだけを載せる。** 隔離されたソースの日付を書くと
-    # 「この日付のデータを含む」という嘘になる(I2 で直した捏造と同族)
+    # 「この日付のデータを含む」という嘘になる(I2 で直した捏造と同族)。
+    # **Task 10: 据え置き(carried over)したソースは、今回の取得日ではなく
+    # 前リリース時点の日付を載せる**(「実際に入っているもの」原則。同じ理由)
     sources: dict[str, str]
     # 隔離されて成果物に入らなかったソース。**落ちたことを黙って消さない**ため、
     # sources から外す代わりにここに出す(設計書§8.2「未解決を無かったことにしない」)
@@ -83,6 +112,61 @@ class PipelineReport(BaseModel):
     # houjin-bangou-allグラフはkg.nqに追記されない(検証前に本体へ混ぜない)。
     # enforce_release_gateがこれも見て止める
     corporations_all_quarantined: int = 0
+
+    # =========================================================================
+    # Task 10: 更新の一巡(差分検出・carry-over)
+    # =========================================================================
+    # 据え置き(前リリースからバイト単位で不変と判定し、再生成をスキップして
+    # 前リリースのグラフをそのまま引き継いだ)グラフのURI一覧。**引き継いだ
+    # 元のグラフのURI**(このリリースの取得日ではなく、前リリースでの実際の
+    # 日付)を載せる — 「この取得日のデータを含む」という嘘を作らないため
+    carried_over: list[str] = []
+
+    # =========================================================================
+    # Task 10: egov-law結線(観測性。§11.1)。derive_jurisdictionの3値分類の
+    # うち、pipeline.pyが実際に集計できるようになった件数(law.py
+    # ExtractionFailed のdocstringが「結線タスクが行う」と申し送っていた計数)
+    # =========================================================================
+    law_records: int = 0
+    law_jurisdiction_resolved: int = 0    # JurisdictionResult.resolved の延べ数
+    law_jurisdiction_unresolved: int = 0  # JurisdictionResult.unresolved の延べ数
+    # 府省令・規則の形をしているのに名称を抽出できなかった件数
+    # (law.EXTRACTION_FAILED。件数を「経路1の欠陥」と読むと過大評価になる
+    # ことに注意 — 皇室令など非府省令の法形式もここに拾われる。task-4-report.md
+    # Task 11への申し送り参照)
+    law_jurisdiction_extraction_failed: int = 0
+
+    # =========================================================================
+    # Task 10: rs-system結線。rs.BuildStatsを結線後に初めてPipelineReportへ
+    # 搭載する(rs.py docstring「PipelineReportに載せることは結線を担うタスク
+    # の作業」)。**rs-systemのグラフが据え置き(carried_over)された場合、
+    # このセクションは全て既定値0のまま**(据え置きは解決処理そのものを
+    # 走らせないため。据え置き元の値は前リリースのreportを参照する —
+    # corporations_all系がフラグOFF時に0のままである既存の作法と同じ形)
+    # =========================================================================
+    budget_projects: int = 0
+    budget_expenditures: int = 0
+    budget_expenditures_bundled: int = 0
+    budget_recipients_sentinel: int = 0
+    budget_recipients_resolved_by_houjin_bangou: int = 0
+    budget_recipients_resolved_by_name: int = 0
+    budget_recipients_unresolved: int = 0
+    budget_ministries_resolved: int = 0
+    budget_ministries_unresolved: int = 0
+    budget_basis_law_resolved: int = 0
+    budget_basis_law_unresolved: int = 0
+
+    # 裁定B24(6): 「合計≒執行額」はゲートにしない(正しい事業でも一致は
+    # 32.0%のみ、と確定済み。task-9-report.md)。事業ごとのΣ(Expenditure.
+    # amount) ÷ 直前年度の執行額(合計)の比を、ゲートにせず**観測**として
+    # 件数だけ載せる。分母が無い(prior_year_executed_amountがNoneまたは
+    # 0以下)事業は budget_ratio_no_denominator に分けて数え、「その他」
+    # (1.0/2.0/3.0のいずれでもない)と混同しない
+    budget_ratio_exact_1_0: int = 0
+    budget_ratio_exact_2_0: int = 0
+    budget_ratio_exact_3_0: int = 0
+    budget_ratio_other: int = 0
+    budget_ratio_no_denominator: int = 0
 
 
 class QuarantineNotEmptyError(RuntimeError):
@@ -174,11 +258,217 @@ def _source_date(
     )
 
 
+# =============================================================================
+# Task 10: 差分検出(carry-over判定)のヘルパー
+# =============================================================================
+
+
+def _rs_system_file_digests(fetched_on: datetime.date) -> dict[str, str]:
+    """指定日のrs-systemスナップショット全ファイルの(ファイル名 -> sha256)。"""
+    return {
+        s.path.name: s.sha256
+        for s in lake.list_snapshots("rs-system")
+        if s.fetched_on == fetched_on
+    }
+
+
+def _previous_date_if_unchanged(
+    source_id: str, current_date: datetime.date, previous_release: datetime.date
+) -> datetime.date | None:
+    """`source_id`が前リリース時点からバイト単位で不変なら、その前リリース
+
+    時点でのfetched_on(引き継ぐべきグラフの日付)を返す。変化していれば
+    (または前リリース時点にスナップショットが無ければ)`None`。
+
+    rs-systemは事業年度ごと15本の関連ファイルに分かれるため、単一の
+    sha256では比較できない — ファイル名の集合ごと突き合わせる(1本でも
+    増減・変化していれば不変ではない)。
+    """
+    if source_id == "rs-system":
+        current_digests = _rs_system_file_digests(current_date)
+        prev_snapshot = lake.latest_before(source_id, previous_release)
+        if prev_snapshot is None:
+            return None
+        prev_digests = _rs_system_file_digests(prev_snapshot.fetched_on)
+        return prev_snapshot.fetched_on if prev_digests == current_digests else None
+
+    prev_snapshot = lake.latest_before(source_id, previous_release)
+    if prev_snapshot is None:
+        return None
+    current_snapshot = next(
+        (s for s in lake.list_snapshots(source_id) if s.fetched_on == current_date),
+        None,
+    )
+    if current_snapshot is None or current_snapshot.sha256 != prev_snapshot.sha256:
+        return None
+    return prev_snapshot.fetched_on
+
+
+def _carry_over_source_date(
+    own_source_id: str,
+    fetched_on: Mapping[str, datetime.date],
+    previous_release: datetime.date | None,
+) -> datetime.date | None:
+    """`own_source_id`のグラフを据え置ける場合、その前リリース時点の
+
+    fetched_onを返す。**依存元(`_GRAPH_DEPENDENCIES`)のいずれか1つでも
+    変化していれば`None`**(このグラフ自身は再生成する) — `own_source_id`
+    自身のバイト列が不変でも、egov-law/rs-systemはhoujin-bangou由来の
+    ministriesの解決結果に依存するため、自ソースだけを見る判定は不健全
+    (このモジュールのコメント「Task 10: 更新の一巡」参照)。
+    """
+    if previous_release is None or own_source_id not in fetched_on:
+        return None
+    result: datetime.date | None = None
+    for dep in _GRAPH_DEPENDENCIES[own_source_id]:
+        if dep == "ministry-codes":
+            continue  # 常に再計算する前提。依存判定には数えない
+        dep_date = fetched_on.get(dep)
+        if dep_date is None:
+            # 依存元ソースが今回の実行対象に含まれていない。保守的に
+            # 「不変と確認できない」として据え置きを諦める
+            return None
+        prev_date = _previous_date_if_unchanged(dep, dep_date, previous_release)
+        if prev_date is None:
+            return None
+        if dep == own_source_id:
+            result = prev_date
+    return result
+
+
+def _load_previous_release_dataset(previous_release: datetime.date) -> Dataset:
+    """前リリースのkg.nqを読む。
+
+    **存在しなければ例外にする**(呼び出し側が`previous_release`を渡した
+    時点で「前リリースが存在する」という明示の主張になるため、黙って
+    据え置きを諦めるのではなく矛盾として止める)。
+    """
+    path = Path(get_settings().artifact_dir) / previous_release.isoformat() / "kg.nq"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"前リリース({previous_release.isoformat()})の成果物が見つからない: {path}。"
+            " previous_release を渡す呼び出しは、そのリリースのkg.nqが"
+            "実在することを前提にする"
+        )
+    ds = Dataset(default_union=True)
+    ds.parse(path, format="nquads")
+    return ds
+
+
+def _extract_graph(previous_ds: Dataset, graph_uri_str: str) -> Graph | None:
+    """前リリースのDatasetから、指定した名前付きグラフの内容だけを取り出す。
+
+    存在しない(または隔離されていて中身が無い)場合は`None`。**呼び出し側
+    はこれを「据え置きを諦めて通常どおり再生成する」契機にする**(黙って
+    空のグラフを引き継がない。task-10-brief.md「踏みやすい欠陥の型」2番)。
+    """
+    ctx = previous_ds.graph(URIRef(graph_uri_str))
+    if len(ctx) == 0:
+        return None
+    g = Graph()
+    for triple in ctx:
+        g.add(triple)
+    return g
+
+
+def _append_carried_graph(
+    clean: Dataset,
+    carried_over: list[str],
+    *,
+    source_id: str,
+    graph_uri_str: str,
+    date: datetime.date,
+    sha256: str | Iterable[str] | None,
+    graph: Graph,
+    base_uri: str,
+) -> None:
+    """据え置きグラフ(前リリースからそのまま引き継ぐグラフ)を`clean`に合流させる。
+
+    **`clean`(SHACL検証後)に足す — `ds`(検証前)ではない。** このグラフの
+    内容は前リリースで既にSHACL検証を通っている、かつバイト単位で不変で
+    あることが確定しているため、同じ検証をもう一度やり直す必要が無い。
+    これが「グラフ再生成をスキップする」carry-overの実体である
+    (advisorレビュー指摘: `ds`に足すとcheck_reference_integrityより前の
+    SHACL検証を再度受けるだけで、参照整合ゲートに型情報を渡す目的は
+    `clean`に足すだけで十分に果たせる)。
+    """
+    target = clean.graph(URIRef(graph_uri_str))
+    for triple in graph:
+        target.add(triple)
+    meta = clean.graph(URIRef(f"{base_uri}/graph/provenance"))
+    for triple in provenance_graph(graph_uri_str, source_id, date, sha256=sha256):
+        meta.add(triple)
+    carried_over.append(graph_uri_str)
+
+
+def _rs_group_paths(fetched_on: datetime.date) -> dict[str, Path]:
+    """指定日のrs-systemスナップショット群を、ファイル名からグループキーへ逆引きする。
+
+    **年(`{year}`)をファイル名から推測しない**(rs-systemの`fetched_on`は
+    「取得した日」であり、ファイル名に埋め込まれた事業年度とは無関係の
+    概念 — advisorレビュー指摘)。`rs_system.RS_GROUP_FILENAMES`のテンプレート
+    と文字列としてパターン照合するだけで、年の値そのものは使わない。
+    """
+    snapshots = [s for s in lake.list_snapshots("rs-system") if s.fetched_on == fetched_on]
+    if not snapshots:
+        raise FileNotFoundError(
+            f"rs-systemのスナップショットが無い(取得日 {fetched_on.isoformat()})。"
+            " 先にコネクタで取得する"
+        )
+    paths: dict[str, Path] = {}
+    for snap in snapshots:
+        stem = snap.path.name.removesuffix(".zip")
+        for group, template in rs_system.RS_GROUP_FILENAMES.items():
+            if group in paths:
+                continue
+            prefix, marker, suffix = template.partition("{year}")
+            if not marker:
+                continue  # テンプレートに{year}が無い(実データには存在しない形)
+            if not (stem.startswith(prefix) and stem.endswith(suffix)):
+                continue
+            year_part = stem[len(prefix): len(stem) - len(suffix)]
+            if year_part.isdigit():
+                paths[group] = snap.path
+                break
+    missing = [g for g in rs_mod.REQUIRED_GROUPS if g not in paths]
+    if missing:
+        raise FileNotFoundError(
+            f"rs-systemの必須ファイルが無い(取得日 {fetched_on.isoformat()}): {missing}。"
+            f" 検出したファイル: {sorted(s.path.name for s in snapshots)}"
+        )
+    return paths
+
+
+def _all_corporations_membership_test(
+    base_uri: str, houjin_bangou_set: set[int]
+) -> Callable[[URIRef], bool]:
+    """`houjin_bangou_set`(全法人ストリームが実際に認識した法人番号の集合)に
+
+    対する`org:Organization`のmembership_test(裁定B21)。org URIから法人
+    番号部分を取り出して集合に照会する — houjin-bangou-allグラフの実データ
+    (581万件規模のURI文字列)をそのまま保持するとメモリが破綻するため、
+    int化した法人番号の集合だけを持ち、判定のたびにURIから逆算する
+    (`stream_emit.dedup_organizations`の`stats.houjin_bangou_seen`と同じ
+    「int化して軽量に保つ」考え方)。
+    """
+    prefix = f"{base_uri}/id/org/"
+
+    def _test(uri: URIRef) -> bool:
+        s = str(uri)
+        if not s.startswith(prefix):
+            return False
+        suffix = s[len(prefix):]
+        return suffix.isdigit() and int(suffix) in houjin_bangou_set
+
+    return _test
+
+
 def run(
     fetched_on: Mapping[str, datetime.date],
     out_dir: Path,
     *,
     include_all_corporations: bool = False,
+    previous_release: datetime.date | None = None,
 ) -> PipelineReport:
     """ソースIDごとの「いつ時点か」を受け取ってKGを1本作る。
 
@@ -193,14 +483,46 @@ def run(
     既定はFalse(触らない) — この規模のストリーミング投入・バッチ検証は
     コストが軽くないため、必要なリリース(RS/支出データを含むもの)でだけ
     明示的に有効にする。
+
+    **`fetched_on`に`rs-system`を含めるなら`include_all_corporations=True`が
+    必須**(裁定B17懸念2/B18。task-7-report.md)。`budget:recipient`が指す
+    支出先の多くは民間企業で、848件規模の国の機関グラフには存在しない。
+    全法人グラフを投入しないと参照整合ゲートが必ず数万件規模の違反で
+    止まる — それ自体はゲートが正しく機能している証拠だが、「意図せず
+    RSだけを結線してゲートに阻まれる」を避けるため、ここで先に明示的に
+    エラーにする(黙って通さない)。
+
+    `previous_release`(Task 10。更新の一巡): 前リリースの取得日を渡すと、
+    ソースの内容が前リリース時点からバイト単位で不変なグラフについては
+    再生成(emit+SHACL検証)をスキップし、前リリースのグラフをそのまま
+    `clean`(検証後のDataset)へ引き継ぐ(carry-over)。**依存関係を考慮する**:
+    houjin-bangou自体が不変でも、そのグラフに依存するegov-law/rs-system
+    のグラフは、依存元(houjin-bangou・ministry-codes・egov-law)のいずれか
+    が変化していれば据え置かない(`_GRAPH_DEPENDENCIES`参照)。既定は`None`
+    (=carry-over を一切使わない。既存の全呼び出し元と後方互換)。
     """
     settings = get_settings()
     if not fetched_on:
         raise ValueError(
             "取得日が1件も渡されていない。例: {'houjin-bangou': date(2026, 8, 1)}"
         )
+    if "rs-system" in fetched_on and not include_all_corporations:
+        raise ValueError(
+            "rs-system を含むリリースは include_all_corporations=True が必須である"
+            "(裁定B17懸念2/B18)。budget:recipient が指す支出先の多くは民間企業"
+            "であり、848件規模の国の機関グラフには存在しない。全法人グラフを"
+            "投入しないと参照整合ゲートが必ず違反で止まる。意図的にrs-systemを"
+            "含めるなら include_all_corporations=True を明示する"
+        )
+
     houjin_date = _source_date("houjin-bangou", fetched_on)
     ministry_date = _source_date("ministry-codes", fetched_on)
+
+    # Task 10: 前リリースのDatasetは、carry-overを試す全ソースで共有する
+    # (kg.nqの再パースを複数回行わない)
+    previous_ds: Dataset | None = None
+    if previous_release is not None:
+        previous_ds = _load_previous_release_dataset(previous_release)
 
     # ファイルパスを渡してストリームで解析する。bytes で読むと実データ(約1GB)で
     # メモリが破綻する(§Task 6 の説明を参照)
@@ -215,6 +537,10 @@ def run(
     # 任意の法人が必要になるのは Phase 1 の縦スライス(支出先法人)。設計書§6.2.3の
     # 「規模の問題は分割で対処し、1つを大きくするな」に従う。
     # 非空行数と取り込み数の両方を数えるのは、破損や欠落を検知するため(§11.1の観測性)
+    #
+    # **Task 10: houjin-bangou自身のグラフが据え置き対象でも、この解析は
+    # 省略しない。** orgs はministry-codes/egov-law/rs-systemの解決にも
+    # 使われるため、自グラフの据え置きとは独立に常に必要
     total_organizations = 0
     orgs: list[org_mod.Organization] = []
     stats = org_mod.ParseStats()
@@ -250,6 +576,9 @@ def run(
 
     reference = ministry_mod.load_reference(MINISTRY_REFERENCE)
     ministries, unmatched = ministry_mod.build(orgs, reference)
+    # egov-law(jurisdiction解決)・rs-system(ministry解決)の両方が同じ形
+    # (dict[name, list[Ministry]])を必要とするため、ここで1回だけ作って共有する
+    ministry_reference_by_name = law_mod.to_ministry_reference(ministries)
     # **実際に読んだファイルのハッシュ**を出典に入れる。参照表にはレイクの
     # スナップショットが無いので、内容ハッシュが「どの版を使ったか」の唯一の証拠
     reference_digest = sources.content_digest(MINISTRY_REFERENCE.read_bytes())
@@ -276,6 +605,167 @@ def run(
             " lake.save() がメタデータを書く前に中断された疑いがある(未コミット)"
         )
 
+    # Task 10: houjin-bangou自身のグラフのcarry-over判定。前リリースに該当
+    # グラフが無ければ(隔離されていた等)、黙って空にせず据え置きを諦める
+    houjin_carry_date = _carry_over_source_date("houjin-bangou", fetched_on, previous_release)
+    carried_houjin_graph: Graph | None = None
+    if houjin_carry_date is not None:
+        assert previous_ds is not None
+        carried_houjin_graph = _extract_graph(
+            previous_ds, uris.graph_uri("houjin-bangou", houjin_carry_date)
+        )
+        if carried_houjin_graph is None:
+            houjin_carry_date = None
+
+    # =========================================================================
+    # Task 10: egov-law結線(任意ソース)。
+    #
+    # **`egov-law`自身のグラフが据え置き対象でも、この解析は省略しない。**
+    # rs-systemの根拠法令解決(basis_law)がlaw_records(law_by_id/by_title)を
+    # 必要とするため — houjin-bangouのorgsと同じ理由(egov-lawだけが不変で
+    # rs-systemが変化した場合に、rs-system側の解決に必要なデータが欠ける)
+    # =========================================================================
+    law_records: list[law_mod.LawRecord] = []
+    jurisdictions: dict[str, law_mod.JurisdictionResult] = {}
+    law_jurisdiction_resolved = 0
+    law_jurisdiction_unresolved = 0
+    law_jurisdiction_extraction_failed = 0
+    egov_date: datetime.date | None = None
+    egov_snapshot = None
+    egov_carry_date: datetime.date | None = None
+    carried_egov_graph: Graph | None = None
+
+    if "egov-law" in fetched_on:
+        egov_date = _source_date("egov-law", fetched_on)
+        egov_snapshot_path = lake.path_of("egov-law", egov_date, egov_law.FILENAME)
+        if not egov_snapshot_path.exists():
+            raise FileNotFoundError(
+                f"egov-lawのスナップショットが無い: {egov_snapshot_path}。"
+                " 先にコネクタで取得する"
+            )
+        egov_snapshot = next(
+            (
+                s
+                for s in lake.list_snapshots("egov-law")
+                if s.fetched_on == egov_date and s.path.name == egov_law.FILENAME
+            ),
+            None,
+        )
+        if egov_snapshot is None:
+            raise FileNotFoundError(
+                f"egov-lawのスナップショットのメタデータが無い: {egov_snapshot_path}.meta.json。"
+                " lake.save() がメタデータを書く前に中断された疑いがある(未コミット)"
+            )
+
+        old_ministry_names = old_ministries.load_old_ministries()
+        for record in law_mod.parse_laws(egov_snapshot_path):
+            law_records.append(record)
+            jr = law_mod.derive_jurisdiction(record, ministry_reference_by_name, old_ministry_names)
+            if jr is None or jr is law_mod.EXTRACTION_FAILED:
+                if jr is law_mod.EXTRACTION_FAILED:
+                    law_jurisdiction_extraction_failed += 1
+                continue
+            jurisdictions[record.law_id] = jr
+            law_jurisdiction_resolved += len(jr.resolved)
+            law_jurisdiction_unresolved += len(jr.unresolved)
+
+        egov_carry_date = _carry_over_source_date("egov-law", fetched_on, previous_release)
+        if egov_carry_date is not None:
+            assert previous_ds is not None
+            carried_egov_graph = _extract_graph(
+                previous_ds, uris.graph_uri("egov-law", egov_carry_date)
+            )
+            if carried_egov_graph is None:
+                egov_carry_date = None
+
+    # =========================================================================
+    # Task 10: rs-system結線(任意ソース)。
+    #
+    # **据え置き(carry-over)対象なら、パース・解決処理そのものを省略する**
+    # (houjin-bangou/egov-lawと異なり、rs-systemの解決結果を必要とする
+    # 下流の消費者がpipeline内に無いため、省略しても他の処理に影響しない —
+    # これがcarry-overの実際の計算コスト削減になる部分)
+    # =========================================================================
+    budget_projects_all: tuple[rs_mod.BudgetProjectRecord, ...] = ()
+    budget_expenditures_all: tuple[rs_mod.ExpenditureRecord, ...] = ()
+    budget_unresolved_all: tuple[rs_mod.UnresolvedBudgetReference, ...] = ()
+    budget_stats = rs_mod.BuildStats()
+    rs_date: datetime.date | None = None
+    rs_snapshot_sha256s: list[str] = []
+    rs_carry_date: datetime.date | None = None
+    carried_rs_graph: Graph | None = None
+
+    if "rs-system" in fetched_on:
+        rs_date = _source_date("rs-system", fetched_on)
+        # ファイル群の実在確認(メタデータのみ。CSV本体は読まない)は
+        # 据え置き判定の有無にかかわらず行う — 呼び出し側が指定した取得日に
+        # スナップショットが無ければ、据え置くにせよ再生成するにせよ
+        # 前提が崩れている
+        rs_paths = _rs_group_paths(rs_date)
+        rs_snapshot_sha256s = [
+            s.sha256
+            for s in lake.list_snapshots("rs-system")
+            if s.fetched_on == rs_date and s.path in rs_paths.values()
+        ]
+
+        rs_carry_date = _carry_over_source_date("rs-system", fetched_on, previous_release)
+        if rs_carry_date is not None:
+            assert previous_ds is not None
+            carried_rs_graph = _extract_graph(
+                previous_ds, uris.graph_uri("rs-system", rs_carry_date)
+            )
+            if carried_rs_graph is None:
+                rs_carry_date = None
+
+        if rs_carry_date is None:
+            laws_by_id = {r.law_id: r for r in law_records}
+            laws_by_title = rs_mod.laws_index_by_title(law_records)
+            # B14: 名称正規化による支出先解決(name_index)は導入しない。
+            # 実データでの解決件数が0件と確定済み(task-7-report.md:
+            # recipients_resolved_by_name=0/56,667)であり、この索引を
+            # 構築するには全法人(約581万件)をもう1パス走査する必要がある
+            # (build_recipient_name_index)。「計測してから導入する」
+            # (裁定B14)を字義通り守り、実測0件のまま追加のコストを払わない
+            # という判断(Task 11への申し送り: 将来データでこの前提が崩れたら
+            # 再検討する)
+            rs_parse_stats = rs_mod.RsParseStats()
+            rs_rows = list(rs_mod.parse_rs(rs_paths, stats=rs_parse_stats))
+            budget_result = rs_mod.build_projects(
+                rs_rows, ministry_reference_by_name, laws_by_id, laws_by_title, name_index={}
+            )
+            budget_projects_all = budget_result.projects
+            budget_expenditures_all = budget_result.expenditures
+            budget_unresolved_all = budget_result.unresolved
+            budget_stats = budget_result.stats
+
+    # 裁定B24(6): 「合計≒執行額」の比の分布を観測として計算する(ゲートには
+    # 使わない。budget_projects_all/budget_expenditures_allが空(rs-system
+    # 未結線・据え置き)ならループは走らず全て既定値0のまま)
+    budget_ratio_exact_1_0 = 0
+    budget_ratio_exact_2_0 = 0
+    budget_ratio_exact_3_0 = 0
+    budget_ratio_other = 0
+    budget_ratio_no_denominator = 0
+    if budget_projects_all:
+        totals_by_project: dict[tuple[str, str], int] = {}
+        for exp in budget_expenditures_all:
+            key = (exp.fiscal_year, exp.project_id)
+            totals_by_project[key] = totals_by_project.get(key, 0) + exp.amount
+        for project in budget_projects_all:
+            key = (project.fiscal_year, project.project_id)
+            total = totals_by_project.get(key, 0)
+            denom = project.prior_year_executed_amount
+            if denom is None or denom <= 0:
+                budget_ratio_no_denominator += 1
+            elif total == denom:
+                budget_ratio_exact_1_0 += 1
+            elif total == 2 * denom:
+                budget_ratio_exact_2_0 += 1
+            elif total == 3 * denom:
+                budget_ratio_exact_3_0 += 1
+            else:
+                budget_ratio_other += 1
+
     # =========================================================================
     # Task 8: 全法人のストリーミング投入(フラグON時のみ)。
     #
@@ -290,6 +780,10 @@ def run(
     corporations_all_quarantined = 0
     all_corporations_graph_uri: str | None = None
     all_corporations_nq_path: Path | None = None
+    # Task 10(B21): 全法人ストリームが実際に認識した法人番号の集合。
+    # 参照整合ゲートの外部知識(externally_typed)に使う。フラグOFF時は
+    # `None`(=この知識が存在しない。空集合`set()`とは意味的に区別する)
+    stream_stats: stream_emit.StreamStats | None = None
 
     if include_all_corporations:
         all_corporations_graph_uri = uris.graph_uri(ALL_CORPORATIONS_GRAPH_ID, houjin_date)
@@ -338,12 +832,14 @@ def run(
             )
 
     ds = Dataset(default_union=True)
-    _merge(
-        ds,
-        emit.emit_organizations(
-            orgs, "houjin-bangou", houjin_date, sha256=houjin_snapshot.sha256
-        ),
-    )
+
+    if houjin_carry_date is None:
+        _merge(
+            ds,
+            emit.emit_organizations(
+                orgs, "houjin-bangou", houjin_date, sha256=houjin_snapshot.sha256
+            ),
+        )
     _merge(
         ds,
         emit.emit_ministries(
@@ -355,6 +851,25 @@ def run(
             recorded_on=ministry_recorded_on,
         ),
     )
+    if "egov-law" in fetched_on and egov_carry_date is None:
+        _merge(
+            ds,
+            emit.emit_laws(
+                law_records, jurisdictions, "egov-law", egov_date, sha256=egov_snapshot.sha256
+            ),
+        )
+    if "rs-system" in fetched_on and rs_carry_date is None:
+        _merge(
+            ds,
+            emit.emit_budget(
+                budget_projects_all,
+                budget_expenditures_all,
+                budget_unresolved_all,
+                "rs-system",
+                rs_date,
+                sha256=rs_snapshot_sha256s,
+            ),
+        )
 
     # Task 8: バッチ検証を通った全法人グラフの出典をここで記録する(原則7:
     # 出典を持たない事実をKGに入れない)。**検証に失敗していれば記録しない**
@@ -390,17 +905,73 @@ def run(
 
     clean = validate.passing_dataset(ds, results)
 
+    # Task 10: 据え置き(carry-over)したグラフを`clean`に合流させる。
+    # SHACL検証を再び受けさせない(前リリースで既に通っている、かつ
+    # バイト単位で不変であることが確定しているため)
+    carried_over: list[str] = []
+    if houjin_carry_date is not None:
+        assert carried_houjin_graph is not None
+        _append_carried_graph(
+            clean, carried_over,
+            source_id="houjin-bangou",
+            graph_uri_str=uris.graph_uri("houjin-bangou", houjin_carry_date),
+            date=houjin_carry_date,
+            sha256=houjin_snapshot.sha256,
+            graph=carried_houjin_graph,
+            base_uri=settings.base_uri,
+        )
+    if egov_carry_date is not None:
+        assert carried_egov_graph is not None and egov_snapshot is not None
+        _append_carried_graph(
+            clean, carried_over,
+            source_id="egov-law",
+            graph_uri_str=uris.graph_uri("egov-law", egov_carry_date),
+            date=egov_carry_date,
+            sha256=egov_snapshot.sha256,
+            graph=carried_egov_graph,
+            base_uri=settings.base_uri,
+        )
+    if rs_carry_date is not None:
+        assert carried_rs_graph is not None
+        _append_carried_graph(
+            clean, carried_over,
+            source_id="rs-system",
+            graph_uri_str=uris.graph_uri("rs-system", rs_carry_date),
+            date=rs_carry_date,
+            sha256=rs_snapshot_sha256s,
+            graph=carried_rs_graph,
+            base_uri=settings.base_uri,
+        )
+
+    # Task 10(裁定B21): houjin-bangou-allは`clean`に載らない(rdflibに載る
+    # 規模ではないため、意図的に別経路。stream_emit.py/validate.pyの
+    # モジュールdocstring参照)。その代わり、実際に投入した法人番号の集合を
+    # 「外部知識」として参照整合ゲートに渡す — budget:recipient等が指す
+    # 民間企業への参照を、和集合に型情報を実体化させずに検査できるようにする。
+    # **除外(Task 8のexclude)ではない**: 除外は「検査しない」ことになり
+    # 54.9k件規模の実参照の検査放棄になる(裁定B21)ため、この方式に置き換えた
+    externally_typed: dict[URIRef, Callable[[URIRef], bool]] | None = None
+    if (
+        include_all_corporations
+        and corporations_all_quarantined == 0
+        and stream_stats is not None
+        and stream_stats.houjin_bangou_seen is not None
+    ):
+        org_organization_class = URIRef(f"{settings.base_uri}/def/org#Organization")
+        externally_typed = {
+            org_organization_class: _all_corporations_membership_test(
+                settings.base_uri, stream_stats.houjin_bangou_seen
+            )
+        }
+
     # **隔離を通過した `clean` に対して検査する(`ds` ではない)。** SHACLで
     # 隔離されたグラフへの参照は「壊れて当然」なのでここでも違反として拾って
     # しまうと、原因(SHACL側の隔離)と結果(参照切れ)が両方報告されて
     # ノイズになる。`clean` は`--allow-partial`時に実際に出荷される内容と
     # 一致するので、そこでの参照切れこそがこのゲートが守るべきものである。
-    # **houjin-bangou-allは`clean`に含まれない**(rdflibに載らない規模のため
-    # 意図的に別経路。validate.check_reference_integrityのexcludeパラメータは
-    # このゲートに和集合として merge する将来の呼び出し側のために用意した
-    # 機構であり、ここでは使わない — 除外は「載っているものを取り除く」
-    # 操作であって、そもそも載せていないものには不要)
-    reference_violations = validate.check_reference_integrity(clean, SHAPES_DIR)
+    reference_violations = validate.check_reference_integrity(
+        clean, SHAPES_DIR, externally_typed=externally_typed
+    )
 
     out_dir.mkdir(parents=True, exist_ok=True)
     emit.write_nquads(clean, out_dir / "kg.nq")
@@ -430,14 +1001,27 @@ def run(
     # **成果物に残ったソースだけを sources に載せる。** グラフが隔離されたのに
     # 「このソースはこの日付のデータを含む」と書くと、manifest が嘘をつく
     # (`--allow-partial` で出荷したときに実際に起きる)。落ちたことは
-    # quarantined_sources に出して、黙って消さない
-    source_dates = {"houjin-bangou": houjin_date, "ministry-codes": ministry_date}
+    # quarantined_sources に出して、黙って消さない。
+    # **Task 10: 据え置きしたソースは、今回の取得日ではなく引き継いだ元の
+    # 日付を載せる**(「実際に入っているもの」原則。同じ理由でI2と同族)
+    effective_source_dates: dict[str, datetime.date] = {
+        "houjin-bangou": houjin_carry_date if houjin_carry_date is not None else houjin_date,
+        "ministry-codes": ministry_date,
+    }
+    if "egov-law" in fetched_on:
+        effective_source_dates["egov-law"] = (
+            egov_carry_date if egov_carry_date is not None else egov_date
+        )
+    if "rs-system" in fetched_on:
+        effective_source_dates["rs-system"] = (
+            rs_carry_date if rs_carry_date is not None else rs_date
+        )
     surviving_sources = {
         sid: d.isoformat()
-        for sid, d in source_dates.items()
+        for sid, d in effective_source_dates.items()
         if uris.graph_uri(sid, d) in surviving_graphs
     }
-    quarantined_sources = sorted(set(source_dates) - set(surviving_sources))
+    quarantined_sources = sorted(set(effective_source_dates) - set(surviving_sources))
 
     return PipelineReport(
         # リリース名は**呼び出し側が渡した取得日**のうち最も新しいもの。
@@ -461,4 +1045,29 @@ def run(
         corporations_all=corporations_all,
         corporations_all_dedup_removed=corporations_all_dedup_removed,
         corporations_all_quarantined=corporations_all_quarantined,
+        carried_over=carried_over,
+        law_records=len(law_records),
+        law_jurisdiction_resolved=law_jurisdiction_resolved,
+        law_jurisdiction_unresolved=law_jurisdiction_unresolved,
+        law_jurisdiction_extraction_failed=law_jurisdiction_extraction_failed,
+        budget_projects=len(budget_projects_all),
+        budget_expenditures=len(budget_expenditures_all),
+        budget_expenditures_bundled=budget_stats.expenditures_bundled,
+        budget_recipients_sentinel=budget_stats.recipients_sentinel,
+        budget_recipients_resolved_by_houjin_bangou=budget_stats.recipients_resolved_by_houjin_bangou,
+        budget_recipients_resolved_by_name=budget_stats.recipients_resolved_by_name,
+        budget_recipients_unresolved=budget_stats.recipients_unresolved,
+        budget_ministries_resolved=budget_stats.ministries_resolved,
+        budget_ministries_unresolved=budget_stats.ministries_unresolved,
+        budget_basis_law_resolved=(
+            budget_stats.basis_law_resolved_by_id
+            + budget_stats.basis_law_resolved_by_title_raw
+            + budget_stats.basis_law_resolved_by_title_stripped
+        ),
+        budget_basis_law_unresolved=budget_stats.basis_law_unresolved,
+        budget_ratio_exact_1_0=budget_ratio_exact_1_0,
+        budget_ratio_exact_2_0=budget_ratio_exact_2_0,
+        budget_ratio_exact_3_0=budget_ratio_exact_3_0,
+        budget_ratio_other=budget_ratio_other,
+        budget_ratio_no_denominator=budget_ratio_no_denominator,
     )

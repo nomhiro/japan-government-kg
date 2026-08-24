@@ -5,7 +5,7 @@ import pytest
 from zenken_rows import zenken_row, zipped
 
 from jgkg import lake, pipeline
-from jgkg.connectors import houjin_bangou
+from jgkg.connectors import egov_law, houjin_bangou
 
 DAY = datetime.date(2026, 8, 1)
 # 取得して来るソースの日付だけを渡す。参照表(ministry-codes)の日付は
@@ -495,3 +495,215 @@ def test_run_with_the_flag_does_not_append_when_batch_validation_fails(
     with pytest.raises(pipeline.QuarantineNotEmptyError, match="全法人"):
         pipeline.enforce_release_gate(report)
     pipeline.enforce_release_gate(report, allow_partial=True)  # 明示指定時だけ続行
+
+
+# =============================================================================
+# Task 10(Ruling B17): egov-law / rs-system の pipeline.run への結線
+# =============================================================================
+
+RS_YEAR = 2025
+KOUSEIROUDOU_BANGOU = "6000012070001"  # 厚生労働省(実在。R45)
+WOLFSTYLE_BANGOU = "3010001137944"     # 株式会社ウルフスタイル(実在RS支出先。R45)
+
+
+def _zip_single_csv(text: str, member: str = "data.csv") -> bytes:
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr(member, text)
+    return buf.getvalue()
+
+
+def _rs_row_for(group: str, values: dict) -> list[str]:
+    from jgkg.transform import rs_columns
+
+    spec = rs_columns.RS_FILES[group]
+    row = [""] * len(spec.full_header)
+    for name, value in values.items():
+        row[spec.col[name]] = value
+    return row
+
+
+def _rs_csv_text(group: str, rows: list[list[str]]) -> str:
+    import csv
+    import io
+
+    from jgkg.transform import rs_columns
+
+    spec = rs_columns.RS_FILES[group]
+    buf = io.StringIO(newline="")
+    writer = csv.writer(buf)
+    writer.writerow(spec.full_header)
+    writer.writerows(rows)
+    return buf.getvalue()
+
+
+def _save_rs_snapshot(fetched_on, groups: dict[str, list[list[str]]]) -> None:
+    from jgkg.connectors import rs_system
+
+    for group, rows in groups.items():
+        filename = rs_system.filename_for(group, RS_YEAR)
+        content = _zip_single_csv(_rs_csv_text(group, rows))
+        lake.save("rs-system", fetched_on, filename, content)
+
+
+def _egov_law_jsonl(records: list[dict]) -> bytes:
+    import json
+
+    lines = [json.dumps(r, ensure_ascii=False, sort_keys=True) for r in records]
+    return ("\n".join(lines) + "\n").encode("utf-8") if lines else b""
+
+
+def _minimal_law_record(law_id: str, law_num: str, law_title: str = "テスト法令") -> dict:
+    return {
+        "law_info": {
+            "law_id": law_id, "law_num": law_num, "law_num_type": "MinisterialOrdinance",
+            "law_type": "MinisterialOrdinance", "promulgation_date": "2020-01-01",
+        },
+        "revision_info": None,
+        "current_revision_info": {"law_title": law_title, "abbrev": None, "repeal_status": "None"},
+    }
+
+
+@pytest.fixture
+def houjin_with_a_company():
+    """厚生労働省(政府機関)と株式会社ウルフスタイル(民間)の2行だけの小さいスナップショット。
+
+    rs-systemのministry解決・recipient解決の両方を、実在の値(R45)で
+    exerciseするための最小構成(共有fixture`houjin_bangou_sample.csv`の
+    唯一の民間法人はRSのセンチネル値と同じ番号を偶然持つため、ここでは
+    専用のスナップショットを別に作る)。
+    """
+    content = (
+        zenken_row(houjin_bangou=KOUSEIROUDOU_BANGOU, name="厚生労働省", kind="101")
+        + zenken_row(houjin_bangou=WOLFSTYLE_BANGOU, name="株式会社ウルフスタイル", kind="301", seq="2")
+    )
+    lake.save("houjin-bangou", DAY, houjin_bangou.FILENAME, zipped(content))
+
+
+def test_run_requires_all_corporations_flag_when_rs_system_is_included():
+    """rs-systemを含むのにinclude_all_corporations=Falseなら、ファイルへ触れる前に
+
+    即座にエラーになること(裁定B17懸念2/B18)。
+    """
+    with pytest.raises(ValueError, match="include_all_corporations"):
+        pipeline.run({"houjin-bangou": DAY, "rs-system": DAY}, Path("unused"))
+
+
+def test_run_wires_egov_law_into_a_named_graph_with_resolved_jurisdiction(
+    houjin_with_a_company, tmp_path
+):
+    from jgkg import uris
+    from jgkg.connectors import egov_law
+
+    lake.save(
+        "egov-law", DAY, egov_law.FILENAME,
+        _egov_law_jsonl([_minimal_law_record("323M60000100010", "令和三年厚生労働省令第一号")]),
+    )
+    report = pipeline.run({"houjin-bangou": DAY, "egov-law": DAY}, tmp_path / "out")
+
+    assert uris.graph_uri("egov-law", DAY) in report.graphs
+    assert report.law_records == 1
+    assert report.law_jurisdiction_resolved == 1
+    assert report.law_jurisdiction_unresolved == 0
+    assert report.law_jurisdiction_extraction_failed == 0
+    assert report.sources["egov-law"] == DAY.isoformat()
+
+
+def test_run_wires_egov_law_counts_unresolved_and_extraction_failed(
+    houjin_with_a_company, tmp_path
+):
+    """未解決(NO_CANDIDATE)と抽出失敗(EXTRACTION_FAILED)がそれぞれ
+
+    別カウンタに載ること(結線タスクが行うと申し送られていた計数)。
+    """
+    lake.save(
+        "egov-law", DAY, egov_law.FILENAME,
+        _egov_law_jsonl([
+            # 参照表に無い名称(NO_CANDIDATE)
+            _minimal_law_record("999RS0000000099", "ダミー機関規則第一号"),
+            # 府省令の形をしているのに1文字の区分(「政」)= 経路1対象外(None)。
+            # これはjurisdictionsにもEXTRACTION_FAILEDにも数えない対象外行
+            _minimal_law_record("999RS0000000098", "令和三年政令第一号"),
+        ]),
+    )
+    report = pipeline.run({"houjin-bangou": DAY, "egov-law": DAY}, tmp_path / "out")
+
+    assert report.law_records == 2
+    assert report.law_jurisdiction_resolved == 0
+    assert report.law_jurisdiction_unresolved == 1  # ダミー機関 -> NO_CANDIDATE
+    assert report.law_jurisdiction_extraction_failed == 0
+
+
+def test_run_wires_rs_system_and_reports_budget_and_ratio_observation(
+    houjin_with_a_company, tmp_path
+):
+    """rs-systemの結線: グラフが出現し、BuildStats(束ね・センチネル・解決/未解決)
+
+    がPipelineReportに載り、B24(6)の比の分布が観測として計算されること。
+    """
+    from jgkg import uris
+
+    _save_rs_snapshot(DAY, {
+        "project_summary": [
+            _rs_row_for("project_summary", {
+                "project_id": "1", "fiscal_year": "2025", "project_name": "テスト事業1",
+                "ministry_name": "厚生労働省",
+            }),
+            _rs_row_for("project_summary", {
+                "project_id": "2", "fiscal_year": "2025", "project_name": "テスト事業2",
+                "ministry_name": "厚生労働省",
+            }),
+        ],
+        "budget_summary": [
+            # project 1: 当年度100・前年度執行額100(=分母100。比を計算できる)
+            _rs_row_for("budget_summary", {
+                "project_id": "1", "budget_fiscal_year": "2025",
+                "budget_amount": "100", "executed_amount": "0",
+            }),
+            _rs_row_for("budget_summary", {
+                "project_id": "1", "budget_fiscal_year": "2024",
+                "budget_amount": "90", "executed_amount": "100",
+            }),
+            # project 2: 前年度の行が無い(分母欠損。budget_ratio_no_denominatorに数える)
+            _rs_row_for("budget_summary", {
+                "project_id": "2", "budget_fiscal_year": "2025",
+                "budget_amount": "50", "executed_amount": "0",
+            }),
+        ],
+        "policy_measure_laws_and_regulations": [],
+        "payee_payment_information": [
+            # project 1: 実在の支出先へ200円(=分母100の2倍。比2.0)
+            _rs_row_for("payee_payment_information", {
+                "project_id": "1", "recipient_name": "株式会社ウルフスタイル",
+                "recipient_houjin_bangou": WOLFSTYLE_BANGOU, "expenditure_amount": "200",
+                "recipient_other_flag": "FALSE",
+            }),
+            # project 2: センチネル(法人でない支払先。B18)
+            _rs_row_for("payee_payment_information", {
+                "project_id": "2", "recipient_name": "個人Ａ",
+                "recipient_houjin_bangou": "9999999999999", "expenditure_amount": "10",
+                "recipient_other_flag": "FALSE",
+            }),
+        ],
+    })
+
+    report = pipeline.run(
+        {"houjin-bangou": DAY, "rs-system": DAY}, tmp_path / "out",
+        include_all_corporations=True,
+    )
+
+    assert uris.graph_uri("rs-system", DAY) in report.graphs
+    assert report.reference_violations == [], report.reference_violations
+    assert report.budget_projects == 2
+    assert report.budget_expenditures == 2
+    assert report.budget_recipients_resolved_by_houjin_bangou == 1
+    assert report.budget_recipients_sentinel == 1
+    assert report.budget_ministries_resolved == 2
+    # B24(6): project 1はΣ(200)/前年度執行額(100)=2.0、project 2は分母欠損
+    assert report.budget_ratio_exact_2_0 == 1
+    assert report.budget_ratio_no_denominator == 1
+    assert report.budget_ratio_exact_1_0 == 0
+    assert report.budget_ratio_other == 0
