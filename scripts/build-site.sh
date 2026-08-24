@@ -10,6 +10,13 @@
 # (同じものを2箇所にコミットしない)。
 set -euo pipefail
 
+# 最終レビュー⚠️E(実測): Windowsのコンソールコードページ(cp932)で
+# stdoutが開かれると、下のuv run python -c "..."が出す日本語(「パス分の
+# ブロック」等)が文字化けする。serve.sh・generate-schema.shで既に2回
+# 直した欠陥の3回目(実測: 修正前は`パス分のブロック`が
+# `�p�X���̃u���b�N`のように化けた)。
+export PYTHONUTF8=1
+
 if [ -f .env ]; then
   set -a
   . ./.env
