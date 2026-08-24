@@ -303,9 +303,10 @@ def emit_budget(
         data.add((s, ns["budget"]["fiscalYear"], Literal(int(exp.fiscal_year))))
         if exp.recipient_houjin_bangou is not None:
             data.add((s, ns["budget"]["recipient"], URIRef(org_uri(exp.recipient_houjin_bangou))))
-        # センチネル法人番号の行(B18)だけがpayeeLabelを持つ。recipientが
-        # 無い他の行(束ね・未解決)と区別するため`is not None`で判定する
-        # (空文字を欠損と混同しないという§8.2と同じ判定形)
+        # センチネル法人番号の行(B18)・実在しない法人番号の行(Ruling B27)
+        # だけがpayeeLabelを持つ。recipientが無い他の行(束ね・未解決)と
+        # 区別するため`is not None`で判定する(空文字を欠損と混同しないと
+        # いう§8.2と同じ判定形)
         if exp.payee_label is not None:
             data.add((s, ns["budget"]["payeeLabel"], Literal(exp.payee_label, lang="ja")))
         # role(B20)はverbatim・plain(LangStringではない。budget.yaml参照)なので

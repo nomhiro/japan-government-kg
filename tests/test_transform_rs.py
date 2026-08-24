@@ -362,6 +362,103 @@ def test_resolve_recipient_a_real_houjin_bangou_is_not_flagged_as_sentinel():
 
 
 # =============================================================================
+# resolve_recipient: 実在しない法人番号(Ruling B27。task-10-review.md裁定要1)
+# =============================================================================
+
+
+def test_resolve_recipient_excludes_a_houjin_bangou_that_does_not_exist():
+    """`houjin_bangou_exists`が偽と判定する法人番号は直結しない(B18のセンチネル
+
+    と同じ形)。実データで全法人フラグONでも60件・distinct53件が残ることが
+    確定している(ダミー値`1234567890123`等)。method/reasonはNone(未解決
+    ではない — 照合すべき実体がそもそも無い)。`is_nonexistent`だけが立つ。
+    """
+    row = rs.ExpenditureLine(
+        recipient_name="実在しない架空商事株式会社", recipient_houjin_bangou="1234567890123",
+        is_bundled=False, amount=1000,
+    )
+    result = rs.resolve_recipient(row, name_index={}, houjin_bangou_exists=lambda s: False)
+    assert result.houjin_bangou is None
+    assert result.method is None
+    assert result.reason is None
+    assert result.is_nonexistent is True
+    assert result.is_sentinel is False
+
+
+def test_resolve_recipient_a_houjin_bangou_that_exists_is_not_flagged_as_nonexistent():
+    """壊し確認の裏取り: `houjin_bangou_exists`が真を返す値はis_nonexistentにならない。"""
+    row = rs.ExpenditureLine(
+        recipient_name="株式会社ウルフスタイル", recipient_houjin_bangou="3010001137944",
+        is_bundled=False, amount=3025000,
+    )
+    result = rs.resolve_recipient(row, name_index={}, houjin_bangou_exists=lambda s: True)
+    assert result.is_nonexistent is False
+    assert result.method == "houjin_bangou"
+    assert result.houjin_bangou == "3010001137944"
+
+
+def test_resolve_recipient_skips_the_existence_check_when_not_given():
+    """`houjin_bangou_exists`を渡さない既定の呼び出しでは、実在確認を行わず
+
+    従来どおり直結すること(既存の全呼び出し元との後方互換性)。
+    """
+    row = rs.ExpenditureLine(
+        recipient_name="実在しない架空商事株式会社", recipient_houjin_bangou="1234567890123",
+        is_bundled=False, amount=1000,
+    )
+    result = rs.resolve_recipient(row, name_index={})
+    assert result.is_nonexistent is False
+    assert result.method == "houjin_bangou"
+    assert result.houjin_bangou == "1234567890123"
+
+
+def test_resolve_recipient_sentinel_takes_priority_over_the_existence_check():
+    """センチネル(`9999999999999`)は`houjin_bangou_exists`が何を返しても
+
+    センチネル判定が先に効くこと(§8.1と同じ順序。センチネルはそもそも
+    実在確認の対象ではない)。
+    """
+    row = rs.ExpenditureLine(
+        recipient_name="個人Ａ", recipient_houjin_bangou="9999999999999",
+        is_bundled=False, amount=93000,
+    )
+    result = rs.resolve_recipient(row, name_index={}, houjin_bangou_exists=lambda s: False)
+    assert result.is_sentinel is True
+    assert result.is_nonexistent is False
+
+
+def test_build_projects_excludes_a_nonexistent_houjin_bangou_and_keeps_the_display_name_via_payee_label():
+    """実在しない法人番号(Ruling B27)の行はExpenditureは作るが
+
+    budget:recipientは張らず、payeeLabelに表示名を残し、UnresolvedReferenceも
+    作らない(B18のセンチネルと全く同じ機構)。BuildStatsの専用カウンタに
+    計上する。
+    """
+    expenditures = [
+        rs.ExpenditureLine(
+            recipient_name="実在しない架空商事株式会社", recipient_houjin_bangou="1234567890123",
+            is_bundled=False, amount=93000,
+        )
+    ]
+    result = rs.build_projects(
+        [_row(project_id="9001", expenditures=expenditures)], MINISTRY_REF, LAWS_BY_ID, LAWS_BY_TITLE,
+        houjin_bangou_exists=lambda s: False,
+    )
+    assert len(result.expenditures) == 1
+    exp = result.expenditures[0]
+    assert exp.recipient_houjin_bangou is None
+    assert exp.payee_label == "実在しない架空商事株式会社"
+    assert exp.label == "実在しない架空商事株式会社"
+    assert not [u for u in result.unresolved if u.kind == "recipient"], (
+        "実在しない法人番号は照合すべき実体が無いので「未解決」ではない"
+    )
+    assert result.stats.recipients_nonexistent_houjin_bangou == 1
+    assert result.stats.recipients_unresolved == 0
+    assert result.stats.recipients_resolved_by_houjin_bangou == 0
+    assert result.stats.recipients_sentinel == 0
+
+
+# =============================================================================
 # build_recipient_name_index(Step 3: RSの支出先名の集合に限定してストリーミング)
 # =============================================================================
 
@@ -1147,10 +1244,13 @@ def test_payee_row_accounting_identity_holds_across_the_full_fixture():
 
 
 def test_expenditure_resolution_accounting_identity_holds_across_the_full_fixture():
-    """emitされる全Expenditureが、束ね・センチネル・法人番号直結・名称解決・
+    """emitされる全Expenditureが、束ね・センチネル・実在しない法人番号(B27)・
 
-    未解決のいずれか1つに必ず属する(`resolve_recipient`の4分岐+束ね早期リターン
-    が全域を尽くしていることの検算)。
+    法人番号直結・名称解決・未解決のいずれか1つに必ず属する
+    (`resolve_recipient`の5分岐+束ね早期リターンが全域を尽くしていることの
+    検算)。このfixtureへの呼び出しは`houjin_bangou_exists`を渡さないため
+    `recipients_nonexistent_houjin_bangou`は常に0だが、恒等式には項として
+    含めておく(将来この呼び出しにも実在確認を結線した場合の回帰を検知する)。
     """
     paths = _full_fixture_paths()
     rows = list(rs.parse_rs(paths))
@@ -1159,6 +1259,7 @@ def test_expenditure_resolution_accounting_identity_holds_across_the_full_fixtur
     assert (
         result.stats.expenditures_bundled
         + result.stats.recipients_sentinel
+        + result.stats.recipients_nonexistent_houjin_bangou
         + result.stats.recipients_resolved_by_houjin_bangou
         + result.stats.recipients_resolved_by_name
         + result.stats.recipients_unresolved

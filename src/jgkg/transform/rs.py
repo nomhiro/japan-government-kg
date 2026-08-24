@@ -21,13 +21,24 @@ Task 6の分岐と同じ理由で、`parse_rs` も単一 `path` ではなく
 しないが、UnresolvedReferenceも立てない — 束ね行(「意図的に複数を集約」)・
 未解決(「照合を試みたが一致しなかった」)のどちらでもなく、「そもそも
 照合すべき法人ではない」という別の事実を表すため(task-7-review.md指摘1)。
+
+**実在しない法人番号(Ruling B27)は第5の分類**: `houjin_bangou_exists`
+(呼び出し側が全法人ストリームから渡す、実在確認のmembership_test)を渡すと、
+形式は13桁でセンチネルでもないが**法人番号公表サイトの全件データに実在しない**
+値を同じ作法で扱う——recipientは設定せず、UnresolvedReferenceも立てない。
+実データで全法人フラグONでも60件・distinct53件が残ることが確定している
+(task-10-review.md裁定要1。ダミー値`1234567890123`や地方公共団体レンジ
+`X00002...`等)。センチネルとの違いは「検出に外部データが要る」ことだけで、
+「そもそも照合すべき実体が存在しない」という結論の形は同じなので、
+B18と全く同じ機構(recipientを張らず、payeeLabelに表示名を残し、
+UnresolvedReferenceを作らない)を再利用する。
 """
 import csv
 import io
 import re
 import unicodedata
 import zipfile
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -601,23 +612,29 @@ def build_recipient_name_index(
 class RecipientResolution:
     """`resolve_recipient` の結果。
 
-    束ね行・センチネル行はどちらも method/reason ともに `None`
-    (解決を試みていないことを型で表す — NO_CANDIDATEと紛れさせない)。
-    `is_sentinel` でこの2つを区別する: 束ね行は「複数の支払先を意図的に
-    集約した」行、センチネル行は「そもそも法人ではない支払先(個人・職員等)」
-    の行で、どちらも`budget:recipient`は張らないが、センチネル行は
-    **UnresolvedReferenceも作らない**(照合すべき実体がそもそも存在しない
-    ので「未解決」と呼ぶと嘘になる。B18・task-7-review.md指摘1)。
+    束ね行・センチネル行・実在しない法人番号の行(Ruling B27)はどれも
+    method/reason ともに `None`(解決を試みていないことを型で表す —
+    NO_CANDIDATEと紛れさせない)。`is_sentinel`/`is_nonexistent`で区別する:
+    束ね行は「複数の支払先を意図的に集約した」行、センチネル行は「そもそも
+    法人ではない支払先(個人・職員等)」の行、実在しない法人番号の行は
+    「法人番号の形はしているが法人番号公表サイトの全件データに存在しない」
+    行——どれも`budget:recipient`は張らないが、センチネル・実在しない法人番号
+    の2つは**UnresolvedReferenceも作らない**(照合すべき実体がそもそも
+    存在しないので「未解決」と呼ぶと嘘になる。B18・task-7-review.md指摘1/
+    Ruling B27)。
     """
 
     houjin_bangou: str | None
     method: Literal["houjin_bangou", "name"] | None
     reason: Literal["NO_CANDIDATE", "AMBIGUOUS"] | None
     is_sentinel: bool = False
+    is_nonexistent: bool = False
 
 
 def resolve_recipient(
-    line: ExpenditureLine, name_index: Mapping[str, list[str]]
+    line: ExpenditureLine,
+    name_index: Mapping[str, list[str]],
+    houjin_bangou_exists: Callable[[str], bool] | None = None,
 ) -> RecipientResolution:
     """支出先1件を解決する(B14: 法人番号直結 → 名称正規化の一意一致 → 未解決)。
 
@@ -629,12 +646,24 @@ def resolve_recipient(
     の対象から除外する** — 束ね行の判定の直後、法人番号直結の判定より前に
     見る(法人番号が非空でもセンチネルなら直結しない。束ね行チェックを先に
     置く理由は§8.1と同じ順序で、束ね行はそもそも法人番号を見ない設計だから)。
+
+    **`houjin_bangou_exists`(Ruling B27)**: 渡された場合、センチネルでない
+    非空の法人番号がこの述語で偽と判定されたら直結しない(`is_nonexistent`)。
+    **既定は`None`(=検査しない)**——呼び出し側(pipeline.py)が全法人
+    ストリームを実行した場合だけ、実際に認識した法人番号の集合から作った
+    membership_testを渡す(B21のexternally_typedと同じ「黙って緩めない」
+    精神。既存の呼び出し元(この引数を渡さない全ての呼び出し)は今までと
+    同じ挙動を保つ)。
     """
     if line.is_bundled:
         return RecipientResolution(None, None, None)
     if line.recipient_houjin_bangou in SENTINEL_HOUJIN_BANGOU:
         return RecipientResolution(None, None, None, is_sentinel=True)
     if line.recipient_houjin_bangou:
+        if houjin_bangou_exists is not None and not houjin_bangou_exists(
+            line.recipient_houjin_bangou
+        ):
+            return RecipientResolution(None, None, None, is_nonexistent=True)
         return RecipientResolution(line.recipient_houjin_bangou, "houjin_bangou", None)
 
     normalized = normalize_corporate_name(line.recipient_name)
@@ -672,6 +701,11 @@ class BuildStats:
     expenditures_seen: int = 0
     expenditures_bundled: int = 0
     recipients_sentinel: int = 0
+    # Ruling B27: 形式は法人番号だがhoujin_bangou_existsが偽と判定した件数
+    # (実データで全法人フラグONでも60件・distinct53件が残ることが確定して
+    # いる。センチネルと同じ「recipientを張らずUnresolvedReferenceも作らない」
+    # 扱い)。`houjin_bangou_exists`を渡さない呼び出しでは常に0のまま
+    recipients_nonexistent_houjin_bangou: int = 0
     recipients_resolved_by_houjin_bangou: int = 0
     recipients_resolved_by_name: int = 0
     recipients_unresolved: int = 0
@@ -699,9 +733,10 @@ class ExpenditureRecord:
     amount: int
     label: str
     is_bundled: bool
-    # センチネル行(B18)の表示名。`recipient_houjin_bangou`がNoneでも
-    # 「未解決」ではない行だけがこれを持つ(束ね行はlabelで足りるので持たない
-    # — budget.yaml Expenditureのdocstring参照)
+    # センチネル行(B18)・実在しない法人番号の行(Ruling B27)の表示名。
+    # `recipient_houjin_bangou`がNoneでも「未解決」ではない行だけがこれを持つ
+    # (束ね行はlabelで足りるので持たない — budget.yaml Expenditureの
+    # docstring参照)
     payee_label: str | None = None
     role: str = ""
 
@@ -736,11 +771,12 @@ def build_projects(
     laws_by_id: Mapping[str, LawRecord],
     laws_by_title: Mapping[str, list[LawRecord]],
     name_index: Mapping[str, list[str]] = {},  # 読み取り専用。呼び出し側が変更しない
+    houjin_bangou_exists: Callable[[str], bool] | None = None,
 ) -> BuildResult:
     """`RsRow` を解決済みの `BudgetProjectRecord` / `ExpenditureRecord` にする。
 
     **ブリーフ本文の署名は `(rows, ministry_ref, laws_by_title)` の3引数だが、
-    2つの理由で逸脱する(Task 7報告書の逸脱台帳を参照)**:
+    3つの理由で逸脱する(Task 7報告書の逸脱台帳を参照)**:
 
     1. B13(law_id直結を主にする裁定)後は law_id 単体でも引けないと経路2の
        (1)が実装できないため、`laws_by_id` を第4引数として加えた
@@ -751,6 +787,9 @@ def build_projects(
        を回す前の1回目のパースだけを見たいテスト)を壊さないため)。
        `build_recipient_name_index` の出力をそのまま渡せる形
        (`dict[normalized_name, list[houjin_bangou]]`)
+    3. Ruling B27(Task 10修正ラウンド1): 実在しない法人番号を第5分類として
+       弾くための`houjin_bangou_exists`を第6引数として加えた(既定は`None`
+       =検査しない。`resolve_recipient`にそのまま渡すだけの薄い引き渡し)
 
     返り値も3-tupleではなく `BuildResult`(dataclass。中に stats を持つ)にした
     — 解決率・束ね件数・未解決内訳を「消費者のいない記録」にしないため(欠陥型4)。
@@ -828,7 +867,7 @@ def build_projects(
             stats.expenditures_seen += 1
             if line.is_bundled:
                 stats.expenditures_bundled += 1
-            recipient = resolve_recipient(line, name_index)
+            recipient = resolve_recipient(line, name_index, houjin_bangou_exists)
             expenditures.append(
                 ExpenditureRecord(
                     project_id=row.project_id,
@@ -838,9 +877,14 @@ def build_projects(
                     amount=line.amount,
                     label=line.recipient_name,
                     is_bundled=line.is_bundled,
-                    # センチネル行だけがpayeeLabelを持つ(B18)。束ね行は
-                    # labelで表示名を既に持つため、ここでは重複させない
-                    payee_label=line.recipient_name if recipient.is_sentinel else None,
+                    # センチネル行(B18)・実在しない法人番号の行(Ruling B27)
+                    # だけがpayeeLabelを持つ。束ね行はlabelで表示名を既に
+                    # 持つため、ここでは重複させない
+                    payee_label=(
+                        line.recipient_name
+                        if (recipient.is_sentinel or recipient.is_nonexistent)
+                        else None
+                    ),
                     role=line.role,
                 )
             )
@@ -848,6 +892,10 @@ def build_projects(
                 # B18: 法人でない支払先(センチネル)。「未解決」ではない
                 # (照合すべき実体が無い)ので UnresolvedReference は作らない
                 stats.recipients_sentinel += 1
+            elif recipient.is_nonexistent:
+                # Ruling B27: 形式は法人番号だが実在しない。センチネルと同じ
+                # 理由でUnresolvedReferenceは作らない
+                stats.recipients_nonexistent_houjin_bangou += 1
             elif recipient.method == "houjin_bangou":
                 stats.recipients_resolved_by_houjin_bangou += 1
             elif recipient.method == "name":
