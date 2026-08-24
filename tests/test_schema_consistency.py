@@ -500,3 +500,35 @@ def test_enum_has_a_single_iri_across_generated_owl():
 
     conflicts = {name: sorted(iris) for name, iris in by_local_name.items() if len(iris) > 1}
     assert not conflicts, f"同一の enum が複数のIRIで宣言されている: {conflicts}"
+
+
+# =============================================================================
+# 修正ラウンド1(レビューB36・B37): 公開される定義文が実装の外延を言い当てているか
+# =============================================================================
+
+
+def test_ministry_definition_is_bounded_to_currently_existing_organs():
+    """org:Ministryの定義文が「現存する」機関に限定されていること(裁定B36)。
+
+    B16の元の欠陥は「定義文がRS経由の3機関を字義上除外している」だった。
+    その修正(Task 12)は3機関を含めることには成功したが、逆方向に外延を開き、
+    「現存する」の限定を落として廃止済み省庁(大蔵省等。実データで名称出現
+    2,271件・34.9%)まで字義上Ministryに含める欠陥を作った(レビューB36)。
+
+    定義文の全文を一致比較するのは自然言語なので過剰(将来の言い回しの改善を
+    禁じてしまう)。しかし**「現存」という1語が本文から消えると、まさにこの
+    欠陥が再発する**という構造的な依存があるので、部分文字列の存在という
+    弱いが的確な検査で十分な検出力がある。
+
+    **何があれば落ちるか**: `schema/org.yaml`のMinistryのdescriptionから
+    「現存」を含む語句を削除して再生成すると落ちる(実際に落として確認した。
+    報告書参照)。
+    """
+    g = _load(GENERATED / "org.owl.ttl")
+    ministry = URIRef("https://jgkg.norr-tech.com/def/org#Ministry")
+    definition = g.value(ministry, SKOS.definition)
+    assert definition is not None, "org:Ministryのskos:definitionが無い"
+    assert "現存" in str(definition), (
+        f"org:Ministryの定義文に『現存』の限定が無い: {definition}"
+        "(裁定B36と同じ型の欠陥 — 廃止済み機関を字義上含んでしまう)"
+    )
