@@ -36,7 +36,10 @@ docker compose stop fuseki || true
 echo "== 成果物の照合と配置 =="
 # --jena-version には fuseki イメージのタグを決めている値をそのまま渡す。
 # .env の JENA_VERSION を上げて古い成果物を配ろうとすると、ここで止まる
-uv run python -m jgkg.serve "$ART" --jena-version "${JENA_VERSION}"
+# **PYTHONUTF8=1**: これを付けずにWindows上で直接実行すると、標準出力の
+# 日本語がプラットフォームの既定コードページ(UTF-8でない)で解釈されて
+# 文字化けする(繰越項目。動作自体には影響しないが、運用時にログが読めない)
+PYTHONUTF8=1 uv run python -m jgkg.serve "$ART" --jena-version "${JENA_VERSION}"
 
 echo "== Fusekiを起動 =="
 docker compose up -d fuseki
