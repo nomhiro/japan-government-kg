@@ -63,11 +63,20 @@ TARGET_PREDICATES = (SKOS.definition, SH.description)
 # 順序に意味が無いと確認済みの述語だけをここに登録する。
 # sh:path の連鎖パスや owl:propertyChainAxiom は順序そのものが意味を持つので、
 # 絶対に追加してはならない。
+#
+# owl:members は OWL 2 の n項対称構文(owl:AllDisjointClasses /
+# owl:AllDifferent / owl:AllDisjointProperties)専用の述語で、いずれも
+# 「このリストの要素は互いに◯◯である」という対称関係を表すだけであり、
+# 要素の並び順に意味は無い(仕様上、集合として解釈される)。Task 12(R16)で
+# `children_are_mutually_disjoint` を使うと gen-owl がこの形でリストを出す
+# (実測: 7クラスがソート済みで並ぶ)。個々の構文ごとに許可するのではなく
+# 述語そのものを許可する — 3構文とも同じ理由で順序無意味だから
 ORDER_INSENSITIVE_LIST_PREDICATES = {
     OWL.unionOf,
     OWL.intersectionOf,
     OWL.oneOf,
     OWL.withRestrictions,
+    OWL.members,
     SH.ignoredProperties,
     SH["in"],
 }

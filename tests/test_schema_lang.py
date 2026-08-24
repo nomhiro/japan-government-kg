@@ -7,7 +7,7 @@
 未知の述語がリストを持っていたら例外になることを固定する。
 """
 import pytest
-from rdflib import BNode, Graph, URIRef
+from rdflib import OWL, BNode, Graph, URIRef
 from rdflib.collection import Collection
 from rdflib.namespace import SH
 
@@ -58,6 +58,26 @@ def test_sort_rdf_lists_handles_longer_chains_without_false_positive():
 
     assert changed == 1
     new_head = g.value(SHAPE, SH.ignoredProperties)
+    assert list(Collection(g, new_head)) == [A, B, C]
+
+
+def test_sort_rdf_lists_normalizes_owl_members():
+    """`owl:members`(Task 12・R16。`owl:AllDisjointClasses` 等が使う)も
+    許可リストにあるので、順序を辞書順に正規化する。
+
+    **何があれば落ちるか**: `ORDER_INSENSITIVE_LIST_PREDICATES` から
+    `OWL.members` を外すと、この述語が「未知の述語」判定に戻り、
+    `changed == 1` の代わりに `ValueError` になって落ちる。
+    """
+    g = Graph()
+    head = BNode()
+    Collection(g, head, [C, B, A])  # 意図的に逆順で構築する
+    g.add((SHAPE, OWL.members, head))
+
+    changed = schema_lang.sort_rdf_lists(g)
+
+    assert changed == 1
+    new_head = g.value(SHAPE, OWL.members)
     assert list(Collection(g, new_head)) == [A, B, C]
 
 
