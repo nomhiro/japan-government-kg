@@ -51,7 +51,7 @@ def _load(path: Path) -> Dataset:
     return ds
 
 
-def _write_fake_manifest(out_dir: Path, release: str) -> None:
+def _write_fake_manifest(out_dir: Path, release: str, source_date: str | None = None) -> None:
     """build.sh が作るのと同じ形の最小限のtarball+manifestを書く(検証済み実行の代用)。
 
     「前リリースの成果物が実在し、出荷された」という前提を作るために使う。
@@ -62,7 +62,15 @@ def _write_fake_manifest(out_dir: Path, release: str) -> None:
     を読んで計算するため、この関数を呼ぶ**時点**のkg.nqの内容がそのまま
     manifestに記録される——kg.nqをこの後で書き換えるテストは、書き換えた
     **後**に呼ぶこと)。
+
+    `source_date`: manifest.sourcesに書く`houjin-bangou`の取得日(ISO文字列)。
+    省略時は`release`と同じ値を使う(既存呼び出しの後方互換——B31以前は
+    releaseと取得日が同じ前提だった)。**Ruling B31修正ラウンド3(項目1)**:
+    `release`(basename。同一性)と取得日(日付。鮮度)は別の軸になったため、
+    非ISOの`release`(例: "2026-07-01-payees")を使うテストは`source_date`を
+    明示すること(省略すると`release`自体が`fromisoformat`に渡って落ちる)。
     """
+    source_date = release if source_date is None else source_date
     (out_dir / "tdb2").mkdir(parents=True, exist_ok=True)
     (out_dir / "tdb2" / "nodes.dat").write_bytes(b"fake")
     tarball = out_dir / "tdb2.tar.gz"
@@ -73,7 +81,7 @@ def _write_fake_manifest(out_dir: Path, release: str) -> None:
         tarball=tarball,
         jena_version="6.2.0",
         release=release,
-        sources={"houjin-bangou": release},
+        sources={"houjin-bangou": source_date},
         graphs=[],
         tdb2_expanded_bytes=4,
     )
@@ -129,7 +137,7 @@ def test_replacement_reflects_correction_and_deletion_even_with_previous_release
     pipeline.run({"houjin-bangou": DAY1}, out1)
     _write_fake_manifest(out1, DAY1.isoformat())
     r2 = pipeline.run(
-        {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1
+        {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1.isoformat()
     )
 
     assert r2.carried_over == [], "内容が変わったソースが据え置きされてしまった"
@@ -159,7 +167,7 @@ def test_unchanged_source_is_carried_over():
 
     lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
     r2 = pipeline.run(
-        {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1
+        {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1.isoformat()
     )
 
     assert uris.graph_uri("houjin-bangou", DAY1) in r2.carried_over
@@ -178,7 +186,7 @@ def test_carried_over_graph_keeps_its_original_content_and_date():
 
     lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
     r2 = pipeline.run(
-        {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1
+        {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1.isoformat()
     )
 
     ds = _load(_artifact_dir(DAY2) / "kg.nq")
@@ -220,8 +228,50 @@ def test_carry_over_raises_when_the_previous_release_artifact_is_missing():
     lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
     with pytest.raises(FileNotFoundError, match="前リリース"):
         pipeline.run(
-            {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1
+            {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1.isoformat()
         )
+
+
+# =============================================================================
+# Ruling B31修正ラウンド3(項目1): B31の部分適用を解消する。`previous_release`
+# は成果物ディレクトリの任意のbasenameを受け付け、日付形式である必要はない
+# =============================================================================
+
+
+def test_carry_over_works_when_the_previous_release_name_is_not_an_iso_date():
+    """`previous_release`にISO日付形式ではないbasenameを渡してもcarry-over
+
+    が機能すること。
+
+    B31は「リリースの同一性=成果物ディレクトリのbasename」と決めたが、
+    `previous_release`(参照側)が`datetime.date`型のままだと、日付形式
+    ではない名前(`2026-08-26-payees`等。同日に複数リリースを作るときの
+    区別に使う想定の名前)を実際に付けても、それをcarry-overの入力には
+    渡せない——B31が作った同一性空間の一部にしか、参照側が追従していない
+    「部分適用」になる。
+
+    何があれば落ちるか: `previous_release`を再び`datetime.date`型の
+    パラメータに戻す(または内部で`.isoformat()`/`fromisoformat`を要求する
+    実装に戻す)と、非ISO形式の`non_iso_name`を渡すこの呼び出し自体が
+    `AttributeError`(`str`に`.isoformat()`が無い)または`ValueError`
+    (`fromisoformat`が非ISO文字列を拒否)で落ちる。
+    """
+    lake.save("houjin-bangou", DAY1, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
+    non_iso_name = "not-an-iso-date"
+    out1 = Path(get_settings().artifact_dir) / non_iso_name
+    pipeline.run({"houjin-bangou": DAY1}, out1)
+    # source_dateは明示する——releaseがもう日付ではないため(上記docstring参照)
+    _write_fake_manifest(out1, non_iso_name, source_date=DAY1.isoformat())
+
+    lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
+    r2 = pipeline.run(
+        {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=non_iso_name
+    )
+
+    assert uris.graph_uri("houjin-bangou", DAY1) in r2.carried_over, (
+        "basenameが非ISO形式の前リリースからcarry-overできていない"
+        "(B31の部分適用が残っている)"
+    )
 
 
 # =============================================================================
@@ -257,7 +307,7 @@ def test_carry_over_rejects_a_previous_release_that_was_never_shipped():
     # 「出荷」はこのモジュールの専用メッセージにしか出現しない語
     with pytest.raises(FileNotFoundError, match="出荷"):
         pipeline.run(
-            {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1
+            {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1.isoformat()
         )
 
 
@@ -279,7 +329,7 @@ def test_carry_over_rejects_a_previous_release_whose_kg_nq_no_longer_matches_the
     lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
     with pytest.raises(ValueError, match="sha256"):
         pipeline.run(
-            {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1
+            {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1.isoformat()
         )
 
 
@@ -319,7 +369,7 @@ def test_carry_over_declines_when_the_carried_graph_fails_shacl_revalidation():
 
     lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
     r2 = pipeline.run(
-        {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1
+        {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1.isoformat()
     )
 
     assert r2.carried_over == [], "SHACL不適合のグラフがcarry-overされてしまった"
@@ -345,7 +395,7 @@ def test_carried_over_graph_is_counted_in_graphs_validated():
 
     lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
     r2 = pipeline.run(
-        {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1
+        {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1.isoformat()
     )
 
     assert uris.graph_uri("houjin-bangou", DAY1) in r2.carried_over
@@ -374,9 +424,17 @@ def test_carry_over_date_lookup_is_not_confused_by_a_same_date_sidecar_file():
 
     何があれば落ちるか: ファイル名で絞らずソート順(辞書順で最後)のsha256を
     拾う実装に戻すと、「zenken.zipより辞書順で後に来るサイドカー」の存在で
-    `lake.latest_before`の`max(key=path.name)`がサイドカーを前リリース側に
-    選んでしまい、本来は不変(=据え置き対象)であるはずのzenken.zip自身の
-    比較が無関係なサイドカーの差分に汚染されて、据え置きが誤って諦められる。
+    サイドカーの方を前リリース側の比較対象に選んでしまい、本来は不変
+    (=据え置き対象)であるはずのzenken.zip自身の比較が無関係なサイドカーの
+    差分に汚染されて、据え置きが誤って諦められる。
+
+    **Ruling B31修正ラウンド3の注記**: この判定は以前`lake.latest_before`で
+    「前リリース日付以前の直近スナップショット」を探索してから、その日付で
+    ファイル名を再絞り込みしていた(`max(key=path.name)`のソート順に依存する
+    経路)。修正後は前リリースのmanifest.sourcesが記録する日付を直接使うため
+    探索そのものが無くなったが、**ファイル名で絞り込む**という本テストが
+    固定する性質自体は変わらず必要(サイドカーが同じ日付ディレクトリに
+    あれば、ファイル名を見ない限りどちらの実装でも誤って拾いうる)。
     """
     # "zzz..."はzenken.zipより辞書順で後に来る(list_snapshotsはmeta.jsonの
     # globをsortedで返す——pipeline.py:640-649の既存コメントと同じ罠を、
@@ -393,7 +451,7 @@ def test_carry_over_date_lookup_is_not_confused_by_a_same_date_sidecar_file():
     lake.save("houjin-bangou", DAY2, "zzz-unrelated-sidecar.zip", b"sidecar content DAY2 different")
     lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
     r2 = pipeline.run(
-        {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1
+        {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1.isoformat()
     )
 
     assert uris.graph_uri("houjin-bangou", DAY1) in r2.carried_over, (
@@ -418,7 +476,7 @@ def test_carry_over_falls_back_to_regeneration_when_the_previous_graph_is_absent
 
     lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
     r2 = pipeline.run(
-        {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1
+        {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1.isoformat()
     )
 
     assert r2.carried_over == [], "前リリースに該当グラフが無いのに据え置きした"
@@ -474,7 +532,7 @@ def test_carry_over_ignores_unrelated_graphs_present_in_the_previous_kg_nq():
 
     lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
     r2 = pipeline.run(
-        {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1
+        {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1.isoformat()
     )
 
     # (a) 本来の据え置き対象は無関係グラフの混在に関わらず正しく機能する
@@ -528,7 +586,7 @@ def test_carry_over_declines_for_egov_law_when_houjin_bangou_changed():
     r2 = pipeline.run(
         {"houjin-bangou": DAY2, "egov-law": DAY2},
         _artifact_dir(DAY2),
-        previous_release=DAY1,
+        previous_release=DAY1.isoformat(),
     )
 
     assert uris.graph_uri("egov-law", DAY1) not in r2.carried_over, (

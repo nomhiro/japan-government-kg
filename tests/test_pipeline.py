@@ -861,8 +861,10 @@ def test_run_reclassifies_a_nonexistent_recipient_houjin_bangou_and_drops_the_re
 
 # =============================================================================
 # Ruling B30(Task 11修正ラウンド): 支出先として登場する法人番号に限る
-# corporations_scope="payees"。実測(progress.md): 全法人35,584,368quads/
-# 13.8GiBに対し、支出先限定は704,359quads/232MiB(§6.3の8GiB判定への対応)
+# corporations_scope="payees"。実測: 全法人35,584,368quads/13.8GiBに対し、
+# 支出先限定は817,982quads/TDB2実サイズ429MiB(§6.3の8GiB判定への対応。
+# 修正ラウンド2で実測値に訂正——旧「704,359quads/232MiB」は法人グラフを
+# 除外しただけの事前見積りで、実装後の実測ではなかった)
 # =============================================================================
 
 
@@ -1116,7 +1118,7 @@ def test_run_payees_scope_carry_over_regenerates_the_payees_graph_but_carries_th
     r2 = pipeline.run(
         fetched, tmp_path / "out2",
         include_all_corporations=True, corporations_scope="payees",
-        previous_release=DAY,
+        previous_release=DAY.isoformat(),
     )
 
     assert uris.graph_uri("houjin-bangou", DAY) in r2.carried_over

@@ -355,43 +355,50 @@ def _rs_system_file_digests(fetched_on: datetime.date) -> dict[str, str]:
 
 
 def _previous_date_if_unchanged(
-    source_id: str, current_date: datetime.date, previous_release: datetime.date
+    source_id: str, current_date: datetime.date, previous_fetched_on: datetime.date
 ) -> datetime.date | None:
-    """`source_id`が前リリース時点からバイト単位で不変なら、その前リリース
+    """`source_id`が前リリース時点からバイト単位で不変なら、`previous_fetched_on`
 
-    時点でのfetched_on(引き継ぐべきグラフの日付)を返す。変化していれば
-    (または前リリース時点にスナップショットが無ければ)`None`。
+    (前リリースのmanifest.sourcesに記録された、そのソースの実際の取得日)を
+    そのまま返す。変化していれば`None`。
 
     rs-systemは事業年度ごと15本の関連ファイルに分かれるため、単一の
     sha256では比較できない — ファイル名の集合ごと突き合わせる(1本でも
     増減・変化していれば不変ではない)。
 
     **houjin-bangou/egov-law(単一ファイルソース)はファイル名で絞り込む**
-    (task-10-review.md観察3)。`lake.latest_before`は「同じ日付に複数の
-    スナップショットがあればどれか1件を返す」契約(lake.pyのdocstring)なので、
-    日付だけで前後を比較すると、将来同じ日付ディレクトリに別ファイル
-    (サイドカー等)が増えたときにソート順で先に来た方のsha256を黙って
-    拾ってしまう。`latest_before`は「いつ時点か」を決めるためだけに使い、
-    実際の比較対象は`list_snapshots`をファイル名で再度絞り込んで取る
-    (`lake.latest_before`のdocstringが推奨する使い方そのもの)。
+    (task-10-review.md観察3)。同じ日付ディレクトリに別ファイル(サイドカー等)
+    が増えても、`list_snapshots`をファイル名で絞り込んで比較するため、
+    無関係なファイルの増減が判定を汚染しない。
+
+    **Ruling B31修正ラウンド3(項目1)**: 以前はここで`lake.latest_before(
+    source_id, previous_release)`を呼び、「前リリースの日付以前の直近
+    スナップショット」を**探索**していた。これには2つの問題があった:
+    (1) `previous_release`が成果物ディレクトリのbasename(日付である保証が
+    ない)になったため、この探索はそもそも成立しない。(2) 探索であること
+    自体が別の欠陥だった——`lake.latest_before`の「直近」は、後から鮮度の
+    異なるスナップショットが増えると答えが変わりうる(裁定B33の
+    `scripts/compare_releases.py`docstringが指摘した「RS-2024取得により
+    `lake.latest_before`の直近判定が変わり、以後は同じ入力でリリースBの
+    carry-over判定が再現できない」不安定性そのもの)。`previous_fetched_on`は
+    前リリースのmanifest.sourcesに**そのリリースが実際に使った値として
+    既に記録されている**ため、探索は不要であり、直接その日付のスナップショット
+    を見ればよい(探索より正確——前リリースが実際に使った値そのものだから。
+    副次的にこの不安定性も解消する)。
     """
     if source_id == "rs-system":
         current_digests = _rs_system_file_digests(current_date)
-        prev_snapshot = lake.latest_before(source_id, previous_release)
-        if prev_snapshot is None:
+        prev_digests = _rs_system_file_digests(previous_fetched_on)
+        if not prev_digests:
             return None
-        prev_digests = _rs_system_file_digests(prev_snapshot.fetched_on)
-        return prev_snapshot.fetched_on if prev_digests == current_digests else None
+        return previous_fetched_on if prev_digests == current_digests else None
 
     filename = _SINGLE_FILE_SOURCE_FILENAMES[source_id]
-    prev_candidate = lake.latest_before(source_id, previous_release)
-    if prev_candidate is None:
-        return None
     prev_snapshot = next(
         (
             s
             for s in lake.list_snapshots(source_id)
-            if s.fetched_on == prev_candidate.fetched_on and s.path.name == filename
+            if s.fetched_on == previous_fetched_on and s.path.name == filename
         ),
         None,
     )
@@ -413,7 +420,7 @@ def _previous_date_if_unchanged(
 def _carry_over_source_date(
     own_source_id: str,
     fetched_on: Mapping[str, datetime.date],
-    previous_release: datetime.date | None,
+    previous_sources: Mapping[str, datetime.date] | None,
 ) -> datetime.date | None:
     """`own_source_id`のグラフを据え置ける場合、その前リリース時点の
 
@@ -422,8 +429,18 @@ def _carry_over_source_date(
     自身のバイト列が不変でも、egov-law/rs-systemはhoujin-bangou由来の
     ministriesの解決結果に依存するため、自ソースだけを見る判定は不健全
     (このモジュールのコメント「Task 10: 更新の一巡」参照)。
+
+    `previous_sources`: 前リリースのmanifest.sourcesを日付にパースしたもの
+    (`_previous_release_sources`)。**Ruling B31修正ラウンド3(項目1)**:
+    以前はこの関数自体が`previous_release`(前リリースの識別子)を受け取り、
+    それを日付として`_previous_date_if_unchanged`に渡していた。B31で
+    `previous_release`が成果物ディレクトリのbasename(日付である保証がない)
+    になったため、この関数はもう「前リリースの識別子」ではなく「前リリースが
+    各ソースについて実際に使った取得日の一覧」を受け取る形に変えた
+    (呼び出し側`run()`が`previous_release is None`なら`previous_sources`も
+    `None`を渡す規約——このチェックは変わらず有効)。
     """
-    if previous_release is None or own_source_id not in fetched_on:
+    if previous_sources is None or own_source_id not in fetched_on:
         return None
     result: datetime.date | None = None
     for dep in _GRAPH_DEPENDENCIES[own_source_id]:
@@ -434,7 +451,12 @@ def _carry_over_source_date(
             # 依存元ソースが今回の実行対象に含まれていない。保守的に
             # 「不変と確認できない」として据え置きを諦める
             return None
-        prev_date = _previous_date_if_unchanged(dep, dep_date, previous_release)
+        prev_fetched_on = previous_sources.get(dep)
+        if prev_fetched_on is None:
+            # 前リリースがこの依存元ソースを含んでいなかった。保守的に
+            # 「不変と確認できない」として据え置きを諦める
+            return None
+        prev_date = _previous_date_if_unchanged(dep, dep_date, prev_fetched_on)
         if prev_date is None:
             return None
         if dep == own_source_id:
@@ -442,20 +464,71 @@ def _carry_over_source_date(
     return result
 
 
-def _previous_release_kg_nq_path(previous_release: datetime.date) -> Path:
-    """前リリースのkg.nqのパスを返す。**manifest.jsonの存在を出荷済みの証拠と
+def _previous_release_manifest(previous_release: str) -> build.Manifest:
+    """前リリース(成果物ディレクトリのbasename)のmanifest.jsonを読む。
 
-    し、kg.nqのsha256をmanifestと照合する**(Task 10修正ラウンド1。Ruling B26)。
+    **manifest.jsonの存在を出荷済みの証拠とする**(Task 10修正ラウンド1。
+    Ruling B26)。以前は`kg.nq`の存在だけを「前リリースが実在する」証拠に
+    していたが、`build.sh`は`run()`がkg.nqを書いた**後**に
+    `enforce_release_gate`を呼び、ゲートで落ちれば`set -e`によりtdb2構築・
+    manifest作成に進まない(`scripts/build.sh`参照)。つまり「**kg.nqは
+    あるがmanifest.jsonは無い**」=**出荷を拒否されたリリース**という状態が
+    実運用で必ず生じる(task-10-review.md要修正1の実測[a])。`lake.save`が
+    `meta.json`の存在を「コミット済み」の印にしている先例(`lake.py`の
+    docstring: 「データ本体だけが残った中途半端な状態は未コミットとみなす」)
+    と、リリースにも同じ印(manifest.json)を要求することで揃える。
 
-    以前は`kg.nq`の存在だけを「前リリースが実在する」証拠にしていたが、
-    `build.sh`は`run()`がkg.nqを書いた**後**に`enforce_release_gate`を呼び、
-    ゲートで落ちれば`set -e`によりtdb2構築・manifest作成に進まない
-    (`scripts/build.sh`参照)。つまり「**kg.nqはあるがmanifest.jsonは無い**」
-    =**出荷を拒否されたリリース**という状態が実運用で必ず生じる
-    (task-10-review.md要修正1の実測[a])。`lake.save`が`meta.json`の存在を
-    「コミット済み」の印にしている先例(`lake.py`のdocstring: 「データ本体
-    だけが残った中途半端な状態は未コミットとみなす」)と、リリースにも
-    同じ印(manifest.json)を要求することで揃える。
+    **Ruling B31修正ラウンド3(項目1)**: `previous_release`は成果物
+    ディレクトリのbasename(日付である保証がない)。以前は`.isoformat()`を
+    呼んでパスを組んでいたが、basenameはそのまま文字列としてパスに使う。
+    """
+    if "/" in previous_release or "\\" in previous_release:
+        raise ValueError(
+            f"previous_release にはディレクトリの区切り文字を含めない"
+            f"(成果物ディレクトリのbasenameだけを渡す): {previous_release!r}"
+        )
+    release_dir = Path(get_settings().artifact_dir) / previous_release
+    manifest_path = release_dir / build.MANIFEST_NAME
+    if not manifest_path.exists():
+        raise FileNotFoundError(
+            f"前リリース({previous_release})のmanifest.jsonが"
+            f"見つからない: {manifest_path}。kg.nqの存在だけは出荷済みの証拠に"
+            "ならない(build.shはenforce_release_gateを通過した後にだけ"
+            "manifest.jsonを書くため、出荷を拒否されたリリースにもkg.nqは"
+            "存在しうる)。previous_release を渡す呼び出しは、そのリリースが"
+            "実際に出荷されたことを前提にする(basename自体が正しいかも確認する)"
+        )
+    return build.read_manifest(manifest_path)
+
+
+def _previous_release_sources(manifest: build.Manifest) -> dict[str, datetime.date]:
+    """前リリースのmanifest.sourcesを`{source_id: 取得日}`にパースする。
+
+    **Ruling B31修正ラウンド3(項目1)**: carry-over判定
+    (`_carry_over_source_date`/`_previous_date_if_unchanged`)が「前リリース
+    時点で各ソースが何の日付だったか」を知る手段を、`lake.latest_before`に
+    よる探索(`previous_release`が日付であることに依存し、しかも探索である
+    こと自体がレイクへの新規取得で答えが変わる不安定性を持つ)から、前リリース
+    自身が実際に使った値をmanifest.sourcesから直接読み取る方式に変える。
+    """
+    parsed: dict[str, datetime.date] = {}
+    for source_id, value in manifest.sources.items():
+        try:
+            parsed[source_id] = datetime.date.fromisoformat(value)
+        except ValueError as e:
+            raise ValueError(
+                f"前リリース({manifest.release})のmanifest.sourcesの"
+                f"'{source_id}'の値が日付として読めない: {value!r}"
+            ) from e
+    return parsed
+
+
+def _previous_release_kg_nq_path(previous_release: str, manifest: build.Manifest) -> Path:
+    """前リリースのkg.nqのパスを返す。**kg.nqのsha256をmanifestと照合する**
+
+    (Task 10修正ラウンド1。Ruling B26)。manifest.json自体の存在確認は
+    呼び出し側が`_previous_release_manifest`で既に行っている前提——ここでは
+    manifestを受け取り、kg.nq本体の実在と完全性だけを見る。
 
     manifestの`nquads_sha256`が記録されていれば(manifest_version>=3)、
     実際のkg.nqのsha256と照合する。**内容の照合が無いと、保管中に
@@ -464,33 +537,22 @@ def _previous_release_kg_nq_path(previous_release: datetime.date) -> Path:
     ゲートを素通りする実測を確認済み)。旧形式のmanifest(`nquads_sha256`が
     無い)は照合できないため、同じ「既定は止まる側」で拒否する。
 
-    どちらの検査も、呼び出し側が`previous_release`を渡した時点での
-    「前リリースが実在し、出荷された」という明示の主張の検査であり、
-    carry-over候補が結果的に1件も無い呼び出しでも行う(既存の設計方針を
-    維持——黙って据え置きを諦めるのではなく矛盾として止める)。
+    この検査は、呼び出し側が`previous_release`を渡した時点での「前リリースが
+    実在し、出荷された」という明示の主張の検査であり、carry-over候補が
+    結果的に1件も無い呼び出しでも行う(既存の設計方針を維持——黙って
+    据え置きを諦めるのではなく矛盾として止める)。
     """
-    release_dir = Path(get_settings().artifact_dir) / previous_release.isoformat()
+    release_dir = Path(get_settings().artifact_dir) / previous_release
     kg_nq_path = release_dir / "kg.nq"
-    manifest_path = release_dir / build.MANIFEST_NAME
-    if not manifest_path.exists():
-        raise FileNotFoundError(
-            f"前リリース({previous_release.isoformat()})のmanifest.jsonが"
-            f"見つからない: {manifest_path}。kg.nqの存在だけは出荷済みの証拠に"
-            "ならない(build.shはenforce_release_gateを通過した後にだけ"
-            "manifest.jsonを書くため、出荷を拒否されたリリースにもkg.nqは"
-            "存在しうる)。previous_release を渡す呼び出しは、そのリリースが"
-            "実際に出荷されたことを前提にする"
-        )
     if not kg_nq_path.exists():
         raise FileNotFoundError(
-            f"前リリース({previous_release.isoformat()})の成果物が見つからない: "
+            f"前リリース({previous_release})の成果物が見つからない: "
             f"{kg_nq_path}。previous_release を渡す呼び出しは、そのリリースの"
             "kg.nqが実在することを前提にする"
         )
-    manifest = build.read_manifest(manifest_path)
     if manifest.nquads_sha256 is None:
         raise ValueError(
-            f"前リリース({previous_release.isoformat()})のmanifest.jsonに"
+            f"前リリース({previous_release})のmanifest.jsonに"
             "kg.nqのsha256が記録されていない(manifest_versionが3未満の旧形式)。"
             " 完全性を照合できないリリースをcarry-overの供給元にはできない。"
             " scripts/build.sh で再ビルドする"
@@ -498,7 +560,7 @@ def _previous_release_kg_nq_path(previous_release: datetime.date) -> Path:
     actual_sha256 = build.file_sha256(kg_nq_path)
     if actual_sha256 != manifest.nquads_sha256:
         raise ValueError(
-            f"前リリース({previous_release.isoformat()})のkg.nqがmanifestの"
+            f"前リリース({previous_release})のkg.nqがmanifestの"
             f"sha256と一致しない(manifest={manifest.nquads_sha256} "
             f"actual={actual_sha256})。保管中に壊れたか書き換えられた疑いがある。"
             " carry-overの供給元には使えない"
@@ -737,7 +799,7 @@ def run(
     *,
     include_all_corporations: bool = False,
     corporations_scope: Literal["all", "payees"] = "all",
-    previous_release: datetime.date | None = None,
+    previous_release: str | None = None,
 ) -> PipelineReport:
     """ソースIDごとの「いつ時点か」を受け取ってKGを1本作る。
 
@@ -762,7 +824,9 @@ def run(
     - `"payees"`: budget:recipientの参照先として**実際に登場する法人番号**
       (rs-systemの生データのdistinct recipient_houjin_bangou。全法人の0.33%)
       に絞り、`graph/houjin-bangou-payees/{取得日}`に書く。TDB2実サイズ
-      **232MiB**・構築6.3秒。Phase 1のCQ1〜10はどれも支出先以外の法人を
+      **429MiB**(修正ラウンド2で実測。旧「232MiB」は別の見積り〔選択肢A、
+      未使用〕からの混入だった——docs/measurements-phase1.md参照)・
+      構築6.3秒。Phase 1のCQ1〜10はどれも支出先以外の法人を
       参照しないため、消費者のいない581万件を積まない(B-1/B-2と同じ原則)。
       **`"rs-system"`が`fetched_on`に無ければ使えない**(絞り込む対象の集合が
       rs-systemのデータから決まるため)。既定にはしない(全法人モードを
@@ -776,17 +840,30 @@ def run(
     RSだけを結線してゲートに阻まれる」を避けるため、ここで先に明示的に
     エラーにする(黙って通さない)。
 
-    `previous_release`(Task 10。更新の一巡): 前リリースの取得日を渡すと、
-    ソースの内容が前リリース時点からバイト単位で不変なグラフについては
-    再生成(emit+SHACL検証)をスキップし、前リリースのグラフをそのまま
-    `clean`(検証後のDataset)へ引き継ぐ(carry-over)。**依存関係を考慮する**:
-    houjin-bangou自体が不変でも、そのグラフに依存するegov-law/rs-system
-    のグラフは、依存元(houjin-bangou・ministry-codes・egov-law)のいずれか
-    が変化していれば据え置かない(`_GRAPH_DEPENDENCIES`参照)。既定は`None`
+    `previous_release`(Task 10。更新の一巡): **前リリースの識別子
+    (成果物ディレクトリのbasename。Ruling B31)**を渡すと、ソースの内容が
+    前リリース時点からバイト単位で不変なグラフについては再生成(emit+SHACL
+    検証)をスキップし、前リリースのグラフをそのまま`clean`(検証後の
+    Dataset)へ引き継ぐ(carry-over)。**依存関係を考慮する**: houjin-bangou
+    自体が不変でも、そのグラフに依存するegov-law/rs-systemのグラフは、
+    依存元(houjin-bangou・ministry-codes・egov-law)のいずれかが変化して
+    いれば据え置かない(`_GRAPH_DEPENDENCIES`参照)。既定は`None`
     (=carry-over を一切使わない。既存の全呼び出し元と後方互換)。
     **houjin-bangou-all/houjin-bangou-payeesはcarry-overの対象外**
     (Task 10レビュー観察。`_GRAPH_DEPENDENCIES`に無い——既知の繰り越し課題で
     あり、このリリースが法人グラフを要求すれば毎回再計算する)。
+
+    **Ruling B31修正ラウンド3(項目1。B31の部分適用の解消)**: 以前は
+    `previous_release`が`datetime.date`型のみで、ISO日付形式の
+    basenameしか前リリースとして参照できなかった。B31が「リリースの
+    同一性=成果物ディレクトリのbasename」に決めた以上、参照側がまだ日付
+    前提のままでは、区別できる名前(`2026-08-26b`等)を付けても
+    carry-overには使えない「部分適用」になる。**このリリースの各ソースが
+    実際に何の日付だったかは、この文字列を日付として解釈するのではなく、
+    前リリース自身のmanifest.sourcesから読む**(`_previous_release_sources`)
+    ——探索(`lake.latest_before`)に頼らないぶん、後から取得したスナップ
+    ショットで判定結果が変わる不安定性も同時に解消する
+    (`_previous_date_if_unchanged`のdocstring参照)。
     """
     settings = get_settings()
     if not fetched_on:
@@ -902,28 +979,41 @@ def run(
         )
 
     # Task 10: 3ソースの据え置き候補日をまとめて先に確定する(いずれも
-    # fetched_on/レイクメタデータだけで判定できるため、egov-law/rs-systemの
-    # 実ファイル解析より前に決められる——`_carry_over_source_date`は
-    # `own_source_id`が`fetched_on`に無ければ`None`を返すので、無条件に
-    # 呼んでよい)。**前リリースへの実際の存在確認はここで1回だけ行う**
-    # (advisorレビュー指摘: ソースごとに前リリースのkg.nqを何度も読むと、
-    # RS入りの前リリースではhoujin-bangou-allの約3,500万行を含むため、
-    # `rs_carry_date`の判定を後段(rs-systemブロック内)まで遅らせたまま
-    # `Dataset`へ丸ごとパースする実装はR19/R21に反する規模のメモリを使う。
-    # 3件の据え置き候補のうちrs-systemだけは後段の「解析そのものを省略する」
-    # 分岐(後述)がこの値を直接使うため、その分岐より前に確定させる必要がある)
-    houjin_carry_date = _carry_over_source_date("houjin-bangou", fetched_on, previous_release)
-    egov_carry_date = _carry_over_source_date("egov-law", fetched_on, previous_release)
-    rs_carry_date = _carry_over_source_date("rs-system", fetched_on, previous_release)
+    # fetched_on/前リリースのmanifest.sourcesだけで判定できるため、
+    # egov-law/rs-systemの実ファイル解析より前に決められる——
+    # `_carry_over_source_date`は`own_source_id`が`fetched_on`に無ければ
+    # `None`を返すので、無条件に呼んでよい)。**前リリースのmanifest読み取り
+    # と実在確認はここで1回だけ行う**(advisorレビュー指摘: ソースごとに
+    # 前リリースのkg.nqを何度も読むと、RS入りの前リリースでは
+    # houjin-bangou-allの約3,500万行を含むため、`rs_carry_date`の判定を
+    # 後段(rs-systemブロック内)まで遅らせたまま`Dataset`へ丸ごとパースする
+    # 実装はR19/R21に反する規模のメモリを使う。3件の据え置き候補のうち
+    # rs-systemだけは後段の「解析そのものを省略する」分岐(後述)がこの値を
+    # 直接使うため、その分岐より前に確定させる必要がある)。
+    #
+    # **Ruling B31修正ラウンド3(項目1)**: `previous_release`(basename)
+    # 自体はもう日付ではないため、`previous_sources`(前リリースの
+    # manifest.sourcesを日付にパースしたもの)を先に読み、各ソースの
+    # 据え置き判定にはそちらを渡す
+    previous_manifest: build.Manifest | None = None
+    previous_sources: dict[str, datetime.date] | None = None
+    if previous_release is not None:
+        previous_manifest = _previous_release_manifest(previous_release)
+        previous_sources = _previous_release_sources(previous_manifest)
+
+    houjin_carry_date = _carry_over_source_date("houjin-bangou", fetched_on, previous_sources)
+    egov_carry_date = _carry_over_source_date("egov-law", fetched_on, previous_sources)
+    rs_carry_date = _carry_over_source_date("rs-system", fetched_on, previous_sources)
 
     carried_graphs: dict[str, Graph] = {}
     # Task 10修正ラウンド1(観察4): 据え置き候補のSHACL再検証結果(合否問わず)。
     # graphs_validated/graphs_quarantinedへの合算に使う(後述)
     carried_validation_results: list[validate.ValidationResult] = []
     if previous_release is not None:
+        assert previous_manifest is not None  # 上のブロックで必ず設定済み
         # wanted_urisが空でも存在確認だけは行う(「前リリースが実在する」
         # という呼び出し側の明示の主張は、carry-over候補の有無と無関係)
-        previous_kg_path = _previous_release_kg_nq_path(previous_release)
+        previous_kg_path = _previous_release_kg_nq_path(previous_release, previous_manifest)
         wanted_uris: set[str] = set()
         if houjin_carry_date is not None:
             wanted_uris.add(uris.graph_uri("houjin-bangou", houjin_carry_date))
@@ -1614,10 +1704,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--previous-release",
-        type=datetime.date.fromisoformat,
+        type=str,
         default=None,
-        help="前リリースの日付。渡すと差分検出(carry-over)が働き、"
-        "前リリースから不変なグラフは再生成せず引き継ぐ",
+        help="前リリースの識別子(成果物ディレクトリのbasename。例: "
+        "2026-08-24、または2026-08-24-payeesのような非ISO形式の名前も可。"
+        "Ruling B31修正ラウンド3で日付形式限定を解消した)。渡すと差分検出"
+        "(carry-over)が働き、前リリースから不変なグラフは再生成せず引き継ぐ",
     )
     parser.add_argument(
         "--include-all-corporations",
@@ -1633,7 +1725,7 @@ def main(argv: list[str] | None = None) -> int:
         "(Ruling B30)。'all'=全法人(約581万件。houjin-bangou-allグラフ。"
         "TDB2実サイズ13.8GiB)。'payees'=budget:recipientの参照先として"
         "実際に登場する法人に限る(houjin-bangou-payeesグラフ。約19,000件・"
-        "232MiB。rs-system を含むリリースでのみ指定できる)。既定は'all'"
+        "TDB2実サイズ429MiB。rs-system を含むリリースでのみ指定できる)。既定は'all'"
         "(全法人モードを捨てない。明示のフラグで選ぶ)",
     )
     parser.add_argument(
