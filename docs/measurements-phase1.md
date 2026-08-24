@@ -5,7 +5,14 @@
 **裁定B25(測定は使い捨てにしない)に従う。** 数字の出典はすべて `scripts/` に
 コミットされたスクリプトであり、ここには**その出力を全量転記する**(要約・
 再計算はしない)。この計画で「再導出できない数値」由来の訂正が複数回起きた
-ため、この記録自体が再現可能性の担保になる。
+ため、この記録自体が再現可能性の担保になる。**この宣言をliterallyに守る
+(裁定B32)。** 手で要約・圧縮した箇所が実機の出力と食い違う事故(修正
+ラウンド2の要修正1・6)が実際に起きたため——**全量転記できない箇所は
+「全量」と書かず、何を省いたか(行内容の抜粋のみで件数・所要時間は
+全量、等)とどう再生成するか(実行コマンド)を明記する。** 具体的には
+§4(CQの結果行。cq04/05/06/09は数千〜8千件超あるため`run_cq.py`自身の
+`--head`件数分のみを載せ、以降は同スクリプトの省略行の文言のまま)がこれに
+該当する。件数・所要時間・0件判定は全10本とも全量。
 
 対象: 計画B(Phase 1)完了条件 —
 (A) CQ1〜CQ10 に実データ・実エンドポイントで答えられる。
@@ -29,20 +36,24 @@ Ruling B30)により、Phase 1 で提供するKGは**「支出先として実際
 | 支出先限定・リリースB(carry-over検証) | `data/artifact/2026-08-26/` | リリースAと全く同じ4ソース。`--previous-release 2026-08-25`で構築 | 完了条件C(更新の一巡)の実データ検証。§5参照 |
 
 **リリースディレクトリ名と manifest 内部の `release` フィールドの不一致に
-ついて**: 上表の3ディレクトリは、`release` フィールドが**全て**
-`"2026-08-24"`になる(`max(fetched_on.values())`から導出。3件とも
-egov-lawの取得日が2026-08-24であるため)。ディレクトリ名を実際の構築日・
-用途に応じて`2026-08-24`(全法人)・`2026-08-25`(支出先限定A)・
-`2026-08-26`(支出先限定B=carry-over)と分けたのは、既存ディレクトリと
-衝突しないための選択であり、task-11-fix-brief.mdが明示的に許容している
-(「B30の新リリースは別の日付か別ディレクトリに作る」)。この
-ディレクトリ名/release不一致は Ruling B29 が既に受理した先例
-(「同一IDの再ビルドが区別できない」がPhase 2への繰り越し課題)と同種であり、
-実害は無い(sourcesフィールドで実際の取得日は分かる)。**この不一致の
-対象がリリースBの追加によって2件から3件に増えたことは、Phase 2への
-繰り越し課題として明記する**(3つの`data/artifact/`ディレクトリが同じ
-`release`文字列を名乗る状態は、識別子としての`release`フィールドの
-設計を将来見直す動機になる)。
+ついて【修正ラウンド2で解消。Ruling B31】**: 上表の3ディレクトリ(全法人・
+支出先限定A・支出先限定B)は、いずれも修正前の実装で作られたもので、
+`release` フィールドが**全て**`"2026-08-24"`のまま固定されている
+(`max(fetched_on.values())`から導出。3件とも実際にmanifestを読んで確認
+済み——全法人ディレクトリはmanifest.json自体が無いため対象外、A/Bは
+上の「manifest.jsonの比較」節参照)。当時はこれを「Ruling B29が既に受理した
+先例と同種で実害は無い、Phase 2への繰り越し課題」としていたが、**この
+判断は誤りだった**——実際にはmanifestだけでは3ディレクトリを区別できず、
+§6.3の配布契約(tar.gz + manifest)が嘘をついていた。修正ラウンド2で
+`release`の意味を「成果物ディレクトリのbasename」に変え(§5「Ruling B31」節
+に実物のmanifest比較・壊し確認を記す)、`manifest_version`を5に上げた。
+**この3ディレクトリ自体は保護対象なので書き換えていない**(上表のとおり、
+manifestの`release`は今も`"2026-08-24"`のまま——修正の効果は、この3件
+より後に作るリリースから効く)。検証のため、この3件と全く同じ取得日の組で
+新たに`data/artifact/2026-08-27/`をビルドし(**Phase 1として配信する
+リリースではなく、B31の修正が実データで効くことを確認するためだけの
+第4のディレクトリ**)、`release`が`"2026-08-27"`になり衝突しないことを
+確認した(§5参照)。
 
 ---
 
@@ -59,7 +70,10 @@ egov-lawの取得日が2026-08-24であるため)。ディレクトリ名を実�
 - **TDB2 実サイズ = 14,813,075,171 bytes(13.8 GiB)**
 - tar.gz = 1,994,085,008 bytes(1.86 GiB)。圧縮に約6分
 - 内訳の目安: 固定オーバーヘッド約192MiB(後述§3のとおり201,423,591 bytes
-  が実測値) + データ 約13.6GiB(35,584,368 quads → 約390 bytes/quad の目安。
+  が実測値) + データ 約13.6GiB。**1トリプルあたり
+  (14,813,075,171 − 201,423,591) / (35,584,368 − 5,143) = 410.7 bytes/quad**
+  (自分で再計算した値。旧記載の「約390」はprogress.mdからの逐語転記で
+  再導出できなかったため訂正——8GiB判定の結論〔13.8GiB > 8GiB〕には影響しない。
   厳密な baseline 引き算は §3 参照)
 
 ### バインドマウント方式との比較(発見7)
@@ -247,32 +261,120 @@ build.sh側の検査バグ——発見8/9、下記——でスクリプト自体
 両方が違反0件で通過している(B21のexternally_typed機構、B27の
 nonexistent分類を含む)。
 
-### 突き合わせ(§1の事前見積り704,359行 との整合性検査)
+### 突き合わせ(§1の事前見積り704,359行 との整合性検査)【修正ラウンド2で再導出】
+
+**修正ラウンド2での訂正。** 以前の記載は「payeesグラフの実測差分は
+113,623 quads」としていたが、これは`kg.nq`全体から
+`grep -F "houjin-bangou-payees/2026-08-23>"`という**部分文字列一致**で
+数えた値であり、**payeesグラフ自身についての出典情報(provenanceグラフに
+入る7トリプル)を誤って含んでいた**。N-Quadsの4番目の項(グラフ項)を
+きちんと末尾で固定して数え直すと、値が変わる。以下、自分で再現した手順と
+結果を示す。
+
+```
+$ grep -cF "graph/houjin-bangou-payees/2026-08-23>" data/artifact/2026-08-25/kg.nq
+113623   # 誤り。部分文字列一致なので、他グラフに入る「このグラフURIへの言及」も数えてしまう
+
+$ grep -cE "<https://jgkg\.norr-tech\.com/graph/houjin-bangou-payees/2026-08-23> \.$" data/artifact/2026-08-25/kg.nq
+113616   # 正しい。行末が「<グラフURI> .」であることを固定して、グラフ項そのものだけを数える
+```
+
+差分の7行を実際に確認すると、全て**主語がpayeesグラフのURI・グラフ項が
+`graph/provenance`**(payeesグラフ「について」のprovenance記述であって
+payeesグラフの構成要素ではない):
+
+```
+<.../graph/houjin-bangou-payees/2026-08-23> prov:wasDerivedFrom <...zenken/> <.../graph/provenance> .
+<.../graph/houjin-bangou-payees/2026-08-23> prov:generatedAtTime "2026-08-23"^^xsd:date <.../graph/provenance> .
+<.../graph/houjin-bangou-payees/2026-08-23> dcterms:rights "政府標準利用規約(第2.0版)" <.../graph/provenance> .
+<.../graph/houjin-bangou-payees/2026-08-23> dcterms:source "国税庁 法人番号公表サイト 全件データ" <.../graph/provenance> .
+<.../graph/houjin-bangou-payees/2026-08-23> prov:wasGeneratedBy "jgkg/0.1.0" <.../graph/provenance> .
+<.../graph/houjin-bangou-payees/2026-08-23> dcterms:license <...terms_of_use> <.../graph/provenance> .
+<.../graph/houjin-bangou-payees/2026-08-23> core:sourceSha256 "69d3c3a6...be55a" <.../graph/provenance> .
+```
 
 B30が実際に追加するのは「支出先として実在する法人(corporations_all=
 18,941件)の法人グラフ」である。`_organization_lines`(`src/jgkg/rdf/
 stream_emit.py`)は1法人につき **rdf:type・skos:prefLabel・houjinBangou・
 organizationKindCode の4つを必須**、prefectureName・cityNameは値がある
-ときだけ発行する(最大6トリプル/法人)。
+ときだけ発行する(最大6トリプル/法人)。抽出した113,616行を述語別に
+数えると(`grep -c` を4回):
+
+| 述語 | 件数 |
+|---|---|
+| rdf:type | 18,941 |
+| skos:prefLabel | 18,941 |
+| houjinBangou | 18,941 |
+| organizationKindCode | 18,941 |
+| prefectureName | 18,926 |
+| cityName | 18,926 |
+| **合計** | **113,616** |
 
 - 実測差分: 817,982(実装後) − 704,359(事前見積り。法人グラフ抜き) =
-  **113,623 quads**
-- 予測上限: 18,941法人 × 6トリプル = **113,646**(実測差分との差はわずか23。
-  都道府県名または市区町村名を欠く法人が23件相当ぶんある、という意味で
-  整合する——両方とも任意項目であり、全法人データに欠損があることは
-  Phase 0から既知)
-- **corporations_all(18,941。実在する支出先法人)+ 53(distinctな
-  「支出先だが法人番号が実在しない」件数。progress.md 2026-08-24時点の
-  実測記録「全法人フラグONでも60件の違反が残る(distinct 53件)」より) =
-  18,994 = 支出先のdistinct法人総数**(§1既出の数字と一致)。
-  この53件は`payee_houjin_bangou`(RS生データから直接作る、resolve前の
-  distinct集合)に含まれるが実在法人と一致しないもの——B27が
-  `budget_recipients_nonexistent_houjin_bangou`(60行。distinctでは53件)
-  として分類する対象そのものであり、定義上必然的に成り立つ恒等式である
+  113,623 quads = **payeesグラフ自身(113,616)+ provenanceの7行**
+- 予測上限: 18,941法人 × 6トリプル = 113,646。payeesグラフの実測113,616
+  との差は**23ではなく30**
+- **この30の意味を集合として確かめた**(件数の一致だけでなく、対象が
+  同じ法人であることまで確認): 法人ごとの`houjinBangou`行から全18,941件の
+  法人URI集合を作り、`prefectureName`を持つ集合・`cityName`を持つ集合を
+  それぞれ作って差集合を取ると、**prefectureNameを欠く15件とcityNameを
+  欠く15件は完全に同じ集合だった**(`comm -23`と`diff`で確認。差分0行)。
+  つまり「30」は「都道府県名**または**市区町村名を欠く法人が23件」では
+  なく、**「両方を欠く法人が15件(15法人×2項目=30トリプル分の欠落)」**
+  である
 
-両方の突き合わせが誤差の範囲内(前者は非任意項目のみの欠損23件で説明でき、
-後者は完全一致)で成立しており、**B30のフィルタが「実装意図どおりに」
-支出先の実在法人だけを積んでいる**ことの独立した検証になっている。
+### 「恒等式」の再検証(要修正4)【修正ラウンド2で訂正】
+
+**修正ラウンド2での訂正。** 以前の記載は「corporations_all(18,941)+53=
+18,994=支出先のdistinct法人総数」を「定義上必然的に成り立つ恒等式」と
+書いていたが、これは**足し算で作った数(18,994)が、既にprogress.mdに
+載っていた数(18,994)と一致することを確認しただけ**であり、
+`payee_houjin_bangou`という名指しした集合そのものを実際に構築して
+数えてはいなかった。実際に構築すると数が変わる。
+
+`pipeline.py`が`payee_houjin_bangou`を作る規則
+(`{int(v) for row in rows for line in row.expenditures if (v :=
+line.recipient_houjin_bangou) and v.isdigit()}`)を、`rs.parse_rs`を
+自分で呼んでそのまま再現した:
+
+```
+$ uv run python scripts/verify_payee_houjin_bangou.py --houjin-bangou 2026-08-23 --rs-system 2026-08-23
+==============================================================================
+payee_houjin_bangou の再構築(要修正4)
+==============================================================================
+houjin-bangouスナップショット: 2026-08-23
+rs-systemスナップショット    : 2026-08-23
+payee_houjin_bangou の distinct 件数: 18995
+センチネル(9999999999999)がこの集合に入っているか: True
+実在する(corporations_all相当)  : 18941
+実在しない(センチネル除く。distinct): 53
+内訳の合計: 18941 + 53 + 1(センチネル) = 18995
+内訳の合計とpayee_houjin_bangouの件数が一致した(恒等式が成立)
+```
+
+**`payee_houjin_bangou`の実際のdistinct件数は18,995であり、18,994では
+ない。** 差の1件は**センチネル(`9999999999999`。B18の「非法人の支出先」を
+表す値)**——センチネルは13桁の数字文字列なので`v.isdigit()`を通過し、
+`payee_houjin_bangou`集合に入る。しかし`resolve_recipient`はセンチネル
+判定を法人番号の実在確認より先に行うため、
+`budget_recipients_nonexistent_houjin_bangou`(60行/distinct 53件)には
+分類されない——`corporations_all`(実在法人)にも`nonexistent`(実在しない
+distinct53件)にも入らない、**3つに分けた分類のうちどれにも該当しない
+第3の値**である。
+
+**訂正した恒等式: 18,941(実在。corporations_all)+ 53(distinctで実在
+しない)+ 1(センチネル) = 18,995 = payee_houjin_bangouのdistinct件数。**
+§1に既出の「18,994」は、**センチネルを除いた数**(controllerが前ラウンド
+で足し算のみで出した数値)であり、`payee_houjin_bangou`そのものの件数
+ではなかったと明記する。この訂正により、恒等式は「足し算の一致」ではなく
+「名指しした集合を実際に数えた結果」になった——`corporations_all`の定義が
+将来変わっても(例: センチネルを含む方向に変わっても)、この検証手順自体は
+再実行すれば誤りを検出できる。
+
+両方の突き合わせ(§2の行数分解・上記の集合構築)が、内容まで確認した
+完全な説明として成立しており(件数の一致を運で得たものではない)、
+**B30のフィルタが「実装意図どおりに」支出先の実在法人だけを積んでいる**
+ことの独立した検証になっている。
 
 ---
 
@@ -367,14 +469,27 @@ TDB2 実サイズ / 8GiB = 5.2%
 
 ## 4. CQ1〜CQ10 実エンドポイント実行(完了条件A。`scripts/run_cq.py`)
 
+**修正ラウンド2で単一実行の出力に貼り替えた。** 以前の記載は`--head`の
+ラベルが15/10/5の3種類混在し、実際に載っている行数(3/3/5/3)とも
+食い違っていた(要修正6。3種類の異なる実行——おそらく`--head`を都度変えて
+実行した結果——を手で1つのコードブロックに混ぜていた)。これは単一実行の
+出力ではあり得ない、というB32/B25の趣旨に反する状態だった。
+
 **実行対象: `scripts/serve.sh 2026-08-25` で配置したFuseki(`http://localhost:3030/kg/sparql`)。
 rdflibのインメモリ実行ではなく実際のJena/TDB2エンドポイント。全10本が非0件で
 答えた時点で完了条件Aを満たす(`run_cq.py`の既定は1件でも0件のCQがあれば
-非0終了する仕様)。** 標準出力を転記する(件数・所要時間は全10本とも
-全量。行内容は`--head 15`分の抜粋——cq04/05/06/09は件数が数千件になるため、
-先頭の抜粋のみをここに示し、全行はJSONを参照する)。全行のJSONは
-`data/artifact/2026-08-25/cq-results/`に保存した(リポジトリにはコミットしない
-成果物ディレクトリ内。転記した本記録が恒久的な証拠)。
+非0終了する仕様)。** 以下は`uv run python scripts/run_cq.py`(オプション無し。
+既定の`--head 20`)を**1回だけ実行した標準出力そのまま**である(手で編集した
+箇所は無い。省略行の文言も`run_cq.py`自身が出す`... 以下 N 行省略`のまま)。
+
+**全行のJSON(`--save-dir`付きの別実行)は`data/artifact/2026-08-25/cq-results/`
+に保存済み(リポジトリにはコミットしない成果物ディレクトリ内)——ただし
+この保存は上記の標準出力転記より前(同じ`2026-08-25`リリースに対する
+別回の実行。ファイルの更新日時で確認できる)。この転記(標準出力)自体が
+恒久的な証拠であり、`cq-results/`のJSONは全行データの補助証拠として
+残している(同じリリース・同じクエリなので内容は一致するはずだが、
+実行そのものは別物であることを明記する——「同じ実行の出力」という
+誤読を避けるため)。**
 
 ```
 ==============================================================================
@@ -385,21 +500,21 @@ CQの実エンドポイント実行: http://localhost:3030/kg/sparql
 ------------------------------------------------------------------------------
 ### cq01-jurisdiction-of-ordinance.rq
 形式: SELECT / 変数: ['ministry', 'ministryName']
-行数: 1 / 0.032 秒
+行数: 1 / 0.297 秒
 ministry | ministryName
 https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省
 
 ------------------------------------------------------------------------------
 ### cq02-ministry-budget-by-year.rq
 形式: SELECT / 変数: ['y', 'totalBudget', 'projectCount']
-行数: 1 / 2.985 秒
+行数: 1 / 3.266 秒
 y | totalBudget | projectCount
 2025 | 91789031491000 | 1176
 
 ------------------------------------------------------------------------------
 ### cq03-recipient-expenditures-by-year.rq
 形式: SELECT / 変数: ['project', 'projectName', 'y', 'a']
-行数: 13 / 0.093 秒
+行数: 13 / 0.109 秒
 project | projectName | y | a
 https://jgkg.norr-tech.com/id/budget/2025/2330 | 地域保健活動検討経費 | 2025 | 1127876
 https://jgkg.norr-tech.com/id/budget/2025/884 | 法教育の推進 | 2025 | 1439000
@@ -418,42 +533,88 @@ https://jgkg.norr-tech.com/id/budget/2025/1933 | ユネスコ「世界の記憶�
 ------------------------------------------------------------------------------
 ### cq04-money-trace-to-ministry-and-law.rq
 形式: SELECT / 変数: ['ministry', 'ministryName', 'law', 'lawTitle']
-行数: 2021 / 8.391 秒
-(先頭15行。全行は cq-results/cq04-money-trace-to-ministry-and-law.json)
+行数: 2021 / 9.000 秒
 ministry | ministryName | law | lawTitle
 https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省 | https://jgkg.norr-tech.com/id/law/413M60000100092 | 義肢装具士法第十七条第一項に規定する指定試験機関を指定する省令
 https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省 | https://jgkg.norr-tech.com/id/law/420M60000100003 | 特定フィブリノゲン製剤及び特定血液凝固第ＩＸ因子製剤によるＣ型肝炎感染被害者を救済するための給付金の支給に関する特別措置法施行規則
 https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省 | https://jgkg.norr-tech.com/id/law/501M60000100040 | 自殺対策の総合的かつ効果的な実施に資するための調査研究及びその成果の活用等の推進に関する法律施行規則
-... (以下省略。全2021行はcq-resultsのJSON参照)
+https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省 | https://jgkg.norr-tech.com/id/law/502M60000100172 | 新型コロナウイルス感染症を指定感染症として定める等の政令第三条において準用する感染症の予防及び感染症の患者に対する医療に関する法律第十九条第一項の厚生労働省令で定める者等を定める省令
+https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省 | https://jgkg.norr-tech.com/id/law/414M60000100127 | 身体障害者補助犬法施行規則
+https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省 | https://jgkg.norr-tech.com/id/law/413M60000100067 | 労働安全衛生法第七十五条の二第一項に規定する指定試験機関の指定に関する省令
+https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省 | https://jgkg.norr-tech.com/id/law/413M60000100191 | 個別労働関係紛争の解決の促進に関する法律施行規則
+https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省 | https://jgkg.norr-tech.com/id/law/418M60000100036 | 指定地域密着型介護予防サービスの事業の人員、設備及び運営並びに指定地域密着型介護予防サービスに係る介護予防のための効果的な支援の方法に関する基準
+https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省 | https://jgkg.norr-tech.com/id/law/503M60001F40001 | 特定工場における公害防止組織の整備に関する法律の規定に基づく立入検査の際に携帯する職員の身分を示す証明書の様式の特例に関する省令
+https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省 | https://jgkg.norr-tech.com/id/law/417M60000100118 | 心神喪失等の状態で重大な他害行為を行った者の医療及び観察等に関する法律第百三条第一項及び心神喪失等の状態で重大な他害行為を行った者の医療及び観察等に関する法律施行令第十五条の規定により地方厚生局長に委任する権限を定める省令
+https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省 | https://jgkg.norr-tech.com/id/law/424M6000054A001 | 株式会社地域経済活性化支援機構法第二十五条第一項第一号に規定するおそれがある旨の認定の申請手続に関する命令
+https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省 | https://jgkg.norr-tech.com/id/law/415M60000100152 | 独立行政法人勤労者退職金共済機構の業務運営、財務及び会計並びに人事管理に関する省令
+https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省 | https://jgkg.norr-tech.com/id/law/501M60000900005 | 厚生労働省・国土交通省関係地域再生法施行規則
+https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省 | https://jgkg.norr-tech.com/id/law/507M60001FCA010 | 物資の流通の効率化に関する法律の規定に基づく荷主に係る届出等に関する命令
+https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省 | https://jgkg.norr-tech.com/id/law/419M60000F48001 | 地域経済牽引事業の促進による地域の成長発展の基盤強化に関する法律第四条第一項に規定する基本計画等に関する省令
+https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省 | https://jgkg.norr-tech.com/id/law/415M60000100053 | 特別児童扶養手当証書の様式を定める省令
+https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省 | https://jgkg.norr-tech.com/id/law/429M60000100019 | 地域医療連携推進法人会計基準
+https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省 | https://jgkg.norr-tech.com/id/law/422M60001500004 | ＰＦＯＳ又はその塩及び化学物質の審査及び製造等の規制に関する法律施行令第九条の表ＰＦＯＳ又はその塩の項第一号から第三号までに定める製品に関する技術上の基準を定める省令
+https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省 | https://jgkg.norr-tech.com/id/law/418M60001FFA002 | 温室効果ガス算定排出量等の報告等に関する命令
+https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省 | https://jgkg.norr-tech.com/id/law/506M60000100106 | 厚生労働省の所管する法令に係る情報通信技術を利用する方法による国の歳入等の納付に関する法律施行規則
+... 以下 2001 行省略
 
 ------------------------------------------------------------------------------
 ### cq05-ministry-of-basis-law.rq
 形式: SELECT / 変数: ['law', 'project', 'ministry', 'ministryName']
-行数: 5663 / 8.562 秒
-(先頭15行。全行は cq-results/cq05-ministry-of-basis-law.json)
+行数: 5663 / 7.469 秒
 law | project | ministry | ministryName
 https://jgkg.norr-tech.com/id/law/416AC0000000135 | https://jgkg.norr-tech.com/id/budget/2025/2966 | https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省
+https://jgkg.norr-tech.com/id/law/416AC0000000135 | https://jgkg.norr-tech.com/id/budget/2025/2965 | https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省
+https://jgkg.norr-tech.com/id/law/416AC0000000135 | https://jgkg.norr-tech.com/id/budget/2025/22037 | https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省
+https://jgkg.norr-tech.com/id/law/416AC0000000135 | https://jgkg.norr-tech.com/id/budget/2025/22035 | https://jgkg.norr-tech.com/id/org/6000012070001 | 厚生労働省
 https://jgkg.norr-tech.com/id/law/329AC0000000144 | https://jgkg.norr-tech.com/id/budget/2025/1545 | https://jgkg.norr-tech.com/id/org/7000012060001 | 文部科学省
+https://jgkg.norr-tech.com/id/law/329AC0000000144 | https://jgkg.norr-tech.com/id/budget/2025/1533 | https://jgkg.norr-tech.com/id/org/7000012060001 | 文部科学省
 https://jgkg.norr-tech.com/id/law/411AC0100000052 | https://jgkg.norr-tech.com/id/budget/2025/49 | https://jgkg.norr-tech.com/id/org/8000012130001 | 警察庁
-... (以下省略。全5663行はcq-resultsのJSON参照)
+https://jgkg.norr-tech.com/id/law/412CO0000000249 | https://jgkg.norr-tech.com/id/budget/2025/961 | https://jgkg.norr-tech.com/id/org/9000012040001 | 外務省
+https://jgkg.norr-tech.com/id/law/412CO0000000249 | https://jgkg.norr-tech.com/id/budget/2025/1057 | https://jgkg.norr-tech.com/id/org/9000012040001 | 外務省
+https://jgkg.norr-tech.com/id/law/412CO0000000249 | https://jgkg.norr-tech.com/id/budget/2025/966 | https://jgkg.norr-tech.com/id/org/9000012040001 | 外務省
+https://jgkg.norr-tech.com/id/law/412CO0000000249 | https://jgkg.norr-tech.com/id/budget/2025/1137 | https://jgkg.norr-tech.com/id/org/9000012040001 | 外務省
+https://jgkg.norr-tech.com/id/law/412CO0000000249 | https://jgkg.norr-tech.com/id/budget/2025/956 | https://jgkg.norr-tech.com/id/org/9000012040001 | 外務省
+https://jgkg.norr-tech.com/id/law/412CO0000000249 | https://jgkg.norr-tech.com/id/budget/2025/994 | https://jgkg.norr-tech.com/id/org/9000012040001 | 外務省
+https://jgkg.norr-tech.com/id/law/412CO0000000249 | https://jgkg.norr-tech.com/id/budget/2025/7683 | https://jgkg.norr-tech.com/id/org/9000012040001 | 外務省
+https://jgkg.norr-tech.com/id/law/412CO0000000249 | https://jgkg.norr-tech.com/id/budget/2025/1082 | https://jgkg.norr-tech.com/id/org/9000012040001 | 外務省
+https://jgkg.norr-tech.com/id/law/412CO0000000249 | https://jgkg.norr-tech.com/id/budget/2025/999 | https://jgkg.norr-tech.com/id/org/9000012040001 | 外務省
+https://jgkg.norr-tech.com/id/law/412CO0000000249 | https://jgkg.norr-tech.com/id/budget/2025/21745 | https://jgkg.norr-tech.com/id/org/9000012040001 | 外務省
+https://jgkg.norr-tech.com/id/law/412CO0000000249 | https://jgkg.norr-tech.com/id/budget/2025/21868 | https://jgkg.norr-tech.com/id/org/9000012040001 | 外務省
+https://jgkg.norr-tech.com/id/law/412CO0000000249 | https://jgkg.norr-tech.com/id/budget/2025/20154 | https://jgkg.norr-tech.com/id/org/8000012010038 | デジタル庁
+https://jgkg.norr-tech.com/id/law/412CO0000000249 | https://jgkg.norr-tech.com/id/budget/2025/1069 | https://jgkg.norr-tech.com/id/org/9000012040001 | 外務省
+... 以下 5643 行省略
 
 ------------------------------------------------------------------------------
 ### cq06-unresolved-recipients-per-project.rq
 形式: SELECT / 変数: ['project', 'category', 'count']
-行数: 8151 / **154.828 秒**
-(先頭10行。全行は cq-results/cq06-unresolved-recipients-per-project.json)
+行数: 8151 / **152.890 秒**
 project | category | count
 https://jgkg.norr-tech.com/id/budget/2025/1 | resolved | 8
 https://jgkg.norr-tech.com/id/budget/2025/100 | bundled | 1
 https://jgkg.norr-tech.com/id/budget/2025/100 | resolved | 10
 https://jgkg.norr-tech.com/id/budget/2025/1000 | resolved | 10
 https://jgkg.norr-tech.com/id/budget/2025/1001 | resolved | 1
-... (以下省略。全8151行はcq-resultsのJSON参照)
+https://jgkg.norr-tech.com/id/budget/2025/1003 | bundled | 1
+https://jgkg.norr-tech.com/id/budget/2025/1004 | resolved | 1
+https://jgkg.norr-tech.com/id/budget/2025/1007 | bundled | 1
+https://jgkg.norr-tech.com/id/budget/2025/1008 | bundled | 1
+https://jgkg.norr-tech.com/id/budget/2025/1009 | resolved | 1
+https://jgkg.norr-tech.com/id/budget/2025/101 | resolved | 2
+https://jgkg.norr-tech.com/id/budget/2025/101 | sentinel | 8
+https://jgkg.norr-tech.com/id/budget/2025/1010 | bundled | 1
+https://jgkg.norr-tech.com/id/budget/2025/1011 | bundled | 1
+https://jgkg.norr-tech.com/id/budget/2025/1011 | resolved | 4
+https://jgkg.norr-tech.com/id/budget/2025/1012 | bundled | 1
+https://jgkg.norr-tech.com/id/budget/2025/1014 | bundled | 2
+https://jgkg.norr-tech.com/id/budget/2025/1015 | bundled | 2
+https://jgkg.norr-tech.com/id/budget/2025/1016 | resolved | 17
+https://jgkg.norr-tech.com/id/budget/2025/1016 | sentinel | 42
+... 以下 8131 行省略
 
 ------------------------------------------------------------------------------
 ### cq07-provenance-of-edge.rq
 形式: SELECT / 変数: ['graph', 'source', 'fetchedOn', 'license']
-行数: 1 / 0.016 秒
+行数: 1 / 0.031 秒
 graph | source | fetchedOn | license
 https://jgkg.norr-tech.com/graph/egov-law/2026-08-24 | https://laws.e-gov.go.jp/api/2/laws | 2026-08-24 | 政府標準利用規約(第2.0版)
 
@@ -467,18 +628,34 @@ https://jgkg.norr-tech.com/id/law/417M60000100021/20260401_令和八年厚生労
 ------------------------------------------------------------------------------
 ### cq09-jurisdiction-resolution-status.rq
 形式: SELECT / 変数: ['law', 'status', 'detail']
-行数: 6517 / 6.984 秒
-(先頭5行。全行は cq-results/cq09-jurisdiction-resolution-status.json)
+行数: 6517 / 7.047 秒
 law | status | detail
 https://jgkg.norr-tech.com/id/law/414M60000800066 | resolved | https://jgkg.norr-tech.com/id/org/2000012100001
 https://jgkg.norr-tech.com/id/law/426M60400000004 | resolved | https://jgkg.norr-tech.com/id/org/7000012010022
 https://jgkg.norr-tech.com/id/law/422M60000040052 | resolved | https://jgkg.norr-tech.com/id/org/8000012050001
-... (以下省略。全6517行はcq-resultsのJSON参照)
+https://jgkg.norr-tech.com/id/law/430M60000048001 | resolved | https://jgkg.norr-tech.com/id/org/8000012050001
+https://jgkg.norr-tech.com/id/law/430M60000048001 | resolved | https://jgkg.norr-tech.com/id/org/2000012020001
+https://jgkg.norr-tech.com/id/law/429M60000442003 | resolved | https://jgkg.norr-tech.com/id/org/2000012010019
+https://jgkg.norr-tech.com/id/law/429M60000442003 | resolved | https://jgkg.norr-tech.com/id/org/8000012050001
+https://jgkg.norr-tech.com/id/law/429M60000442003 | resolved | https://jgkg.norr-tech.com/id/org/4000012090001
+https://jgkg.norr-tech.com/id/law/413M60000100092 | resolved | https://jgkg.norr-tech.com/id/org/6000012070001
+https://jgkg.norr-tech.com/id/law/504RJNJ09148000 | resolved | https://jgkg.norr-tech.com/id/org/2000012010002
+https://jgkg.norr-tech.com/id/law/413M60000400104 | resolved | https://jgkg.norr-tech.com/id/org/4000012090001
+https://jgkg.norr-tech.com/id/law/503M60001C00002 | resolved | https://jgkg.norr-tech.com/id/org/4000012090001
+https://jgkg.norr-tech.com/id/law/503M60001C00002 | resolved | https://jgkg.norr-tech.com/id/org/2000012100001
+https://jgkg.norr-tech.com/id/law/503M60001C00002 | resolved | https://jgkg.norr-tech.com/id/org/1000012110001
+https://jgkg.norr-tech.com/id/law/503M60000080031 | resolved | https://jgkg.norr-tech.com/id/org/7000012060001
+https://jgkg.norr-tech.com/id/law/405M50000640001 | resolved | https://jgkg.norr-tech.com/id/org/5000012080001
+https://jgkg.norr-tech.com/id/law/423R00000001007 | resolved | https://jgkg.norr-tech.com/id/org/6000012150001
+https://jgkg.norr-tech.com/id/law/420M60000100003 | resolved | https://jgkg.norr-tech.com/id/org/6000012070001
+https://jgkg.norr-tech.com/id/law/501M60000100040 | resolved | https://jgkg.norr-tech.com/id/org/6000012070001
+https://jgkg.norr-tech.com/id/law/419M60400000023 | resolved | https://jgkg.norr-tech.com/id/org/7000012010022
+... 以下 6497 行省略
 
 ------------------------------------------------------------------------------
 ### cq10-release-freshness.rq
 形式: SELECT / 変数: ['sourceName', 'asOf', 'dateKind']
-行数: 5 / 0.047 秒
+行数: 5 / 0.031 秒
 sourceName | asOf | dateKind
 e-Gov法令API v2 全法令メタデータ | 2026-08-24 | 取得日
 国税庁 法人番号公表サイト 全件データ | 2026-08-23 | 取得日
@@ -496,6 +673,41 @@ e-Gov法令API v2 全法令メタデータ | 2026-08-24 | 取得日
 **全10本(CQ1〜CQ10)が実データ・実エンドポイント(Fuseki/TDB2)で非0件の
 答えを返した。完了条件Aを満たす。**
 
+- **CQ2の答え(91,789,031,491,000円)の範囲を明文化(修正ラウンド2
+  裁定B34)**: この金額は**一般会計＋特別会計の合計**である。
+  `budget_summary`の会計区分別明細行(列25「会計区分」・列28「当初予算」)を
+  自分で集計すると、特別会計71,174,383,135,000円(77.5%)+一般会計
+  20,614,648,356,000円(22.5%)=91,789,031,491,000円と、CQ2の答え・
+  集計行(列14「当初予算(合計)」)の合計の両方に一致した(下記のように
+  3方向とも一致することを自分で確認した)。厚生労働省の一般会計予算
+  だけを期待して比べる読者は約2.6倍ずれた解釈をする。クエリのコメント
+  ・`schema/competency-questions.md`(B34節)にもスコープを明記した。
+  併せて`budget:ministry`がRS列5(政策所管府省庁)から作られること
+  (列6の府省庁ではない)も同じ場所に明記した。
+  **この裏付けは`scripts/verify_cq2_scope.py`としてコミット済み**
+  (裁定B25「測定は使い捨てにしない」——要修正5で他の1回限りの確認を
+  スクリプト化しなかったことが指摘されたのと同じ轍を踏まないため、
+  ここは最初からコミットする)。
+
+```
+$ uv run python scripts/verify_cq2_scope.py --rs-system 2026-08-23 \
+    --ministry 厚生労働省 --fiscal-year 2025
+==============================================================================
+B34裏付け確認: 厚生労働省 FY2025 budget_summaryの会計区分別明細
+==============================================================================
+集計行(会計区分が空): 1176 行 / 合計 91,789,031,491,000 円
+明細行(会計区分が非空): 1225 行
+  特別会計: 71,174,383,135,000 円 (77.5%)
+  一般会計: 20,614,648,356,000 円 (22.5%)
+明細行の合計: 91,789,031,491,000 円
+集計行の合計と明細行の合計が一致するか: True
+```
+
+CQ2自体の答え(91,789,031,491,000円)は`run_cq.py`+`cq02`のSPARQLで
+恒久的に再現可能(§4参照)。上記の集計行合計もその値と一致しており、
+3方向(CQ2のSPARQL結果・集計行(列14)の合計・明細行(列28)を会計区分別に
+合計した値)がすべて91,789,031,491,000円で一致した。
+
 - CQ8(法令の改正としての時点指定): 事前監査で発見した実データ不整合
   (ハードコードされたカットオフ日`2023-01-01`が実データの改正日
   `2026-04-01`より前で0件になる)を修正した効果が、実エンドポイントでも
@@ -503,11 +715,12 @@ e-Gov法令API v2 全法令メタデータ | 2026-08-24 | 取得日
 - CQ10(鮮度): 5件——e-Gov(取得日)・法人番号(取得日。houjin-bangou/
   houjin-bangou-payeesの2グラフ分で2行)・府省名簿(記録日)・RS(取得日)。
   ソース4種+法人番号グラフが2つという構成と一致する(異常ではない)
-- **観察(性能。完了条件Aの合否には影響しないが記録する): CQ6は154.8秒
-  かかった。** 他のCQ(いずれも10秒未満)と比べて明確に遅い。予算執行明細
-  (73,919行)をproject×categoryで集計するクエリで、この規模でも実用上は
-  許容範囲(タイムアウト300秒以内)だが、Phase 2でAPI層を作る場合はこの
-  パターン(project単位の集計)にキャッシュや事前集計を検討する価値がある、
+- **観察(性能。完了条件Aの合否には影響しないが記録する): CQ6は今回の
+  実行で152.9秒かかった**(前ラウンドの実行では154.8秒。ともに他のCQ
+  〔いずれも10秒未満〕と比べて明確に遅い)。予算執行明細(73,919行)を
+  project×categoryで集計するクエリで、この規模でも実用上は許容範囲
+  (タイムアウト300秒以内)だが、Phase 2でAPI層を作る場合はこのパターン
+  (project単位の集計)にキャッシュや事前集計を検討する価値がある、
   という申し送り
 
 ---
@@ -569,21 +782,77 @@ rs-systemが据え置かれないことを確認し、この前提を記録し�
 変わるため。内容の差ではない)。
 
 **nquads_sha256の不一致は「内容の差」ではなく「行の並び順の差」だと
-確認した。** kg.nqを名前付きグラフごとに切り出し、各グラフの行を
-`sort`してから改めてsha256を取ると、**manifestに載る6グラフ全て
-(houjin-bangou・egov-law・rs-system・ministry-codes・provenance・
-houjin-bangou-payees)がA/Bで完全に一致した**(`triple_count`が
-A/Bで同じ817,982なのは「総数が同じ」ことしか示さないため、6グラフ
-それぞれを個別に確認した):
+確認した。修正ラウンド2でこの検査を`scripts/compare_releases.py`として
+コミットした(要修正5・裁定B33)。** 前ラウンドの記載はグラフ別に手で
+`grep`して`sort | sha256sum`した結果の書き起こしで、コミットされた
+スクリプトが無かった(B25違反)。このスクリプトは名前付きグラフごとに
+行をソートしてsha256を突き合わせ、**残余行(manifestが列挙するどの
+グラフにも属さない行)が0であることも検査する**。
+
+**開発中に実際に発見した罠**: グラフ項を素朴な正規表現(`<[^>]*>`が
+行末に来ることを見る)で取ろうとしたところ、実データの1つのリテラル値
+(`"<こどもの事故防止に関する取組の経費＞ ..."`。ASCIIの`<`で開き全角の
+「＞」で閉じる書式)がリテラル内部に生の`<`を含んでいたため、そこから
+実際のグラフ項の`>`までを1つの誤ったIRIとして食ってしまい、2行が
+「残余行」として誤検出された。引用符の内外を状態として追う簡易
+トークナイザに直して解消した(スクリプトのdocstring参照)。
 
 ```
-houjin-bangou        : 2d409ddc... (A) == 2d409ddc... (B)
-egov-law              : 6d0574ca... (A) == 6d0574ca... (B)
-rs-system             : f4785f75... (A) == f4785f75... (B)
-ministry-codes        : 3392faec... (A) == 3392faec... (B)
-provenance            : 83a9a5f3... (A) == 83a9a5f3... (B)
-houjin-bangou-payees  : 77de2dc4... (A) == 77de2dc4... (B)
+$ uv run python scripts/compare_releases.py data/artifact/2026-08-25 data/artifact/2026-08-26
+==============================================================================
+リリース比較(グラフ別ソート済みsha256): data\artifact\2026-08-25 vs data\artifact\2026-08-26
+==============================================================================
+manifest graphs A (6): ['https://jgkg.norr-tech.com/graph/egov-law/2026-08-24', 'https://jgkg.norr-tech.com/graph/houjin-bangou-payees/2026-08-23', 'https://jgkg.norr-tech.com/graph/houjin-bangou/2026-08-23', 'https://jgkg.norr-tech.com/graph/ministry-codes/2026-08-23', 'https://jgkg.norr-tech.com/graph/provenance', 'https://jgkg.norr-tech.com/graph/rs-system/2026-08-23']
+manifest graphs B (6): ['https://jgkg.norr-tech.com/graph/egov-law/2026-08-24', 'https://jgkg.norr-tech.com/graph/houjin-bangou-payees/2026-08-23', 'https://jgkg.norr-tech.com/graph/houjin-bangou/2026-08-23', 'https://jgkg.norr-tech.com/graph/ministry-codes/2026-08-23', 'https://jgkg.norr-tech.com/graph/provenance', 'https://jgkg.norr-tech.com/graph/rs-system/2026-08-23']
+
+SAME   https://jgkg.norr-tech.com/graph/egov-law/2026-08-24
+        A: 140,430 行  sha256=126afa10d5286c5e2a3a40102e10fc7c15e21a85bbd7077c9a51336423cf2c0a
+        B: 140,430 行  sha256=126afa10d5286c5e2a3a40102e10fc7c15e21a85bbd7077c9a51336423cf2c0a
+SAME   https://jgkg.norr-tech.com/graph/houjin-bangou-payees/2026-08-23
+        A: 113,616 行  sha256=e992ca610e1063feff0f771c2feba5797b83c2a823d52c537ffccc2073e4bafe
+        B: 113,616 行  sha256=e992ca610e1063feff0f771c2feba5797b83c2a823d52c537ffccc2073e4bafe
+SAME   https://jgkg.norr-tech.com/graph/houjin-bangou/2026-08-23
+        A:   5,088 行  sha256=58b427d642828dcddd5f2d6c73bef92f1e11afbf54063163a62a3708077b52e6
+        B:   5,088 行  sha256=58b427d642828dcddd5f2d6c73bef92f1e11afbf54063163a62a3708077b52e6
+SAME   https://jgkg.norr-tech.com/graph/ministry-codes/2026-08-23
+        A:      40 行  sha256=33a658ede3c32ccd631bd0f52013b4a39868375e4bfe5aaecc864ac920e0f987
+        B:      40 行  sha256=33a658ede3c32ccd631bd0f52013b4a39868375e4bfe5aaecc864ac920e0f987
+SAME   https://jgkg.norr-tech.com/graph/provenance
+        A:      40 行  sha256=83a9a5f33ecdaf62a24346c0f5fb8e6107daf6dc10987e9846558e181f2d2e81
+        B:      40 行  sha256=83a9a5f33ecdaf62a24346c0f5fb8e6107daf6dc10987e9846558e181f2d2e81
+SAME   https://jgkg.norr-tech.com/graph/rs-system/2026-08-23
+        A: 558,768 行  sha256=3d0e0cbb7230b48cf1d63aeae02257f40faf4b62059f305001d92edd7d36dd54
+        B: 558,768 行  sha256=3d0e0cbb7230b48cf1d63aeae02257f40faf4b62059f305001d92edd7d36dd54
+
+残余行(いずれのmanifest記載グラフにも属さない行): A=0 / B=0
+内容が一致しないグラフ: 0 件 []
+判定: 全6グラフの内容が一致し、残余行も0件
+
+$ echo $?
+0
 ```
+
+**manifestに載る6グラフ全て(houjin-bangou・egov-law・rs-system・
+ministry-codes・provenance・houjin-bangou-payees)がA/Bで完全に一致し、
+残余行も0件だった**(`triple_count`が同じ817,982なのは「総数が同じ」
+ことしか示さないため、6グラフそれぞれを個別に確認する意味がある)。
+
+**壊し確認**: 合成した最小限の2リリース(g1/g2のみ・3行)に対し、Bの
+kg.nqへ`<graph/g3-stray>`という**manifestに載っていないグラフ**の行を
+1行だけ追加して実行すると、正しく検出して失敗した:
+
+```
+残余行(いずれのmanifest記載グラフにも属さない行): A=0 / B=1
+  残余として検出されたグラフ項/キー: ['https://example.org/graph/g3-stray']
+内容が一致しないグラフ: 0 件 []
+判定: 不一致あり(**既定は失敗**)
+$ echo $?
+1
+```
+
+g1/g2自体は変更していないので両方`SAME`のまま出力され、追加した1行だけが
+正しく残余として検出されている(検査が「対象0件で合格に退化」していない
+ことも兼ねて確認できた)。
 
 つまり**トリプルの欠落・重複・改変は無い**。差は`emit.write_nquads`が
 `clean`(rdflib Dataset)をシリアライズする際の行の出力順のみであり、
@@ -594,24 +863,107 @@ carry-over経路(前リリースのグラフを読み込んで`clean`に足す)�
 ロード結果(トリプルの集合)には影響しない**——実際に`tdb2_expanded_bytes`
 はA/Bで完全に一致している。
 
+### Ruling B31: releaseフィールドが同日リリースA/Bで衝突していた実物証拠
+
+**この節の`release`/`manifest_version`の値は、上のA/Bのmanifest.jsonを
+そのまま読んだものであり、加工していない(データは`data/artifact/2026-08-25/`・
+`data/artifact/2026-08-26/`。両方とも保護対象で、修正ラウンド2ではこれらの
+中身を一切書き換えていない)。**
+
+修正前の`pipeline.py`は`release=max(fetched_on.values()).isoformat()`
+(=ソースの中で最も新しい取得日)を「リリースの同一性」として書いていた。
+A・Bはどちらも「取得日の組」が同じ(egov-lawだけ2026-08-24、他は
+2026-08-23)ため、ディレクトリ名(basename)が違うのに`release`が
+衝突していた。実際にA/Bのmanifest.jsonを読んで確認した:
+
+| ディレクトリ(basename) | manifest.jsonの`release` | `created_on` | `manifest_version` |
+|---|---|---|---|
+| `data/artifact/2026-08-25`(A) | `2026-08-24` | `2026-08-24` | 4 |
+| `data/artifact/2026-08-26`(B) | `2026-08-24` | `2026-08-24` | 4 |
+
+**A・Bはディレクトリ名が違う(A=`2026-08-25`、B=`2026-08-26`)のに、
+manifest.jsonの`release`は両方とも`2026-08-24`で完全に一致している。**
+manifest.jsonだけを見て「これはどのリリースか」を判定する利用者は、
+A/Bを区別できない(§6.3の配布契約は「tar.gz + manifest」なので、
+manifestが契約の全てである)。この2つのmanifestは**修正前の実装で
+実際に作られたもの**であり、修正ラウンド2ではこの2ディレクトリの
+中身を書き換えていない(保護対象。上の表はそのままの実測)。
+
+**修正後の実データ確認(判定基準(a))**: `release=out_dir.name`に直し、
+`houjin-bangou/ministry-codes/rs-system=2026-08-23、egov-law=2026-08-24`
+という**A/Bと全く同じ取得日の組**で、新しいディレクトリ
+`data/artifact/2026-08-27/`に実際にビルドした(`--out-dir`で明示。
+既存リリースを上書きしないため。ビルド自体は支出先限定構成なので約21秒):
+
+```
+$ cat data/artifact/2026-08-27/manifest.json
+{
+  "release": "2026-08-27",
+  "created_on": "2026-08-27",
+  ...
+  "manifest_version": 5,
+  ...
+}
+```
+
+**取得日の組はA/Bと同一のまま、`release`はディレクトリ名どおり
+`2026-08-27`になり、A/Bの`2026-08-24`とはもう衝突しない。**
+`manifest_version`も5に上がっている(旧実装で作られたA/Bの4とは
+読み手が区別できる)。
+
+**pytestでの回帰防止(判定基準(a)の自動テスト化)**:
+`tests/test_pipeline.py::test_run_same_day_releases_are_distinguishable_by_release_field`
+を追加した。壊し確認は§14に記す。
+
 ### 壁時計時間の比較(carry-overの効果が見えない理由)
+
+**訂正(修正ラウンド2)。** 以前の記載は「A=461秒」だったが、これは
+`data/artifact/2026-08-25/build.log` を読み違えたか、実物検査が途中失敗
+した1回目のビルド(実物検査は失敗したがパイプライン自体は完走していた
+——本報告書のStep 6参照)のログの数字を誤って引いてきたもので、**最終的に
+採用した成功ビルドの実ログの値ではなかった。** 現存する
+`data/artifact/2026-08-25/build.log` を直接`grep`して確認した実際の値は
+以下のとおり:
+
+```
+$ grep -n "パイプライン\|総所要" data/artifact/2026-08-25/build.log
+[所要] パイプライン(取得済みスナップショット→kg.nq、検証含む): 445 秒(開始からの累計 489 秒)
+完了: data/artifact/2026-08-25(総所要 527 秒)
+```
 
 | リリース | パイプライン実行(検証を含む) | 総所要 |
 |---|---|---|
-| A(初回) | 461秒 | 527秒 |
+| A(初回) | **445秒**(訂正前は461秒と誤記載) | 527秒 |
 | B(carry-over) | 458秒 | 544秒 |
 
-**carry-overが3/4グラフを据え置いたにもかかわらず、壁時計時間はほぼ
-変わらなかった(458秒 vs 461秒。誤差の範囲)。** 理由:
-`corporations_scope="payees"`は設計上、支出先フィルタ(`payee_houjin_bangou`)
-の再構築のために**houjin-bangou全件(580万行)を毎回フルスキャンする**
-(`pipeline-report.json`の`rows_seen`はA/Bとも5,816,535で完全に同一)。
-これは houjin-bangou-payees グラフが carry-over の対象外(上記)である
-ことの直接の結果であり、この構成では carry-over の本来の効果(検証・
-排出のスキップによる時間短縮)がフルスキャンの時間に埋もれて見えない。
-carry-overの効果自体は`carried_over`リストと(fixtureの)carry-overテスト群
-で確認済みであり、この観察は「効いていない」ではなく「この構成では
-支配的なコストが別にある」という切り分けである。
+**carry-overが3グラフを据え置いたにもかかわらず、Bのほうが13秒
+遅かった(458秒 vs 445秒)。** 訂正前の記載は符号が逆(「Bがわずかに速い」)
+だった。carry-overの価値を評価する読者はこの逆転した結論を受け取っては
+ならない——修正する。
+
+原因は完全には特定できないが、`src/jgkg/pipeline.py`を自分で読んで
+説明できる寄与を1つ確認した: **egov-lawの法令パース・所管解決
+(`law_mod.parse_laws`→`derive_jurisdiction`。9,547件)は、carry-over判定
+(`egov_carry_date`)を一度も参照せず`"egov-law" in fetched_on`だけで
+無条件に実行される**(`pipeline.py:974`〜`1006`。据え置き対象の判定は
+その後段でグラフを書くかどうかにしか使われない)。つまりegov-lawグラフが
+`carried_over`に載っていても、その生成に使う9,547件の解析処理自体はA・B
+どちらでも丸ごと実行されており、carry-overはこの部分の時間を1秒も
+節約していない。houjin-bangou全件(580万行)の毎回フルスキャン
+(`rows_seen`がA/Bとも5,816,535で同一)と合わせると、**「据え置き対象の
+グラフの生成コストの大部分は、そもそもcarry-overで避けられない構成に
+なっている」**ことがA/B双方の`rows_seen`/`law_records`の一致から分かる。
+残りの13秒の差自体(Bが遅い理由の全て)は、これだけでは説明がつかない
+——同規模の処理を2回連続で行ったときの実行ごとのばらつき(ディスク
+キャッシュの状態やOSスケジューリング等)である可能性が高いが、**これは
+推測であり、確認していない。未解明として残す。**
+
+carry-overがグラフの**据え置き**(再検証・再排出のスキップ)自体は
+`carried_over`リストと(fixtureの)carry-overテスト群で確認済みである。
+この構成での結論は「carry-overは効いていないが、そもそも壁時計時間の
+大半を占めるのはcarry-overの対象になっていない処理(法人マスタの
+フルスキャン・egov-lawの無条件パース)である」という切り分けであり、
+訂正後もこの切り分け自体は変わらない。
 
 ### リリース切替と鮮度反映
 
@@ -653,13 +1005,31 @@ pipeline-report.json  1,921 bytes
 開始前のタイムスタンプのまま)。`--out-dir`の明示により、リリースA・B
 ともこの証拠を上書きしていない。
 
-### 完了条件Cの判定
+### 完了条件Cの判定【修正ラウンド2で訂正】
 
-**満たす。** 取得(既存スナップショットの再利用含む)→差分検出
-(`carried_over`)→検証(据え置き4グラフはSHACL再検証、新規1グラフは
-通常検証)→リリース切替(serve.sh)→鮮度反映(current/previousの実際の
-入れ替わり+エンドポイントの応答)の一巡を実データで通し、2つ目の
-リリース(`data/artifact/2026-08-26/`)を作った。
+**修正ラウンド2での訂正。** 以前の記載「据え置き4グラフはSHACL再検証、
+新規1グラフは通常検証」は数が実物と合っていなかった。実物
+(`data/artifact/2026-08-26/pipeline-report.json`)は`carried_over`が3件
+(houjin-bangou/egov-law/rs-system)・`graphs_validated: 5`である。
+`src/jgkg/pipeline.py:1329`の`results = validate.validate_dataset(ds,
+SHAPES_DIR)`が見る`ds`には、この時点でministry-codes・provenance(常に
+新規生成する2グラフ)しか入っていない(carry-overされる3グラフは
+`ds`に足されず、別のDataset上で`carried_validation_results`として
+個別に再検証される。`houjin-bangou-payees`はこれとも別の
+`validate.validate_stream`(バッチSHACL)で検証される)。したがって
+`graphs_validated=5`の内訳は**新規2(ministry-codes・provenance。
+`validate_dataset`経由)+ 据え置き3(houjin-bangou・egov-law・rs-system。
+別Datasetでの再検証経由)**であり、「4+1」ではない。
+`houjin-bangou-payees`はこの5件のどちらにも数えられていない(=別経路の
+検証を受けている)ため、6グラフ全体で見ると「新規2+据え置き3+
+バッチSHACL1(houjin-bangou-payees)」が正しい内訳になる。
+
+完了条件Cの判定: **満たす。** 取得(既存スナップショットの再利用含む)→
+差分検出(`carried_over`)→検証(新規2グラフは通常のSHACL検証・据え置き
+3グラフは別Datasetでの再検証・houjin-bangou-payeesはバッチSHACL)→
+リリース切替(serve.sh)→鮮度反映(current/previousの実際の入れ替わり+
+エンドポイントの応答)の一巡を実データで通し、2つ目のリリース
+(`data/artifact/2026-08-26/`)を作った。
 
 ---
 
@@ -689,45 +1059,140 @@ Task 6は事業年度2025のみ取得しており、懸念12・13は「観察・
 | 1-3_RS_2024_基本情報_政策・施策、法令等.zip | `890d31b93d7d4266975fb763ceb707458a103ba21bada92999e92a5be177eced` |
 | 5-1_RS_2024_支出先_支出情報.zip | `4624b0c1e179cbe2c6edcff4bbf30e4108ff8bb3f2751c74f7e216821afe895d` |
 
+**修正ラウンド2で全量転記に置き換えた。** 以前の記載は`:6`の
+「全量転記」の宣言に反して、標準出力の一部(paths・分布2種・重複キーの
+上位10件・建制順の全23行・不一致30件)を手で1〜数行に圧縮していた
+(要修正6)。以下は`scripts/measure_rs_cross_year.py --snapshot
+2026-08-23 --snapshot 2026-08-24`を再実行した標準出力の**全量**である:
+
 ```
 ==============================================================================
 RSの年度をまたいだ整合(Task 6 懸念12・13)
 ==============================================================================
---- 取得日 2026-08-23(事業年度2025) ---
+--- 取得日 2026-08-23 ---
+  budget_summary                           data\lake\rs-system\2026-08-23\2-1_RS_2025_予算・執行_サマリ.zip
+  organization_information                 data\lake\rs-system\2026-08-23\1-1_RS_2025_基本情報_組織情報.zip
+  payee_payment_information                data\lake\rs-system\2026-08-23\5-1_RS_2025_支出先_支出情報.zip
+  policy_measure_laws_and_regulations      data\lake\rs-system\2026-08-23\1-3_RS_2025_基本情報_政策・施策、法令等.zip
+  project_summary                          data\lake\rs-system\2026-08-23\1-2_RS_2025_基本情報_事業概要等.zip
   project_summary の行数 : 6,061
   事業数(distinct pid)  : 5,794
   府省数(distinct 府省庁): 23
+  事業年度の分布         : {'2025': 6061}
   budget_summary の行数  : 47,100
+  budget_summary の事業年度列: {'2025': 47100}
 
---- 取得日 2026-08-24(事業年度2024) ---
+--- 取得日 2026-08-24 ---
+  budget_summary                           data\lake\rs-system\2026-08-24\2-1_RS_2024_予算・執行_サマリ.zip
+  payee_payment_information                data\lake\rs-system\2026-08-24\5-1_RS_2024_支出先_支出情報.zip
+  policy_measure_laws_and_regulations      data\lake\rs-system\2026-08-24\1-3_RS_2024_基本情報_政策・施策、法令等.zip
+  project_summary                          data\lake\rs-system\2026-08-24\1-2_RS_2024_基本情報_事業概要等.zip
   project_summary の行数 : 5,948
   事業数(distinct pid)  : 5,664
   府省数(distinct 府省庁): 23
+  事業年度の分布         : {'2024': 5948}
   budget_summary の行数  : 37,981
+  budget_summary の事業年度列: {'2024': 37981}
 
 ### 懸念12: 建制順(kensei_jun)の年度をまたいだ安定性
-  両年度に現れる府省名 : 23 / 片方だけ: 0件(両方0件)
-  **建制順が変わった府省: 0 件**(両年度に現れる府省の建制順はすべて一致)
-  (23府省全ての建制順を確認。例: 内閣官房1→1、こども家庭庁12→12、防衛省26→26)
+比較: 2026-08-23 vs 2026-08-24
+  2026-08-23: 府省名1件に建制順が2つ以上 = 0 件 
+  2026-08-24: 府省名1件に建制順が2つ以上 = 0 件 
+  両年度に現れる府省名 : 23
+  片方だけ(2026-08-23のみ): []
+  片方だけ(2026-08-24のみ): []
+  **建制順が変わった府省: 0 件**
+    (両年度に現れる府省の建制順はすべて一致した)
+
+  両年度の建制順の対応(全件):
+    こども家庭庁                   ['12'] / ['12']
+    カジノ管理委員会                 ['9'] / ['9']
+    デジタル庁                    ['13'] / ['13']
+    個人情報保護委員会                ['8'] / ['8']
+    公正取引委員会                  ['6'] / ['6']
+    内閣官房                     ['1'] / ['1']
+    内閣府                      ['4'] / ['4']
+    厚生労働省                    ['20'] / ['20']
+    原子力規制委員会                 ['25'] / ['25']
+    国土交通省                    ['23'] / ['23']
+    外務省                      ['17'] / ['17']
+    復興庁                      ['14'] / ['14']
+    文部科学省                    ['19'] / ['19']
+    法務省                      ['16'] / ['16']
+    消費者庁                     ['11'] / ['11']
+    環境省                      ['24'] / ['24']
+    経済産業省                    ['22'] / ['22']
+    総務省                      ['15'] / ['15']
+    警察庁                      ['7'] / ['7']
+    財務省                      ['18'] / ['18']
+    農林水産省                    ['21'] / ['21']
+    金融庁                      ['10'] / ['10']
+    防衛省                      ['26'] / ['26']
 
 ### 懸念13(前半): budget_summary の (project_id, 予算年度) 複合キー
   2026-08-23: キー数 23,036 / 重複キー 23,034 件
+    6 行  project_id=20087 予算年度=2024
+    5 行  project_id=2511 予算年度=2023
+    5 行  project_id=2639 予算年度=2023
+    5 行  project_id=3000 予算年度=2023
+    5 行  project_id=3822 予算年度=2023
+    4 行  project_id=284 予算年度=2024
+    4 行  project_id=341 予算年度=2023
+    4 行  project_id=341 予算年度=2022
+    4 行  project_id=341 予算年度=2021
+    4 行  project_id=474 予算年度=2024
+    予算年度の分布: {'2021': 7180, '2022': 7683, '2023': 9915, '2024': 10614, '2025': 11708}
   2026-08-24: キー数 18,524 / 重複キー 18,521 件
-  予算年度の分布(2025スナップショット): {2021: 7180, 2022: 7683, 2023: 9915, 2024: 10614, 2025: 11708}
-  予算年度の分布(2024スナップショット): {2021: 7585, 2022: 8232, 2023: 10724, 2024: 11440}
+    5 行  project_id=2511 予算年度=2023
+    5 行  project_id=2639 予算年度=2023
+    5 行  project_id=3000 予算年度=2023
+    5 行  project_id=3822 予算年度=2023
+    4 行  project_id=341 予算年度=2023
+    4 行  project_id=341 予算年度=2022
+    4 行  project_id=341 予算年度=2021
+    4 行  project_id=2253 予算年度=2023
+    4 行  project_id=2253 予算年度=2022
+    4 行  project_id=2437 予算年度=2022
+    予算年度の分布: {'2021': 7585, '2022': 8232, '2023': 10724, '2024': 11440}
 
 ### 懸念13(核心): 同じ project_id が両年度で同じ事業を指すか
   両年度に現れる project_id : 5,231
+  2026-08-23 のみ: 563
+  2026-08-24 のみ: 433
   事業名が一致   : 4,952 (94.7%)
   **事業名が不一致: 279 (5.3%)**
   所管府省が一致 : 5,231 (100.0%)
-  不一致の例(先頭5件): 「内閣人事局経費(研修事業)」→「内閣人事局経費」/
-  「サイバーセキュリティ関係情報システム等経費」→「内閣サイバーセキュリティ
-  センター情報システム等経費」/「子供の性被害防止対策の推進」→「人身安全
-  関連事案対策の推進」/「「魅力的な地域をつくる」ための調査・研究事業」→
-  「「魅力的な地域をつくる」ための先行事例調査・研究」/「地域の社会課題
-  解決に資する起業者展開推進事業」→「地域の担い手展開推進事業」
-  (全30件は`scripts/measure_rs_cross_year.py`の実行結果として再現可能)
+  不一致の例(最大30件。project_id / 事業名A / 事業名B):
+    1        内閣人事局経費(研修事業)                              内閣人事局経費
+    48       サイバーセキュリティ関係情報システム等経費                      内閣サイバーセキュリティセンター情報システム等経費
+    49       子供の性被害防止対策の推進                              人身安全関連事案対策の推進
+    50       「魅力的な地域をつくる」ための調査・研究事業                     「魅力的な地域をつくる」ための先行事例調査・研究
+    114      地域の社会課題解決に資する起業者展開推進事業                     地域の担い手展開推進事業
+    119      リモートワークを活用した官民共創による人流創出事業                  地方創生テレワーク推進事業
+    134      地方創生特区推進事業費                                スーパーシティ構想等の推進に必要な経費
+    163      沖縄振興交付金事業推進費                               沖縄振興交付金推進事業推進費
+    168      沖縄北部連携促進特別振興対策特定開発事業推進費                    沖縄北部連携促進特別振興対策特定開発事業費
+    271      安全・安心に関するシンクタンク機能の構築・運営                    安全・安心に関するシンクタンク機能の構築
+    422      金融危機対応の円滑な実施                               金融危機対応の円滑な実施のための経費
+    423      金融仲介機能強化事業                                 金融仲介機能の強化
+    424      金融デジタライゼーション推進事業                           金融デジタライゼーション関連経費
+    426      金融知識普及功績者表彰事業                              金融経済教育の推進
+    429      金融サービス利用者保護推進事業                            金融サービス利用者保護の推進に必要な経費
+    430      課徴金制度の施行                                   課徴金制度関係経費
+    432      企業財務諸制度調査等事業                               企業財務諸制度の整備
+    433      公認会計士試験実施事業                                公認会計士試験実施経費
+    436      コーポレートガバナンス推進事業                            コーポレートガバナンスの更なる推進に係る事業費
+    437      金融分野のサイバーセキュリティ対策向上事業                      金融分野におけるサイバーセキュリティ対策向上
+    438      サステナブルファイナンス推進事業                           サステナブルファイナンス推進に必要な経費
+    439      アカデミアとの連携強化事業                              アカデミアとの連携強化に必要な経費
+    440      自然災害による被災者の債務整理支援事業                        自然災害による被災者の債務整理支援
+    441      新興国に対する技術協力事業                              新興国に対する技術協力に必要な経費
+    442      アジア諸国等との金融連携・協力事業                          アジア諸国等との金融連携・協力に必要な経費
+    443      気候変動リスクをはじめとする新たなリスクへの対応                   気候変動リスクをはじめとする新たなリスクへの対応に必要な経費
+    455      家計の安定的な資産形成推進のための制度周知・広報及び税制の調査・検証事業       家計の安定的な資産形成推進のための制度周知・広報及び税制の調査・検証
+    461      エシカル消費の普及啓発                                エシカル消費の普及・啓発
+    653      放射性物質環境汚染状況監視等調査に必要な経費                     放射性物質環境汚染状況監視等調査研究に必要な経費
+    717      ICTアクセシビリティ推進事業(旧:デジタル活用共生社会推進事業、令和7年度要求)   ICTアクセシビリティ推進事業/(旧:デジタル活用共生社会推進事業)
 ```
 
 ### 結論
@@ -1083,6 +1548,91 @@ Task 6 懸念12・13の実測は§6に全量転記した(このセクション�
   いずれも意図した「エラー:」分岐に入ることを確認。正常系(`tdb2/Data-0001/`
   を含む有効なtarball)では素通りすることも確認(正のコントロール)。
 
+### Ruling B31の壊し確認(修正ラウンド2。判定基準(a)(b))
+
+**判定基準(a): `release`が再びソース取得日由来に戻ると、pytestが実際に落ちる。**
+`src/jgkg/pipeline.py`の`release=out_dir.name`を一時的に
+`release=max(fetched_on.values()).isoformat()`に戻し、
+`test_run_same_day_releases_are_distinguishable_by_release_field`だけを実行:
+
+```
+$ PYTHONUTF8=1 uv run pytest tests/test_pipeline.py -q -k test_run_same_day_releases_are_distinguishable_by_release_field
+F                                                                        [100%]
+================================== FAILURES ===================================
+_______ test_run_same_day_releases_are_distinguishable_by_release_field _______
+>       assert release_a.release != release_b.release, (...)
+E       AssertionError: 取得日が同じ2つのリリースのreleaseフィールドが衝突している(manifestだけではリリースを区別できない。Ruling B31違反)
+E       assert '2026-08-01' != '2026-08-01'
+E        +  where '2026-08-01' = PipelineReport(release='2026-08-01', ...).release
+E        +  and   '2026-08-01' = PipelineReport(release='2026-08-01', ...).release
+1 failed, 42 deselected in 1.59s
+```
+
+`out_dir`を`tmp_path / "2026-08-25"`と`tmp_path / "2026-08-26"`に変えても
+`release`は取得日(fixtureの`FETCHED`。2026-08-01)しか見ないため、
+意図どおり衝突して落ちた。`release=out_dir.name`に戻して再実行すると、
+このテストを含め全緑に戻ることを確認した:
+
+```
+$ PYTHONUTF8=1 uv run pytest tests/test_pipeline.py -q -k "test_run_same_day_releases_are_distinguishable_by_release_field or release"
+....                                                                     [100%]
+4 passed, 39 deselected in 1.08s
+```
+
+**判定基準(b): 引数なしの`build.sh`が既存リリースディレクトリに書けない。**
+実際に**A/Bと全く同じ取得日の組**(houjin-bangou/ministry-codes/
+rs-system=2026-08-23、egov-law=2026-08-24)を`--out-dir`なしで渡した
+(このコマンドは、修正前なら`data/artifact/2026-08-24/`——保護対象の
+全法人13.8GiB証拠——にそのまま書き込んでいた組み合わせそのものである):
+
+```
+$ bash scripts/build.sh --source houjin-bangou=2026-08-23 --source ministry-codes=2026-08-23 \
+    --source egov-law=2026-08-24 --source rs-system=2026-08-23 \
+    --corporations-scope payees --include-all-corporations
+エラー: 既定の出力先 data/artifact/2026-08-24 には既に何らかのファイルがある
+(既存リリースの疑い)。既定(--out-dir省略)のまま実行すると上書きしてしまうため
+停止した。別のリリースとして残すなら --out-dir で別のパスを明示すること
+$ echo $?
+1
+```
+
+**パイプラインが1行も実行される前に(スキーマ生成すら始まる前に)拒否している**
+——`data/artifact/2026-08-24/`の中身(`kg.nq`・`pipeline-report.json`・
+`tdb2.tar.gz`の3ファイル)はこの実行の前後で一切変化していないことを
+`ls`で確認した。
+
+**正のコントロール(ガードが誤検出でないこと)**: 同じコマンドの`egov-law`
+だけを実在しない日付(`2026-08-28`。レイクに無い)に変え、既定の出力先が
+本当に新規(`data/artifact/2026-08-28/`はまだ存在しない)になるようにすると、
+ガードは何も言わずに素通りし、スキーマ生成まで進んだ上で、**ガードとは
+無関係の別の理由(該当日のegov-lawスナップショットがレイクに無い)で
+失敗した**:
+
+```
+$ PYTHONUTF8=1 bash scripts/build.sh --source houjin-bangou=2026-08-23 --source ministry-codes=2026-08-23 \
+    --source egov-law=2026-08-28 --source rs-system=2026-08-23 \
+    --corporations-scope payees --include-all-corporations
+== 鮮度監視(...) ==
+鮮度監視(2026-08-25 基準): 追跡対象 3 ソース / 陳腐化 0 件
+== スキーマ生成 ==
+(...スキーマ生成の出力。省略...)
+== パイプライン実行(検証を含む) ==
+FileNotFoundError: egov-lawのスナップショットが無い: data\lake\egov-law\2026-08-28\laws.jsonl。 先にコネクタで取得する
+$ echo $?
+1
+```
+
+「既定の出力先 ... には既に何らかのファイルがある」という**ガード自身の
+エラー文言は出ていない**。`data/artifact/2026-08-28/`はこの実行後も
+作られていない(パイプラインが出力を書く前に落ちたため)。つまりガードは
+「出力先が既に塞がっている」ときだけ発火し、出力先が本当に新規のときは
+素通りする——判定基準(b)は誤検出(false positive)側も確認できた。
+
+(このスキーマ再生成は`schema/generated/`を書き換えるが、決定的な生成の
+ため常にコミット済みの内容と同一になる。`git status --short schema/generated/`
+が2回とも空であることを確認済み——このラウンドで唯一触ってはいけない
+ファイル群だが、実際には差分が残っていない。)
+
 ---
 
 ## 15. Phase 1 完了条件の判定
@@ -1091,7 +1641,7 @@ Task 6 懸念12・13の実測は§6に全量転記した(このセクション�
 |---|---|---|
 | (A) CQ1〜CQ10 に実データ・実エンドポイントで答えられる | **満たす** | §4(2026-08-25リリース。Fuseki実エンドポイントで全10本が非0件) |
 | (B) 縦の接続スライスを双方向に辿れ、出典が付く | **満たす** | `tests/test_vertical_slice.py`(fixture、全ホップ往復)+ 実データ: CQ1(法令→府省)・CQ5(法令→事業→府省)・CQ4(法人→支出→事業→府省→法令。逆方向を明示ジョインで確認、2,021件)・CQ7(出典。graph/source/fetchedOn/licenseが1件で返る) |
-| (C) 更新の一巡を実データで通し、2つ目のリリースを作れる | **満たす** | §5(`data/artifact/2026-08-26/`。carry-over3グラフ+新規1グラフ+serve.sh切替+新規回帰テスト) |
+| (C) 更新の一巡を実データで通し、2つ目のリリースを作れる | **満たす** | §5(`data/artifact/2026-08-26/`。据え置き3グラフ+新規2グラフ〔通常SHACL〕+houjin-bangou-payees〔バッチSHACL〕+serve.sh切替+新規回帰テスト。`graphs_validated=5`の内訳は本文参照) |
 
 **Phase 1(計画B)の完了条件A・B・Cを実データで満たした。** 併せて
 task-11-brief.mdの必須項目6〜10(RS年度整合・PAGE_LIMIT・
