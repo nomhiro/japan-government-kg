@@ -61,7 +61,7 @@ CQ6・CQ9・CQ10は「データの欠けと鮮度そのものを問える」こ�
 | CQ3 | 株式会社ウルフスタイル: 2024年度=2,000,000円・2025年度=3,025,000円 |
 | CQ4 | 株式会社ウルフスタイルへの資金は厚生労働省→厚生労働省令(417M60000100021)に行き着く |
 | CQ5 | 旧厚生省令(327M50000100010)を根拠とする事業の所管は「厚生労働省」 |
-| CQ6 | ある事業(PROJECT_CORE)の支出4件: resolved=1・unresolved=1・bundled=1・sentinel=1 |
+| CQ6 | ある事業(PROJECT_CORE)の支出4件: resolved=1・unresolved=1・bundled=1・sentinel_or_nonexistent_houjin_bangou=1(最終レビュー要修正4で改称。下記参照) |
 | CQ7 | 厚生労働省令のjurisdictionエッジの出典は`egov-law`、取得日2026-08-01 |
 | CQ8 | 2026-04-01時点の版は2026-01-01施行分(2026-05-01施行分はまだ未来、lawId無しの野良版は対象外。Task 11修正ラウンド: 日付は実データのカットオフに合わせて平行移動済み。§実在値の根拠 参照) |
 | CQ9 | 厚生労働省令=resolved、旧厚生省令=unresolved_old_or_obsolete_ministry(OLD_MINISTRY)、ダミー機関規則=unresolved_other(NO_CANDIDATE) |
@@ -298,13 +298,29 @@ Task 11修正ラウンド2のレビューで指摘(観察1): CQ2の答え(厚生
 違反するため)。CQ6のクエリは実装に合わせて書いた(コメントに明記)。
 
 さらに、recipientが無い支出は「未解決」だけではない。Task 7の
-`BuildStats`が区別する3種類——**未解決**(照合を試みて失敗。
+`BuildStats`が区別する4種類——**未解決**(照合を試みて失敗。
 `core:UnresolvedReference`を持つ)・**束ね**(「その他」等への意図的な
 集約)・**センチネル**(RSが個人・職員等に使う13桁のダミー法人番号
-`9999999999999`)——をCQ6も区別する(4分類: resolved/unresolved/
-bundled/sentinel。GROUP BYに事業を含め、事業単位のCOUNTで返す)。
-束ね・センチネルを「未解決」に混ぜると、実際には照合の失敗ではないものを
-失敗として過大に報告してしまう。
+`9999999999999`。B18)・**実在しない法人番号**(形式は法人番号だが
+法人番号公表サイトの全件データに存在しない。Ruling B27)——のうち、
+束ねと未解決はグラフ上区別できるが、**センチネルと実在しない法人番号は
+区別できない**(`budget:payeeLabel`が両方に付き、区別するトリプルが
+グラフに無い。`emit.py`参照)。
+
+**最終レビュー要修正4(裁定B42)。以前はこの2つの合算を`sentinel`と
+呼んでいた**が、それは「実在しない法人番号」(照合すべき対象はあるが
+照合に失敗した、疑うべき行)を「そもそも法人でない」に紛れ込ませる
+誤った報告だった。**クエリ側だけでは区別できない**(区別するには
+emit側に理由トリプルを足す必要があり、Phase 2に送った)ため、
+CQ6のカテゴリ名を合算であることが分かる
+`sentinel_or_nonexistent_houjin_bangou`に改めた。4分類
+(resolved/unresolved/bundled/sentinel_or_nonexistent_houjin_bangou)を
+GROUP BYに事業を含め、事業単位のCOUNTで返す。束ね・
+sentinel_or_nonexistent_houjin_bangouを「未解決」に混ぜると、実際には
+照合の失敗ではないものを失敗として過大に報告してしまう。この合算の
+内訳(センチネル件数・実在しない法人番号件数)はpipeline-report.jsonの
+`budget_recipients_sentinel`/`budget_recipients_nonexistent_houjin_bangou`
+で見える。
 
 ### CQ9: 分類の境界
 

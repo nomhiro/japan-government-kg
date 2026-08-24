@@ -206,12 +206,13 @@ def test_cq5_ministry_of_basis_law(kg):
 
 
 def test_cq6_unresolved_recipients_per_project_distinguishes_categories(kg):
-    """PROJECT_COREの4支出が resolved/unresolved/bundled/sentinel に
-    正しく1件ずつ分かれること(骨子との乖離はcq06のクエリ本体コメントに明記済み)。
+    """PROJECT_COREの4支出が resolved/unresolved/bundled/
+    sentinel_or_nonexistent_houjin_bangou に正しく1件ずつ分かれること
+    (骨子との乖離はcq06のクエリ本体コメントに明記済み)。
 
-    何があれば落ちるか: bundled/sentinelを「未解決」に混ぜたら
-    unresolvedが3になる(過大報告)。core:unresolvedForの向きを間違えたら
-    unresolvedが0になる。
+    何があれば落ちるか: bundled/sentinel_or_nonexistent_houjin_bangouを
+    「未解決」に混ぜたらunresolvedが3になる(過大報告)。
+    core:unresolvedForの向きを間違えたらunresolvedが0になる。
     """
     rows = _query(kg, "cq06-unresolved-recipients-per-project.rq")
     assert rows, "CQ6に答えられない"
@@ -221,7 +222,8 @@ def test_cq6_unresolved_recipients_per_project_distinguishes_categories(kg):
         str(category): int(count) for project, category, count in rows if project == project_uri
     }
     assert by_category == {
-        "resolved": 1, "unresolved": 1, "bundled": 1, "sentinel": 1,
+        "resolved": 1, "unresolved": 1, "bundled": 1,
+        "sentinel_or_nonexistent_houjin_bangou": 1,
     }, by_category
 
 
@@ -231,6 +233,14 @@ def test_cq6_totals_match_task7_build_stats(kg, budget_result):
     CQ6が独自に数えた分類と、rs.build_projectsが返す統計が食い違えば、
     SPARQL側かPython側のどちらかの分類ロジックが壊れている証拠になる
     (advisorレビュー指摘: 「整合の証拠そのもの」)。
+
+    **最終レビュー要修正4(裁定B42)**: `sentinel_or_nonexistent_houjin_bangou`
+    はグラフ上区別できない2つのBuildStats欄(recipients_sentinel・
+    recipients_nonexistent_houjin_bangou)の**合計**と一致するはず
+    ——このテストが「合算である」という設計そのものを固定する
+    (この2つを合計せず`recipients_sentinel`だけと比較する実装に戻すと、
+    `recipients_nonexistent_houjin_bangou`が1件以上ある入力で合計が
+    ずれて落ちる)。
     """
     rows = _query(kg, "cq06-unresolved-recipients-per-project.rq")
     totals: dict[str, int] = {}
@@ -243,7 +253,9 @@ def test_cq6_totals_match_task7_build_stats(kg, budget_result):
         "resolved": resolved_total,
         "unresolved": stats.recipients_unresolved,
         "bundled": stats.expenditures_bundled,
-        "sentinel": stats.recipients_sentinel,
+        "sentinel_or_nonexistent_houjin_bangou": (
+            stats.recipients_sentinel + stats.recipients_nonexistent_houjin_bangou
+        ),
     }, (totals, stats)
 
 
