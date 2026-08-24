@@ -29,6 +29,14 @@
 関数自身はファイルシステム側の退避・配置だけを担う)。前世代は必ず
 `data/artifact/previous/` に残す(§6.3の「過去N世代を保持」の最低限。
 N=1)。
+
+**中断時の復旧(task-10-review.md観察7)**: `current_dir.replace(previous_dir)`と
+`incoming_dir.replace(current_dir)`の間でプロセスが落ちると、`current/`が
+一時的に存在しない状態になる。`docker-compose.yml`は`./data/artifact/current/tdb2`
+をbind mountするため、Dockerがホスト側の空ディレクトリを自動作成し、Fusekiが
+空のKGを配信しうる。窓は極小(rename2回の間のみ)だが、復旧手順は前世代を
+戻すだけでよい: `data/artifact/previous`を`data/artifact/current`へ戻し
+(`mv`または`Path.replace`)、`docker compose up -d fuseki`で再起動する。
 """
 import argparse
 import os
@@ -38,13 +46,19 @@ from pathlib import Path
 
 from jgkg import build
 
-MANIFEST_NAME = "manifest.json"
+# serve.MANIFEST_NAME として再公開する(既存呼び出し元・テスト向け。build.py側が
+# 単一の出典になったため、ここでは再importするだけにする)
+from jgkg.build import MANIFEST_NAME
+
 TARBALL_NAME = "tdb2.tar.gz"
 # tar の中身のトップディレクトリ(build.sh の `tar -C "$OUT" tdb2`)
 DB_DIRNAME = "tdb2"
+# アトミック切替の単位そのもの(target.parent がこの名前であることを
+# stage_release が検査する。要修正3参照)
+CURRENT_DIRNAME = "current"
 # docker-compose.yml が読み取り専用でマウントする場所(Task 10:
 # `data/artifact/current/` がアトミック切替の単位そのもの)
-DEFAULT_TARGET = Path("data/artifact") / "current" / DB_DIRNAME
+DEFAULT_TARGET = Path("data/artifact") / CURRENT_DIRNAME / DB_DIRNAME
 
 
 def stage_release(
@@ -70,7 +84,28 @@ def stage_release(
     退避先(`previous`)はいずれも`target.parent`の**兄弟ディレクトリ**
     (`target.parent.parent`直下)に置く — `target.parent`自身をリネームで
     退避するため、退避先が`target.parent`の**内側**にあってはならない。
+
+    **修正ラウンド1(要修正3): `target`の形を検査する。** `target`は
+    `--target`で外部から渡せるため、`target.parent`全体を無検証で改名する
+    設計と組み合わさると破壊的になる——`python -m jgkg.serve <dir>
+    --target data/artifact/tdb2`(旧レイアウトの形そのもの。
+    `docs/superpowers/plans/2026-08-22-phase0-data-layer-foundation.md:3087`に
+    文書として残っており、このリポジトリに実際に残存物`data/artifact/tdb2`が
+    存在する)を渡すと`current_dir = data/artifact`になり、**全リリース・
+    全manifest・全tarballを含むディレクトリ全体**が`data/previous`へ
+    改名されてしまう(task-10-review.md要修正3)。`scripts/serve.sh`は
+    `--target`を渡さないので既定経路は安全だが、「既定は止まる側」を
+    貫くコードベースとして、破壊的な既定を外部入力に無検査で委ねてはならない。
     """
+    if target.name != DB_DIRNAME or target.parent.name != CURRENT_DIRNAME:
+        raise ValueError(
+            f"target の形が想定と違う: {target}。"
+            f" target.name は {DB_DIRNAME!r}、target.parent.name は"
+            f" {CURRENT_DIRNAME!r} である必要がある(例: data/artifact/current/tdb2)。"
+            " 切替の単位は target.parent 全体なので、この検査が無いと"
+            " 想定外のディレクトリ全体を丸ごと改名してしまう"
+        )
+
     manifest_path = artifact_dir / MANIFEST_NAME
     tarball = artifact_dir / TARBALL_NAME
     for p in (manifest_path, tarball):

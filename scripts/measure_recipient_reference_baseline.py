@@ -144,6 +144,14 @@ def main() -> None:
 
     print("=== budget:recipient 参照整合ゲート(確定値) ===")
     print(f"検査対象(examined。recipient_houjin_bangouがNoneでない件数): {examined:,}")
+    # Task 10修正ラウンド1(観察5): 「ゲートの重複排除後の件数と一致するか」の
+    # 確認として構築したが今まで印字していなかった(task-10-review.md観察5)。
+    # ゲート(check_reference_integrity)は(subject, object)組で重複排除するため、
+    # Expenditure URIが重複しなければexamined_pairsの件数はexaminedと一致するはず
+    print(
+        f"うちdistinct(project_id, fiscal_year, seq)組: {len(examined_pairs):,} "
+        f"(examinedと一致すべき: {'OK' if len(examined_pairs) == examined else 'NG'})"
+    )
     print(f"型を持つ(848件の国の機関のいずれかに一致): {matched:,}")
     print(f"違反(examined - 型を持つ): {violations:,}")
     print()

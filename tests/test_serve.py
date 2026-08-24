@@ -120,6 +120,29 @@ def test_stage_release_swaps_the_whole_current_directory_not_just_tdb2(tmp_path)
     assert previous_marker.read_text(encoding="utf-8") == "gen-1"
 
 
+def test_stage_release_refuses_an_unexpected_target_shape(tmp_path):
+    """`--target`が`current/tdb2`という想定の形でないと配置しないこと
+
+    (task-10-review.md要修正3)。切替の単位は`target.parent`全体を無検証で
+    改名する設計なので、想定外の`target`を渡すと無関係なディレクトリ全体が
+    改名されてしまう。ここでは`target.parent`が成果物ソース(`art`)自身の
+    親ディレクトリと同じになる形(旧レイアウト`--target .../tdb2`と同型)を
+    渡し、**成果物ソースそのものが退避されてしまわないこと**を確認する
+    (無検査だとどれほど危険かが分かる具体例)。
+
+    何があれば落ちるか: `target.name`/`target.parent.name`の検査を外すと、
+    `bad_target.parent`(=`art.parent`)が`previous`へ改名され、`art`が
+    消失して例外もなく処理が進んでしまう。
+    """
+    art = _make_artifact(tmp_path)
+    bad_target = art.parent / "tdb2"  # target.parent.name は "current" ではない
+
+    with pytest.raises(ValueError, match="target"):
+        serve.stage_release(art, bad_target, expected_jena_version="6.2.0")
+    assert not bad_target.exists(), "想定外のtargetなのに配置してしまった"
+    assert art.exists(), "成果物ソースの親ディレクトリが改名されてしまった"
+
+
 def test_stage_release_reports_a_missing_artifact(tmp_path):
     with pytest.raises(FileNotFoundError, match="成果物が見つからない"):
         serve.stage_release(

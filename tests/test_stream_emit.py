@@ -214,9 +214,14 @@ def test_dedup_seen_set_memory_budget_is_within_the_phase1_budget():
     intでない何かをキーにする退行や、他の場所での余分な蓄積を検出できない)。
     ここでは実際にジェネレータファクトリ(呼ぶたびに新しい`Organization`の列を
     生成する。事前に`list`化しない)を`dedup_organizations`に渡し、フルの
-    実行(1パス目のint集合構築→解放→2パス目)を通したピークメモリを
-    `tracemalloc`で測る。重複を1件も作らない(2パス目の`pending`が空のまま
-    になる)ので、測ったピークは実質的に1パス目の`seen`が支配する。
+    実行(1パス目のint集合構築→2パス目。**B21以降は`seen`を解放せず
+    `stats.houjin_bangou_seen`として保持し続けるが、ピークは1パス目の`seen`
+    構築時点で確定するため、この測定対象には影響しない**——task-10-review.md
+    要修正4。以前は「1パス目のint集合構築→解放→2パス目」と書いていたが、
+    B21で`del seen`を廃止したので「解放」は実際には起きない)を通した
+    ピークメモリを`tracemalloc`で測る。重複を1件も作らない(2パス目の
+    `pending`が空のままになる)ので、測ったピークは実質的に1パス目の`seen`
+    が支配する。
 
     **サンプルは`tracemalloc.start()`の前に構築してはならない**(サンプルの
     構築コストがピークを支配してしまい、`dedup_organizations`自体ではなく
