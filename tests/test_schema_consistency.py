@@ -301,20 +301,28 @@ def test_overlay_is_empty_pending_new_axioms():
 
     **ファイル集合も固定する。** `OVERLAY.glob("*.ttl")` でループするだけの
     検査に戻すと、将来 `schema/overlay/` に新しいファイルが増えたときに
-    無審査で公開マージ(`merge_ontology`)へ混入する(この検査は対象0件のまま
+    無審査で `merge_ontology` の入力に混入する(この検査は対象0件のまま
     気づかれずに合格を続ける)。ファイル集合をここで明示することで、
     想定外のファイルが増えたら**このテストの想定から外れて**気づける。
+
+    **公開経路はオーバーレイを読まない(決定44)。** `src/jgkg/site.py` が
+    配布するのは生成OWLのモジュール別ファイルのみで、`merge_ontology` を
+    呼ぶのは現在このテストだけである。オーバーレイに公理を書いても、それ
+    だけでは利用者には届かない — 公開するなら `site.py` への結線が別途必要
+    (現在は結線されていない)。
 
     **何があれば落ちるか**: `core-axioms.ttl` にトリプルを1つでも追加する、
     `schema/overlay/` に新しいファイルを追加する、のいずれでも落ちる。
     新しい公理を書くときは、このテストを書き直し、削除した2テスト相当の
-    整合検査(このコミット以前の git history を参照)を復活させること。
+    整合検査(このコミット以前の git history を参照)を復活させ、
+    **公開したいなら site.py への結線も行うこと。**
     """
     files = sorted(OVERLAY.glob("*.ttl"))
     assert files == [OVERLAY / "core-axioms.ttl"], (
         f"オーバーレイのファイル集合が想定と異なる: {[f.name for f in files]}。"
         " 新しいオーバーレイファイルを追加したなら、対応する整合テスト"
-        "(旧 test_overlay_terms_all_exist_in_generated_owl 相当)を復活させること"
+        "(旧 test_overlay_terms_all_exist_in_generated_owl 相当)を復活させること。"
+        " 公開経路はオーバーレイを読まない — 復活させるなら site.py への結線も含めること"
     )
 
     g = Graph()
@@ -322,7 +330,8 @@ def test_overlay_is_empty_pending_new_axioms():
     assert len(g) == 0, (
         f"{files[0]} が空でない({len(g)}トリプル)。オーバーレイに公理が"
         " 復活したなら、対応する整合テスト(旧 test_merged_ontology_contains_"
-        "both_sources 相当)を復活させること"
+        "both_sources 相当)を復活させること。"
+        " 公開経路はオーバーレイを読まない — 復活させるなら site.py への結線も含めること"
     )
 
 
