@@ -12,6 +12,13 @@ from pydantic import BaseModel
 
 from jgkg._io import atomic_write
 
+# serve.py・pipeline.py が同じファイル名を指すための単一の出典
+# (Task 10修正ラウンド: pipeline.py が carry-over の供給元検査のために
+# manifest.json の存在を要求するようになった。pipeline.py が serve.py を
+# importする層の逆転を避けるため、この定数はserve.pyではなくここに置く
+# ——serve.pyはこちらを再importして使う)
+MANIFEST_NAME = "manifest.json"
+
 
 class Manifest(BaseModel):
     release: str
@@ -20,6 +27,17 @@ class Manifest(BaseModel):
     sha256: str
     byte_size: int
     triple_count: int
+    # Task 10修正ラウンド(Ruling B26): kg.nq(N-Quads本体)の完全性照合に使う
+    # sha256。**既存の`sha256`欄はtarball(tdb2.tar.gz)のハッシュであり、
+    # kg.nqのハッシュではない**(このモジュールの他の欄と同様、tdb2構築前の
+    # kg.nq自体を後から独立に読む消費者がいなかったため今まで無かった)。
+    # pipeline.pyのcarry-over(前リリースのkg.nqから据え置き対象のグラフを
+    # 抽出する処理)が、保管中に書き換えられたkg.nqを黙って受理しないための
+    # 照合に使う。**旧形式(manifest_version<3)のmanifestにはこの欄が無いため
+    # `None`**(「照合できない」ことを0/空文字と区別する。`read_manifest`が
+    # 欄の無いJSONを読むとpydanticの既定値がそのままNoneになるので、
+    # 追加のsetdefaultは要らない)
+    nquads_sha256: str | None = None
     graphs: list[str]
     # 成果物に**実際に入っている**ソースと、その「いつ時点か」。
     # 隔離されたソースはここに載せない(載せると「この日付のデータを含む」という嘘になる)
@@ -32,10 +50,20 @@ class Manifest(BaseModel):
     # (=新規に作る)場合の既定はこの 2。**旧manifestを読むときに 1 とみなす処理は
     # ここではなく read_manifest() 側に置く**(pydanticのフィールド既定だけでは
     # 「新規構築で省略した」のか「旧ファイルに欄が無い」のかを区別できないため)
-    manifest_version: int = 2
+    # Task 10修正ラウンド: `nquads_sha256`を追加したのでこの欄自体は再度3に上げる
+    # (計画B Task 1がmanifest_version欄自体の追加で2に上げたのと同じ作法)
+    manifest_version: int = 3
 
 
-def _sha256(path: Path) -> str:
+def file_sha256(path: Path) -> str:
+    """ファイルの内容全体のsha256(全体をメモリに載せず1MiBずつ読む)。
+
+    tarball・kg.nq のどちらも数百MB〜規模になり得るため、`read_bytes()`では
+    なくストリームで読む。pipeline.py(carry-overの供給元照合。Ruling B26)が
+    このモジュール外から呼ぶため公開名にした(以前は`_sha256`という
+    モジュール内部限定の名前だったが、tarball以外(kg.nq)の照合という
+    2つ目の消費者ができたことで、モジュール境界を越える公開APIになった)。
+    """
     h = hashlib.sha256()
     with path.open("rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
@@ -80,9 +108,10 @@ def build_manifest(
         release=release,
         created_on=release,
         jena_version=jena_version,
-        sha256=_sha256(tarball),
+        sha256=file_sha256(tarball),
         byte_size=tarball.stat().st_size,
         triple_count=_count_triples(nquads),
+        nquads_sha256=file_sha256(nquads),
         graphs=sorted(graphs),
         sources=sources,
         quarantined_sources=sorted(quarantined_sources or []),
@@ -124,7 +153,7 @@ def verify_manifest(
     紐づく**ため、記録しただけで照合しなければ意味がない。
     """
     m = read_manifest(manifest_path)
-    actual = _sha256(tarball)
+    actual = file_sha256(tarball)
     if actual != m.sha256:
         raise ValueError(
             f"成果物のsha256が一致しない。manifest={m.sha256} actual={actual}"

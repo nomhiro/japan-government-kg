@@ -27,6 +27,10 @@ def test_build_manifest_records_checksum_and_jena_version(tmp_path):
     assert m.sha256 == hashlib.sha256(b"fake tarball content").hexdigest()
     assert m.byte_size == len(b"fake tarball content")
     assert m.triple_count == 1
+    assert m.nquads_sha256 == hashlib.sha256(nq.read_bytes()).hexdigest(), (
+        "kg.nq自体のsha256(tarballとは別物)がmanifestに記録されるべき"
+        "(Ruling B26: carry-overの供給元照合に使う)"
+    )
     assert m.graphs == ["http://example.test/g"]
     assert m.sources == {"houjin-bangou": "2026-08-01"}
     assert m.quarantined_sources == []
@@ -159,8 +163,13 @@ def test_triple_count_handles_tricky_literals(tmp_path):
     assert "http://example.test/o" not in m.graphs
 
 
-def test_build_manifest_produces_version_2(tmp_path):
-    """新規に構築した manifest は manifest_version=2 を持つこと(計画B Task 1)。"""
+def test_build_manifest_produces_version_3(tmp_path):
+    """新規に構築した manifest は manifest_version=3 を持つこと。
+
+    計画B Task 1がmanifest_version欄自体の追加で2に上げ、Task 10修正ラウンド1が
+    `nquads_sha256`欄の追加で3に上げた(Ruling B26。同じ「欄を追加したら
+    版を上げる」作法)。
+    """
     nq = tmp_path / "kg.nq"
     nq.write_text("", encoding="utf-8")
     tarball = tmp_path / "kg.tar.gz"
@@ -168,7 +177,7 @@ def test_build_manifest_produces_version_2(tmp_path):
 
     m = build.build_manifest(nquads=nq, tarball=tarball, jena_version="5.0.0",
                              release="r", sources={}, graphs=[])
-    assert m.manifest_version == 2
+    assert m.manifest_version == 3
 
 
 def test_read_manifest_treats_a_missing_version_field_as_1(tmp_path):
@@ -198,7 +207,7 @@ def test_read_manifest_treats_a_missing_version_field_as_1(tmp_path):
 
 
 def test_manifest_version_roundtrips_through_write_and_read(tmp_path):
-    """新規 manifest を書いて読み直しても版(2)が保たれること。"""
+    """新規 manifest を書いて読み直しても版(3)が保たれること。"""
     nq = tmp_path / "kg.nq"
     nq.write_text("", encoding="utf-8")
     tarball = tmp_path / "kg.tar.gz"
@@ -210,4 +219,55 @@ def test_manifest_version_roundtrips_through_write_and_read(tmp_path):
     build.write_manifest(m, manifest_path)
 
     reloaded = build.read_manifest(manifest_path)
-    assert reloaded.manifest_version == 2
+    assert reloaded.manifest_version == 3
+    assert reloaded.nquads_sha256 == m.nquads_sha256
+
+
+def test_read_manifest_treats_a_missing_nquads_sha256_as_none(tmp_path):
+    """`nquads_sha256`欄が無い旧manifest(manifest_version<3)を読むとNoneになること。
+
+    **何があれば落ちるか**: `Manifest`のフィールド既定を空文字などに変えると、
+    pipeline.pyのcarry-over供給元照合(Ruling B26)が「照合できない」ことを
+    正しく検出できなくなる。
+    """
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps({
+            "release": "2026-08-01",
+            "created_on": "2026-08-01",
+            "jena_version": "5.0.0",
+            "sha256": "0" * 64,
+            "byte_size": 1,
+            "triple_count": 1,
+            "graphs": [],
+            "sources": {},
+            "manifest_version": 2,
+        }),
+        encoding="utf-8",
+    )
+
+    m = build.read_manifest(manifest_path)
+    assert m.nquads_sha256 is None
+
+
+def test_build_manifest_nquads_sha256_changes_when_kg_nq_content_changes(tmp_path):
+    """kg.nqの内容が変われば`nquads_sha256`も変わること(完全性照合の基本要件)。"""
+    tarball = tmp_path / "kg.tar.gz"
+    tarball.write_bytes(b"x")
+
+    nq_a = tmp_path / "a.nq"
+    nq_a.write_text(
+        '<http://example.test/s> <http://example.test/p> <http://example.test/o1> <http://example.test/g> .\n',
+        encoding="utf-8",
+    )
+    nq_b = tmp_path / "b.nq"
+    nq_b.write_text(
+        '<http://example.test/s> <http://example.test/p> <http://example.test/o2> <http://example.test/g> .\n',
+        encoding="utf-8",
+    )
+
+    m_a = build.build_manifest(nquads=nq_a, tarball=tarball, jena_version="5.0.0",
+                                release="r", sources={}, graphs=[])
+    m_b = build.build_manifest(nquads=nq_b, tarball=tarball, jena_version="5.0.0",
+                                release="r", sources={}, graphs=[])
+    assert m_a.nquads_sha256 != m_b.nquads_sha256
