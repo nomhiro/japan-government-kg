@@ -55,3 +55,80 @@ def test_served_files_use_the_configured_base_uri(tmp_path):
     core = (tmp_path / "def" / "core.owl.ttl").read_text(encoding="utf-8")
     assert base in core, f"配信物に {base} が現れない"
     assert "localhost" not in core, "開発用のドメインが配信物に残っている"
+
+
+# =============================================================================
+# 最終レビュー要修正1/要修正2(裁定B40): module_names()の導出、
+# _headersの手書きワイルドカードを構造的な生成に置き換える
+# =============================================================================
+
+
+def test_module_names_derives_all_five_phase1_modules():
+    """`module_names()`が`*.owl.ttl`から5モジュール全部を導出すること。
+
+    何があれば落ちるか: `scripts/verify-site.py`が以前手書きしていた
+    `("core", "org", "all")`のように固定の一覧に戻すと、`law`/`budget`が
+    抜けたままこのテストが落ちる(実際に起きた欠陥そのもの)。
+    """
+    assert set(site.module_names(GENERATED)) == {"core", "org", "law", "budget", "all"}
+
+
+def test_build_and_module_names_agree_on_the_module_alias_paths(tmp_path):
+    """`build()`が実際に作るモジュールエイリアスのパスの集合が、
+
+    `module_names()`が返す集合と完全に一致すること(要修正2の「二度と
+    乖離できない形」——両者が同じ関数を呼んでいるため、原理的に一致する
+    はずだが、それをここで実際に確認する)。
+    """
+    made = site.build(GENERATED, tmp_path)
+    # モジュールエイリアス(`/def/core`)は最後のパス片に拡張子が無い
+    # (`.ttl`ファイルのコピー`/def/core.owl.ttl`等と区別する)
+    alias_paths = {
+        p for p in made if p.startswith("/def/") and "." not in p.rsplit("/", 1)[-1]
+    }
+    assert alias_paths == {f"/def/{m}" for m in site.module_names(GENERATED)}
+
+
+def test_build_headers_gives_each_made_path_its_own_block_not_a_wildcard(tmp_path):
+    """`_headers`が`/def/*`のようなワイルドカードを含まず、
+
+    `made`にある各パスへ個別のブロックを与えること(要修正1)。
+
+    何があれば落ちるか: 生成ロジックが以前のワイルドカード
+    (`/def/*\\n  Content-Type: ...`)に戻ると、このテストの
+    `"/def/*" not in content`が落ちる。
+    """
+    made = site.build(GENERATED, tmp_path)
+    content = site.build_headers(made)
+
+    assert "/def/*" not in content, "ワイルドカードのブロックが残っている"
+    for path in made:
+        if path == "/sitemap.txt":
+            continue
+        assert f"{path}\n" in content, f"{path} 用のブロックが無い: {content!r}"
+    assert "Content-Type: text/turtle; charset=utf-8" in content
+    assert "Access-Control-Allow-Origin: *" in content
+    # 共通ブロック(全パス向け。ワイルドカードだがContent-Typeを含まないので安全)
+    assert "/*\n  X-Content-Type-Options: nosniff" in content
+
+
+def test_build_headers_gives_no_block_to_a_path_that_was_never_made():
+    """`made`に含まれないパスには、`_headers`に一致するブロックが無いこと
+
+    (要修正1の核心——欠落したパスがturtleを名乗れないことの直接証明)。
+
+    何があれば落ちるか: 個別パスのブロックではなく`/def/*`的な
+    ワイルドカードに戻すと、実在しない`/def/law`のようなパスも
+    (作られていないのに)このブロックにマッチしてしまい、このテストの
+    `"/def/law" not in content`が落ちる。
+    """
+    content = site.build_headers({"/def/core", "/def/core.owl.ttl"})
+    assert "/def/law" not in content
+    assert "/def/core\n" in content
+
+
+def test_write_headers_writes_the_file_to_out_dir(tmp_path):
+    made = site.build(GENERATED, tmp_path)
+    path = site.write_headers(made, tmp_path)
+    assert path == tmp_path / "_headers"
+    assert path.read_text(encoding="utf-8") == site.build_headers(made)

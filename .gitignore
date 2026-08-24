@@ -58,6 +58,9 @@ Thumbs.db
 # 静的配信物。正は schema/generated/ なので同じものを2箇所にコミットしない
 site/def/
 site/sitemap.txt
+# 最終レビュー要修正1(裁定B40): _headers も build-site.sh が made から
+# 生成する(手書きのワイルドカードをやめた)。正は schema/generated/ 側
+site/_headers
 
 # wrangler のローカル実行が作る一時ファイル
 .wrangler/

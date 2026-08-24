@@ -13,8 +13,11 @@
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 from rdflib import Graph, URIRef
+
+from jgkg import site
 
 # **出力を環境非依存にする。** Windowsでこのスクリプトの出力をパイプすると、
 # Pythonがロケールのコードページ(cp932)で書くため日本語が文字化けする。
@@ -28,7 +31,16 @@ DEFAULT_ORIGIN = "http://localhost:8788"
 # 配信物が名乗る名前空間。Content-Type や CORS と違い、これは**中身**の検査である。
 NAMESPACE = "https://jgkg.norr-tech.com"
 
-MODULES = ("core", "org", "all")
+# **最終レビュー要修正2(裁定B40)。以前はここに`("core", "org", "all")`と
+# 手書きしていた。** Global Constraint「検査対象の一覧を手で書かない。
+# ソースから導出する」の違反であり、Task 2/7が`law`/`budget`モジュールを
+# 追加したあともこの一覧が追従せず、**その2モジュールが公開先で1語も
+# 解決していない欠陥を、検査自体が見逃していた**(実測。live sitemapの
+# `/def/`出現数がちょうど`len(MODULES)*3`と一致してしまい、26項目全て
+# 合格していた)。`src/jgkg/site.py`の`module_names()`(`build()`が実際に
+# モジュールのエイリアスを作るのと**同じ関数**)から導出することで、
+# ビルド側とこの検査側が二度と乖離できない形にする。
+MODULES = tuple(site.module_names(Path("schema/generated")))
 
 
 def _is_html_fallback(body: bytes) -> bool:

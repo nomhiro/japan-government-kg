@@ -39,6 +39,13 @@ if missing:
     raise SystemExit(f'生成物が要求しているのに配信物に無い: {sorted(missing)}')
 for p in sorted(made):
     print('  ', p)
+
+# 最終レビュー要修正1(裁定B40): _headers も生成物(made)から作る。
+# 手書きのワイルドカード /def/* を置いたままにすると、モジュールが増えても
+# 減っても _headers 側が追従せず、欠落したパスに text/turtle を被せて
+# しまう(要修正2と同じ欠陥の型)。
+headers_path = site.write_headers(made, pathlib.Path('site'))
+print(f'  {headers_path} ({len(made) - 1} パス分のブロック + 共通ブロック)')
 "
 
 echo
