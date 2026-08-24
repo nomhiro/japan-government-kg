@@ -42,6 +42,13 @@ NAMESPACE = "https://jgkg.norr-tech.com"
 # ビルド側とこの検査側が二度と乖離できない形にする。
 MODULES = tuple(site.module_names(Path("schema/generated")))
 
+# **最終レビュー⚠️B。** 以前は下(157行目)で`len(MODULES) * 3`と手書きの
+# 乗数を掛けていた。`MODULES`自体は導出したのに乗数だけが手書きのまま
+# 残っていた——モジュールあたりの生成ファイル数が変われば黙って期待値が
+# ずれる、同じ欠陥の型。`site.def_entry_count()`(`build()`が`made`に
+# 追加する2つのループと同じ式)から導出する。
+EXPECTED_DEF_ENTRIES = site.def_entry_count(Path("schema/generated"))
+
 
 def _is_html_fallback(body: bytes) -> bool:
     """本文がHTMLかを判定する。**欠落の直接の検出手段はこれだけである。**
@@ -154,8 +161,8 @@ def main(argv: list[str]) -> int:
 
     _, _, sitemap = _get(origin, "/sitemap.txt")
     listed = sitemap.decode("utf-8").count("/def/")
-    check("sitemap が全モジュールの配信物を列挙している", listed == len(MODULES) * 3,
-          f"{listed} 件 / 期待 {len(MODULES) * 3} 件")
+    check("sitemap が全モジュールの配信物を列挙している", listed == EXPECTED_DEF_ENTRIES,
+          f"{listed} 件 / 期待 {EXPECTED_DEF_ENTRIES} 件")
 
     print()
     if failures:

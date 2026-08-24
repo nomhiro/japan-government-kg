@@ -132,3 +132,25 @@ def test_write_headers_writes_the_file_to_out_dir(tmp_path):
     path = site.write_headers(made, tmp_path)
     assert path == tmp_path / "_headers"
     assert path.read_text(encoding="utf-8") == site.build_headers(made)
+
+
+# =============================================================================
+# 最終レビュー⚠️B: verify-site.pyの手書きの乗数(`len(MODULES) * 3`)を
+# 導出に置き換える
+# =============================================================================
+
+
+def test_def_entry_count_agrees_with_the_actual_def_paths_build_makes(tmp_path):
+    """`def_entry_count()`が主張する件数が、`build()`が実際に作る
+
+    `/def/`配下パスの実数と一致すること(要修正2と同じ「二度と乖離できない
+    形」を、この乗数にも適用する)。
+
+    何があれば落ちるか: `build()`側にモジュールあたりの生成ファイルを
+    増やす/減らす変更が入っても`def_entry_count()`側の式を更新しないと、
+    この一致テストが落ちる(`scripts/verify-site.py`が黙って誤った
+    期待値を持つ、という実際の欠陥の再発を防ぐ)。
+    """
+    made = site.build(GENERATED, tmp_path)
+    actual_def_paths = len([p for p in made if p.startswith("/def/")])
+    assert site.def_entry_count(GENERATED) == actual_def_paths

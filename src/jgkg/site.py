@@ -38,6 +38,33 @@ def module_names(generated_dir: Path) -> list[str]:
     return sorted(p.name.removesuffix(".owl.ttl") for p in generated_dir.glob("*.owl.ttl"))
 
 
+def def_entry_count(generated_dir: Path) -> int:
+    """`build()`が`made`へ`/def/`配下として追加する件数(sitemap掲載件数と一致する)。
+
+    **最終レビュー⚠️B。** `scripts/verify-site.py`は以前
+    `len(MODULES) * 3`(モジュールあたり3件という乗数)を手書きしていた。
+    `MODULES`自体は要修正2で導出化したが、**この乗数だけが手書きのまま
+    残っていた**——モジュールあたりの生成ファイル数(現在は`.owl.ttl`・
+    `.shacl.ttl`の2件)や、エイリアスの有無が変われば黙って期待値が
+    ずれる、同じ欠陥の型。
+
+    `build()`が`made`に追加する2種類のループ(`*.ttl`の実ファイルコピー・
+    `module_names()`のエイリアス)と**同じ2つの式**をここで数えるだけに
+    し、`build()`を副作用込みで呼ばずに済ませる(`verify-site.py`は
+    リモートのsiteを検査することもあり、検査のためにローカルへ書き込みを
+    発生させたくない)。`tests/test_site.py`の一致テストで`build()`の
+    実際の出力と結果が一致することを固定してある。
+
+    `required_paths()`は**使わない**——これは生成OWLの主語IRIから
+    導出した別の集合(SHACLファイルの主語は含まれず、`all`モジュールの
+    エイリアス自体も主語に現れないため実測9件しかない。sitemapの実測は
+    15件で一致しない)。「手で書かない」の対象は個々の値ではなく
+    「`build()`が実際に作る個数」であり、それを最も正確に反映するのは
+    `required_paths()`ではなくこの2つの式である。
+    """
+    return len(list(generated_dir.glob("*.ttl"))) + len(module_names(generated_dir))
+
+
 def required_paths(generated_dir: Path) -> set[str]:
     """生成物が「このURLで解決されるべき」と主張しているパスを集める。
 
