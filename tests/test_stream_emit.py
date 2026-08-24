@@ -177,6 +177,35 @@ def test_dedup_handles_three_occurrences_of_the_same_key():
     assert stats.rows_in == 3
 
 
+def test_dedup_populates_houjin_bangou_seen_with_every_distinct_key():
+    """B21(Task 10): 重複を含む入力からも、distinctな法人番号の全体集合が
+
+    `stats.houjin_bangou_seen` に残ること(重複分は1回だけ)。**何があれば
+    落ちるか**: 従来どおり`del seen`していれば`stats.houjin_bangou_seen`が
+    `None`のままで落ちる。
+    """
+    rows = [
+        _org(bangou="6000012070001", name="v1", updated_on="2015-01-01"),
+        _org(bangou="6000012070001", name="v2-最新", updated_on="2021-06-01"),
+        _org(bangou="2000012020001", name="総務省"),
+    ]
+    stats = stream_emit.StreamStats()
+    list(stream_emit.dedup_organizations(lambda: iter(rows), stats))
+
+    assert stats.houjin_bangou_seen == {6000012070001, 2000012020001}
+
+
+def test_houjin_bangou_seen_is_none_when_dedup_was_never_run():
+    """全法人ストリームを一度も実行していない状態(既定)を`None`で表すこと。
+
+    空集合(`set()`)と意味的に区別する — 空集合は「実行したが0件だった」
+    という別の事実になるため、フラグOFF時の既定(`StreamStats()`をそのまま
+    使う場合)が誤って「0件の全法人グラフが存在する」と読めてはならない。
+    """
+    stats = stream_emit.StreamStats()
+    assert stats.houjin_bangou_seen is None
+
+
 def test_dedup_seen_set_memory_budget_is_within_the_phase1_budget():
     """見積り: `dedup_organizations`を実際に呼び、ピークメモリが上限内であること。
 

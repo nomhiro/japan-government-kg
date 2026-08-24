@@ -4,7 +4,7 @@
 最初に崩れる。ここは厳格側に倒す。
 """
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -280,12 +280,18 @@ def validate_stream(
        現れた主語が、後の別バッチに再出現したら例外。1エンティティ連続
        書き(条件1)か上流dedup(条件3)のいずれかが崩れている状況そのもの
        (`closed_subjects`という全主語文字列の集合を保持する — 5.8M件で
-       実測約683MiB。`dedup_organizations`の1パス目`seen`(int化した法人
-       番号のみ。実測約490MiB)とは**同時に生存しない**: dedupが完全に
-       終わり`seen`を解放した後に初めてstream_emit_organizationsの書き出しが
-       始まり、その書き出しが終わった後に初めてこの関数が読み始める逐次の
-       パイプラインなので、ピークメモリはどちらか大きい方であって合計では
-       ない)。
+       実測約683MiB。**B21(Task 10)以前**は`dedup_organizations`の1パス目
+       `seen`(int化した法人番号のみ。実測約490MiB)と同時に生存しなかった
+       (dedupが完全に終わり`seen`を解放した後に初めてstream_emit_
+       organizationsの書き出しが始まり、その書き出しが終わった後に初めて
+       この関数が読み始める逐次のパイプラインだったため)。**B21以降は
+       この前提が崩れている**: `dedup_organizations`は`seen`を
+       `StreamStats.houjin_bangou_seen`として保持し続け、pipeline.pyが
+       この関数(`validate_stream`)の実行後もそれを`check_reference_
+       integrity`まで持ち越すため、この関数の実行中は`seen`(≒490MiB)と
+       `closed_subjects`(≒683MiB)が**同時に生存する**(合計ピーク約
+       1.2GiB。Phase 1の想定実行環境8GiBに対しては十分小さい。
+       `jgkg.rdf.stream_emit`のモジュールdocstring参照)。
     3. **対象0件ガード(B-2)**: バッチが自オントロジーのクラスを1つも
        名指ししていない(=SHACLの対象が0件)なら例外。`validate_dataset`の
        `_assert_shapes_cover`と同じ原則をバッチ単位でも適用する — これが
@@ -537,7 +543,9 @@ def _subclass_closure(ontology: Graph, cls: URIRef) -> set[URIRef]:
 
 
 def check_reference_integrity(
-    ds: Dataset, shapes_dir: Path, exclude: Mapping[str, str] | None = None
+    ds: Dataset,
+    shapes_dir: Path,
+    externally_typed: Mapping[URIRef, Callable[[URIRef], bool]] | None = None,
 ) -> list[ReferenceViolation]:
     """自名前空間クラスへの参照(`sh:class`から抽出したもの)を和集合で検査する。
 
@@ -550,32 +558,49 @@ def check_reference_integrity(
     `sh:class`は原理的に満たせない(Task 4 懸念1で発見したABox欠落)。
     `ds`は`default_union=True`のDataset(全グラフの和集合)を渡すこと。
 
-    **`exclude`(Task 8所有: houjin-bangou-allの除外機構)**: グラフURI→
-    除外理由の対応。全法人約3,500万トリプル規模の和集合はrdflibに載らない
-    ため、houjin-bangou-allグラフはこのゲートの対象から明示的に外せる
-    必要がある(Task 8のバッチ検証がその範囲を別途担う)。**指定したグラフは
-    「和集合に存在しないもの」として扱う** — そのグラフが持つ参照元トリプル
-    (`path`の主語・値)も、そのグラフが持つ型情報(参照先の`rdf:type`)も、
-    両方から取り除く。片方だけ除外すると、除外したグラフの外にある正しい
-    参照が「型が無い」という偽の違反になる(型情報も一緒に消えるため)。
+    **`externally_typed`(裁定B21。Task 8の`exclude`機構を置き換える)**:
+    期待クラスのIRI → membership_test(`URIRef -> bool`)の対応。全法人
+    約3,500万トリプル規模(houjin-bangou-allグラフ)はrdflibの和集合に
+    載せられないため、そこにしか型情報が無い参照(`budget:recipient`が
+    指す民間企業など)を検査する手段が要る。**Task 8時点の`exclude`は
+    「対象グラフを和集合から取り除く」機構だったが、これは54.9k件規模の
+    実参照(Task 7懸念2で判明した実データの規模)を丸ごと検査放棄すること
+    になり、参照整合ゲートの目的そのものに反する(裁定B21)。** 代わりに、
+    houjin-bangou-allを実際にストリーミング投入した際に確定する「実在した
+    法人番号の集合」(`stream_emit.StreamStats.houjin_bangou_seen`)を
+    **外部の知識**としてここに渡す — rdflibには載せていない事実を、
+    「載っているのと同じ扱いで検査に使う」ための経路である(除外=検査放棄
+    ではなく、別経路で検査する)。
 
-    **既定は除外なし**(`exclude=None`/`{}`)。呼び出し側(pipeline.py)が
-    明示的にグラフURIを渡したときだけ除外する — 黙って除外しない
-    (task-8-brief.md 引き継ぐ決定)。除外を使った場合、除外したグラフと
-    理由をレポートに残すのは呼び出し側の責務。
+    判定は「`externally_typed`の各キー`C`のうち、`C`が`expected_class`の
+    サブクラス閉包(`allowed`)に含まれるものについて、`membership_test(node)`
+    を試す」という形にする。**単純な`externally_typed.get(expected_class)`
+    にしてはならない** — 例えば`budget:recipient`の期待クラスは
+    `core:Agent`だが、外部知識として渡す集合は`org:Organization`
+    (houjin-bangou-allが実際に持つ最も具体的な型)の判定なので、鍵が完全
+    一致しない。`Organization`は`Agent`のサブクラスなので、サブクラス閉包
+    経由でなければ54.9k件の違反がゲートに残ってしまう(実際に踏んだ設計上の罠)。
+
+    **既定は外部知識なし**(`externally_typed=None`/`{}`)。呼び出し側
+    (pipeline.py)が全法人ストリームを実行した場合だけ渡す — 黙って
+    緩めない(task-8-brief.md 引き継ぐ決定と同じ精神)。
     """
-    exclude = exclude or {}
+    externally_typed = externally_typed or {}
     reference_classes = _load_reference_classes(shapes_dir)
     ontology = _load_ontology(shapes_dir)
 
     def _live_type_closure(node: URIRef) -> set[URIRef]:
-        # `ds.quads()`の第4要素は実測でグラフ識別子(URIRef)そのもの
-        # (rdflib 7.x。Graph/コンテキストオブジェクトではない)
         return {
             t
-            for _s, _p, t, g in ds.quads((node, RDF.type, None, None))
-            if str(g) not in exclude and isinstance(t, URIRef)
+            for _s, _p, t, _g in ds.quads((node, RDF.type, None, None))
+            if isinstance(t, URIRef)
         }
+
+    def _satisfied_externally(node: URIRef, allowed: set[URIRef]) -> bool:
+        for class_uri, membership_test in externally_typed.items():
+            if class_uri in allowed and membership_test(node):
+                return True
+        return False
 
     violations: list[ReferenceViolation] = []
     for entry in reference_classes:
@@ -584,9 +609,7 @@ def check_reference_integrity(
         allowed = _subclass_closure(ontology, expected_class)
 
         seen_pairs: set[tuple[URIRef, URIRef]] = set()
-        for s, _p, o, g in ds.quads((None, path, None, None)):
-            if str(g) in exclude:
-                continue
+        for s, _p, o, _g in ds.quads((None, path, None, None)):
             if not isinstance(o, URIRef):
                 continue  # sh:nodeKind sh:IRI がグラフ単位のSHACLで既に担保している
             if (s, o) in seen_pairs:
@@ -595,6 +618,8 @@ def check_reference_integrity(
 
             types = _live_type_closure(o)
             if types & allowed:
+                continue
+            if _satisfied_externally(o, allowed):
                 continue
             reason = "型が無い" if not types else "期待クラスのサブクラスでない"
             violations.append(

@@ -38,8 +38,8 @@ class StreamStats:
     """ストリーミング投入1回分の内訳。**判定に使って捨てるのではなく報告する**
 
     (organization.ParseStats と同じ作法)。`dedup_organizations` が
-    `rows_in`/`dedup_removed` を、`stream_emit_organizations` が
-    `entities`/`triples` を埋める。呼び出し側(pipeline.py)がこれを
+    `rows_in`/`dedup_removed`/`houjin_bangou_seen` を、`stream_emit_organizations`
+    が `entities`/`triples` を埋める。呼び出し側(pipeline.py)がこれを
     `PipelineReport` に合流させる(消費者の無い記録を残さない)。
     """
 
@@ -47,6 +47,18 @@ class StreamStats:
     dedup_removed: int = 0  # 法人番号の重複により弾いた行数(残す1件は含まない)
     entities: int = 0       # 実際にN-Quadsへ書き出したエンティティ数
     triples: int = 0        # 実際に書き出したトリプル数
+    # B21(Task 10): 全法人ストリームが実際に(重複解消後)認識した法人番号の
+    # 全体集合(int化)。**houjin-bangou-allグラフはrdflibに載らない規模の
+    # ため和集合ゲート(validate.check_reference_integrity)の対象に直接
+    # 入れられない**が、budget:recipient等がこの集合の要素を指しているかは
+    # 検査できる必要がある(除外は54.9k件の検査放棄になるため不可。B21)。
+    # `check_reference_integrity` の `externally_typed` にこの集合の
+    # membership_testを渡すことで、「載せていないが、実際にその法人番号の
+    # Organizationが存在する」という外部の知識としてゲートに伝える。
+    # 既定は`None`(=全法人ストリームを一度も実行していない=この知識が
+    # 存在しない、をNoneで表す。空集合`set()`と意味的に区別する — 空集合は
+    # 「実行したが1件も無かった」という別の事実になってしまうため)
+    houjin_bangou_seen: set[int] | None = None
 
 
 def dedup_organizations(
@@ -68,7 +80,22 @@ def dedup_organizations(
       のは全件分の`seen`(集合)だが、法人番号のintだけなので約5.8M件でも
       ~500MB程度(このモジュールのテスト`test_dedup_seen_set_memory_budget_
       is_within_the_phase1_budget`で実測して見積もる)。**この`seen`は
-      1パス目の終わりで使い終わるので明示的に破棄する。**
+      1パス目の終わりで重複判定には使い終わるが、B21(Task 10)以降は
+      `stats.houjin_bangou_seen`として保持し続ける**(2パス目にコピーを
+      渡さない — 単に手放さないだけで、1パス目の間に確定した「全法人番号の
+      集合」という値そのものはこの時点で完成している。書き込みは以降無い)。
+      **この保持によりピークメモリの寿命が延びる**: 従来はこの`seen`を
+      解放してから`stream_emit_organizations`のストリーミング書き出しに
+      進み、さらにその後の`validate.validate_stream`の`closed_subjects`
+      (5.8M件で約683MiB)が生存する時点では既に無かったため「両者は同時に
+      生存しない」という前提でピークを`max(seen, closed_subjects)`と見積もっ
+      ていた(このモジュールの旧docstring、および`validate.py`
+      `validate_stream`のdocstring参照)。**B21以降はこの前提が崩れ、
+      pipeline.pyが`check_reference_integrity`を呼び終えるまで`stats`
+      経由で`seen`(≒500MiB)を保持し続けるため、`validate_stream`実行中の
+      ピークは`seen + closed_subjects`(約500MiB+683MiB≒1.2GiB)に増える**。
+      Phase 1の想定実行環境(8GiB)に対しては十分小さいため許容するが、
+      「同時に生存しない」という記述は無効化されたのでここに明記する。
     - 2パス目: `source()`をもう一度読む。`duplicated`に無いキーは
       重複が無いと確定しているので即座にyieldする(バッファしない)。
       `duplicated`にあるキーだけを小さい辞書`pending`に保持し、
@@ -116,7 +143,14 @@ def dedup_organizations(
             duplicated.add(key)
         else:
             seen.add(key)
-    del seen  # 大きい構造は使い終わったら即解放する(2パス目には持ち越さない)
+    # B21(Task 10): 以前はここで`del seen`していた(1パス目の重複判定にしか
+    # 使わないため)。**`seen`はこの時点で全法人番号の集合として完成している**
+    # (重複キーも最初の出現時にここへ追加済み)ので、2パス目へ値そのものを
+    # 渡す必要は無いが、`stats`経由で呼び出し側(pipeline.py)に返す。
+    # 呼び出し側は`check_reference_integrity`の`externally_typed`にこの集合の
+    # membership_testを渡し、rdflibに載せない全法人グラフの内容を「外部の
+    # 知識」として参照整合ゲートに伝える(このモジュールdocstring参照)
+    stats.houjin_bangou_seen = seen
 
     pending: dict[int, Organization] = {}
     dup_occurrences = 0

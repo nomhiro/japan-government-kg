@@ -281,91 +281,104 @@ def test_check_reference_integrity_catches_the_wrong_type():
 
 
 # =============================================================================
-# Task 8: houjin-bangou-all除外機構(裁定B4の拡張。Task 8所有)
+# 裁定B21: externally_typed(Task 8の`exclude`機構を置き換える。Task 10所有)
 #
-# 全法人約3,500万トリプル規模の和集合はrdflibに載らないため、
-# houjin-bangou-allグラフはこのゲートの対象から明示的に除外できる必要がある
-# (Task 8のバッチ検証がその範囲を別途担う)。既定は除外なし(黙って除外しない)。
+# 全法人約3,500万トリプル規模の和集合はrdflibに載らないため、houjin-bangou-all
+# の内容は和集合には無い。Task 8時代の`exclude`(グラフを検査対象から除く)は
+# 54.9k件規模の実参照(budget:recipient)を丸ごと検査放棄することになると
+# 判明し(裁定B21)、「rdflibに載せていない事実を外部知識として検査に使う」
+# `externally_typed`に置き換えた。既定は外部知識なし(黙って緩めない)。
 # =============================================================================
 
 
-def test_check_reference_integrity_reports_a_violation_inside_a_graph_without_exclusion():
-    """否定的コントロール: 除外しなければ、houjin-bangou-all風のグラフ内の
-    参照違反もいつもどおり検出されること(除外機構が既定でOFFであることの確認)。
+def test_check_reference_integrity_reports_a_violation_without_external_knowledge():
+    """否定的コントロール: 外部知識を渡さなければ、型を持たない参照先への
+
+    参照はいつもどおり違反として検出されること(externally_typedが既定で
+    空であることの確認)。
     """
     law_id = "999AC0000000001"
     ds = emit.emit_laws([_law_record(law_id)], {}, "egov-law", DAY)
-    all_graph = URIRef("https://jgkg.norr-tech.com/graph/houjin-bangou-all/2026-08-01")
-    g = ds.graph(all_graph)
+    gid = URIRef("https://jgkg.norr-tech.com/graph/egov-law/2026-08-01")
+    g = ds.graph(gid)
     law = emit.NS["law"]
     typeless = URIRef("https://jgkg.norr-tech.com/id/org/1234567890123")
     g.add((URIRef(f"https://jgkg.norr-tech.com/id/law/{law_id}"), law["jurisdiction"], typeless))
 
     violations = validate.check_reference_integrity(ds, SHAPES)
-    assert violations, "除外していないのに違反が検出されない"
+    assert violations, "外部知識が無いのに違反が検出されない"
     assert any(v.value.endswith("1234567890123") for v in violations)
 
 
-def test_check_reference_integrity_exclude_suppresses_violations_inside_that_graph():
-    """`exclude`にグラフURIを渡すと、そのグラフ内の参照はこのゲートの対象外になる。
+def test_check_reference_integrity_externally_typed_resolves_a_budget_recipient_via_subclass_closure():
+    """B21の中心: `budget:recipient`の期待クラスは`core:Agent`だが、外部知識
 
-    何があれば落ちるか: `exclude`が参照元トリプルだけ、または型情報だけの
-    片方しか除外しない実装だと、除外したはずのグラフの参照が別の形の違反
-    (例: 「型が無い」への化け)として残ってしまう。
+    (houjin-bangou-allが実際に持つ最も具体的な型)のキーは`org:Organization`
+    であり、両者は文字列としては一致しない。**サブクラス閉包を経由しないと
+    (`externally_typed.get(expected_class)`のような単純な辞書一致だと)この
+    54.9k件規模の実際のケースは1件も解決できない**(advisorレビューで指摘された、
+    最初の実装が持っていたバグそのものを固定する壊し確認)。
     """
-    law_id = "999AC0000000001"
-    ds = emit.emit_laws([_law_record(law_id)], {}, "egov-law", DAY)
-    all_graph_uri = "https://jgkg.norr-tech.com/graph/houjin-bangou-all/2026-08-01"
-    g = ds.graph(URIRef(all_graph_uri))
-    law = emit.NS["law"]
-    typeless = URIRef("https://jgkg.norr-tech.com/id/org/1234567890123")
-    g.add((URIRef(f"https://jgkg.norr-tech.com/id/law/{law_id}"), law["jurisdiction"], typeless))
+    recipient_bangou = "3010001137944"  # _expenditure_record() の既定値
+    # ministry_houjin_bangou=None にして budget:ministry 由来の別の違反を
+    # 混ぜない(recipient経由の外部知識だけに焦点を絞る)。budget:project の
+    # 参照先(BudgetProject自身)は projects=[_project_record(...)] を渡して
+    # 実在させる(でなければ`budget:project`側の「型が無い」違反が別途残り、
+    # `violations == []` を検証できない)
+    ds = emit.emit_budget(
+        [_project_record(ministry_houjin_bangou=None)],
+        [_expenditure_record()],
+        [],
+        "rs-system",
+        DAY,
+    )
+    org_ns = emit.NS["org"]
+    recipient_uri = URIRef(f"https://jgkg.norr-tech.com/id/org/{recipient_bangou}")
+
+    # 前提: 外部知識が無ければ違反になる(型を持たない民間企業への参照)
+    assert validate.check_reference_integrity(ds, SHAPES), "前提が崩れている"
 
     violations = validate.check_reference_integrity(
-        ds, SHAPES, exclude={all_graph_uri: "全法人規模のため和集合ゲートの対象外(Task 8)"}
+        ds,
+        SHAPES,
+        externally_typed={org_ns["Organization"]: lambda uri, _t=recipient_uri: uri == _t},
     )
     assert violations == [], violations
 
 
-def test_check_reference_integrity_exclude_also_removes_the_type_evidence_from_that_graph():
-    """除外したグラフが提供する型情報も一緒に取り除かれること(片側除外の禁止)。
+def test_check_reference_integrity_externally_typed_still_flags_when_membership_test_says_no():
+    """`externally_typed`を渡しても、membership_testが偽を返す参照は違反のまま残ること。
 
-    参照元は除外対象グラフの外にあり、参照先の型だけが除外対象グラフの中に
-    ある構成にする。**exclude無し(型が見える)では合格するはずのケース**が、
-    「グラフごと存在しないものとして扱う」なら型情報も消えるので、
-    「型が無い」という違反に化けることを確認する。
+    何があれば落ちるか: `externally_typed`のキーが`allowed`に含まれることだけを
+    見て、`membership_test`自体の戻り値を無視する実装だと、無関係な集合を
+    渡すだけで全ての違反が消えてしまう。
     """
+    ds = emit.emit_budget([], [_expenditure_record()], [], "rs-system", DAY)
+    org_ns = emit.NS["org"]
+
+    violations = validate.check_reference_integrity(
+        ds, SHAPES, externally_typed={org_ns["Organization"]: lambda uri: False}
+    )
+    assert violations, "membership_testが常にFalseを返すのに違反が消えてしまった"
+
+
+def test_check_reference_integrity_externally_typed_key_matching_the_expected_class_itself_works_too():
+    """外部知識のキーが期待クラスそのもの(サブクラスを介さない直接一致)でも効くこと。"""
     law_id = "323M60000100010"
     record = _law_record(law_id)
     jr = JurisdictionResult(
         law_id=law_id, ministry_names=["厚生労働省"], resolved=["6000012070001"], unresolved=[],
     )
-    all_graph_uri = "https://jgkg.norr-tech.com/graph/houjin-bangou-all/2026-08-01"
-
-    ds = Dataset(default_union=True)
-    _merge_into(ds, emit.emit_laws([record], {law_id: jr}, "egov-law", DAY))
-    # 型情報(org:Organization)を通常のministry-codesグラフではなく、
-    # houjin-bangou-all風のグラフに直接置く(emit_ministriesは"houjin-bangou-all"
-    # というsource_idの出典登録を要求するため、ここでは検査対象の型トリプルだけを
-    # 直接addする既存テストの作法(test_malformed_houjin_bangou_fails_validation
-    # 等と同じ)を使う)
-    all_graph = ds.graph(URIRef(all_graph_uri))
-    all_graph.add(
-        (
-            URIRef("https://jgkg.norr-tech.com/id/org/6000012070001"),
-            RDF.type,
-            URIRef("https://jgkg.norr-tech.com/def/org#Organization"),
-        )
-    )
-
-    # 除外なしでは、型がどこかのグラフに実在するので合格する(前提の確認)
-    assert validate.check_reference_integrity(ds, SHAPES) == []
+    ds = emit.emit_laws([record], {law_id: jr}, "egov-law", DAY)
+    org_ns = emit.NS["org"]
+    ministry_uri = URIRef("https://jgkg.norr-tech.com/id/org/6000012070001")
 
     violations = validate.check_reference_integrity(
-        ds, SHAPES, exclude={all_graph_uri: "型情報の提供元を除外(テスト)"}
+        ds,
+        SHAPES,
+        externally_typed={org_ns["Organization"]: lambda uri, _t=ministry_uri: uri == _t},
     )
-    assert violations, "除外したグラフの型情報が別経路(和集合)から見えてしまっている"
-    assert any(v.reason == "型が無い" for v in violations), violations
+    assert violations == [], violations
 
 
 # =============================================================================
