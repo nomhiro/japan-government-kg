@@ -171,6 +171,15 @@ class RsRow:
     0件だったが、将来のRS更新で起こり得るため、`parse_rs` はこれを
     ColumnLayoutError(実データ上あり得ないはずの状態、を示す例外)ではなく
     欠損として扱う)。
+
+    prior_year_executed_amount は直前の事業年度(fiscal_year - 1)の執行額
+    （合計）。B19(task-9-brief.md申し送り)が実測した「支出先の金額
+    (payee_payment_information)はレビューシート年度そのものではなく、
+    その1年前の執行実績と中央値1.0で一致する」対応の分母に使う値で、
+    B24(6)(裁定B24。task-10-brief.md引き継ぐ決定)が要求する「合計/執行額の
+    比の分布」という**観測**専用(RDFには出さない。ゲートにも使わない —
+    正しい事業でも一致は32%のみと確定済み)。budget_amountと同じ理由で
+    見つからなければ欠損として`None`。
     """
 
     project_id: str
@@ -178,6 +187,7 @@ class RsRow:
     project_name: str
     ministry_name: str
     budget_amount: int | None
+    prior_year_executed_amount: int | None = None
     basis_law_citations: tuple[BasisLawCitation, ...] = ()
     expenditures: tuple[ExpenditureLine, ...] = ()
 
@@ -287,6 +297,27 @@ def _current_year_budget_amount(
         return None
     idx_amount = rs_columns.RS_FILES["budget_summary"].col["budget_amount"]
     return normalize_amount(row[idx_amount])
+
+
+def _prior_year_executed_amount(
+    rows_for_project: list[list[str]], fiscal_year: str
+) -> int | None:
+    """直前の事業年度(fiscal_year - 1)の執行額（合計)を取る(B24(6)の観測用)。
+
+    `_current_year_budget_amount` と同じ選択規則(`find_budget_aggregate_row`)
+    を1年ずらして呼ぶだけの薄いラッパー — 規則自体は1箇所(rs_columns.py)に
+    集約されているので、ここで選択ロジックを複製しない。見つからなければ
+    `None`(そもそも1年目の事業でbudget_summaryに前年度の行が無い等、
+    実データではまだ確認していない欠損として扱う。`allow_missing=True`)。
+    """
+    prior_year = str(int(fiscal_year) - 1)
+    row = rs_columns.find_budget_aggregate_row(
+        rows_for_project, prior_year, allow_missing=True
+    )
+    if row is None:
+        return None
+    idx_executed = rs_columns.RS_FILES["budget_summary"].col["executed_amount"]
+    return normalize_amount(row[idx_executed])
 
 
 def _basis_law_citations_for(rows_for_project: list[list[str]]) -> tuple[BasisLawCitation, ...]:
@@ -451,12 +482,14 @@ def parse_rs(
 
     for pid in order:
         project_name, ministry_name, fiscal_year = spine[pid]
+        rows_for_project = budget_by_pid.get(pid, [])
         yield RsRow(
             project_id=pid,
             fiscal_year=fiscal_year,
             project_name=project_name,
             ministry_name=ministry_name,
-            budget_amount=_current_year_budget_amount(budget_by_pid.get(pid, []), fiscal_year),
+            budget_amount=_current_year_budget_amount(rows_for_project, fiscal_year),
+            prior_year_executed_amount=_prior_year_executed_amount(rows_for_project, fiscal_year),
             basis_law_citations=_basis_law_citations_for(law_by_pid.get(pid, [])),
             expenditures=_expenditures_for(payee_by_pid.get(pid, []), st),
         )
@@ -652,6 +685,9 @@ class BudgetProjectRecord:
     ministry_houjin_bangou: str | None
     budget_amount: int | None
     basis_law_ids: tuple[str, ...]
+    # B24(6): 観測専用(RDFには出さない。emit_budgetの対象外)。RsRowの
+    # 同名フィールドのdocstring参照
+    prior_year_executed_amount: int | None = None
 
 
 @dataclass(frozen=True)
@@ -784,6 +820,7 @@ def build_projects(
                 ministry_houjin_bangou=ministry_bangou,
                 budget_amount=row.budget_amount,
                 basis_law_ids=tuple(basis_law_ids),
+                prior_year_executed_amount=row.prior_year_executed_amount,
             )
         )
 

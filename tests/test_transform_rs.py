@@ -638,6 +638,7 @@ def _row(
     project_name="テスト事業",
     ministry_name="内閣官房",
     budget_amount=100,
+    prior_year_executed_amount=None,
     basis_law_citations=(),
     expenditures=(),
 ):
@@ -647,6 +648,7 @@ def _row(
         project_name=project_name,
         ministry_name=ministry_name,
         budget_amount=budget_amount,
+        prior_year_executed_amount=prior_year_executed_amount,
         basis_law_citations=tuple(basis_law_citations),
         expenditures=tuple(expenditures),
     )
@@ -658,6 +660,128 @@ def test_build_projects_resolves_ministry_via_the_reference_table():
     assert result.projects[0].ministry_houjin_bangou == DIGITAL_AGENCY.houjin_bangou
     assert result.stats.ministries_resolved == 1
     assert result.stats.ministries_unresolved == 0
+
+
+def test_build_projects_carries_prior_year_executed_amount_through():
+    """B24(6): RsRowのprior_year_executed_amountがBudgetProjectRecordまで
+
+    そのまま伝わること(観測用。RDFへは出さない=emit_budgetの対象外)。
+    """
+    result = rs.build_projects(
+        [_row(prior_year_executed_amount=34482000)], MINISTRY_REF, LAWS_BY_ID, LAWS_BY_TITLE,
+    )
+    assert result.projects[0].prior_year_executed_amount == 34482000
+
+
+def test_build_projects_prior_year_executed_amount_defaults_to_none():
+    result = rs.build_projects([_row()], MINISTRY_REF, LAWS_BY_ID, LAWS_BY_TITLE)
+    assert result.projects[0].prior_year_executed_amount is None
+
+
+# =============================================================================
+# B24(6): parse_rs が budget_summary から直前年度の執行額を実際に抜き出すこと
+# =============================================================================
+
+
+def _write_csv(path: Path, header: tuple[str, ...], rows: list[list[str]]) -> None:
+    with path.open("w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(header)
+        writer.writerows(rows)
+
+
+def test_parse_rs_extracts_the_prior_fiscal_years_executed_amount(tmp_path: Path):
+    """budget_summaryに当該事業年度(2025)と直前年度(2024)の集計行が両方あるとき、
+
+    prior_year_executed_amountは2024年度の[19]執行額(合計)を取ること
+    (B19: 支出はレビューシート年度ではなく直前年度の執行実績と対応する)。
+    """
+    from jgkg.transform import rs_columns
+
+    project_spec = rs_columns.RS_FILES["project_summary"]
+    _write_csv(
+        tmp_path / "project_summary.csv",
+        project_spec.full_header,
+        [_full_row(project_spec, {"project_id": "1", "fiscal_year": "2025", "project_name": "テスト事業", "ministry_name": "内閣官房"})],
+    )
+    budget_spec = rs_columns.RS_FILES["budget_summary"]
+    _write_csv(
+        tmp_path / "budget_summary.csv",
+        budget_spec.full_header,
+        [
+            _full_row(budget_spec, {
+                "project_id": "1", "budget_fiscal_year": "2025",
+                "budget_amount": "100", "executed_amount": "0",
+            }),
+            _full_row(budget_spec, {
+                "project_id": "1", "budget_fiscal_year": "2024",
+                "budget_amount": "90", "executed_amount": "34482000",
+            }),
+        ],
+    )
+    law_spec = rs_columns.RS_FILES["policy_measure_laws_and_regulations"]
+    _write_csv(tmp_path / "law.csv", law_spec.full_header, [])
+    payee_spec = rs_columns.RS_FILES["payee_payment_information"]
+    _write_csv(tmp_path / "payee.csv", payee_spec.full_header, [])
+
+    paths = {
+        "project_summary": tmp_path / "project_summary.csv",
+        "budget_summary": tmp_path / "budget_summary.csv",
+        "policy_measure_laws_and_regulations": tmp_path / "law.csv",
+        "payee_payment_information": tmp_path / "payee.csv",
+    }
+    rows = list(rs.parse_rs(paths))
+    assert len(rows) == 1
+    assert rows[0].budget_amount == 100
+    assert rows[0].prior_year_executed_amount == 34482000
+
+
+def test_parse_rs_prior_year_executed_amount_is_none_when_the_prior_row_is_absent(tmp_path: Path):
+    """直前年度の行がbudget_summaryに存在しない事業は、欠損としてNoneになること
+
+    (ColumnLayoutErrorにしない — `_current_year_budget_amount`と同じ判断)。
+    """
+    from jgkg.transform import rs_columns
+
+    project_spec = rs_columns.RS_FILES["project_summary"]
+    _write_csv(
+        tmp_path / "project_summary.csv",
+        project_spec.full_header,
+        [_full_row(project_spec, {"project_id": "1", "fiscal_year": "2025", "project_name": "テスト事業", "ministry_name": "内閣官房"})],
+    )
+    budget_spec = rs_columns.RS_FILES["budget_summary"]
+    _write_csv(
+        tmp_path / "budget_summary.csv",
+        budget_spec.full_header,
+        [_full_row(budget_spec, {
+            "project_id": "1", "budget_fiscal_year": "2025",
+            "budget_amount": "100", "executed_amount": "0",
+        })],
+    )
+    law_spec = rs_columns.RS_FILES["policy_measure_laws_and_regulations"]
+    _write_csv(tmp_path / "law.csv", law_spec.full_header, [])
+    payee_spec = rs_columns.RS_FILES["payee_payment_information"]
+    _write_csv(tmp_path / "payee.csv", payee_spec.full_header, [])
+
+    paths = {
+        "project_summary": tmp_path / "project_summary.csv",
+        "budget_summary": tmp_path / "budget_summary.csv",
+        "policy_measure_laws_and_regulations": tmp_path / "law.csv",
+        "payee_payment_information": tmp_path / "payee.csv",
+    }
+    rows = list(rs.parse_rs(paths))
+    assert rows[0].prior_year_executed_amount is None
+
+
+def _full_row(spec, values: dict) -> list[str]:
+    """`spec.full_header`と同じ長さの行を作り、`spec.col`名で指定した値だけ埋める。
+
+    それ以外の列は空文字(実データの空欄と同じ)。
+    """
+    row = [""] * len(spec.full_header)
+    for name, value in values.items():
+        row[spec.col[name]] = value
+    return row
 
 
 def test_build_projects_reports_unresolved_ministry_with_no_candidate():
