@@ -146,8 +146,13 @@ def build_headers(made: set[str]) -> str:
     公開語彙で`Access-Control-Allow-Origin`を絞る理由が無い
     (公共財として公開している)。
     """
+    # **最終レビュー⚠️C。** 以前は`p != "/sitemap.txt"`(除外リスト。1要素)
+    # だった。turtleを名乗るべきなのは`/def/`配下だけ、という構造を
+    # 「何を除外するか」ではなく「何が対象か」で表現する
+    # (`sitemap.txt`以外の非`/def/`パスが将来`made`に増えても、
+    # 除外リストへの追記漏れで誤ってturtleブロックを持たない)。
     blocks: list[str] = []
-    for path in sorted(p for p in made if p != "/sitemap.txt"):
+    for path in sorted(p for p in made if p.startswith("/def/")):
         blocks.append(
             f"{path}\n"
             "  Content-Type: text/turtle; charset=utf-8\n"

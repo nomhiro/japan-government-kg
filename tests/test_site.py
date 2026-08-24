@@ -135,9 +135,23 @@ def test_write_headers_writes_the_file_to_out_dir(tmp_path):
 
 
 # =============================================================================
-# 最終レビュー⚠️B: verify-site.pyの手書きの乗数(`len(MODULES) * 3`)を
-# 導出に置き換える
+# 最終レビュー⚠️B/⚠️C: verify-site.pyの手書きの乗数(`len(MODULES) * 3`)と
+# build_headers()の手書きの除外リスト(`!= "/sitemap.txt"`)を導出に置き換える
 # =============================================================================
+
+
+def test_build_headers_gives_no_turtle_block_to_a_non_def_path():
+    """`/def/`で始まらないパス(`/robots.txt`等)には、turtleのブロックを
+
+    与えないこと(最終レビュー⚠️C。要修正1の除外リストを`!= "/sitemap.txt"`
+    という1要素の手書きから`p.startswith("/def/")`という構造の判定に
+    変えたため。以前の実装は`/sitemap.txt`以外の非`/def/`パスが増えたとき、
+    除外リストへの追記漏れで誤ってturtleを名乗らせてしまう可能性があった)。
+    """
+    content = site.build_headers({"/def/core", "/robots.txt", "/sitemap.txt"})
+    assert "/def/core\n" in content
+    assert "/robots.txt\n" not in content
+    assert "/sitemap.txt\n" not in content
 
 
 def test_def_entry_count_agrees_with_the_actual_def_paths_build_makes(tmp_path):
