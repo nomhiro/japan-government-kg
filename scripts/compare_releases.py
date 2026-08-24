@@ -111,11 +111,17 @@ def _sorted_sha256(lines: list[str]) -> str:
     return h.hexdigest()
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    """`argv`を受け取れるようにする(Task 11修正ラウンド3 項目4)。
+
+    `tests/test_compare_releases.py`がpytestから直接呼べるようにするため
+    (`sys.argv`に依存すると、テストプロセス自身の引数がここに渡ってしまう)。
+    `pipeline.main(argv)`と同じ作法。
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("release_a", type=Path, help="例: data/artifact/2026-08-25")
     parser.add_argument("release_b", type=Path, help="例: data/artifact/2026-08-26")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     manifest_a = build.read_manifest(args.release_a / build.MANIFEST_NAME)
     manifest_b = build.read_manifest(args.release_b / build.MANIFEST_NAME)
