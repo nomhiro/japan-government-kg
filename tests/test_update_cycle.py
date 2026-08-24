@@ -75,6 +75,7 @@ def _write_fake_manifest(out_dir: Path, release: str) -> None:
         release=release,
         sources={"houjin-bangou": release},
         graphs=[],
+        tdb2_expanded_bytes=4,
     )
     build.write_manifest(m, out_dir / "manifest.json")
 

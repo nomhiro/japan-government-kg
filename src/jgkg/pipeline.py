@@ -7,8 +7,9 @@ CLI(Task 11 / B28。`scripts/build.sh` から呼ぶ唯一の入口):
     uv run python -m jgkg.pipeline \
         --source houjin-bangou=2026-08-23 --source egov-law=2026-08-24 \
         --source rs-system=2026-08-23 \
-        --out-dir data/artifact/2026-08-24 \
-        --previous-release 2026-08-23 --include-all-corporations
+        --out-dir data/artifact/2026-08-24-payees \
+        --previous-release 2026-08-23 --include-all-corporations \
+        --corporations-scope payees
 
 **`python -c` にシェル変数を埋め込む形をやめてここに置いた理由**: 以前の
 build.sh は `fetched_on` を `{'houjin-bangou': date.fromisoformat('$1')}` と
@@ -21,6 +22,7 @@ import argparse
 import datetime
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel
 from rdflib import Dataset, Graph, URIRef
@@ -42,6 +44,14 @@ from jgkg.transform import rs as rs_mod
 # グラフURIだけをこの名前にする(同じ一次資料から2つの異なる粒度のグラフを
 # 作っている、という事実をそのまま記録する)
 ALL_CORPORATIONS_GRAPH_ID = "houjin-bangou-all"
+# Ruling B30(Task 11修正ラウンド。progress.md実測): 全法人(約581万件)は
+# TDB2実サイズ13.8GiBで§6.3の8GiB上限を超える。Phase 1のCQがどれも参照
+# しないデータのために全法人を積む理由が無い(「消費者のいない取込みを
+# 作らない」— B-1/B-2と同じ原則)。支出先(budget:recipientの参照先)として
+# 実際に登場する法人番号(distinct 18,994件)だけに絞った別グラフ。
+# **「全法人」と誤読されないグラフ名にする**(fix-brief指示。manifestと
+# CQの読み手がhoujin-bangou-allと混同しないため)
+PAYEE_CORPORATIONS_GRAPH_ID = "houjin-bangou-payees"
 
 MINISTRY_REFERENCE = Path("data/reference/ministry-codes.csv")
 SHAPES_DIR = Path("schema/generated")
@@ -130,16 +140,24 @@ class PipelineReport(BaseModel):
     # 意味を持つ。フラグ未指定なら3つとも既定値0のまま(全法人ストリームに
     # 触れていないことがそのまま分かる)
     #
-    # houjin-bangou-allグラフに実際に書き出したエンティティ数(dedup後)。
-    # 「全法人約581万件」の実測値がここに載る(Task 11が単価計算に使う)
+    # houjin-bangou-all(またはhoujin-bangou-payees)グラフに実際に書き出した
+    # エンティティ数(dedup後)。「全法人約581万件」または「支出先限定
+    # 約19,000件」の実測値がここに載る(どちらかは corporations_scope で分かる)
     corporations_all: int = 0
     # 法人番号の重複により上流でdedupして弾いた行数。**消したことを黙らない**
     # (stream_emit.StreamStats.dedup_removedがそのまま渡る)
     corporations_all_dedup_removed: int = 0
     # バッチSHACL検証(validate_stream)で不合格だったバッチ数。0でなければ
-    # houjin-bangou-allグラフはkg.nqに追記されない(検証前に本体へ混ぜない)。
-    # enforce_release_gateがこれも見て止める
+    # 法人グラフ(all/payeesのいずれか)はkg.nqに追記されない(検証前に本体へ
+    # 混ぜない)。enforce_release_gateがこれも見て止める
     corporations_all_quarantined: int = 0
+    # Ruling B30(Task 11修正ラウンド): include_all_corporations=True のとき、
+    # 実際にどちらの範囲で法人グラフを作ったか。**Noneはinclude_all_corporations
+    # =False(法人グラフ自体を作っていない)と区別する**(stream_emit.
+    # StreamStats.houjin_bangou_seenと同じ「None≠既定値」の作法)。
+    # manifest・報告書の読み手が「全法人」と「支出先限定」を取り違えないための
+    # 唯一の出典(fix-brief「どちらを使ったかをPipelineReportに記録する」)
+    corporations_scope: Literal["all", "payees"] | None = None
 
     # =========================================================================
     # Task 10: 更新の一巡(差分検出・carry-over)
@@ -712,6 +730,7 @@ def run(
     out_dir: Path,
     *,
     include_all_corporations: bool = False,
+    corporations_scope: Literal["all", "payees"] = "all",
     previous_release: datetime.date | None = None,
 ) -> PipelineReport:
     """ソースIDごとの「いつ時点か」を受け取ってKGを1本作る。
@@ -721,18 +740,33 @@ def run(
     Phase 1(e-Gov 月次 / 予算 年次)で必ず破綻する。
 
     `include_all_corporations`(Task 8。`--include-all-corporations`相当の
-    フラグ): 指定すると、全法人(約581万件。国の機関だけでなく民間企業も含む)
-    を`graph/houjin-bangou-all/{取得日}`という別グラフとしてkg.nqに追記する。
+    フラグ): 指定すると、法人(国の機関だけでなく民間企業も含む)を
+    `corporations_scope`が決める範囲で別グラフとしてkg.nqに追記する。
     **既存の国の機関グラフ(848件規模の縦スライス)は変えない**(task-8-brief.md)。
     既定はFalse(触らない) — この規模のストリーミング投入・バッチ検証は
     コストが軽くないため、必要なリリース(RS/支出データを含むもの)でだけ
     明示的に有効にする。
 
+    `corporations_scope`(Ruling B30。Task 11修正ラウンド。実測: progress.md
+    「発見7の定量的裏付け」「§6.3の8GiB判定」): `include_all_corporations=True`
+    のときにどの範囲の法人を対象にするか。
+    - `"all"`(既定): 全法人(約581万件)を`graph/houjin-bangou-all/{取得日}`
+      に書く。TDB2実サイズ**13.8GiB**(§6.3の8GiB上限を超える)・構築17分16秒。
+      能力としては維持する(サーバーレス以外の構成なら選べる)。
+    - `"payees"`: budget:recipientの参照先として**実際に登場する法人番号**
+      (rs-systemの生データのdistinct recipient_houjin_bangou。全法人の0.33%)
+      に絞り、`graph/houjin-bangou-payees/{取得日}`に書く。TDB2実サイズ
+      **232MiB**・構築6.3秒。Phase 1のCQ1〜10はどれも支出先以外の法人を
+      参照しないため、消費者のいない581万件を積まない(B-1/B-2と同じ原則)。
+      **`"rs-system"`が`fetched_on`に無ければ使えない**(絞り込む対象の集合が
+      rs-systemのデータから決まるため)。既定にはしない(全法人モードを
+      捨てないため、明示のフラグで選ぶ——fix-brief指示)。
+
     **`fetched_on`に`rs-system`を含めるなら`include_all_corporations=True`が
     必須**(裁定B17懸念2/B18。task-7-report.md)。`budget:recipient`が指す
     支出先の多くは民間企業で、848件規模の国の機関グラフには存在しない。
-    全法人グラフを投入しないと参照整合ゲートが必ず数万件規模の違反で
-    止まる — それ自体はゲートが正しく機能している証拠だが、「意図せず
+    法人グラフ(all/payeesのいずれか)を投入しないと参照整合ゲートが必ず
+    違反で止まる — それ自体はゲートが正しく機能している証拠だが、「意図せず
     RSだけを結線してゲートに阻まれる」を避けるため、ここで先に明示的に
     エラーにする(黙って通さない)。
 
@@ -744,6 +778,9 @@ def run(
     のグラフは、依存元(houjin-bangou・ministry-codes・egov-law)のいずれか
     が変化していれば据え置かない(`_GRAPH_DEPENDENCIES`参照)。既定は`None`
     (=carry-over を一切使わない。既存の全呼び出し元と後方互換)。
+    **houjin-bangou-all/houjin-bangou-payeesはcarry-overの対象外**
+    (Task 10レビュー観察。`_GRAPH_DEPENDENCIES`に無い——既知の繰り越し課題で
+    あり、このリリースが法人グラフを要求すれば毎回再計算する)。
     """
     settings = get_settings()
     if not fetched_on:
@@ -758,6 +795,21 @@ def run(
             "投入しないと参照整合ゲートが必ず違反で止まる。意図的にrs-systemを"
             "含めるなら include_all_corporations=True を明示する"
         )
+    if corporations_scope == "payees":
+        if not include_all_corporations:
+            raise ValueError(
+                "corporations_scope='payees' は include_all_corporations=True が"
+                "必須である(Ruling B30)。法人グラフ自体を作らないなら範囲を"
+                "選ぶ意味が無い——タイプミスで絞り込みだけが指定され、法人グラフが"
+                "一切無いリリースが黙って成立することを避ける"
+            )
+        if "rs-system" not in fetched_on:
+            raise ValueError(
+                "corporations_scope='payees' は rs-system をこのリリースに含む"
+                "ことが必須である(Ruling B30)。支出先として登場する法人番号の"
+                "集合はrs-systemの生データから決まるため、rs-systemが無いと"
+                "絞り込む対象そのものが定義できない"
+            )
 
     houjin_date = _source_date("houjin-bangou", fetched_on)
     ministry_date = _source_date("ministry-codes", fetched_on)
@@ -954,6 +1006,56 @@ def run(
             law_jurisdiction_unresolved += len(jr.unresolved)
 
     # =========================================================================
+    # Ruling B30(Task 11修正ラウンド): rs-systemのファイル位置・sha256は
+    # 解決処理(build_projects)より前に確定できる(ファイルシステムの
+    # メタデータだけで決まり、他の状態に依存しない)。ここに繰り上げたのは、
+    # `corporations_scope=="payees"`のとき、次の法人ストリームブロックが
+    # フィルタ対象(支出先として登場する法人番号の集合)を必要とするため。
+    #
+    # **advisorレビュー指摘(裁定の訂正): carry-over(rs_carry_date is not
+    # None)でもこの生データ読み取りは省略しない。** 当初は「carry-over時は
+    # payeesスコープを使えない」という制約にする案だったが、それだと2件目の
+    # リリース(Task 10懸念2の初通し。rs-systemが不変でcarry-overされる
+    # 検証)でpayeesスコープが使えなくなる。フィルタ対象の抽出は
+    # `houjin_bangou_exists`(全法人ストリーム側の結果)を必要としない
+    # ——`rs.RsRow.expenditures[*].recipient_houjin_bangou`という生の列を
+    # 集計するだけであり、「解決処理」ではない。carry-over ⟺ バイト単位で
+    # 不変 ⟺ 今回のこの生読み取りが導く集合は、据え置かれるグラフが実際に
+    # 張っているbudget:recipientエッジの集合と一致する(正しさはここから
+    # 導かれる)。RS本体(~74,000件の支出行)は5.8M件規模の法人マスタとは
+    # 桁が違うため、この読み取りを毎回行うコストは小さい。
+    # =========================================================================
+    rs_date: datetime.date | None = None
+    rs_paths: dict[str, Path] | None = None
+    rs_snapshot_sha256s: list[str] = []
+    # scope=="payees"のときだけ埋める。build_projects呼び出し側(後段)が
+    # 存在すれば再利用し、二重にRSファイルを読まない
+    rs_rows_prefetched: list[rs_mod.RsRow] | None = None
+    rs_parse_stats = rs_mod.RsParseStats()
+    # Ruling B30: 支出先として登場する法人番号(int化)の集合。
+    # corporations_scope=="all"または"rs-system"が無ければ`None`のまま
+    # (=絞り込まない。stream_emit.StreamStats.houjin_bangou_seenと同じ
+    # 「None≠空集合」の作法)
+    payee_houjin_bangou: set[int] | None = None
+
+    if "rs-system" in fetched_on:
+        rs_date = _source_date("rs-system", fetched_on)
+        rs_paths = _rs_group_paths(rs_date)
+        rs_snapshot_sha256s = [
+            s.sha256
+            for s in lake.list_snapshots("rs-system")
+            if s.fetched_on == rs_date and s.path in rs_paths.values()
+        ]
+        if corporations_scope == "payees":
+            rs_rows_prefetched = list(rs_mod.parse_rs(rs_paths, stats=rs_parse_stats))
+            payee_houjin_bangou = {
+                int(v)
+                for row in rs_rows_prefetched
+                for line in row.expenditures
+                if (v := line.recipient_houjin_bangou) and v.isdigit()
+            }
+
+    # =========================================================================
     # Task 8: 全法人のストリーミング投入(フラグON時のみ)。
     #
     # rdflib の Dataset には載せない(全法人約3,500万トリプル規模はメモリが
@@ -983,9 +1085,14 @@ def run(
     stream_stats: stream_emit.StreamStats | None = None
 
     if include_all_corporations:
-        all_corporations_graph_uri = uris.graph_uri(ALL_CORPORATIONS_GRAPH_ID, houjin_date)
+        # Ruling B30: グラフIDそのものが「全法人」と「支出先限定」を区別する
+        # (fix-brief指示。manifest・CQの読み手が誤読しないように)
+        graph_id = (
+            PAYEE_CORPORATIONS_GRAPH_ID if corporations_scope == "payees" else ALL_CORPORATIONS_GRAPH_ID
+        )
+        all_corporations_graph_uri = uris.graph_uri(graph_id, houjin_date)
         out_dir.mkdir(parents=True, exist_ok=True)
-        all_corporations_nq_path = out_dir / "houjin-bangou-all.nq"
+        all_corporations_nq_path = out_dir / f"{graph_id}.nq"
 
         def _all_corporations_source() -> Iterator[org_mod.Organization]:
             # **ParseStatsを渡さない。** dedup_organizationsはこの関数(source)を
@@ -995,7 +1102,20 @@ def run(
             # 罠と対になる、呼び出し側の責務)。列レイアウトの妥当性検査
             # (_assert_layout_plausible)はstats無しでも内部で自動的に走るので、
             # 渡さなくても安全装置は落ちない
-            return org_mod.parse_source(snapshot_path)
+            #
+            # **Ruling B30(payeesスコープ): dedupより前にフィルタする。**
+            # `payee_houjin_bangou`は`source()`が呼ばれる時点で既に確定して
+            # いる(前段のRS早期パース参照)ので、2回の呼び出しは常に同じ内容を
+            # 返す(dedup_organizationsのF-4(b)不変条件を保つ)。ここで絞ると
+            # `stream_stats.houjin_bangou_seen`(dedup1パス目の副産物)は
+            # 「フィルタ対象のうち実在するもの」になり、B21の
+            # externally_typed・B27のhoujin_bangou_existsはどちらも
+            # 変更なしで正しく動く(実在確認の対象はいずれもrs-systemの
+            # 支出先=フィルタ対象の部分集合だから)
+            for o in org_mod.parse_source(snapshot_path):
+                if payee_houjin_bangou is not None and int(o.houjin_bangou) not in payee_houjin_bangou:
+                    continue
+                yield o
 
         stream_stats = stream_emit.StreamStats()
         deduped = stream_emit.dedup_organizations(_all_corporations_source, stream_stats)
@@ -1021,7 +1141,7 @@ def run(
             # quarantine_dirを手探りで漁ることになる(B-1/裁定B23)
             total_violations = sum(r.violation_count for r in failing_batches)
             print(
-                f"警告: houjin-bangou-allのバッチ検証で"
+                f"警告: {graph_id}のバッチ検証で"
                 f"{corporations_all_quarantined}バッチが不合格"
                 f"(違反合計{total_violations}件)。"
                 f" バッチ番号: {[r.batch_index for r in failing_batches]}"
@@ -1031,31 +1151,22 @@ def run(
     # =========================================================================
     # Task 10: rs-system結線(任意ソース)。
     #
-    # **据え置き(carry-over)対象なら、パース・解決処理そのものを省略する**
-    # (houjin-bangou/egov-lawと異なり、rs-systemの解決結果を必要とする
-    # 下流の消費者がpipeline内に無いため、省略しても他の処理に影響しない —
-    # これがcarry-overの実際の計算コスト削減になる部分。`rs_carry_date`は
-    # 既にファイル冒頭で確定・存在確認済みなので、ここでは再計算しない)
+    # **据え置き(carry-over)対象なら、解決処理(build_projects)そのものを
+    # 省略する**(houjin-bangou/egov-lawと異なり、rs-systemの解決結果を
+    # 必要とする下流の消費者がpipeline内に無いため、省略しても他の処理に
+    # 影響しない — これがcarry-overの実際の計算コスト削減になる部分)。
+    # **ファイル位置・sha256・(corporations_scope=="payees"時の)生データ
+    # 読み取りは既にファイル冒頭(Ruling B30の節)で確定・実行済みなので、
+    # ここでは再計算しない**(`rs_date`/`rs_paths`/`rs_snapshot_sha256s`/
+    # `rs_carry_date`はすべてこのブロックより前で確定済み)
     # =========================================================================
     budget_projects_all: tuple[rs_mod.BudgetProjectRecord, ...] = ()
     budget_expenditures_all: tuple[rs_mod.ExpenditureRecord, ...] = ()
     budget_unresolved_all: tuple[rs_mod.UnresolvedBudgetReference, ...] = ()
     budget_stats = rs_mod.BuildStats()
-    rs_date: datetime.date | None = None
-    rs_snapshot_sha256s: list[str] = []
 
     if "rs-system" in fetched_on:
-        rs_date = _source_date("rs-system", fetched_on)
-        # ファイル群の実在確認(メタデータのみ。CSV本体は読まない)は
-        # 据え置き判定の有無にかかわらず行う — 呼び出し側が指定した取得日に
-        # スナップショットが無ければ、据え置くにせよ再生成するにせよ
-        # 前提が崩れている
-        rs_paths = _rs_group_paths(rs_date)
-        rs_snapshot_sha256s = [
-            s.sha256
-            for s in lake.list_snapshots("rs-system")
-            if s.fetched_on == rs_date and s.path in rs_paths.values()
-        ]
+        assert rs_paths is not None  # 前段で"rs-system" in fetched_on 時に必ず設定済み
 
         if rs_carry_date is None:
             laws_by_id = {r.law_id: r for r in law_records}
@@ -1080,6 +1191,13 @@ def run(
             # `externally_typed`構築時と同じ判断(全法人グラフのバッチ検証が
             # 不合格なら、その集合は参照整合ゲートの外部知識としても
             # rs.build_projectsの実在確認としても信用しない)
+            #
+            # **Ruling B30(payeesスコープ): `stream_stats.houjin_bangou_seen`は
+            # 「フィルタ対象のうち実在するもの」に縮小されているが、
+            # `rs.build_projects`が実在確認する対象
+            # (`recipient_houjin_bangou`)は常にそのフィルタ対象の部分集合な
+            # ので、この縮小後の集合でも実在確認の正しさは変わらない**
+            # (org-streamブロック・このモジュール冒頭のRuling B30コメント参照)
             houjin_bangou_exists = None
             if (
                 stream_stats is not None
@@ -1089,8 +1207,16 @@ def run(
                 houjin_bangou_exists = _houjin_bangou_exists_test(
                     stream_stats.houjin_bangou_seen
                 )
-            rs_parse_stats = rs_mod.RsParseStats()
-            rs_rows = list(rs_mod.parse_rs(rs_paths, stats=rs_parse_stats))
+            # Ruling B30: corporations_scope=="payees"のときは、フィルタ対象を
+            # 決めるために既にRSファイルを読んでいる(このモジュール冒頭)。
+            # **二重に読まない** — 同じ`rs_rows_prefetched`を再利用する。
+            # そうでなければ(scope=="all"または法人グラフを作らないリリース)、
+            # ここで初めて読む(既存の挙動のまま)
+            rs_rows = (
+                rs_rows_prefetched
+                if rs_rows_prefetched is not None
+                else list(rs_mod.parse_rs(rs_paths, stats=rs_parse_stats))
+            )
             budget_result = rs_mod.build_projects(
                 rs_rows, ministry_reference_by_name, laws_by_id, laws_by_title,
                 name_index={}, houjin_bangou_exists=houjin_bangou_exists,
@@ -1288,11 +1414,12 @@ def run(
         ):
             for line in src:
                 dst.write(line)
-        # O-10: 合格時は中間ファイルを削除する。内容はkg.nqへ追記済みで
-        # 二重に持つ理由が無く、581万件規模(約1GB)を毎回残すと成果物
-        # ディレクトリが肥大する。**不合格時はここに来ない**ため、
-        # houjin-bangou-all.nqは事実上の隔離物として残る(バッチ単位の
-        # 違反レポートとは別に、入力全体を再現できる状態を保つ意味がある)
+        # O-10: 合格時は中間ファイル(houjin-bangou-all.nqまたは
+        # houjin-bangou-payees.nq)を削除する。内容はkg.nqへ追記済みで
+        # 二重に持つ理由が無く、全法人スコープ(581万件規模・約1GB)を毎回
+        # 残すと成果物ディレクトリが肥大する。**不合格時はここに来ない**ため、
+        # 中間ファイルは事実上の隔離物として残る(バッチ単位の違反レポートとは
+        # 別に、入力全体を再現できる状態を保つ意味がある)
         all_corporations_nq_path.unlink()
 
     surviving_graphs = sorted(str(c.identifier) for c in clean.graphs() if len(c) > 0)
@@ -1364,6 +1491,7 @@ def run(
         corporations_all=corporations_all,
         corporations_all_dedup_removed=corporations_all_dedup_removed,
         corporations_all_quarantined=corporations_all_quarantined,
+        corporations_scope=corporations_scope if include_all_corporations else None,
         carried_over=carried_over,
         law_records=len(law_records) if egov_law_ran else None,
         law_jurisdiction_resolved=law_jurisdiction_resolved if egov_law_ran else None,
@@ -1480,8 +1608,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--include-all-corporations",
         action="store_true",
-        help="全法人(約581万件)を houjin-bangou-all グラフとして含める。"
+        help="法人グラフ(範囲は --corporations-scope で選ぶ)を含める。"
         "**rs-system を含むリリースでは必須**(裁定B17懸念2/B18)",
+    )
+    parser.add_argument(
+        "--corporations-scope",
+        choices=["all", "payees"],
+        default="all",
+        help="--include-all-corporations 指定時にどの範囲の法人を対象にするか"
+        "(Ruling B30)。'all'=全法人(約581万件。houjin-bangou-allグラフ。"
+        "TDB2実サイズ13.8GiB)。'payees'=budget:recipientの参照先として"
+        "実際に登場する法人に限る(houjin-bangou-payeesグラフ。約19,000件・"
+        "232MiB。rs-system を含むリリースでのみ指定できる)。既定は'all'"
+        "(全法人モードを捨てない。明示のフラグで選ぶ)",
     )
     parser.add_argument(
         "--allow-partial",
@@ -1509,6 +1648,7 @@ def main(argv: list[str] | None = None) -> int:
         fetched_on,
         args.out_dir,
         include_all_corporations=args.include_all_corporations,
+        corporations_scope=args.corporations_scope,
         previous_release=args.previous_release,
     )
 

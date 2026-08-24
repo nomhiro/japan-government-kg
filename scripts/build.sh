@@ -8,8 +8,9 @@
 #                    --source egov-law=2026-08-24 \
 #                    --source rs-system=2026-08-23 \
 #                    --include-all-corporations \
+#                    --corporations-scope payees \
 #                    [--previous-release 2026-08-23] \
-#                    [--out-dir data/artifact/2026-08-24] \
+#                    [--out-dir data/artifact/2026-08-24-payees] \
 #                    [--allow-partial] [--fail-on-stale]
 #
 # **以前は位置引数1つ(取得日)しか受けず、その日付を houjin-bangou の取得日
@@ -41,8 +42,12 @@ usage() {
   --source ID=YYYY-MM-DD     ソースと取得日。**複数回指定する。** 少なくとも
                              houjin-bangou は必要(縦スライスの土台)
   --previous-release DATE    前リリースの日付。差分検出(carry-over)を有効にする
-  --include-all-corporations 全法人(約581万件)を含める。
+  --include-all-corporations 法人グラフを含める(範囲は --corporations-scope で選ぶ)。
                              **rs-system を含むなら必須**(裁定B17懸念2/B18)
+  --corporations-scope SCOPE all(既定)または payees。payeesは支出先として実際に
+                             登場する法人に限る(Ruling B30。約19,000件・232MiB。
+                             all=全法人約581万件・13.8GiB。rs-systemを含む
+                             リリースでのみ payees を指定できる)
   --allow-partial            隔離が起きてもリリースを続ける(既定は止まる)
   --fail-on-stale            鮮度監視で陳腐化があればビルドを始めずに止める
   --out-dir PATH             成果物の出力先。既定は data/artifact/<最新の取得日>
@@ -89,6 +94,11 @@ while [ $# -gt 0 ]; do
     --include-all-corporations)
       PIPELINE_FLAGS+=(--include-all-corporations)
       shift
+      ;;
+    --corporations-scope)
+      [ $# -ge 2 ] || { echo "--corporations-scope に値が無い" >&2; usage; exit 2; }
+      PIPELINE_FLAGS+=(--corporations-scope "$2")
+      shift 2
       ;;
     --allow-partial)
       PIPELINE_FLAGS+=(--allow-partial)
@@ -156,35 +166,88 @@ echo "== パイプライン実行(検証を含む) =="
 uv run python -m jgkg.pipeline "${SOURCE_ARGS[@]}" --out-dir "$OUT" "${PIPELINE_FLAGS[@]+"${PIPELINE_FLAGS[@]}"}"
 phase_done "パイプライン(取得済みスナップショット→kg.nq、検証含む)"
 
-echo "== TDB2インデックス構築 =="
-# **既存の tdb2 ディレクトリを必ず消してから読み込む。** tdb2.tdbloader は
-# 「その場所にあるデータベースへ読み込む」ツールであって、置き換えるツールでは
-# ない。同じリリースディレクトリを作り直すと(Task 11 が 2026-08-23 の
-# Phase 0 リリースを再ビルドしたときに実際に起きる状況)、前の世代のトリプルが
-# 残ったまま新しい kg.nq が足され、**成果物が kg.nq と一致しなくなる**
-# (manifest の sha256 は kg.nq と tdb2.tar.gz を別々に記録するので、この
-# 食い違いは照合では捕まらない)。tar.gz も同様に消す — 残っていると
-# tar が上書きするので実害は無いが、失敗した実行の残骸を次の実行の
-# 成果物と混ぜないため揃えて消す
-if [ -e "${OUT}/tdb2" ]; then
-  echo "既存の ${OUT}/tdb2 を削除する(tdbloader は追記であって置換ではない)"
-  rm -rf "${OUT}/tdb2"
-fi
-rm -f "${OUT}/tdb2.tar.gz"
+echo "== TDB2インデックス構築(コンテナのネイティブ層) =="
+# **バインドマウント上に直接構築しない(task-11-fix-brief.md §2。発見7)。**
+# TDB2はノード表へのランダムI/Oが支配的で、Docker Desktop for Windows の
+# バインドマウントは実質ネットワークファイル共有として振る舞う——設計書§6.3が
+# 「TDB2はメモリマップドファイルを使うためSMB/NFS上に置くな」と警告していた
+# 状況そのもの。**実測(progress.md 発見7の定量的裏付け): ネイティブ層
+# 34,343 quads/秒 → バインドマウント596/秒(単調に減速)。約58倍の差。**
+# 以前はここで直接 `--loc "/work/${OUT}/tdb2"`(バインドマウント上)に構築
+# していたが、この経路は5.8M件規模で13時間以上かかり成立しない。
+#
+# コンテナのネイティブ層(overlayのwritable layer)に構築し、**同一コンテナ
+# 実行内で**tar.gz化してからバインドマウント側(${OUT})へ出す。読み(kg.nq)は
+# シーケンシャルなのでバインドマウント越しでも問題ない——ランダムI/Oだけを
+# ネイティブ層に置く。
+#
+# **`/tdb2`という名前にする(`native-tdb2`ではない)。** `tar -C / tdb2` の
+# 結果、tarball内のトップレベル名が`tdb2`になり、serve.pyが検査する
+# `DB_DIRNAME = "tdb2"`(src/jgkg/serve.py)と最初から一致する——改名の
+# ひと手間もその食い違いのリスクも要らない。
+#
+# **`time`はjena-toolsのベースイメージ(eclipse-temurin)に無い。** 使うと
+# `sh: 1: time: not found`が`set -e`により即死する(発見7の副次教訓)。
+# 所要時間はこのスクリプト自身の`phase_done`で測る。
+#
+# **`mkdir -p`をtdbloaderの前に置く(発見4: tdbloaderは出力ディレクトリを
+# 自分では作らない)。** `--rm`付きの毎回新しいコンテナが毎回新しいoverlay
+# layerで動くため、発見5/6(訂正版。実際は背景ジョブの終了判定ミスと
+# 稼働中ディレクトリの誤削除)が踏んだ「前世代の/tdb2が生き残ったまま
+# 新しい書き込みが追記される」危険は構造的に発生しない(前世代のoverlay
+# layerはそのコンテナと一緒に消えている)。
+#
 # MSYS_NO_PATHCONV=1 が必要。**Windows の Git Bash / MSYS は `/work/...` のような
 # POSIX風の絶対パス引数を Windows パスに書き換えてコンテナに渡す。**
 # 実測(2026-08-23): /work/data/artifact/<日付>/kg.nq が
 # `C:/Program Files/Git/work/data/artifact/<日付>/kg.nq` に化けて Can't read file で落ちた。
 # **コンテナ内のパスなのでホスト側の変換をしてはならない。**
 # cp932 や NTFS の予約文字と同じ、Windowsでしか出ない類型(設計書§11.1の再現性)。
-MSYS_NO_PATHCONV=1 docker compose --profile tools run --rm jena-tools \
-  tdb2.tdbloader --loc "/work/${OUT}/tdb2" "/work/${OUT}/kg.nq"
-phase_done "tdbloader(TDB2インデックス構築)"
+rm -f "${OUT}/tdb2.tar.gz"
+NATIVE_BUILD_LOG="${OUT}/.native-tdb2-build.log"
+NATIVE_SCRIPT="set -e
+mkdir -p /tdb2
+tdb2.tdbloader --loc /tdb2 /work/${OUT}/kg.nq
+du -sb /tdb2
+tar -czf /work/${OUT}/tdb2.tar.gz -C / tdb2
+"
+# pipefail は先頭で設定済み(set -euo pipefail)。docker側が失敗すれば
+# パイプ全体の終了コードが非0になり set -e で止まる
+MSYS_NO_PATHCONV=1 docker compose --profile tools run --rm --entrypoint sh jena-tools \
+  -c "$NATIVE_SCRIPT" 2>&1 | tee "$NATIVE_BUILD_LOG"
+phase_done "tdbloader(コンテナのネイティブ層でTDB2構築+tar.gz化)"
 
-echo "== 成果物のtar.gz化とmanifest =="
-tar -czf "${OUT}/tdb2.tar.gz" -C "$OUT" tdb2
-phase_done "tar.gz化"
-JGKG_OUT="$OUT" JGKG_JENA_VERSION_FOR_MANIFEST="$JENA_VERSION" uv run python -c "
+echo "== 構築結果の実物検査 =="
+# **`docker compose run`の終了コードを信じない**(progress.md 発見5/6の訂正で
+# 確定した教訓。長時間実行では`docker ps`と実物で確認するのが本来の作法だが、
+# ここは`--rm`付きの同期実行であり背景ジョブのラッパを介さないため、この
+# スクリプト自身の制御フロー(pipefail)は機能する。それでも「構築後にtar.gzと
+# 展開後サイズの検査を必ず入れる」(task-11-fix-brief.md §2)という要求は独立に
+# 満たす——万が一途中の失敗が握り潰されても、tar.gzの中身が空/構造がおかしい
+# ことで検出できるようにする)
+if [ ! -s "${OUT}/tdb2.tar.gz" ]; then
+  echo "エラー: ${OUT}/tdb2.tar.gz が作られなかったか空である" >&2
+  exit 1
+fi
+if ! tar -tzf "${OUT}/tdb2.tar.gz" | grep -q '^tdb2/Data-0001/'; then
+  echo "エラー: ${OUT}/tdb2.tar.gz の中に tdb2/Data-0001/ が無い" \
+       "(TDB2の実データが構築されていない疑い)" >&2
+  exit 1
+fi
+# du -sb の出力(`<バイト数><TAB>/tdb2`)をログから取り出す。§6.3の8GiB判定に
+# 使う数値なので、**読み取れなければ manifest に黙って書かず、ここで止める**
+TDB2_EXPANDED_BYTES=$(grep -P '^[0-9]+\t/tdb2$' "$NATIVE_BUILD_LOG" | tail -1 | cut -f1)
+if [ -z "$TDB2_EXPANDED_BYTES" ]; then
+  echo "エラー: du -sb の出力を ${NATIVE_BUILD_LOG} から読み取れなかった" \
+       "(TDB2展開後サイズを記録できない。§6.3の8GiB判定に必要)" >&2
+  exit 1
+fi
+echo "TDB2展開後サイズ: ${TDB2_EXPANDED_BYTES} bytes"
+phase_done "構築結果の検査"
+
+echo "== manifest作成 =="
+JGKG_OUT="$OUT" JGKG_JENA_VERSION_FOR_MANIFEST="$JENA_VERSION" \
+  JGKG_TDB2_EXPANDED_BYTES="$TDB2_EXPANDED_BYTES" uv run python -c "
 import json, os, pathlib
 from jgkg import build, pipeline
 out = pathlib.Path(os.environ['JGKG_OUT'])
@@ -203,6 +266,10 @@ m = build.build_manifest(
     graphs=report['graphs'],
     # 隔離されたソースは sources に載らない代わりにここに出る(--allow-partial 時)
     quarantined_sources=report['quarantined_sources'],
+    # Task 11修正ラウンド(fix-brief §3): du -sb で実測したTDB2展開後サイズ。
+    # §6.3の8GiB判定(全法人13.8GiB/支出先限定232MiB台)をリリースごとに
+    # manifestから読めるようにする
+    tdb2_expanded_bytes=int(os.environ['JGKG_TDB2_EXPANDED_BYTES']),
 )
 build.write_manifest(m, out / 'manifest.json')
 print(m.model_dump_json(indent=2))

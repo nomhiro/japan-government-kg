@@ -29,6 +29,7 @@ def _make_artifact(tmp_path, jena_version="6.2.0", payload=b"index bytes"):
         release="2026-08-01",
         sources={"houjin-bangou": "2026-08-01"},
         graphs=[],
+        tdb2_expanded_bytes=len(payload),
     )
     build.write_manifest(m, art / serve.MANIFEST_NAME)
     return art

@@ -356,7 +356,7 @@ def test_all_hops_survive_a_round_trip_through_nquads_on_disk(phase1_kg, tmp_pat
     again = Dataset(default_union=True)
     again.parse(path, format="nquads")
 
-    assert list(again.query(f"""
+    assert next(iter(again.query(f"""
         PREFIX budget: <{BUDGET_NS}>
         PREFIX law:    <{BASE}/def/law#>
         ASK {{
@@ -364,7 +364,7 @@ def test_all_hops_survive_a_round_trip_through_nquads_on_disk(phase1_kg, tmp_pat
           ?p budget:ministry ?m .
           ?l law:jurisdiction ?m .
         }}
-    """))[0] is True
+    """))) is True
 
     assert {str(g.identifier) for g in again.graphs() if len(g) > 0} == {
         str(g.identifier) for g in phase1_kg.graphs() if len(g) > 0

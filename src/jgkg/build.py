@@ -38,6 +38,16 @@ class Manifest(BaseModel):
     # 欄の無いJSONを読むとpydanticの既定値がそのままNoneになるので、
     # 追加のsetdefaultは要らない)
     nquads_sha256: str | None = None
+    # Task 11修正ラウンド(fix-brief §3): TDB2の**展開後**サイズ(バイト数)。
+    # `byte_size`(tarball圧縮後)とは別の数値 — §6.3の一時ディスク8GiB上限は
+    # 展開後のTDB2が占めるサイズで判定するため、圧縮後サイズだけでは判定できない
+    # (実測: 全法人13.8GiB→tar.gz 1.86GiB、支出先限定232MiB→tar.gzはさらに
+    # 小さい。圧縮率がリリースごとに変わるため展開後サイズを別途記録する)。
+    # `build.sh`がコンテナのネイティブ層(§6.3の警告どおりバインドマウント
+    # 上には構築しない。progress.md 発見7)で`du -sb`した値をそのまま渡す。
+    # **旧形式(manifest_version<4)のmanifestにはこの欄が無いため`None`**
+    # (nquads_sha256と同じ「照合/判定できないことを0と区別する」作法)
+    tdb2_expanded_bytes: int | None = None
     graphs: list[str]
     # 成果物に**実際に入っている**ソースと、その「いつ時点か」。
     # 隔離されたソースはここに載せない(載せると「この日付のデータを含む」という嘘になる)
@@ -50,9 +60,10 @@ class Manifest(BaseModel):
     # (=新規に作る)場合の既定はこの 2。**旧manifestを読むときに 1 とみなす処理は
     # ここではなく read_manifest() 側に置く**(pydanticのフィールド既定だけでは
     # 「新規構築で省略した」のか「旧ファイルに欄が無い」のかを区別できないため)
-    # Task 10修正ラウンド: `nquads_sha256`を追加したのでこの欄自体は再度3に上げる
-    # (計画B Task 1がmanifest_version欄自体の追加で2に上げたのと同じ作法)
-    manifest_version: int = 3
+    # Task 10修正ラウンド: `nquads_sha256`を追加したのでこの欄自体は再度3に上げた
+    # (計画B Task 1がmanifest_version欄自体の追加で2に上げたのと同じ作法)。
+    # Task 11修正ラウンド: `tdb2_expanded_bytes`を追加したので4に上げる
+    manifest_version: int = 4
 
 
 def file_sha256(path: Path) -> str:
@@ -97,12 +108,25 @@ def build_manifest(
     release: str,
     sources: dict[str, str],
     graphs: list[str],
+    tdb2_expanded_bytes: int,
     quarantined_sources: list[str] | None = None,
 ) -> Manifest:
     if not jena_version:
         raise ValueError(
             "Jenaバージョンが空である。TDB2のオンディスク形式はJenaのバージョンに"
             "紐づくため、記録を省略できない(設計書§6.3)"
+        )
+    # Task 11修正ラウンド(fix-brief §3): **必須パラメータにして既定値を
+    # 持たせない。** §6.3の8GiB判定はこの数値でしか行えないため、
+    # 呼び出し側(build.sh)がdu -sbの出力を読み取れなかった場合に
+    # manifestへ黙って`None`を書くのではなく、ここで呼び出しそのものが
+    # 落ちる形にする(「既定は止まる側」。jena_versionの検査と同じ作法)
+    if tdb2_expanded_bytes <= 0:
+        raise ValueError(
+            f"tdb2_expanded_bytes が正の値ではない: {tdb2_expanded_bytes!r}。"
+            " TDB2の展開後サイズを du -sb 等から読み取れていない疑いがある"
+            "(§6.3の一時ディスク8GiB判定にこの数値を使うため、0や負値のまま"
+            "manifestに記録してはならない)"
         )
     return Manifest(
         release=release,
@@ -112,6 +136,7 @@ def build_manifest(
         byte_size=tarball.stat().st_size,
         triple_count=_count_triples(nquads),
         nquads_sha256=file_sha256(nquads),
+        tdb2_expanded_bytes=tdb2_expanded_bytes,
         graphs=sorted(graphs),
         sources=sources,
         quarantined_sources=sorted(quarantined_sources or []),

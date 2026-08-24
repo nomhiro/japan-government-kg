@@ -833,6 +833,209 @@ def test_run_reclassifies_a_nonexistent_recipient_houjin_bangou_and_drops_the_re
 
 
 # =============================================================================
+# Ruling B30(Task 11修正ラウンド): 支出先として登場する法人番号に限る
+# corporations_scope="payees"。実測(progress.md): 全法人35,584,368quads/
+# 13.8GiBに対し、支出先限定は704,359quads/232MiB(§6.3の8GiB判定への対応)
+# =============================================================================
+
+
+def _rs_snapshot_with_one_recipient(fiscal_year: str = "2025") -> None:
+    _save_rs_snapshot(DAY, {
+        "project_summary": [
+            _rs_row_for("project_summary", {
+                "project_id": "1", "fiscal_year": fiscal_year, "project_name": "テスト事業1",
+                "ministry_name": "厚生労働省",
+            }),
+        ],
+        "budget_summary": [],
+        "policy_measure_laws_and_regulations": [],
+        "payee_payment_information": [
+            _rs_row_for("payee_payment_information", {
+                "project_id": "1", "recipient_name": "株式会社ウルフスタイル",
+                "recipient_houjin_bangou": WOLFSTYLE_BANGOU, "expenditure_amount": "500",
+                "recipient_other_flag": "FALSE",
+            }),
+        ],
+    })
+
+
+def test_run_payees_scope_requires_include_all_corporations():
+    """corporations_scope='payees' は include_all_corporations=True が必須(Ruling B30)。
+
+    法人グラフ自体を作らないなら範囲を選ぶ意味が無い——タイプミスで絞り込みだけが
+    指定され、法人グラフが一切無いリリースが黙って成立することを避ける。
+    """
+    with pytest.raises(ValueError, match="include_all_corporations"):
+        pipeline.run(
+            {"houjin-bangou": DAY}, Path("unused"),
+            include_all_corporations=False, corporations_scope="payees",
+        )
+
+
+def test_run_payees_scope_requires_rs_system():
+    """corporations_scope='payees' は rs-system をこのリリースに含むことが必須(Ruling B30)。
+
+    絞り込む対象(支出先として登場する法人番号)そのものがrs-systemのデータから決まる。
+    """
+    with pytest.raises(ValueError, match="rs-system"):
+        pipeline.run(
+            {"houjin-bangou": DAY}, Path("unused"),
+            include_all_corporations=True, corporations_scope="payees",
+        )
+
+
+def test_run_payees_scope_writes_a_distinctly_named_graph_with_only_recipient_corporations(
+    houjin_with_a_company, tmp_path,
+):
+    """payeesスコープは houjin-bangou-payees という別名グラフに、支出先(実際に
+
+    budget:recipientとして参照される法人)だけを書くこと(Ruling B30)。
+
+    **法人マスタに存在するが支出先ではない法人(厚生労働省。ministry-codes
+    経由でBudgetProjectRecordが参照する別の資源)は入らない** —
+    houjin-bangou-payeesグラフはあくまで`budget:recipient`の参照先を
+    埋めるためのグラフであり、府省の実体はministry-codesグラフが別に持つ。
+    """
+    from rdflib import RDF, Dataset, URIRef
+
+    from jgkg import uris
+    from jgkg.config import get_settings
+
+    _rs_snapshot_with_one_recipient()
+
+    report = pipeline.run(
+        {"houjin-bangou": DAY, "rs-system": DAY}, tmp_path / "out",
+        include_all_corporations=True, corporations_scope="payees",
+    )
+
+    assert report.corporations_scope == "payees"
+    payees_uri = uris.graph_uri("houjin-bangou-payees", DAY)
+    all_uri = uris.graph_uri("houjin-bangou-all", DAY)
+    assert payees_uri in report.graphs, "houjin-bangou-payeesグラフが出現していない"
+    assert all_uri not in report.graphs, (
+        "houjin-bangou-allという「全法人」グラフ名が出現している"
+        "(payeesスコープなのに全法人と誤読される名前になっている)"
+    )
+    # fix-brief: フィルタ対象は18,994件相当のごく少数になるはず。この
+    # fixtureでは支出先1件のみなので、法人グラフに書き出すのはその1件だけ
+    assert report.corporations_all == 1
+    assert report.reference_violations == [], report.reference_violations
+
+    ds = Dataset(default_union=True)
+    ds.parse(tmp_path / "out" / "kg.nq", format="nquads")
+    payees_graph = ds.graph(URIRef(payees_uri))
+    org_class = URIRef(f"{get_settings().base_uri}/def/org#Organization")
+    org_uris_in_payees_graph = {str(s) for s in payees_graph.subjects(RDF.type, org_class)}
+    assert org_uris_in_payees_graph == {uris.org_uri(WOLFSTYLE_BANGOU)}, (
+        "支出先(株式会社ウルフスタイル)以外の法人、または支出先以外の法人が"
+        "houjin-bangou-payeesグラフに入っている"
+    )
+    assert uris.org_uri(KOUSEIROUDOU_BANGOU) not in {
+        str(s) for s in payees_graph.subjects(None, None)
+    }, "支出先ではない厚生労働省がhoujin-bangou-payeesグラフに入っている"
+
+
+def test_run_payees_scope_still_resolves_a_real_recipient_by_houjin_bangou(
+    houjin_with_a_company, tmp_path,
+):
+    """支出先限定でも、実在する支出先の解決(B27の実在確認を含む)は全法人
+
+    モードと同じ結果になること(フィルタは「どこまで法人グラフに書くか」
+    だけを変え、rs-system側の解決結果を変えてはならない)。
+    """
+    _rs_snapshot_with_one_recipient()
+
+    report = pipeline.run(
+        {"houjin-bangou": DAY, "rs-system": DAY}, tmp_path / "out",
+        include_all_corporations=True, corporations_scope="payees",
+    )
+
+    assert report.budget_recipients_resolved_by_houjin_bangou == 1
+    assert report.budget_recipients_nonexistent_houjin_bangou == 0
+    assert report.budget_recipients_sentinel == 0
+
+
+def test_run_payees_scope_still_reclassifies_a_nonexistent_recipient(
+    houjin_with_a_company, tmp_path,
+):
+    """payeesスコープでもRuling B27(実在しない法人番号の第5分類)は変わらないこと。
+
+    **何があれば落ちるか**: フィルタ導入がB27のhoujin_bangou_existsの結線を
+    壊すと(payeesスコープ下ではstream_stats.houjin_bangou_seenが縮小
+    されるため、テストの書き方を誤ると常にTrue/常にFalseになりうる)、
+    このテストのnonexistent件数または参照整合違反が変わる。
+
+    **実在の支出先(project 2。株式会社ウルフスタイル)も同居させる** — 実在の
+    支出先が1件も無いと、フィルタ後の法人グラフが完全に空になり
+    `validate.validate_stream`の「対象0件で合格に退化させない」ガード
+    (B-2/F-4)が例外を投げてテストの主旨と無関係な失敗になる
+    (実データでは支出先56,667件超に対しnonexistent60件なので、この
+    空ファイル化は実運用では起きない——このfixture固有の作り方の問題)。
+    """
+    nonexistent_bangou = "1234567890123"
+    _save_rs_snapshot(DAY, {
+        "project_summary": [
+            _rs_row_for("project_summary", {
+                "project_id": "1", "fiscal_year": "2025", "project_name": "テスト事業1",
+                "ministry_name": "厚生労働省",
+            }),
+            _rs_row_for("project_summary", {
+                "project_id": "2", "fiscal_year": "2025", "project_name": "テスト事業2",
+                "ministry_name": "厚生労働省",
+            }),
+        ],
+        "budget_summary": [],
+        "policy_measure_laws_and_regulations": [],
+        "payee_payment_information": [
+            _rs_row_for("payee_payment_information", {
+                "project_id": "1", "recipient_name": "実在しない架空商事株式会社",
+                "recipient_houjin_bangou": nonexistent_bangou, "expenditure_amount": "300",
+                "recipient_other_flag": "FALSE",
+            }),
+            _rs_row_for("payee_payment_information", {
+                "project_id": "2", "recipient_name": "株式会社ウルフスタイル",
+                "recipient_houjin_bangou": WOLFSTYLE_BANGOU, "expenditure_amount": "500",
+                "recipient_other_flag": "FALSE",
+            }),
+        ],
+    })
+
+    report = pipeline.run(
+        {"houjin-bangou": DAY, "rs-system": DAY}, tmp_path / "out",
+        include_all_corporations=True, corporations_scope="payees",
+    )
+
+    assert report.reference_violations == [], report.reference_violations
+    assert report.budget_recipients_nonexistent_houjin_bangou == 1
+    assert report.budget_recipients_resolved_by_houjin_bangou == 1
+    # 実在しない番号の分は法人グラフに書かれない。実在する支出先(ウルフスタイル)
+    # の1件だけが書かれる
+    assert report.corporations_all == 1
+
+
+def test_run_all_scope_is_the_default_and_unaffected_by_the_payees_filter(
+    houjin_with_a_company, tmp_path,
+):
+    """corporations_scopeを省略すると既定の"all"になり、フィルタが掛からず
+
+    法人マスタの全件(このfixtureでは2件)が書かれること(Ruling B30:
+    「既定にしない。全法人モードも残す」)。
+    """
+    from jgkg import uris
+
+    _rs_snapshot_with_one_recipient()
+
+    report = pipeline.run(
+        {"houjin-bangou": DAY, "rs-system": DAY}, tmp_path / "out",
+        include_all_corporations=True,
+    )
+
+    assert report.corporations_scope == "all"
+    assert report.corporations_all == 2, "全法人モードなのに絞り込まれている"
+    assert uris.graph_uri("houjin-bangou-all", DAY) in report.graphs
+
+
+# =============================================================================
 # Task 11 / B28: CLI(`python -m jgkg.pipeline`)。build.sh の引数解釈がシェルの
 # 外(=テストできる場所)にあることを固定する
 # =============================================================================
@@ -920,3 +1123,59 @@ def test_cli_writes_report_before_the_gate_raises(lake_with_duplicate_label, tmp
     import json as _json
     report = _json.loads((out / pipeline.REPORT_NAME).read_text(encoding="utf-8"))
     assert report["graphs_quarantined"] >= 1
+
+
+def test_cli_corporations_scope_defaults_to_all(houjin_with_a_company, tmp_path):
+    """`--corporations-scope` を省略すると既定の"all"がrun()へそのまま渡ること
+
+    (Ruling B30: 既定にしない。全法人モードを捨てない)。
+    """
+    import json as _json
+
+    _rs_snapshot_with_one_recipient()
+    out = tmp_path / "out"
+
+    assert pipeline.main([
+        "--source", f"houjin-bangou={DAY.isoformat()}",
+        "--source", f"rs-system={DAY.isoformat()}",
+        "--out-dir", str(out),
+        "--include-all-corporations",
+    ]) == 0
+
+    report = _json.loads((out / pipeline.REPORT_NAME).read_text(encoding="utf-8"))
+    assert report["corporations_scope"] == "all"
+    assert report["corporations_all"] == 2
+
+
+def test_cli_passes_corporations_scope_payees_through_to_run(houjin_with_a_company, tmp_path):
+    """`--corporations-scope payees` がCLIからrun()まで正しく伝わること(Ruling B30)。"""
+    import json as _json
+
+    _rs_snapshot_with_one_recipient()
+    out = tmp_path / "out"
+
+    assert pipeline.main([
+        "--source", f"houjin-bangou={DAY.isoformat()}",
+        "--source", f"rs-system={DAY.isoformat()}",
+        "--out-dir", str(out),
+        "--include-all-corporations",
+        "--corporations-scope", "payees",
+    ]) == 0
+
+    report = _json.loads((out / pipeline.REPORT_NAME).read_text(encoding="utf-8"))
+    assert report["corporations_scope"] == "payees"
+    assert report["corporations_all"] == 1
+
+
+def test_cli_rejects_an_unknown_corporations_scope_value(tmp_path):
+    """`--corporations-scope` に "all"/"payees" 以外を渡すとargparseが拒否すること
+
+    (未登録ソースIDを黙って受けないtest_cli_rejects_unknown_source_idと同じ
+    「タイプミスを黙って通さない」作法)。
+    """
+    with pytest.raises(SystemExit):
+        pipeline.main([
+            "--source", f"houjin-bangou={DAY.isoformat()}",
+            "--out-dir", str(tmp_path / "out"),
+            "--corporations-scope", "everything",
+        ])
