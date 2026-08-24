@@ -116,6 +116,23 @@ classes:
   Entity:
     abstract: true
     description: 本KGが扱うすべての事物の基底
+    # 6軸(Agent/Work/Place/Event/MonetaryItem/Concept)とUnresolvedReferenceは
+    # 互いに素である。7クラスの全組み合わせ21ペア(7C2=21)を、直接の子クラス
+    # 全体に対して1つの owl:AllDisjointClasses 公理で表す(R16。以前は
+    # schema/overlay/core-axioms.ttl に21本のowl:disjointWithを手書きしていたが、
+    # LinkML 1.11.1のgen-owlがこの構文(children_are_mutually_disjoint)を
+    # サポートしていることを実機で確認し、単一ソース原則に合わせてこちらへ移した
+    # — LinkMLにpairwiseのdisjoint_with生成は実装されていない。実測済み)。
+    #
+    # Agent と Place の排他は特に意味がある: 「東京都」という行政区域(Place)と、
+    # 「東京都」という地方公共団体(Agent、法人番号を持つ)は別のものであり、
+    # 別のURIで表す。この公理がその区別を強制する。
+    #
+    # **この宣言が効くのはEntityの直接の子だけ**(gen-owlの実装: is_a==Entityの
+    # クラスだけを集める)。Entityの子はこの7つのみであること
+    # (`grep -n "is_a: Entity" schema/*.yaml`)を維持する限り、21ペアという
+    # 意味は変わらない
+    children_are_mutually_disjoint: true
     slots: [id, label]
 
   Agent:

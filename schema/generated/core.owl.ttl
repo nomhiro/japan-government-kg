@@ -90,55 +90,6 @@
     skos:definition "「どこで」の軸。行政区域・住所・地物の上位"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
-<https://jgkg.norr-tech.com/def/core#UnresolvedReference> a owl:Class ;
-    rdfs:label "UnresolvedReference" ;
-    rdfs:subClassOf [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_text> ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_reason> ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_key> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom rdf:langString ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_text> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_text> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_reason> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_reason> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom xsd:string ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_key> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_key> ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolvedFor> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolvedFor> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom <https://jgkg.norr-tech.com/def/core#Entity> ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolvedFor> ],
-        <https://jgkg.norr-tech.com/def/core#Entity> ;
-    skos:definition "正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず KGに残して計測できるようにするためのクラス"@ja ;
-    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
-
-<https://jgkg.norr-tech.com/def/core#Work> a owl:Class ;
-    rdfs:label "Work" ;
-    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#Entity> ;
-    skos:closeMatch <http://schema.org/CreativeWork> ;
-    skos:definition "「何を」の軸。法令・政策・事業・文書・司法判断の上位"@ja ;
-    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
-
 <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#AMBIGUOUS> a owl:Class ;
     rdfs:label "AMBIGUOUS" ;
     rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> ;
@@ -159,17 +110,59 @@
     rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> ;
     skos:definition "2001年の中央省庁再編で廃止された名称である(参照表`old-ministries.csv` に列挙。高信頼・出典あり。裁定B7でこの enum の意味をこの範囲に狭めた — それ以前に廃止された省庁は `OBSOLETE_ORGANIZATION` に分類する)"@ja .
 
+<https://jgkg.norr-tech.com/def/core#UnresolvedReference> a owl:Class ;
+    rdfs:label "UnresolvedReference" ;
+    rdfs:subClassOf [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_reason> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_key> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_text> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_reason> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_reason> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:string ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_key> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom rdf:langString ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_text> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_key> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_text> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolvedFor> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolvedFor> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom <https://jgkg.norr-tech.com/def/core#Entity> ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolvedFor> ],
+        <https://jgkg.norr-tech.com/def/core#Entity> ;
+    skos:definition "正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず KGに残して計測できるようにするためのクラス"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
+
+<https://jgkg.norr-tech.com/def/core#Work> a owl:Class ;
+    rdfs:label "Work" ;
+    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#Entity> ;
+    skos:closeMatch <http://schema.org/CreativeWork> ;
+    skos:definition "「何を」の軸。法令・政策・事業・文書・司法判断の上位"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
+
 skos:prefLabel a owl:DatatypeProperty ;
     rdfs:label "label" ;
     rdfs:range rdf:langString ;
     skos:definition "人間が読む名称"@ja ;
-    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
-
-<https://jgkg.norr-tech.com/def/core#Agent> a owl:Class ;
-    rdfs:label "Agent" ;
-    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#Entity> ;
-    skos:definition "「誰が」の軸。行為の主体。組織と人の上位"@ja ;
-    skos:exactMatch prov:Agent ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 <https://jgkg.norr-tech.com/def/core#amount_jpy> a owl:DatatypeProperty ;
@@ -221,6 +214,13 @@ skos:prefLabel a owl:DatatypeProperty ;
 
 rdf:langString a rdfs:Datatype .
 
+<https://jgkg.norr-tech.com/def/core#Agent> a owl:Class ;
+    rdfs:label "Agent" ;
+    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#Entity> ;
+    skos:definition "「誰が」の軸。行為の主体。組織と人の上位"@ja ;
+    skos:exactMatch prov:Agent ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
+
 <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> a owl:Class ;
     rdfs:label "UnresolvedReasonEnum" ;
     owl:unionOf ( <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#AMBIGUOUS> <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#NO_CANDIDATE> <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#OBSOLETE_ORGANIZATION> <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#OLD_MINISTRY> ) ;
@@ -254,4 +254,7 @@ rdf:langString a rdfs:Datatype .
         [ owl:unionOf ( <https://jgkg.norr-tech.com/def/core#Agent> <https://jgkg.norr-tech.com/def/core#Concept> <https://jgkg.norr-tech.com/def/core#Event> <https://jgkg.norr-tech.com/def/core#MonetaryItem> <https://jgkg.norr-tech.com/def/core#Place> <https://jgkg.norr-tech.com/def/core#UnresolvedReference> <https://jgkg.norr-tech.com/def/core#Work> ) ] ;
     skos:definition "本KGが扱うすべての事物の基底"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
+
+[] a owl:AllDisjointClasses ;
+    owl:members ( <https://jgkg.norr-tech.com/def/core#Agent> <https://jgkg.norr-tech.com/def/core#Concept> <https://jgkg.norr-tech.com/def/core#Event> <https://jgkg.norr-tech.com/def/core#MonetaryItem> <https://jgkg.norr-tech.com/def/core#Place> <https://jgkg.norr-tech.com/def/core#UnresolvedReference> <https://jgkg.norr-tech.com/def/core#Work> ) .
 

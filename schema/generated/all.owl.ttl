@@ -144,62 +144,6 @@
     skos:definition "府省及び外局等、行政事業レビューシステム(RS)実データの所管府省庁欄・ 府省庁欄に現れる国の行政機関(裁定B12・B16。名称が主キーで、 府省コードは分かる場合のみ持つ)"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
-<https://jgkg.norr-tech.com/def/core#Concept> a owl:Class ;
-    rdfs:label "Concept" ;
-    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#Entity> ;
-    skos:definition "「何について」の軸。主題・指標・制度手続きの上位"@ja ;
-    skos:exactMatch skos:Concept ;
-    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
-
-<https://jgkg.norr-tech.com/def/core#Place> a owl:Class ;
-    rdfs:label "Place" ;
-    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#Entity> ;
-    skos:closeMatch <http://schema.org/Place> ;
-    skos:definition "「どこで」の軸。行政区域・住所・地物の上位"@ja ;
-    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
-
-<https://jgkg.norr-tech.com/def/core#UnresolvedReference> a owl:Class ;
-    rdfs:label "UnresolvedReference" ;
-    rdfs:subClassOf [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_reason> ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_key> ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_text> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_reason> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_reason> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom xsd:string ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_key> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom rdf:langString ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_text> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_key> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_text> ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolvedFor> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolvedFor> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom <https://jgkg.norr-tech.com/def/core#Entity> ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolvedFor> ],
-        <https://jgkg.norr-tech.com/def/core#Entity> ;
-    skos:definition "正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず KGに残して計測できるようにするためのクラス"@ja ;
-    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
-
 <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> a owl:Class ;
     rdfs:label "GovernmentOrgan" ;
     rdfs:subClassOf <https://jgkg.norr-tech.com/def/org#Organization> ;
@@ -269,44 +213,18 @@
     skos:definition "この予算事業の根拠法令。RSの政策・施策・法令等ファイルが持つ法令IDでの 直結を主とし(e-Govスナップショットに存在することを検査し、解決できた 場合のみ設定する)、法令IDが欠落した引用は法令名・略称の完全一致で フォールバックする(曖昧照合はしない)。解決できない引用はこのスロットを 設定せず、core:UnresolvedReference を別に立てる。1つの法令を複数の 条項で引用しても、このスロットには法令単位で1エッジのみ張る (rs_columns.py照合記録「検証4」参照)"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
 
-<https://jgkg.norr-tech.com/def/core#Event> a owl:Class ;
-    rdfs:label "Event" ;
-    rdfs:subClassOf [ a owl:Restriction ;
-            owl:allValuesFrom xsd:date ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#occurred_on> ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#occurred_on> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#occurred_on> ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#involves_agent> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#involves_agent> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom <https://jgkg.norr-tech.com/def/core#Agent> ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#involves_agent> ],
-        <https://jgkg.norr-tech.com/def/core#Entity> ;
-    skos:closeMatch prov:Activity ;
-    skos:definition "「いつ」の軸。時点を持つ出来事。関係を実体化するための中心クラス。 「AがBに影響した」を直接のエッジにせず、原則としてこのクラスを介す"@ja ;
+<https://jgkg.norr-tech.com/def/core#Concept> a owl:Class ;
+    rdfs:label "Concept" ;
+    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#Entity> ;
+    skos:definition "「何について」の軸。主題・指標・制度手続きの上位"@ja ;
+    skos:exactMatch skos:Concept ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
-<https://jgkg.norr-tech.com/def/core#MonetaryItem> a owl:Class ;
-    rdfs:label "MonetaryItem" ;
-    rdfs:subClassOf [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#amount_jpy> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#amount_jpy> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom xsd:integer ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#amount_jpy> ],
-        <https://jgkg.norr-tech.com/def/core#Entity> ;
-    skos:definition "「いくらで」の軸。予算科目・支出の上位"@ja ;
+<https://jgkg.norr-tech.com/def/core#Place> a owl:Class ;
+    rdfs:label "Place" ;
+    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#Entity> ;
+    skos:closeMatch <http://schema.org/Place> ;
+    skos:definition "「どこで」の軸。行政区域・住所・地物の上位"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#AMBIGUOUS> a owl:Class ;
@@ -328,6 +246,48 @@
     rdfs:label "OLD_MINISTRY" ;
     rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> ;
     skos:definition "2001年の中央省庁再編で廃止された名称である(参照表`old-ministries.csv` に列挙。高信頼・出典あり。裁定B7でこの enum の意味をこの範囲に狭めた — それ以前に廃止された省庁は `OBSOLETE_ORGANIZATION` に分類する)"@ja .
+
+<https://jgkg.norr-tech.com/def/core#UnresolvedReference> a owl:Class ;
+    rdfs:label "UnresolvedReference" ;
+    rdfs:subClassOf [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_reason> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_key> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_text> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_reason> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_reason> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:string ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_key> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom rdf:langString ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_text> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_key> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_text> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolvedFor> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolvedFor> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom <https://jgkg.norr-tech.com/def/core#Entity> ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolvedFor> ],
+        <https://jgkg.norr-tech.com/def/core#Entity> ;
+    skos:definition "正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず KGに残して計測できるようにするためのクラス"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 <https://jgkg.norr-tech.com/def/law#Law> a owl:Class ;
     rdfs:label "Law" ;
@@ -466,11 +426,44 @@ skos:prefLabel a owl:DatatypeProperty ;
     skos:definition "RSの[16]事業を行う上での役割の文言をそのまま保存する(verbatim。 解釈しない — LangStringではなく識別子的なコード値に近い扱いとして plainなstringにする。B20裁定)。「一次支出先」「間接補助事業者」 「再委託」等の値が実データに現れ、事業内の支出額を段を区別せず単純合計 すると通過金を二重に数える(task-7-review.md指摘8)。この段を集計から どう扱うか(モデル化するか、一次支出先のみを対象にするか)はTask 9の 裁定事項であり、Task 7はデータを保存するだけにとどめる"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
 
-<https://jgkg.norr-tech.com/def/core#Work> a owl:Class ;
-    rdfs:label "Work" ;
-    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#Entity> ;
-    skos:closeMatch <http://schema.org/CreativeWork> ;
-    skos:definition "「何を」の軸。法令・政策・事業・文書・司法判断の上位"@ja ;
+<https://jgkg.norr-tech.com/def/core#Event> a owl:Class ;
+    rdfs:label "Event" ;
+    rdfs:subClassOf [ a owl:Restriction ;
+            owl:allValuesFrom xsd:date ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#occurred_on> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#occurred_on> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#occurred_on> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#involves_agent> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#involves_agent> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom <https://jgkg.norr-tech.com/def/core#Agent> ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#involves_agent> ],
+        <https://jgkg.norr-tech.com/def/core#Entity> ;
+    skos:closeMatch prov:Activity ;
+    skos:definition "「いつ」の軸。時点を持つ出来事。関係を実体化するための中心クラス。 「AがBに影響した」を直接のエッジにせず、原則としてこのクラスを介す"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
+
+<https://jgkg.norr-tech.com/def/core#MonetaryItem> a owl:Class ;
+    rdfs:label "MonetaryItem" ;
+    rdfs:subClassOf [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#amount_jpy> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#amount_jpy> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:integer ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#amount_jpy> ],
+        <https://jgkg.norr-tech.com/def/core#Entity> ;
+    skos:definition "「いくらで」の軸。予算科目・支出の上位"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 <https://jgkg.norr-tech.com/def/core#amount_jpy> a owl:DatatypeProperty ;
@@ -593,6 +586,13 @@ skos:prefLabel a owl:DatatypeProperty ;
     skos:definition "所在地の都道府県名"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
+<https://jgkg.norr-tech.com/def/core#Work> a owl:Class ;
+    rdfs:label "Work" ;
+    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#Entity> ;
+    skos:closeMatch <http://schema.org/CreativeWork> ;
+    skos:definition "「何を」の軸。法令・政策・事業・文書・司法判断の上位"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
+
 <https://jgkg.norr-tech.com/def/org#Organization> a owl:Class ;
     rdfs:label "Organization" ;
     rdfs:subClassOf [ a owl:Restriction ;
@@ -644,13 +644,6 @@ skos:prefLabel a owl:DatatypeProperty ;
     skos:definition "この記述が対応する事業年度(RSのレビューシート自体の年度)。 budgetAmountは同じ年度の当初予算(合計)を指す (budget_summaryの「予算年度」列がこの値と一致する集計行)。RSは 1シートに直近5年度分の予算履歴を束ねて持つが、Task 7はレビューシート 自体の年度分のみを1つのBudgetProjectとしてモデル化する(過去4年度分の 履歴は対象外。Task 7報告書の逸脱台帳を参照)"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
 
-<https://jgkg.norr-tech.com/def/core#Agent> a owl:Class ;
-    rdfs:label "Agent" ;
-    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#Entity> ;
-    skos:definition "「誰が」の軸。行為の主体。組織と人の上位"@ja ;
-    skos:exactMatch prov:Agent ;
-    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
-
 <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> a owl:Class ;
     rdfs:label "UnresolvedReasonEnum" ;
     owl:unionOf ( <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#AMBIGUOUS> <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#NO_CANDIDATE> <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#OBSOLETE_ORGANIZATION> <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#OLD_MINISTRY> ) ;
@@ -665,6 +658,13 @@ skos:prefLabel a owl:DatatypeProperty ;
     rdfs:label "lawId" ;
     skos:definition "e-Gov法令APIが付与する法令ID。法令の正準識別子。法令番号(lawNum)や 題名(lawTitle)は改正で変わり得るため、同一性の根拠にはしない"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/law> .
+
+<https://jgkg.norr-tech.com/def/core#Agent> a owl:Class ;
+    rdfs:label "Agent" ;
+    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#Entity> ;
+    skos:definition "「誰が」の軸。行為の主体。組織と人の上位"@ja ;
+    skos:exactMatch prov:Agent ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 <https://jgkg.norr-tech.com/def/core#Entity> a owl:Class ;
     rdfs:label "Entity" ;
@@ -691,4 +691,7 @@ skos:prefLabel a owl:DatatypeProperty ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 rdf:langString a rdfs:Datatype .
+
+[] a owl:AllDisjointClasses ;
+    owl:members ( <https://jgkg.norr-tech.com/def/core#Agent> <https://jgkg.norr-tech.com/def/core#Concept> <https://jgkg.norr-tech.com/def/core#Event> <https://jgkg.norr-tech.com/def/core#MonetaryItem> <https://jgkg.norr-tech.com/def/core#Place> <https://jgkg.norr-tech.com/def/core#UnresolvedReference> <https://jgkg.norr-tech.com/def/core#Work> ) .
 

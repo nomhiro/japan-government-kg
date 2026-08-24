@@ -127,7 +127,9 @@ class Entity(ConfiguredBaseModel):
     """
     本KGが扱うすべての事物の基底
     """
-    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'abstract': True, 'from_schema': 'https://jgkg.norr-tech.com/def/core'})
+    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'abstract': True,
+         'children_are_mutually_disjoint': True,
+         'from_schema': 'https://jgkg.norr-tech.com/def/core'})
 
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })

@@ -325,11 +325,50 @@ def test_merged_ontology_contains_both_sources():
     assert any(merged.triples((None, OWL.disjointWith, None))), "オーバーレイの公理が入っていない"
 
 
-def test_overlay_declares_all_axis_disjointness_pairs():
-    """6軸+未解決参照の21ペアすべてがdisjointとして宣言されていること。
+def _disjoint_with_pairs(g: Graph) -> set[frozenset[str]]:
+    """`owl:disjointWith` の直接ペア(pairwise形式)をすべて集める。"""
+    return {frozenset((str(s), str(o))) for s, o in g.subject_objects(OWL.disjointWith)}
 
-    手で書くと漏れる。実際に初版では Concept が5軸との排他を落としていた
-    (15ペアしか無かった)。件数で固定して再発を防ぐ。
+
+def _all_disjoint_classes_member_pairs(g: Graph) -> set[frozenset[str]]:
+    """`owl:AllDisjointClasses`/`owl:members`(n項形式)の各ノードを、
+    要素の全ペアに展開する。
+
+    LinkML 1.11.1 の `children_are_mutually_disjoint` はこの形で出す
+    (owlgen.pyに pairwise の `disjoint_with` 生成は実装されていない。実測済み)。
+    `owl:AllDisjointClasses` は OWL 2 の構文として「members の要素は
+    互いに素である」— pairwiseの `owl:disjointWith` の集合と同じ意味を持つ
+    (要素順に意味はない)。
+    """
+    from itertools import combinations
+
+    from rdflib.collection import Collection
+
+    pairs: set[frozenset[str]] = set()
+    for node in g.subjects(RDF.type, OWL.AllDisjointClasses):
+        members = g.value(node, OWL.members)
+        if members is None:
+            continue
+        items = [str(x) for x in Collection(g, members)]
+        pairs.update(frozenset((a, b)) for a, b in combinations(items, 2))
+    return pairs
+
+
+def test_disjoint_axiom_covers_exactly_the_21_axis_pairs():
+    """6軸+UnresolvedReferenceの21ペア(7C2)が、表現形式を問わず互いに素と
+    宣言されていること。
+
+    R16(Task 12): 表現の場所を `schema/overlay/core-axioms.ttl` の手書き
+    pairwise `owl:disjointWith` から `schema/core.yaml` の
+    `children_are_mutually_disjoint`(n項の `owl:AllDisjointClasses`)へ移した。
+    このテストは**どちらの表現でも**(移行中の過渡状態で両方が同時に存在しても)
+    同じ21ペアという主張を検査できるよう、両方の形式からペアを抽出して和集合を取る。
+
+    **厳密な集合の一致**(不足も余剰も無し)で検査する。「不足なし」だけでは、
+    Entityの直接の子が意図せず8つ目増えても素通りする(その場合21ペアに加えて
+    新しいクラスを含む6ペアが余剰として現れるが、supersetチェックでは検出できない)。
+    手で書くと漏れる実例が既にある(初版でConceptが5軸との排他を落とし15ペア
+    しか無かった)ため、厳密な一致で両方向の欠陥を1つのアサーションで捕まえる。
     """
     from itertools import combinations
 
@@ -344,15 +383,18 @@ def test_overlay_declares_all_axis_disjointness_pairs():
         "Agent", "Work", "Place", "Event",
         "MonetaryItem", "Concept", "UnresolvedReference",
     ]
+    expected = {frozenset((core + a, core + b)) for a, b in combinations(axes, 2)}
+    assert len(expected) == 21, f"axesの列挙自体が21ペアにならない: {len(expected)}"
 
-    missing = []
-    for a, b in combinations(axes, 2):
-        ua, ub = URIRef(core + a), URIRef(core + b)
-        # owl:disjointWith は対称なのでどちら向きでも可
-        if (ua, OWL.disjointWith, ub) not in merged and (ub, OWL.disjointWith, ua) not in merged:
-            missing.append(f"{a}-{b}")
+    actual = _disjoint_with_pairs(merged) | _all_disjoint_classes_member_pairs(merged)
 
-    assert not missing, f"disjointの宣言が無いペアがある({len(missing)}件): {missing}"
+    missing = expected - actual
+    extra = actual - expected
+    assert not missing and not extra, (
+        f"disjoint公理が21ペアと一致しない。"
+        f" 不足({len(missing)}件): {sorted(' - '.join(sorted(p)) for p in missing)}"
+        f" 余剰({len(extra)}件): {sorted(' - '.join(sorted(p)) for p in extra)}"
+    )
 
 
 # =============================================================================

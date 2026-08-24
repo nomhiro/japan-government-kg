@@ -165,6 +165,12 @@
     skos:definition "府省及び外局等、行政事業レビューシステム(RS)実データの所管府省庁欄・ 府省庁欄に現れる国の行政機関(裁定B12・B16。名称が主キーで、 府省コードは分かる場合のみ持つ)"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
+<https://jgkg.norr-tech.com/def/org#GovernmentOrgan> a owl:Class ;
+    rdfs:label "GovernmentOrgan" ;
+    rdfs:subClassOf <https://jgkg.norr-tech.com/def/org#Organization> ;
+    skos:definition "法人種別が国の機関である組織"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/org> .
+
 <https://jgkg.norr-tech.com/def/core#Concept> a owl:Class ;
     rdfs:label "Concept" ;
     rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#Entity> ;
@@ -193,6 +199,26 @@
     skos:closeMatch <http://schema.org/Place> ;
     skos:definition "「どこで」の軸。行政区域・住所・地物の上位"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
+
+<https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#AMBIGUOUS> a owl:Class ;
+    rdfs:label "AMBIGUOUS" ;
+    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> ;
+    skos:definition "候補が複数あり一意に決められなかった"@ja .
+
+<https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#NO_CANDIDATE> a owl:Class ;
+    rdfs:label "NO_CANDIDATE" ;
+    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> ;
+    skos:definition "候補が見つからず、政府機関の形(省/府/庁/院/委員会等)にも見えない。 抽出そのものを疑うべき警報"@ja .
+
+<https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#OBSOLETE_ORGANIZATION> a owl:Class ;
+    rdfs:label "OBSOLETE_ORGANIZATION" ;
+    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> ;
+    skos:definition "現存府省の参照表にも2001年再編の名称一覧にも無いが、政府機関の形 (省/府/庁/院/委員会等で終わる)をしている。2001年より前に廃止された 省庁名や、参照表にまだ収録されていない現存機関などが該当し得る (裁定B7。列挙ではなく形から導出するため、参照表の完全性次第で 現存機関がここに一時的に入り得る)"@ja .
+
+<https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#OLD_MINISTRY> a owl:Class ;
+    rdfs:label "OLD_MINISTRY" ;
+    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> ;
+    skos:definition "2001年の中央省庁再編で廃止された名称である(参照表`old-ministries.csv` に列挙。高信頼・出典あり。裁定B7でこの enum の意味をこの範囲に狭めた — それ以前に廃止された省庁は `OBSOLETE_ORGANIZATION` に分類する)"@ja .
 
 <https://jgkg.norr-tech.com/def/core#UnresolvedReference> a owl:Class ;
     rdfs:label "UnresolvedReference" ;
@@ -236,11 +262,23 @@
     skos:definition "正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず KGに残して計測できるようにするためのクラス"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
-<https://jgkg.norr-tech.com/def/org#GovernmentOrgan> a owl:Class ;
-    rdfs:label "GovernmentOrgan" ;
-    rdfs:subClassOf <https://jgkg.norr-tech.com/def/org#Organization> ;
-    skos:definition "法人種別が国の機関である組織"@ja ;
-    skos:inScheme <https://jgkg.norr-tech.com/def/org> .
+<https://jgkg.norr-tech.com/def/law#abbrev> a owl:DatatypeProperty ;
+    rdfs:label "abbrev" ;
+    rdfs:range rdf:langString ;
+    skos:definition "法令の略称。e-Gov法令APIでは0件以上の複数件があり得る"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/law> .
+
+<https://jgkg.norr-tech.com/def/law#jurisdiction> a owl:ObjectProperty ;
+    rdfs:label "jurisdiction" ;
+    rdfs:range <https://jgkg.norr-tech.com/def/org#Organization> ;
+    skos:definition "この法令を所管する府省等。法令番号からの解析(経路1)等で解決できた場合のみ設定する。 共管(複数府省の並記。例:「総理府・大蔵省令」)は府省ごとに複数のエッジを張る (設計書§7.2)。解決できない場合はこのスロットを設定せず、 core:UnresolvedReference を別に立てて unresolved_reason(OLD_MINISTRY/NO_CANDIDATE/ AMBIGUOUS)で理由を分類する(このスロット自体は未解決を表さない)"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/law> .
+
+skos:prefLabel a owl:DatatypeProperty ;
+    rdfs:label "label" ;
+    rdfs:range rdf:langString ;
+    skos:definition "人間が読む名称"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 <https://jgkg.norr-tech.com/def/core#Event> a owl:Class ;
     rdfs:label "Event" ;
@@ -267,49 +305,11 @@
     skos:definition "「いつ」の軸。時点を持つ出来事。関係を実体化するための中心クラス。 「AがBに影響した」を直接のエッジにせず、原則としてこのクラスを介す"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
-<https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#AMBIGUOUS> a owl:Class ;
-    rdfs:label "AMBIGUOUS" ;
-    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> ;
-    skos:definition "候補が複数あり一意に決められなかった"@ja .
-
-<https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#NO_CANDIDATE> a owl:Class ;
-    rdfs:label "NO_CANDIDATE" ;
-    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> ;
-    skos:definition "候補が見つからず、政府機関の形(省/府/庁/院/委員会等)にも見えない。 抽出そのものを疑うべき警報"@ja .
-
-<https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#OBSOLETE_ORGANIZATION> a owl:Class ;
-    rdfs:label "OBSOLETE_ORGANIZATION" ;
-    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> ;
-    skos:definition "現存府省の参照表にも2001年再編の名称一覧にも無いが、政府機関の形 (省/府/庁/院/委員会等で終わる)をしている。2001年より前に廃止された 省庁名や、参照表にまだ収録されていない現存機関などが該当し得る (裁定B7。列挙ではなく形から導出するため、参照表の完全性次第で 現存機関がここに一時的に入り得る)"@ja .
-
-<https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#OLD_MINISTRY> a owl:Class ;
-    rdfs:label "OLD_MINISTRY" ;
-    rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> ;
-    skos:definition "2001年の中央省庁再編で廃止された名称である(参照表`old-ministries.csv` に列挙。高信頼・出典あり。裁定B7でこの enum の意味をこの範囲に狭めた — それ以前に廃止された省庁は `OBSOLETE_ORGANIZATION` に分類する)"@ja .
-
 <https://jgkg.norr-tech.com/def/core#Work> a owl:Class ;
     rdfs:label "Work" ;
     rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#Entity> ;
     skos:closeMatch <http://schema.org/CreativeWork> ;
     skos:definition "「何を」の軸。法令・政策・事業・文書・司法判断の上位"@ja ;
-    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
-
-<https://jgkg.norr-tech.com/def/law#abbrev> a owl:DatatypeProperty ;
-    rdfs:label "abbrev" ;
-    rdfs:range rdf:langString ;
-    skos:definition "法令の略称。e-Gov法令APIでは0件以上の複数件があり得る"@ja ;
-    skos:inScheme <https://jgkg.norr-tech.com/def/law> .
-
-<https://jgkg.norr-tech.com/def/law#jurisdiction> a owl:ObjectProperty ;
-    rdfs:label "jurisdiction" ;
-    rdfs:range <https://jgkg.norr-tech.com/def/org#Organization> ;
-    skos:definition "この法令を所管する府省等。法令番号からの解析(経路1)等で解決できた場合のみ設定する。 共管(複数府省の並記。例:「総理府・大蔵省令」)は府省ごとに複数のエッジを張る (設計書§7.2)。解決できない場合はこのスロットを設定せず、 core:UnresolvedReference を別に立てて unresolved_reason(OLD_MINISTRY/NO_CANDIDATE/ AMBIGUOUS)で理由を分類する(このスロット自体は未解決を表さない)"@ja ;
-    skos:inScheme <https://jgkg.norr-tech.com/def/law> .
-
-skos:prefLabel a owl:DatatypeProperty ;
-    rdfs:label "label" ;
-    rdfs:range rdf:langString ;
-    skos:definition "人間が読む名称"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 <https://jgkg.norr-tech.com/def/core#amount_jpy> a owl:DatatypeProperty ;
@@ -524,4 +524,7 @@ skos:prefLabel a owl:DatatypeProperty ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 rdf:langString a rdfs:Datatype .
+
+[] a owl:AllDisjointClasses ;
+    owl:members ( <https://jgkg.norr-tech.com/def/core#Agent> <https://jgkg.norr-tech.com/def/core#Concept> <https://jgkg.norr-tech.com/def/core#Event> <https://jgkg.norr-tech.com/def/core#MonetaryItem> <https://jgkg.norr-tech.com/def/core#Place> <https://jgkg.norr-tech.com/def/core#UnresolvedReference> <https://jgkg.norr-tech.com/def/core#Work> ) .
 
