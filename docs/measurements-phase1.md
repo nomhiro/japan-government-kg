@@ -1438,7 +1438,11 @@ URL: https://laws.e-gov.go.jp/api/2/law_data/411AC0000000160
 
 ## 10. 必須項目10: 「内閣官房令」の実在確認(同スクリプト)
 
-実測(2026-08-25。`uv run python scripts/measure_jurisdiction_resolution.py`):
+実測(2026-08-25。`uv run python scripts/measure_jurisdiction_resolution.py`)
+【→ **最終レビュー⚠️A**: 以下の転記中の「名称単位」小計(resolved/unresolved/
+OBSOLETE_ORGANIZATION)と、未解決の名称一覧にある共管規則2件の行は、
+要修正3(裁定B41)**修正前**の実測である。修正後の実測による訂正は
+この転記の直後にある】:
 
 ```
 ==============================================================================
