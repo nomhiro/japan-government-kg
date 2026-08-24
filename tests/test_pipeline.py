@@ -1013,6 +1013,93 @@ def test_run_payees_scope_still_reclassifies_a_nonexistent_recipient(
     assert report.corporations_all == 1
 
 
+def test_run_payees_scope_carry_over_regenerates_the_payees_graph_but_carries_the_rest(
+    houjin_with_a_company, tmp_path, monkeypatch,
+):
+    """corporations_scope='payees'とcarry-overを同時に使うと、houjin-bangou/
+
+    rs-systemは(無変更なので)据え置きされるが、houjin-bangou-payeesは
+    **常に再生成される**こと(Task 10のcarry-over機構とTask 11のB30の
+    組み合わせは、Task 10のテスト群〔fixtureはcorporations_scopeを知らない
+    時期に書かれた〕には無い)。
+
+    根拠: houjin-bangou-payeesの内容はhoujin-bangou**と**rs-systemの両方に
+    依存する(支出先フィルタはrs-systemの生データから決まる)。carry-overの
+    差分検出はソース単位(houjin-bangou/egov-law/rs-system)でしか効かず、
+    「rs-systemは変わっていないがフィルタ生成ロジック自体が変わった」場合を
+    見落とす恐れがあるため、意図的に毎回再構築する(実装コメント参照)。
+
+    実データ(2026-08-25→2026-08-26の2リリース。4ソース全て無変更)で
+    この挙動を確認済み——houjin-bangou/egov-law/rs-systemの3グラフは
+    `carried_over`に載り、houjin-bangou-payeesだけが載らず、
+    `corporations_all`(18,941)は2回とも独立に計算された
+    (`docs/measurements-phase1.md` §5)。このテストはfixtureでその
+    判定を固定する回帰防止。
+
+    **egov-lawも必ず含める**: `_GRAPH_DEPENDENCIES["rs-system"]`は
+    `("houjin-bangou", "ministry-codes", "egov-law", "rs-system")`であり、
+    このリリースの`fetched_on`にegov-lawが無いと
+    `_carry_over_source_date`は「依存元ソースが実行対象に含まれていない
+    →不変と確認できない」として保守的にrs-system自身の据え置きも諦める
+    (実データのリリースA/Bは両方egov-lawを含んでいたため、この前提を
+    最初のfixture〔houjin-bangou/rs-systemのみ〕では見落としていた——
+    このテストを書く過程で見つけた)。
+
+    何があれば落ちるか: 将来、法人グラフの再構築を「安易に」carry-over
+    対象へ含める変更をすると、`payees_uri`が`carried_over`に入って
+    このテストが落ちる。
+    """
+    import tarfile
+
+    from jgkg import build, uris
+    from jgkg.config import get_settings
+
+    monkeypatch.setenv("JGKG_ARTIFACT_DIR", str(tmp_path / "artifact"))
+    get_settings.cache_clear()
+
+    _rs_snapshot_with_one_recipient()
+    lake.save(
+        "egov-law", DAY, egov_law.FILENAME,
+        _egov_law_jsonl([_minimal_law_record("323M60000100010", "令和三年厚生労働省令第一号")]),
+    )
+    fetched = {"houjin-bangou": DAY, "egov-law": DAY, "rs-system": DAY}
+    out1 = Path(get_settings().artifact_dir) / DAY.isoformat()
+    r1 = pipeline.run(
+        fetched, out1,
+        include_all_corporations=True, corporations_scope="payees",
+    )
+    assert r1.corporations_all == 1
+
+    (out1 / "tdb2").mkdir()
+    (out1 / "tdb2" / "x").write_bytes(b"x")
+    tarball = out1 / "tdb2.tar.gz"
+    with tarfile.open(tarball, "w:gz") as tf:
+        tf.add(out1 / "tdb2", arcname="tdb2")
+    m = build.build_manifest(
+        nquads=out1 / "kg.nq", tarball=tarball, jena_version="6.2.0",
+        release=DAY.isoformat(),
+        sources={k: v.isoformat() for k, v in fetched.items()},
+        graphs=r1.graphs, tdb2_expanded_bytes=4,
+    )
+    build.write_manifest(m, out1 / "manifest.json")
+
+    r2 = pipeline.run(
+        fetched, tmp_path / "out2",
+        include_all_corporations=True, corporations_scope="payees",
+        previous_release=DAY,
+    )
+
+    assert uris.graph_uri("houjin-bangou", DAY) in r2.carried_over
+    assert uris.graph_uri("egov-law", DAY) in r2.carried_over
+    assert uris.graph_uri("rs-system", DAY) in r2.carried_over
+    payees_uri = uris.graph_uri("houjin-bangou-payees", DAY)
+    assert payees_uri not in r2.carried_over, (
+        "houjin-bangou-payeesがcarry-over対象になっている"
+        "(このグラフは常に再生成すべき。実データ2026-08-25→08-26で確認した挙動)"
+    )
+    assert r2.corporations_all == 1, "2回目もフィルタ集合が独立に再計算されているはず"
+
+
 def test_run_all_scope_is_the_default_and_unaffected_by_the_payees_filter(
     houjin_with_a_company, tmp_path,
 ):
