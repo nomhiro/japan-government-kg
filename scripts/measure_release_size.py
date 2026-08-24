@@ -25,7 +25,11 @@
         --baseline-tdb2 data/artifact/2026-08-23/tdb2
 """
 import argparse
+import contextlib
 import json
+import tarfile
+import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 
 from jgkg import build
@@ -49,6 +53,41 @@ def _dir_size(path: Path) -> tuple[int, list[tuple[str, int]]]:
     return total, entries
 
 
+@contextlib.contextmanager
+def _resolved_tdb2_dir(tdb2_dir: Path) -> Iterator[Path | None]:
+    """展開済みの`tdb2/`があればそれを、無ければ隣の`tdb2.tar.gz`から
+
+    一時ディレクトリに展開して使う。どちらも無ければ`None`。
+
+    **Task 11修正ラウンド(B30。build.shのTDB2構築をコンテナのネイティブ層に
+    変更した副作用)への対応**: 新しいbuild.shは成果物ディレクトリに展開済みの
+    `tdb2/`を残さない(バインドマウント上には`tdb2.tar.gz`しか置かない —
+    scripts/build.sh参照)。このスクリプトは旧形式(展開済み`tdb2/`が
+    成果物ディレクトリに残っている)を前提にしていたため、新形式の
+    リリースに対しては`tdb2.tar.gz`から一時的に展開してから測る
+    (測定後に一時ディレクトリは自動で消える。成果物側は変更しない)。
+    """
+    if tdb2_dir.is_dir():
+        yield tdb2_dir
+        return
+    tarball = tdb2_dir.parent / "tdb2.tar.gz"
+    if not tarball.exists():
+        yield None
+        return
+    with tempfile.TemporaryDirectory(prefix="jgkg-measure-release-size-") as tmp:
+        tmp_path = Path(tmp)
+        with tarfile.open(tarball, "r:gz") as tf:
+            tf.extractall(tmp_path, filter="data")
+        extracted = tmp_path / "tdb2"
+        if not extracted.is_dir():
+            raise ValueError(
+                f"{tarball} を展開しても tdb2/ が無い。serve.pyが検査する"
+                " DB_DIRNAME='tdb2' と食い違うtarballの疑いがある"
+            )
+        print(f"({tarball} を一時ディレクトリに展開して測定した)")
+        yield extracted
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("artifact_dir", type=Path, help="例: data/artifact/2026-08-24")
@@ -56,17 +95,16 @@ def main() -> None:
         "--baseline-tdb2",
         type=Path,
         default=Path("data/artifact/2026-08-23/tdb2"),
-        help="固定オーバーヘッドを測るための、ほぼ空のTDB2ディレクトリ",
+        help="固定オーバーヘッドを測るための、ほぼ空のTDB2ディレクトリ"
+        "(展開済みディレクトリでもtdb2.tar.gzだけでもよい)",
     )
     args = parser.parse_args()
 
     art = args.artifact_dir
     kg_nq = art / "kg.nq"
-    tdb2 = art / "tdb2"
     tarball = art / "tdb2.tar.gz"
-    for p in (kg_nq, tdb2):
-        if not p.exists():
-            raise FileNotFoundError(f"成果物が無い: {p}。先に scripts/build.sh を実行する")
+    if not kg_nq.exists():
+        raise FileNotFoundError(f"成果物が無い: {kg_nq}。先に scripts/build.sh を実行する")
 
     print("=" * 78)
     print(f"成果物サイズの実測: {art}")
@@ -78,6 +116,7 @@ def main() -> None:
         print(f"release          : {m['release']}")
         print(f"jena_version     : {m['jena_version']}")
         print(f"manifest triple_count: {m['triple_count']}")
+        print(f"manifest tdb2_expanded_bytes: {m.get('tdb2_expanded_bytes')}")
         print(f"sources          : {m['sources']}")
 
     nq_bytes = kg_nq.stat().st_size
@@ -88,57 +127,64 @@ def main() -> None:
           f"({nq_bytes / MIB:.1f} MiB)")
     print(f"kg.nq 1行あたり  : {nq_bytes / nq_lines:.1f} バイト" if nq_lines else "")
 
-    tdb2_bytes, entries = _dir_size(tdb2)
-    print()
-    print(f"TDB2 実サイズ    : {tdb2_bytes:,} バイト "
-          f"({tdb2_bytes / MIB:.1f} MiB / {tdb2_bytes / GIB:.3f} GiB)")
-    print("TDB2 ファイル内訳(降順・全件):")
-    for name, size in entries:
-        print(f"  {size:>14,}  {size / MIB:>9.2f} MiB  {name}")
-
-    if tarball.exists():
-        tar_bytes = tarball.stat().st_size
+    with _resolved_tdb2_dir(art / "tdb2") as tdb2:
+        if tdb2 is None:
+            raise FileNotFoundError(
+                f"成果物が無い: {art / 'tdb2'} も {tarball} も無い。"
+                " 先に scripts/build.sh を実行する"
+            )
+        tdb2_bytes, entries = _dir_size(tdb2)
         print()
-        print(f"tdb2.tar.gz      : {tar_bytes:,} バイト ({tar_bytes / MIB:.1f} MiB)"
-              f" / 圧縮率 {tar_bytes / tdb2_bytes:.3f}")
+        print(f"TDB2 実サイズ    : {tdb2_bytes:,} バイト "
+              f"({tdb2_bytes / MIB:.1f} MiB / {tdb2_bytes / GIB:.3f} GiB)")
+        print("TDB2 ファイル内訳(降順・全件):")
+        for name, size in entries:
+            print(f"  {size:>14,}  {size / MIB:>9.2f} MiB  {name}")
 
-    print()
-    print("--- 1トリプルあたりバイト数 ---")
-    if args.baseline_tdb2.exists():
-        base_bytes, _ = _dir_size(args.baseline_tdb2)
-        base_kg = args.baseline_tdb2.parent / "kg.nq"
-        base_lines = build._count_triples(base_kg) if base_kg.exists() else 0
-        print(f"固定オーバーヘッドの実測元: {args.baseline_tdb2}"
-              f"({base_lines:,} 行)")
-        print(f"  その実サイズ           : {base_bytes:,} バイト "
-              f"({base_bytes / MIB:.1f} MiB)")
-        delta_bytes = tdb2_bytes - base_bytes
-        delta_lines = nq_lines - base_lines
-        print(f"  差分(このリリース − 基準): {delta_bytes:,} バイト / "
-              f"{delta_lines:,} 行")
-        if delta_lines > 0:
-            print(f"  **1トリプルあたり {delta_bytes / delta_lines:.2f} バイト**")
-        # 引き算をしない素の値も出す(どちらの数字を引用しているかを
-        # 読み手が取り違えないように、両方を並べて書く)
-        print(f"  (参考)引き算なしの単純平均: {tdb2_bytes / nq_lines:.2f} バイト/行")
-    else:
-        print(f"基準のTDB2が無い({args.baseline_tdb2})ので引き算はしない。")
-        print(f"  引き算なしの単純平均: {tdb2_bytes / nq_lines:.2f} バイト/行")
+        if tarball.exists():
+            tar_bytes = tarball.stat().st_size
+            print()
+            print(f"tdb2.tar.gz      : {tar_bytes:,} バイト ({tar_bytes / MIB:.1f} MiB)"
+                  f" / 圧縮率 {tar_bytes / tdb2_bytes:.3f}")
 
-    print()
-    print("--- 8GiB(Azure Container Apps 一時ディスク上限。§6.3)判定 ---")
-    print(f"TDB2 実サイズ / 8GiB = {tdb2_bytes / ACA_EPHEMERAL_LIMIT:.1%}")
-    verdict = "収まる" if tdb2_bytes <= ACA_EPHEMERAL_LIMIT else "**収まらない**"
-    print(f"判定: {verdict}(余裕 {(ACA_EPHEMERAL_LIMIT - tdb2_bytes) / GIB:+.3f} GiB)")
-    # **展開に必要な一時容量も見る。** ACAの一時ディスクには tar.gz と展開後の
-    # TDB2 が同時に載る瞬間がある(serve.py は tar.gz を展開してから
-    # ディレクトリを差し替える)ので、上限判定は「両方の合計」で見ないと甘くなる
-    if tarball.exists():
-        peak = tdb2_bytes + tarball.stat().st_size
-        print(f"展開中のピーク(tar.gz + 展開後TDB2) = {peak:,} バイト "
-              f"({peak / GIB:.3f} GiB) → 8GiB の {peak / ACA_EPHEMERAL_LIMIT:.1%}")
-        print("判定(ピーク基準): "
-              + ("収まる" if peak <= ACA_EPHEMERAL_LIMIT else "**収まらない**"))
+        print()
+        print("--- 1トリプルあたりバイト数 ---")
+        with _resolved_tdb2_dir(args.baseline_tdb2) as baseline:
+            if baseline is not None:
+                base_bytes, _ = _dir_size(baseline)
+                base_kg = args.baseline_tdb2.parent / "kg.nq"
+                base_lines = build._count_triples(base_kg) if base_kg.exists() else 0
+                print(f"固定オーバーヘッドの実測元: {args.baseline_tdb2}"
+                      f"({base_lines:,} 行)")
+                print(f"  その実サイズ           : {base_bytes:,} バイト "
+                      f"({base_bytes / MIB:.1f} MiB)")
+                delta_bytes = tdb2_bytes - base_bytes
+                delta_lines = nq_lines - base_lines
+                print(f"  差分(このリリース − 基準): {delta_bytes:,} バイト / "
+                      f"{delta_lines:,} 行")
+                if delta_lines > 0:
+                    print(f"  **1トリプルあたり {delta_bytes / delta_lines:.2f} バイト**")
+                # 引き算をしない素の値も出す(どちらの数字を引用しているかを
+                # 読み手が取り違えないように、両方を並べて書く)
+                print(f"  (参考)引き算なしの単純平均: {tdb2_bytes / nq_lines:.2f} バイト/行")
+            else:
+                print(f"基準のTDB2が無い({args.baseline_tdb2})ので引き算はしない。")
+                print(f"  引き算なしの単純平均: {tdb2_bytes / nq_lines:.2f} バイト/行")
+
+        print()
+        print("--- 8GiB(Azure Container Apps 一時ディスク上限。§6.3)判定 ---")
+        print(f"TDB2 実サイズ / 8GiB = {tdb2_bytes / ACA_EPHEMERAL_LIMIT:.1%}")
+        verdict = "収まる" if tdb2_bytes <= ACA_EPHEMERAL_LIMIT else "**収まらない**"
+        print(f"判定: {verdict}(余裕 {(ACA_EPHEMERAL_LIMIT - tdb2_bytes) / GIB:+.3f} GiB)")
+        # **展開に必要な一時容量も見る。** ACAの一時ディスクには tar.gz と展開後の
+        # TDB2 が同時に載る瞬間がある(serve.py は tar.gz を展開してから
+        # ディレクトリを差し替える)ので、上限判定は「両方の合計」で見ないと甘くなる
+        if tarball.exists():
+            peak = tdb2_bytes + tarball.stat().st_size
+            print(f"展開中のピーク(tar.gz + 展開後TDB2) = {peak:,} バイト "
+                  f"({peak / GIB:.3f} GiB) → 8GiB の {peak / ACA_EPHEMERAL_LIMIT:.1%}")
+            print("判定(ピーク基準): "
+                  + ("収まる" if peak <= ACA_EPHEMERAL_LIMIT else "**収まらない**"))
 
 
 if __name__ == "__main__":
