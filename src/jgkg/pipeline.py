@@ -192,6 +192,15 @@ class PipelineReport(BaseModel):
     law_records: int | None = None
     law_jurisdiction_resolved: int | None = None    # JurisdictionResult.resolved の延べ数
     law_jurisdiction_unresolved: int | None = None  # JurisdictionResult.unresolved の延べ数
+    # 最終レビュー要修正5(完了条件「未解決の件数がpipeline-reportとCQ9の
+    # 両方から見える」の未達への対応): 理由別(law_mod.UNRESOLVED_REASONSの
+    # 4値。OLD_MINISTRY/OBSOLETE_ORGANIZATION/NO_CANDIDATE/AMBIGUOUS)の内訳。
+    # **0件の理由もキーとして持つ**(4キー全部を出す) — 例えば
+    # NO_CANDIDATE(「抽出そのものを疑うべき警報」)が3→503に増えても、
+    # law_jurisdiction_unresolvedの一括値だけでは変化がリリース記録に
+    # 現れない(実測。修正前の欠陥そのもの)。キー自体は`law_mod`の
+    # `Literal`型から導出する(手書きの列挙をここに複製しない)。
+    law_jurisdiction_unresolved_by_reason: dict[str, int] | None = None
     # 府省令・規則の形をしているのに名称を抽出できなかった件数
     # (law.EXTRACTION_FAILED。件数を「経路1の欠陥」と読むと過大評価になる
     # ことに注意 — 皇室令など非府省令の法形式もここに拾われる。task-4-report.md
@@ -1063,6 +1072,11 @@ def run(
     jurisdictions: dict[str, law_mod.JurisdictionResult] = {}
     law_jurisdiction_resolved = 0
     law_jurisdiction_unresolved = 0
+    # 4キー全部を0で初期化する(law_mod.UNRESOLVED_REASONSから導出。
+    # 0件のまま出すことに意味がある — 上のフィールドのコメント参照)
+    law_jurisdiction_unresolved_by_reason: dict[str, int] = {
+        reason: 0 for reason in law_mod.UNRESOLVED_REASONS
+    }
     law_jurisdiction_extraction_failed = 0
     egov_date: datetime.date | None = None
     egov_snapshot = None
@@ -1100,6 +1114,8 @@ def run(
             jurisdictions[record.law_id] = jr
             law_jurisdiction_resolved += len(jr.resolved)
             law_jurisdiction_unresolved += len(jr.unresolved)
+            for ur in jr.unresolved:
+                law_jurisdiction_unresolved_by_reason[ur.reason] += 1
 
     # =========================================================================
     # Ruling B30(Task 11修正ラウンド): rs-systemのファイル位置・sha256は
@@ -1600,6 +1616,9 @@ def run(
         law_records=len(law_records) if egov_law_ran else None,
         law_jurisdiction_resolved=law_jurisdiction_resolved if egov_law_ran else None,
         law_jurisdiction_unresolved=law_jurisdiction_unresolved if egov_law_ran else None,
+        law_jurisdiction_unresolved_by_reason=(
+            law_jurisdiction_unresolved_by_reason if egov_law_ran else None
+        ),
         law_jurisdiction_extraction_failed=(
             law_jurisdiction_extraction_failed if egov_law_ran else None
         ),

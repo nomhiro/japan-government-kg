@@ -636,6 +636,10 @@ def test_run_wires_egov_law_into_a_named_graph_with_resolved_jurisdiction(
     assert report.law_jurisdiction_resolved == 1
     assert report.law_jurisdiction_unresolved == 0
     assert report.law_jurisdiction_extraction_failed == 0
+    # 最終レビュー要修正5: 全解決でも4キー全部が(0埋めで)出ること
+    assert report.law_jurisdiction_unresolved_by_reason == {
+        "OLD_MINISTRY": 0, "OBSOLETE_ORGANIZATION": 0, "NO_CANDIDATE": 0, "AMBIGUOUS": 0,
+    }
     assert report.sources["egov-law"] == DAY.isoformat()
 
 
@@ -662,6 +666,43 @@ def test_run_wires_egov_law_counts_unresolved_and_extraction_failed(
     assert report.law_jurisdiction_resolved == 0
     assert report.law_jurisdiction_unresolved == 1  # ダミー機関 -> NO_CANDIDATE
     assert report.law_jurisdiction_extraction_failed == 0
+    # 最終レビュー要修正5: NO_CANDIDATE1件が理由別の欄にも載ること
+    assert report.law_jurisdiction_unresolved_by_reason == {
+        "OLD_MINISTRY": 0, "OBSOLETE_ORGANIZATION": 0, "NO_CANDIDATE": 1, "AMBIGUOUS": 0,
+    }
+
+
+def test_run_wires_egov_law_tallies_unresolved_by_reason_separately(
+    houjin_with_a_company, tmp_path
+):
+    """理由が違う複数の未解決が、それぞれ正しいキーに数えられること
+
+    (最終レビュー要修正5)。
+
+    何があれば落ちるか: 理由別の内訳が実際には`reason`で分岐せず
+    (例: 常に同じキーに加算する、または`law_jurisdiction_unresolved`の
+    総数をどこか1つのキーに丸めるような実装に退化すると)、このテストの
+    ようにOLD_MINISTRYとNO_CANDIDATEが両方1件ずつ発生する入力で、
+    どちらかが0のまま(または合計2が1つのキーに載る)になって落ちる。
+    """
+    lake.save(
+        "egov-law", DAY, egov_law.FILENAME,
+        _egov_law_jsonl([
+            # 大蔵省はdata/reference/old-ministries.csvに実在する旧省庁名
+            # (OLD_MINISTRY)
+            _minimal_law_record("999RS0000000097", "昭和二十六年大蔵省令第百号"),
+            # 参照表(houjin_with_a_companyには厚生労働省しか無い)に無い名称
+            # (NO_CANDIDATE)
+            _minimal_law_record("999RS0000000099", "ダミー機関規則第一号"),
+        ]),
+    )
+    report = pipeline.run({"houjin-bangou": DAY, "egov-law": DAY}, tmp_path / "out")
+
+    assert report.law_jurisdiction_resolved == 0
+    assert report.law_jurisdiction_unresolved == 2
+    assert report.law_jurisdiction_unresolved_by_reason == {
+        "OLD_MINISTRY": 1, "OBSOLETE_ORGANIZATION": 0, "NO_CANDIDATE": 1, "AMBIGUOUS": 0,
+    }
 
 
 def test_run_wires_rs_system_and_reports_budget_and_ratio_observation(
@@ -772,6 +813,7 @@ def test_run_reports_law_and_budget_fields_as_none_when_the_source_is_not_includ
     assert report.law_records is None
     assert report.law_jurisdiction_resolved is None
     assert report.law_jurisdiction_unresolved is None
+    assert report.law_jurisdiction_unresolved_by_reason is None
     assert report.law_jurisdiction_extraction_failed is None
     assert report.budget_projects is None
     assert report.budget_expenditures is None

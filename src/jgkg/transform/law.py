@@ -12,7 +12,7 @@ import json
 import re
 from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel
 
@@ -276,7 +276,22 @@ def to_ministry_reference(ministries: Iterable[Ministry]) -> dict[str, list[Mini
 
 class UnresolvedJurisdiction(BaseModel):
     name: str  # 法令番号から抽出した名称(そのまま core:unresolved_key になる)
-    reason: str  # OLD_MINISTRY / OBSOLETE_ORGANIZATION / NO_CANDIDATE / AMBIGUOUS
+    # `Literal`にする理由(最終レビュー要修正5): `PipelineReport`が理由別の
+    # 内訳(law_jurisdiction_unresolved_by_reason)を持つには、4つの理由文字列
+    # を**どこか1箇所**で正として持つ必要がある。この型注釈をその1箇所にし、
+    # `UNRESOLVED_REASONS`(下記)で導出する——別の場所に同じ4値を書き写すと、
+    # 「一覧を手で書かない。ソースから導出する」という今ラウンドの制約
+    # (要修正2/6と同じ型の欠陥)をこの理由集合自身で再生産することになる。
+    reason: Literal["OLD_MINISTRY", "OBSOLETE_ORGANIZATION", "NO_CANDIDATE", "AMBIGUOUS"]
+
+
+# `UnresolvedJurisdiction.reason`のLiteral型から導出する(上のコメント参照)。
+# 呼び出し側(pipeline.py)はこれを使って理由別の内訳を初期化し、実際には
+# 0件の理由も欄として持つ(4キー全部を出す。0→N件に増えたことが
+# リリース記録から見えなくなる退化を避けるため)。
+UNRESOLVED_REASONS: tuple[str, ...] = get_args(
+    UnresolvedJurisdiction.model_fields["reason"].annotation
+)
 
 
 class JurisdictionResult(BaseModel):
@@ -369,6 +384,7 @@ def derive_jurisdiction(
 
 __all__ = [
     "EXTRACTION_FAILED",
+    "UNRESOLVED_REASONS",
     "ExtractionFailed",
     "JurisdictionResult",
     "LawRecord",
