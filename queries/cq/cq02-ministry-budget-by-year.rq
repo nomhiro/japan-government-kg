@@ -6,6 +6,16 @@
 # 合計して作った値ではないため、事業内の役割(一次/間接補助等)による
 # 二重計上(B20)の影響を受けない — このCQに役割フィルタは不要
 # (schema/competency-questions.md「B20」節に根拠を記録)。
+#
+# **範囲の明文化(修正ラウンド2 裁定B34)**: budgetAmount(RSの「当初予算
+# (合計)」)は**一般会計＋特別会計の合計**である(RS budget_summaryの
+# 会計区分別の明細行を合計した値と一致することを実測確認済み。
+# schema/competency-questions.md「B34」節参照)。厚生労働省のFY2025の
+# 一般会計予算だけを期待して比べると、この合計額はそれより大きく出る。
+# **budget:ministryはRS列5=政策所管府省庁から作る**(列6=府省庁ではない。
+# `rs_columns.py`の`budget_summary`/`project_summary`両スペックの
+# `col["ministry_name"]`が列5を指す)。府省庁(列6)で数えると事業数・
+# 総額がわずかに変わる(schema/competency-questions.md参照)。
 PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
 
 SELECT ?y (SUM(?a) AS ?totalBudget) (COUNT(?p) AS ?projectCount) WHERE {
