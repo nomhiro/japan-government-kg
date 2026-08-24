@@ -70,6 +70,13 @@ ALLOWED_EXTERNAL_HOSTS: frozenset[str] = frozenset({
     # **この検査はコメント内のURLも拾う。** コメントのURLはコードに写されるため、
     # 区別しないのが正しい(この行を書いたときに実際に検出された)。
     "localhost:8788",
+    # ローカルのFusekiエンドポイント(scripts/run_cq.py。CQを実機で流す)
+    "localhost:3030",
+    # 旧省庁名の出典確認に使う総務省サイト(scripts/verify_old_ministries_source.py)。
+    # 2026-08-24 時点で 403/404 のため引用できず、代替の機械照合を採った
+    # (Task 11 発見3。設置法の存否による照合)。URLは検証スクリプトの記録として残す
+    "www.soumu.go.jp",
+    "www.gyoukaku.go.jp",  # 行政改革推進本部(同スクリプトの代替候補URL)
     # 生成物のコメントに現れる
     "pydantic-docs.helpmanual.io",
     # テスト専用のダミー(RFC 2606 / RFC 6761 の予約名)

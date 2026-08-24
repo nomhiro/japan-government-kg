@@ -830,3 +830,93 @@ def test_run_reclassifies_a_nonexistent_recipient_houjin_bangou_and_drops_the_re
     assert {str(o) for o in ds.objects(exp_uri, payee_label_pred)} == {
         "実在しない架空商事株式会社"
     }
+
+
+# =============================================================================
+# Task 11 / B28: CLI(`python -m jgkg.pipeline`)。build.sh の引数解釈がシェルの
+# 外(=テストできる場所)にあることを固定する
+# =============================================================================
+
+
+def test_cli_accepts_multiple_sources_and_writes_report(seeded_lake, tmp_path):
+    """`--source` を複数受け、レポートを out-dir に書くこと。
+
+    **これが B28 の本題。** 以前の build.sh は位置引数1つ(取得日)しか
+    受けず、その日付を houjin-bangou の取得日として決め打ちしていたため、
+    egov-law / rs-system を含むリリースを実行系から作れなかった。
+    """
+    out = tmp_path / "out"
+    laws = Path("tests/fixtures/egov_laws_page1.json").read_text(encoding="utf-8")
+    import json as _json
+    lines = [
+        _json.dumps(law, ensure_ascii=False, sort_keys=True)
+        for law in _json.loads(laws)["laws"]
+    ]
+    lake.save(
+        "egov-law", DAY, egov_law.FILENAME,
+        ("\n".join(lines) + "\n").encode("utf-8"),
+    )
+
+    assert pipeline.main([
+        "--source", f"houjin-bangou={DAY.isoformat()}",
+        "--source", f"egov-law={DAY.isoformat()}",
+        "--out-dir", str(out),
+    ]) == 0
+
+    report = _json.loads((out / pipeline.REPORT_NAME).read_text(encoding="utf-8"))
+    assert report["release"] == DAY.isoformat()
+    assert set(report["sources"]) == {"houjin-bangou", "ministry-codes", "egov-law"}
+    assert report["law_records"] == 3, "egov-lawが実際に結線されている"
+    assert (out / "kg.nq").exists()
+
+
+def test_cli_rejects_unknown_source_id(tmp_path):
+    """未登録のソースIDを黙って無視しないこと。
+
+    何があれば落ちるか: `--source houjin-banogu=...`(タイプミス)が
+    「そのソースを含めないリリース」として静かに成功する実装に戻したとき。
+    """
+    with pytest.raises(SystemExit) as exc:
+        pipeline.main([
+            "--source", "houjin-banogu=2026-08-01", "--out-dir", str(tmp_path / "o"),
+        ])
+    assert exc.value.code == 2
+
+
+def test_cli_rejects_malformed_source_and_missing_source(tmp_path):
+    """`=` の無い --source と、--source が1つも無い呼び出しを弾くこと。"""
+    with pytest.raises(SystemExit) as exc:
+        pipeline.main(["--source", "houjin-bangou", "--out-dir", str(tmp_path / "o")])
+    assert exc.value.code == 2
+
+    with pytest.raises(SystemExit) as exc:
+        pipeline.main(["--out-dir", str(tmp_path / "o")])
+    assert exc.value.code == 2
+
+
+def test_cli_rejects_same_source_with_two_dates(tmp_path):
+    """同じソースに違う日付が2回渡されたら弾くこと(後勝ちで黙って通さない)。"""
+    with pytest.raises(SystemExit) as exc:
+        pipeline.main([
+            "--source", "houjin-bangou=2026-08-01",
+            "--source", "houjin-bangou=2026-08-02",
+            "--out-dir", str(tmp_path / "o"),
+        ])
+    assert exc.value.code == 2
+
+
+def test_cli_writes_report_before_the_gate_raises(lake_with_duplicate_label, tmp_path):
+    """隔離で落ちる実行でも、例外の**前に**レポートが書かれていること。
+
+    何があれば落ちるか: レポート書き出しを enforce_release_gate の後ろに
+    移したとき(何が落ちたのかを人が読めなくなる。旧 build.sh が
+    コメントで守っていた順序をCLIの中に移したので、ここで固定する)。
+    """
+    out = tmp_path / "out"
+    with pytest.raises(pipeline.QuarantineNotEmptyError):
+        pipeline.main([
+            "--source", f"houjin-bangou={DAY.isoformat()}", "--out-dir", str(out),
+        ])
+    import json as _json
+    report = _json.loads((out / pipeline.REPORT_NAME).read_text(encoding="utf-8"))
+    assert report["graphs_quarantined"] >= 1

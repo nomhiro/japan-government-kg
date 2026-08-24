@@ -220,3 +220,54 @@ def test_sleeps_between_pages(monkeypatch):
     # 2ページ(offset 0 → 3)なので、ページ間の待機は1回だけ
     assert sleeps == [egov_law.PAGE_INTERVAL_SECONDS]
     assert egov_law.PAGE_INTERVAL_SECONDS >= 0.5
+
+
+def test_last_page_omits_next_offset_key_entirely(monkeypatch):
+    """最終ページが `next_offset` キー自体を持たない実データの形で完走すること。
+
+    Task 11(2026-08-24)の全件実取得で判明した実測: e-Gov法令API v2 は
+    最終ページで `next_offset` を **null で返すのではなく、キーごと落とす**。
+        offset=9400 → keys=['count','laws','next_offset','total_count']
+        offset=9500 → keys=['count','laws','total_count']      ← 欠落
+    Task 3 のfixtureは最終ページを `next_offset: None` で作っていたため
+    (JSONのnullとして明示的に存在する形)、`page["next_offset"]` という
+    素朴な添字アクセスが通ってしまい、実データで初めて KeyError で落ちた。
+
+    何があれば落ちるか: `page.get("next_offset")` を `page["next_offset"]` に
+    戻したとき(=全件取得が最後のページで必ず落ちる状態に戻る)。
+    """
+    monkeypatch.setattr(egov_law, "PAGE_INTERVAL_SECONDS", 0)
+
+    pages = {
+        0: {"total_count": 5, "count": 3, "next_offset": 3,
+            "laws": [FIXTURE_LAW_1, FIXTURE_LAW_2, FIXTURE_LAW_3]},
+        # **next_offset を書かない。** これが実データの最終ページの形
+        3: {"total_count": 5, "count": 2,
+            "laws": [FIXTURE_LAW_4, FIXTURE_LAW_5]},
+    }
+    result = egov_law.fetch(DAY, client=client_returning(pages))
+
+    assert result.skipped is False
+    saved = lake.path_of("egov-law", DAY, egov_law.FILENAME).read_text(encoding="utf-8")
+    assert len(saved.splitlines()) == 5
+
+
+def test_page_count_mismatch_is_rejected(monkeypatch):
+    """ページが宣言した `count` と実際の laws の件数がずれたら例外になること。
+
+    何があれば落ちるか: ページ単位の欠落(配列だけが切れた応答)を
+    「取れた分だけ保存」で通す実装に戻したとき。全体の総数チェック
+    (total_count)は通る組み合わせが作れるため、ページ単位でも見る。
+    """
+    monkeypatch.setattr(egov_law, "PAGE_INTERVAL_SECONDS", 0)
+
+    pages = {
+        # count は3だが laws は2件しか入っていない
+        0: {"total_count": 2, "count": 3, "next_offset": None,
+            "laws": [FIXTURE_LAW_1, FIXTURE_LAW_2]},
+    }
+    with pytest.raises(egov_law.IncompleteSnapshotError, match="宣言件数"):
+        egov_law.fetch(DAY, client=client_returning(pages))
+
+    # 失敗した取得はスナップショットを残さない
+    assert lake.list_snapshots("egov-law") == []

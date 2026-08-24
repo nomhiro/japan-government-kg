@@ -1,7 +1,23 @@
 """パイプラインの結線。取得済みスナップショットからN-Quadsまでを1本にする。
 
 各段の件数を PipelineReport として返す。観測性は設計書§11.1の要件。
+
+CLI(Task 11 / B28。`scripts/build.sh` から呼ぶ唯一の入口):
+
+    uv run python -m jgkg.pipeline \
+        --source houjin-bangou=2026-08-23 --source egov-law=2026-08-24 \
+        --source rs-system=2026-08-23 \
+        --out-dir data/artifact/2026-08-24 \
+        --previous-release 2026-08-23 --include-all-corporations
+
+**`python -c` にシェル変数を埋め込む形をやめてここに置いた理由**: 以前の
+build.sh は `fetched_on` を `{'houjin-bangou': date.fromisoformat('$1')}` と
+Pythonソースへ文字列展開しており、(a) houjin-bangou 以外のソースを渡す
+方法が無く、(b) 引数の検査がシェルの外に無かった。ソースごとに取得日が
+違うことは `run()` の第一の設計前提(§6.4の更新頻度表)なので、その前提を
+そのまま渡せるCLIをコードとして持ち、テストで固定する。
 """
+import argparse
 import datetime
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
@@ -1401,3 +1417,112 @@ def run(
             budget_ratio_no_denominator if rs_resolution_ran else None
         ),
     )
+
+
+# =============================================================================
+# Task 11 / B28: CLI。build.sh から呼ぶ唯一の入口(モジュールdocstring参照)
+# =============================================================================
+
+REPORT_NAME = "pipeline-report.json"
+
+
+def _parse_source(spec: str) -> tuple[str, datetime.date]:
+    """`--source houjin-bangou=2026-08-23` の右辺をパースする。
+
+    **未登録のソースIDを黙って受けない**(`sources.get_source`が弾く)。
+    タイプミスした`--source houjin-banogu=...`が「そのソースを含めない
+    リリース」として静かに成功するのが、このCLIで最も踏みやすい欠陥である。
+    """
+    source_id, sep, date_str = spec.partition("=")
+    if not sep or not source_id or not date_str:
+        raise argparse.ArgumentTypeError(
+            f"--source の形式が違う: {spec!r}。`<ソースID>=<YYYY-MM-DD>` と書く"
+            "(例: --source houjin-bangou=2026-08-23)"
+        )
+    try:
+        sources.get_source(source_id)
+    except KeyError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+    try:
+        date = datetime.date.fromisoformat(date_str)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"--source の日付が ISO 形式でない: {spec!r}({exc})"
+        ) from exc
+    return source_id, date
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="取得済みスナップショットから kg.nq を1本作り、リリースゲートをかける"
+    )
+    parser.add_argument(
+        "--source",
+        action="append",
+        type=_parse_source,
+        metavar="ID=YYYY-MM-DD",
+        default=None,
+        help="ソースIDとその取得日。**複数回指定できる**"
+        "(例: --source houjin-bangou=2026-08-23 --source egov-law=2026-08-24)。"
+        " リポジトリにコミットした参照表(ministry-codes)は渡さない"
+        " — sources.py の recorded_on が使われる",
+    )
+    parser.add_argument(
+        "--out-dir", type=Path, required=True, help="成果物の出力先(例: data/artifact/2026-08-24)"
+    )
+    parser.add_argument(
+        "--previous-release",
+        type=datetime.date.fromisoformat,
+        default=None,
+        help="前リリースの日付。渡すと差分検出(carry-over)が働き、"
+        "前リリースから不変なグラフは再生成せず引き継ぐ",
+    )
+    parser.add_argument(
+        "--include-all-corporations",
+        action="store_true",
+        help="全法人(約581万件)を houjin-bangou-all グラフとして含める。"
+        "**rs-system を含むリリースでは必須**(裁定B17懸念2/B18)",
+    )
+    parser.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help="隔離が起きてもリリースを続ける。**既定は止まる側**(設計書§6.3)",
+    )
+    args = parser.parse_args(argv)
+
+    if not args.source:
+        parser.error(
+            "--source を1つ以上渡す(例: --source houjin-bangou=2026-08-23)。"
+            " 取得して来るソースの日付は呼び出し側が決める"
+        )
+    fetched_on: dict[str, datetime.date] = {}
+    for source_id, date in args.source:
+        if source_id in fetched_on and fetched_on[source_id] != date:
+            parser.error(
+                f"同じソース {source_id!r} に違う日付が2回渡された"
+                f"({fetched_on[source_id].isoformat()} と {date.isoformat()})。"
+                " 1リリースにつき1ソース1日付である"
+            )
+        fetched_on[source_id] = date
+
+    report = run(
+        fetched_on,
+        args.out_dir,
+        include_all_corporations=args.include_all_corporations,
+        previous_release=args.previous_release,
+    )
+
+    # **レポートはゲートの前に書く。** 隔離で落ちたときに「何が落ちたか」を
+    # 人が読めるようにするため(旧build.shが守っていた順序をここに移した)
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+    (args.out_dir / REPORT_NAME).write_text(
+        report.model_dump_json(indent=2), encoding="utf-8"
+    )
+    print(report.model_dump_json(indent=2))
+
+    enforce_release_gate(report, allow_partial=args.allow_partial)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

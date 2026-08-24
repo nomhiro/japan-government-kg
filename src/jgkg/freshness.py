@@ -8,8 +8,20 @@
 失敗したことはここでは分からない(コネクタ・呼び出し側の責務)。ここが
 答えるのは「最後に成功した取得はいつで、それは想定周期を超えているか」
 だけである。
+
+CLI(Task 11 / B28。**呼び出し元を持たない記録を作らない**——I3(照合しない
+manifest)・F-5(ゲートを通らない出典グラフ)と同型の欠陥を避けるため、
+`report()`には実際の消費者が要る。`scripts/build.sh` がリリースを作る前に
+これを呼び、陳腐化しているソースを必ず標準出力に出す):
+
+    uv run python -m jgkg.freshness                      # 今日基準で人が読む形
+    uv run python -m jgkg.freshness --today 2026-08-24   # 基準日を明示する
+    uv run python -m jgkg.freshness --json               # 機械可読
+    uv run python -m jgkg.freshness --fail-on-stale      # 1件でもあれば exit 1
 """
+import argparse
 import datetime
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -96,3 +108,89 @@ def report(
                 )
             )
     return sorted(stale, key=lambda s: s.source_id)
+
+
+def _format_human(stale: list[StaleSource], today: datetime.date) -> list[str]:
+    """人が読む形。**「何も出ない」を成功と誤読させない**ため、陳腐化0件でも
+    「何件を見て何件が陳腐化だったか」を必ず1行出す。"""
+    tracked = [
+        s for s in sources.SOURCES.values() if s.expected_cadence_days is not None
+    ]
+    lines = [
+        (
+            f"鮮度監視({today.isoformat()} 基準): 追跡対象 {len(tracked)} ソース"
+            f" / 陳腐化 {len(stale)} 件"
+        )
+    ]
+    for s in stale:
+        if s.last_fetched_on is None:
+            lines.append(
+                f"  [未取得] {s.source_id}: レイクに記録が無い"
+                f"(期待周期 {s.expected_cadence_days} 日)"
+            )
+        else:
+            lines.append(
+                f"  [陳腐化] {s.source_id}: 最終取得 {s.last_fetched_on.isoformat()}"
+                f" / {s.days_since_last_fetch} 日経過"
+                f"(期待周期 {s.expected_cadence_days} 日)"
+            )
+    return lines
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="レイクの最終取得日と期待周期を突き合わせ、陳腐化したソースを出す"
+    )
+    parser.add_argument(
+        "--today",
+        type=datetime.date.fromisoformat,
+        default=None,
+        help="判定の基準日(YYYY-MM-DD)。既定は実行日。テストや再現のために明示できる",
+    )
+    parser.add_argument("--json", action="store_true", help="機械可読なJSONで出す")
+    parser.add_argument(
+        "--fail-on-stale",
+        action="store_true",
+        help="陳腐化が1件でもあれば exit 1。**既定は exit 0**"
+        "(リリースを止めるかどうかは呼び出し側の判断であり、"
+        "鮮度そのものは成果物の正しさの条件ではない)",
+    )
+    args = parser.parse_args(argv)
+
+    # CLIの既定値としての「今日」。--today で明示できるようにしてあり、
+    # テストは常に明示値を渡す(ローカル日付でよい。鮮度は日単位の運用指標)
+    today = args.today or datetime.date.today()  # noqa: DTZ011
+    stale = report(today)
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "today": today.isoformat(),
+                    "stale": [
+                        {
+                            "source_id": s.source_id,
+                            "last_fetched_on": (
+                                s.last_fetched_on.isoformat()
+                                if s.last_fetched_on is not None
+                                else None
+                            ),
+                            "expected_cadence_days": s.expected_cadence_days,
+                            "days_since_last_fetch": s.days_since_last_fetch,
+                        }
+                        for s in stale
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    else:
+        for line in _format_human(stale, today):
+            print(line)
+
+    return 1 if (stale and args.fail_on_stale) else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -66,13 +66,37 @@ def fetch(fetched_on: datetime.date, client: httpx.Client | None = None) -> Fetc
 
             if total_count is None:
                 # 最初のページが宣言した総数を正とする(以降のページで
-                # 動いても再宣言は追わない — 取得開始時点の契約として扱う)
+                # 動いても再宣言は追わない — 取得開始時点の契約として扱う)。
+                #
+                # **これは単なる方針ではなく必須である**(2026-08-24 実測):
+                # 範囲外の offset を渡すと API は `total_count: 0` を返す
+                # (offset=9547 / 9600 のいずれも count=0, total_count=0)。
+                # 各ページの total_count を採り直す実装は、最終ページの次で
+                # 総数が 0 に化けて完全性チェックを無意味にする
                 total_count = page["total_count"]
+
+            # `count` はそのページの件数。API が宣言した件数と実際の配列長が
+            # ずれたら黙って進まない(§11.1 の観測性。取得の欠落を
+            # 「取れた分だけ保存」で通さないための、ページ単位の同じ検査)
+            page_count = page.get("count")
+            if page_count is not None and page_count != len(page["laws"]):
+                raise IncompleteSnapshotError(
+                    f"ページの宣言件数と実際の件数が一致しない(offset={offset}): "
+                    f"count={page_count} だが laws は {len(page['laws'])} 件"
+                )
 
             for law in page["laws"]:
                 lines.append(json.dumps(law, ensure_ascii=False, sort_keys=True).encode("utf-8"))
 
-            next_offset = page["next_offset"]
+            # **`page["next_offset"]` と書いてはならない。** 最終ページでは
+            # このキー自体が**応答に存在しない**(null が入るのではなく欠落する)。
+            # 2026-08-24、全件実取得(Task 11)で初めて判明した実測:
+            #   offset=9400 → keys=['count','laws','next_offset','total_count']
+            #   offset=9500 → keys=['count','laws','total_count']      ← 欠落
+            # Task 3 のfixtureは最終ページを `next_offset: None` で作っていたため
+            # (JSONのnullとして明示的に存在する形)、この差を検出できなかった。
+            # 実データで初めて出る、Windows固有の罠と同じ類型(設計書§11.1の再現性)
+            next_offset = page.get("next_offset")
             if next_offset is None:
                 break
             offset = next_offset
