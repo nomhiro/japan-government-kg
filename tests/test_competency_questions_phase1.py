@@ -135,7 +135,7 @@ def test_b20_naive_sum_double_counts_but_role_is_queryable(kg):
         """,
         initBindings={"p": project_uri},
     )
-    assert int(list(naive)[0][0]) == 2_000_000, "素朴な合計が想定どおり二重計上していない"
+    assert int(next(iter(naive))[0]) == 2_000_000, "素朴な合計が想定どおり二重計上していない"
 
     role_filtered = kg.query(
         """
@@ -149,7 +149,7 @@ def test_b20_naive_sum_double_counts_but_role_is_queryable(kg):
         """,
         initBindings={"p": project_uri},
     )
-    assert int(list(role_filtered)[0][0]) == 1_000_000, (
+    assert int(next(iter(role_filtered))[0]) == 1_000_000, (
         "budget:roleでの除外がこの最小例では機能していない"
     )
 
@@ -310,12 +310,17 @@ def test_cq8_positive_control_the_rogue_revision_exists_but_is_unrelated(kg):
 
 
 def test_cq9_distinguishes_resolved_from_old_ministry_unresolved(kg):
-    """解決済み(厚生労働省令)と旧省庁名のため未解決(旧厚生省令)の両側に
-    正のコントロールを持つ(advisorレビュー指摘)。
+    """解決済み(厚生労働省令)・旧省庁名のため未解決(旧厚生省令)・
+    NO_CANDIDATE警報のため未解決(ダミー機関規則。task-9-review.md指摘5)の
+    三方に正のコントロールを持つ。
 
     何があれば落ちるか: OLD_MINISTRY/OBSOLETE_ORGANIZATIONをNO_CANDIDATEと
-    区別しなければstatusが常に同じ値になる。core:unresolvedForの向きを
-    間違えたら旧厚生省令の行が0件になる。
+    区別しなければstatusが常に同じ値になる — 分類のIFを丸ごと定数
+    "unresolved_old_or_obsolete_ministry"に置き換えても、旧厚生省令側の
+    アサートだけでは検出できない(NO_CANDIDATE_LAW_ID側のアサートが無いと
+    このテストはPASSしたままになる。実際に置き換えて確認した結果は
+    task-9-report.mdに記録)。core:unresolvedForの向きを間違えたら
+    旧厚生省令・ダミー機関規則の行が両方0件になる。
     """
     rows = _query(kg, "cq09-jurisdiction-resolution-status.rq")
     assert rows, "CQ9に答えられない"
@@ -323,8 +328,10 @@ def test_cq9_distinguishes_resolved_from_old_ministry_unresolved(kg):
 
     current_law = f"{BASE}/id/law/{fx.KOUSEIROUDOU_LAW_ID}"
     old_law = f"{BASE}/id/law/{fx.OLD_KOUSEISHO_LAW_ID}"
+    no_candidate_law = f"{BASE}/id/law/{fx.NO_CANDIDATE_LAW_ID}"
     assert by_law[current_law] == ("resolved", f"{BASE}/id/org/{fx.KOUSEIROUDOU_BANGOU}")
     assert by_law[old_law] == ("unresolved_old_or_obsolete_ministry", "OLD_MINISTRY")
+    assert by_law[no_candidate_law] == ("unresolved_other", "NO_CANDIDATE")
 
 
 # =============================================================================

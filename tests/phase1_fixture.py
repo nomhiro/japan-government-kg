@@ -70,6 +70,20 @@ OLD_KOUSEISHO_PROMULGATION_DATE = "1952-01-01"
 WOLFSTYLE_BANGOU = "3010001137944"
 WOLFSTYLE_NAME = "株式会社ウルフスタイル"
 
+# task-9-review.md指摘5: CQ9の分類境界(unresolved_other)側に正のコントロールが
+# 無かった(OLD_MINISTRY側しか無く、クエリのIFを丸ごと定数に置き換えても
+# テストがPASSしてしまう)。NO_CANDIDATE(警報。抽出段の誤りを疑うべき)の
+# 正のコントロールとして、tests/test_transform_law.pyの既存precedent
+# (test_derive_jurisdiction_classifies_non_organ_shaped_name_as_no_candidate)
+# と同じ法令番号「ダミー機関規則第一号」を使う。ここでは架空(明らかに合成と
+# 分かる形式。R45)なので law_id も"999RS"始まり(同ファイルの既存precedentと
+# 同じ接頭辞)にする。実際に`law.derive_jurisdiction`(現行40件+旧18件の
+# 実参照表)に通し、NO_CANDIDATEになることを確認済み(検証スクリプトは
+# 使い捨てのため未コミット。task-9-report.md参照)
+NO_CANDIDATE_LAW_ID = "999RS0000000099"
+NO_CANDIDATE_LAW_NUM = "ダミー機関規則第一号"
+NO_CANDIDATE_NAME = "ダミー機関"
+
 # --- 架空だが明らかに合成と分かる値 ------------------------------------------
 PROJECT_CORE = "999901"  # 厚生労働省・FY2025・basisLaw有・支出3件(解決1/未解決1/束ね1)+sentinel1件
 PROJECT_MULTI_YEAR = "999902"  # 厚生労働省・FY2024・WOLFSTYLEへの2件目の支出(CQ3の年度別確認用)
@@ -147,6 +161,22 @@ def _law_records_and_jurisdictions() -> tuple[list[LawRecord], dict[str, Jurisdi
         repeal_status="None",
         revisions=[],
     )
+    # task-9-review.md指摘5: unresolved_other(NO_CANDIDATE)側の正のコントロール。
+    # 現行(resolved)・旧省庁(OLD_MINISTRY)しか無いと、CQ9のクエリのIFを丸ごと
+    # 定数"unresolved_old_or_obsolete_ministry"に置き換えてもテストがPASSして
+    # しまう(NO_CANDIDATEという警報が「昔の省庁名だから仕方ない」に化けて
+    # 消えることを検出できない)。架空の法令(明らかに合成と分かる形式。R45)
+    no_candidate = LawRecord(
+        law_id=NO_CANDIDATE_LAW_ID,
+        law_num=NO_CANDIDATE_LAW_NUM,
+        law_num_type="Rule",
+        law_type="Rule",
+        law_title="架空の題名(NO_CANDIDATEの正のコントロール)",
+        abbrev=[],
+        promulgation_date="2020-01-01",
+        repeal_status="None",
+        revisions=[],
+    )
     jurisdictions = {
         KOUSEIROUDOU_LAW_ID: JurisdictionResult(
             law_id=KOUSEIROUDOU_LAW_ID,
@@ -162,8 +192,16 @@ def _law_records_and_jurisdictions() -> tuple[list[LawRecord], dict[str, Jurisdi
                 UnresolvedJurisdiction(name=OLD_KOUSEISHO_NAME, reason="OLD_MINISTRY"),
             ],
         ),
+        NO_CANDIDATE_LAW_ID: JurisdictionResult(
+            law_id=NO_CANDIDATE_LAW_ID,
+            ministry_names=[NO_CANDIDATE_NAME],
+            resolved=[],
+            unresolved=[
+                UnresolvedJurisdiction(name=NO_CANDIDATE_NAME, reason="NO_CANDIDATE"),
+            ],
+        ),
     }
-    return [current, old], jurisdictions
+    return [current, old, no_candidate], jurisdictions
 
 
 def build_budget_result() -> rs.BuildResult:
