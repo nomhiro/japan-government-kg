@@ -187,7 +187,7 @@ Phase 2 以降は `person` / `document` / `statistics` / `judicial` / `place` �
 
 ### 5.5 公理オーバーレイ — LinkMLで書けない公理の置き場
 
-LinkML の `gen-owl` が出せない公理(外部語彙への `owl:equivalentClass`、軸間の `owl:disjointWith`、限定基数制限など)は、**加算専用の手書きTTLオーバーレイ** `schema/overlay/*.ttl` に置く。公開するオントロジーは「生成OWL + オーバーレイ」を CI でマージしたものとする。
+LinkML の `gen-owl` が出せない公理(外部語彙への `owl:equivalentClass`、軸間の `owl:disjointWith`【→ **決定44で反証。直後の追記を参照** — `gen-owl`は`children_are_mutually_disjoint`で軸間の排他を出せる】、限定基数制限など)は、**加算専用の手書きTTLオーバーレイ** `schema/overlay/*.ttl` に置く。公開するオントロジーは「生成OWL + オーバーレイ」を CI でマージしたものとする【→ **決定44で反証。直後の追記を参照** — マージはしない。公開するのは生成OWLのモジュール別ファイルそのもの】。
 
 > **追記(2026-08-25、決定44)。上記の記述はTask 12(R16)で反証され、仕様を改訂する:**
 >
