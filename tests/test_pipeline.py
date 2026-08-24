@@ -716,6 +716,9 @@ def test_run_wires_rs_system_and_reports_budget_and_ratio_observation(
     assert report.budget_expenditures == 2
     assert report.budget_recipients_resolved_by_houjin_bangou == 1
     assert report.budget_recipients_sentinel == 1
+    # Ruling B27: このfixtureに実在しない法人番号は無いので0(Noneではない
+    # ——rs-systemの解決処理は実際に走ったので「未実行」のNoneにはならない)
+    assert report.budget_recipients_nonexistent_houjin_bangou == 0
     assert report.budget_ministries_resolved == 3
     # B24(6): project 1はΣ(200)/前年度執行額(100)=2.0、project 2は分母欠損、
     # project 3は分母50>0だが合計0(「その他」と別枠であること。advisor指摘)
@@ -724,3 +727,106 @@ def test_run_wires_rs_system_and_reports_budget_and_ratio_observation(
     assert report.budget_ratio_total_zero == 1
     assert report.budget_ratio_exact_1_0 == 0
     assert report.budget_ratio_other == 0
+
+
+def test_run_reports_law_and_budget_fields_as_none_when_the_source_is_not_included(
+    seeded_lake, tmp_path,
+):
+    """egov-law/rs-systemを含まないリリースでは、それらに関するフィールドが
+
+    `None`(=未実行)であること(task-10-review.md要修正2)。`0`だと
+    「実行して0件だった」と区別できず、Task 11の実測レポートが誤って0を
+    公表する事故になりうる。このコードベース自身が`stream_emit.StreamStats.
+    houjin_bangou_seen`/`freshness.StaleSource.days_since_last_fetch`で
+    0とNoneを区別する作法を既に持っている。
+    """
+    report = pipeline.run(FETCHED, tmp_path / "out")  # houjin-bangouのみ
+
+    assert report.law_records is None
+    assert report.law_jurisdiction_resolved is None
+    assert report.law_jurisdiction_unresolved is None
+    assert report.law_jurisdiction_extraction_failed is None
+    assert report.budget_projects is None
+    assert report.budget_expenditures is None
+    assert report.budget_expenditures_bundled is None
+    assert report.budget_recipients_sentinel is None
+    assert report.budget_recipients_nonexistent_houjin_bangou is None
+    assert report.budget_recipients_resolved_by_houjin_bangou is None
+    assert report.budget_recipients_resolved_by_name is None
+    assert report.budget_recipients_unresolved is None
+    assert report.budget_ministries_resolved is None
+    assert report.budget_ministries_unresolved is None
+    assert report.budget_basis_law_resolved is None
+    assert report.budget_basis_law_unresolved is None
+    assert report.budget_ratio_exact_1_0 is None
+    assert report.budget_ratio_exact_2_0 is None
+    assert report.budget_ratio_exact_3_0 is None
+    assert report.budget_ratio_total_zero is None
+    assert report.budget_ratio_other is None
+    assert report.budget_ratio_no_denominator is None
+
+
+# =============================================================================
+# Task 10修正ラウンド1(Ruling B27。task-10-review.md裁定要1): 実在しない
+# 法人番号を第5分類として弾き、参照整合ゲートの違反にしない
+# =============================================================================
+
+
+def test_run_reclassifies_a_nonexistent_recipient_houjin_bangou_and_drops_the_reference_violation(
+    houjin_with_a_company, tmp_path,
+):
+    """支出先の法人番号が13桁の形はしているが、全法人グラフに実在しない場合、
+
+    `budget:recipient`エッジを張らず`payeeLabel`を残す(B18のセンチネルと
+    同じ作法。Ruling B27)。裁定要1の実測(全法人フラグONでも60件の参照整合
+    違反が残る——法人番号公表サイトの全件データに行として存在しない値)への
+    対応。
+
+    何があれば落ちるか: `houjin_bangou_exists`をrs.build_projectsへ結線
+    し忘れると、このテストの`report.reference_violations`が空にならない
+    (存在しない番号への参照が型無しの違反としてゲートに残る)。
+    """
+    from rdflib import Dataset, URIRef
+
+    from jgkg import uris
+    from jgkg.config import get_settings
+
+    nonexistent_bangou = "1234567890123"  # レビューの実例と同じ、明らかなダミー
+    _save_rs_snapshot(DAY, {
+        "project_summary": [
+            _rs_row_for("project_summary", {
+                "project_id": "1", "fiscal_year": "2025", "project_name": "テスト事業1",
+                "ministry_name": "厚生労働省",
+            }),
+        ],
+        "budget_summary": [],
+        "policy_measure_laws_and_regulations": [],
+        "payee_payment_information": [
+            _rs_row_for("payee_payment_information", {
+                "project_id": "1", "recipient_name": "実在しない架空商事株式会社",
+                "recipient_houjin_bangou": nonexistent_bangou, "expenditure_amount": "300",
+                "recipient_other_flag": "FALSE",
+            }),
+        ],
+    })
+
+    report = pipeline.run(
+        {"houjin-bangou": DAY, "rs-system": DAY}, tmp_path / "out",
+        include_all_corporations=True,
+    )
+
+    assert report.reference_violations == [], report.reference_violations
+    assert report.budget_recipients_nonexistent_houjin_bangou == 1
+    assert report.budget_recipients_resolved_by_houjin_bangou == 0
+
+    ds = Dataset(default_union=True)
+    ds.parse(tmp_path / "out" / "kg.nq", format="nquads")
+    exp_uri = URIRef(uris.expenditure_uri("2025", "1", 0))
+    recipient_pred = URIRef(f"{get_settings().base_uri}/def/budget#recipient")
+    assert (exp_uri, recipient_pred, None) not in ds, (
+        "実在しない法人番号なのにbudget:recipientエッジが張られている"
+    )
+    payee_label_pred = URIRef(f"{get_settings().base_uri}/def/budget#payeeLabel")
+    assert {str(o) for o in ds.objects(exp_uri, payee_label_pred)} == {
+        "実在しない架空商事株式会社"
+    }

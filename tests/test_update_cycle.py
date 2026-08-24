@@ -54,9 +54,14 @@ def _load(path: Path) -> Dataset:
 def _write_fake_manifest(out_dir: Path, release: str) -> None:
     """build.sh が作るのと同じ形の最小限のtarball+manifestを書く(検証済み実行の代用)。
 
-    `test_failed_validation_keeps_previous_release` が「前リリースの成果物が
-    実在する」という前提を作るためだけに使う(carry-over機構そのものは
-    kg.nqしか読まないので、他のテストはこれを呼ばない)。
+    「前リリースの成果物が実在し、出荷された」という前提を作るために使う。
+    **Task 10修正ラウンド1(Ruling B26)以降、`previous_release`を渡す
+    テストは全てこれを呼ぶ必要がある** — carry-overはmanifest.jsonの存在を
+    出荷済みの証拠として要求し、`nquads_sha256`で`kg.nq`(呼び出し時点の
+    実際の内容)との整合も照合する(`build.build_manifest`が`out_dir/"kg.nq"`
+    を読んで計算するため、この関数を呼ぶ**時点**のkg.nqの内容がそのまま
+    manifestに記録される——kg.nqをこの後で書き換えるテストは、書き換えた
+    **後**に呼ぶこと)。
     """
     (out_dir / "tdb2").mkdir(parents=True, exist_ok=True)
     (out_dir / "tdb2" / "nodes.dat").write_bytes(b"fake")
@@ -119,7 +124,9 @@ def test_replacement_reflects_correction_and_deletion_even_with_previous_release
     「変わっていないのに変わったと誤認する」方向の誤りを防ぐ)。
     """
     _two_generations_with_correction_and_deletion()
-    pipeline.run({"houjin-bangou": DAY1}, _artifact_dir(DAY1))
+    out1 = _artifact_dir(DAY1)
+    pipeline.run({"houjin-bangou": DAY1}, out1)
+    _write_fake_manifest(out1, DAY1.isoformat())
     r2 = pipeline.run(
         {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1
     )
@@ -145,7 +152,9 @@ def test_unchanged_source_is_carried_over():
     何があれば落ちるか: 差分検出を外すと carried_over が空になり落ちる。
     """
     lake.save("houjin-bangou", DAY1, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
-    pipeline.run({"houjin-bangou": DAY1}, _artifact_dir(DAY1))
+    out1 = _artifact_dir(DAY1)
+    pipeline.run({"houjin-bangou": DAY1}, out1)
+    _write_fake_manifest(out1, DAY1.isoformat())
 
     lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
     r2 = pipeline.run(
@@ -162,7 +171,9 @@ def test_carried_over_graph_keeps_its_original_content_and_date():
     しない)。
     """
     lake.save("houjin-bangou", DAY1, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
-    pipeline.run({"houjin-bangou": DAY1}, _artifact_dir(DAY1))
+    out1 = _artifact_dir(DAY1)
+    pipeline.run({"houjin-bangou": DAY1}, out1)
+    _write_fake_manifest(out1, DAY1.isoformat())
 
     lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
     r2 = pipeline.run(
@@ -212,6 +223,184 @@ def test_carry_over_raises_when_the_previous_release_artifact_is_missing():
         )
 
 
+# =============================================================================
+# Task 10修正ラウンド1(Ruling B26): manifest.jsonをコミット印として要求し、
+# kg.nqの完全性(sha256)・内容(SHACL再検証)を照合する。
+# task-10-review.md要修正1の実測[a]/[b]を正のコントロールのテストにする。
+# =============================================================================
+
+
+def test_carry_over_rejects_a_previous_release_that_was_never_shipped():
+    """kg.nqはあるがmanifest.jsonが無い(=enforce_release_gateで落ちて出荷を
+
+    拒否されたリリース)を、carry-overの据え置き元として黙って受理しない
+    こと(task-10-review.md要修正1の実測[a])。
+
+    `build.sh`は`run()`がkg.nqを書いた**後**に`enforce_release_gate`を呼び、
+    落ちれば`set -e`でmanifest作成に進まない——「kg.nqはあるがmanifest.json
+    は無い」は実運用で必ず生じる状態であり、kg.nqの存在だけを「前リリースが
+    実在する」証拠にしてはならない。
+    """
+    lake.save("houjin-bangou", DAY1, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
+    out1 = _artifact_dir(DAY1)
+    pipeline.run({"houjin-bangou": DAY1}, out1)
+    # manifest.jsonは書かない(ゲートで落ちた=出荷拒否されたリリースを模す)
+    assert not (out1 / "manifest.json").exists()
+
+    lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
+    # **`match`は「出荷」で固定する(`manifest`ではない)。** manifest.jsonが
+    # 存在しない場合、専用の検査を外しても`build.read_manifest`が
+    # `Path.read_text()`経由で素の`FileNotFoundError`(メッセージに
+    # パス文字列として"manifest.json"を含む)を投げてしまい、`match="manifest"`
+    # では専用の検査の有無を区別できない(空振りの実例。壊し確認で発見)。
+    # 「出荷」はこのモジュールの専用メッセージにしか出現しない語
+    with pytest.raises(FileNotFoundError, match="出荷"):
+        pipeline.run(
+            {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1
+        )
+
+
+def test_carry_over_rejects_a_previous_release_whose_kg_nq_no_longer_matches_the_manifest():
+    """manifestに記録されたkg.nqのsha256と実際のkg.nqが一致しない
+
+    (保管中に書き換えられた)場合、carry-overの供給元として拒否すること
+    (task-10-review.md要修正1の実測[b]の一部)。
+    """
+    lake.save("houjin-bangou", DAY1, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
+    out1 = _artifact_dir(DAY1)
+    pipeline.run({"houjin-bangou": DAY1}, out1)
+    _write_fake_manifest(out1, DAY1.isoformat())  # 正しい内容に対するmanifest
+
+    # 保管中の書き換えを模す(manifestは更新しない)
+    with (out1 / "kg.nq").open("a", encoding="utf-8") as f:
+        f.write("# tampered\n")
+
+    lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
+    with pytest.raises(ValueError, match="sha256"):
+        pipeline.run(
+            {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1
+        )
+
+
+_FULLWIDTH_DIGITS = str.maketrans("0123456789", "０１２３４５６７８９")
+
+
+def test_carry_over_declines_when_the_carried_graph_fails_shacl_revalidation():
+    """manifestのsha256はkg.nqと一致するが、内容がSHACL不適合(全角13桁の
+
+    法人番号。裁定B22/F-3が禁じた形)なグラフは、carry-overの合流前に
+    再検証で弾かれ、通常どおり再生成すること(task-10-review.md要修正1の
+    実測[b]の中心。Ruling B26(b): 「carry-overは再生成の省略であって検証の
+    省略ではない」)。
+
+    manifestのsha256照合(tier 1)だけでは、**破損した内容に対してmanifestが
+    正しく再計算された場合**(このテストが模す状況。スキーマ進化などで
+    ハッシュだけでは検出できない劣化の代理)を検出できない——SHACL再検証
+    (tier 3)が独立の防御であることを直接確認する。
+
+    何があれば落ちるか: `run()`から`_validate_carried_graphs`の呼び出しを
+    外す(単純な`_extract_graphs_from_kg_nq`呼び出しに戻す)と、壊れた
+    houjinBangouの値がそのまま出荷される。
+    """
+    lake.save("houjin-bangou", DAY1, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
+    out1 = _artifact_dir(DAY1)
+    pipeline.run({"houjin-bangou": DAY1}, out1)
+
+    # 前リリースのkg.nqを破損させる(B22/F-3が禁じた全角13桁の法人番号)
+    kg_path = out1 / "kg.nq"
+    original = kg_path.read_text(encoding="utf-8")
+    corrupted = original.replace(f'"{NUM_A}"', f'"{NUM_A.translate(_FULLWIDTH_DIGITS)}"')
+    assert corrupted != original, "置換対象(houjinBangouの値)が見つからなかった"
+    kg_path.write_text(corrupted, encoding="utf-8")
+    # manifestは破損**後**の内容に対して書く(sha256照合だけでは検出できない
+    # 劣化を模す——tier 3の独立性を確認するため)
+    _write_fake_manifest(out1, DAY1.isoformat())
+
+    lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
+    r2 = pipeline.run(
+        {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1
+    )
+
+    assert r2.carried_over == [], "SHACL不適合のグラフがcarry-overされてしまった"
+    assert r2.sources["houjin-bangou"] == DAY2.isoformat()
+    ds = _load(_artifact_dir(DAY2) / "kg.nq")
+    uri_a = URIRef(uris.org_uri(NUM_A))
+    assert {str(o) for o in ds.objects(uri_a, SKOS.prefLabel)} == {"厚生労働省"}, (
+        "再生成されたはずのグラフに内容が無い(破損した据え置きが混入した疑い)"
+    )
+
+
+def test_carried_over_graph_is_counted_in_graphs_validated():
+    """据え置きグラフもSHACL再検証を受けるため、graphs_validatedに数えられる
+
+    こと(task-10-review.md観察4)。据え置きグラフはgraphsには載るが
+    validate_datasetを通らないためgraphs_validatedに数えられない、という
+    ズレをRuling B26(b)のSHACL再検証で解消する。
+    """
+    lake.save("houjin-bangou", DAY1, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
+    out1 = _artifact_dir(DAY1)
+    r1 = pipeline.run({"houjin-bangou": DAY1}, out1)
+    _write_fake_manifest(out1, DAY1.isoformat())
+
+    lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
+    r2 = pipeline.run(
+        {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1
+    )
+
+    assert uris.graph_uri("houjin-bangou", DAY1) in r2.carried_over
+    # r1: houjin-bangou・ministry-codes・provenanceの3グラフを検証。
+    # r2: houjin-bangouは検証をスキップして据え置くが、ministry-codes・
+    # provenanceは常に再計算するので同じ2件+据え置き分の再検証1件=3件
+    # (「据え置きグラフの検証が数から漏れる」というズレが無ければ、世代間で
+    # 一致するはず)
+    assert r2.graphs_validated == r1.graphs_validated, (
+        "据え置きグラフの検証件数が世代1の検証件数と一致しない"
+        f"(r1={r1.graphs_validated}, r2={r2.graphs_validated})"
+    )
+
+
+# =============================================================================
+# Task 10修正ラウンド1(観察3): 同一日付ディレクトリに複数ファイルがあっても、
+# carry-overの差分検出がファイル名で正しく絞り込むこと
+# =============================================================================
+
+
+def test_carry_over_date_lookup_is_not_confused_by_a_same_date_sidecar_file():
+    """据え置き判定(`_previous_date_if_unchanged`)が、同じ日付ディレクトリに
+
+    別ファイルが増えても、正しいファイル名(`houjin_bangou.FILENAME`)のsha256
+    だけを比較すること(task-10-review.md観察3)。
+
+    何があれば落ちるか: ファイル名で絞らずソート順(辞書順で最後)のsha256を
+    拾う実装に戻すと、「zenken.zipより辞書順で後に来るサイドカー」の存在で
+    `lake.latest_before`の`max(key=path.name)`がサイドカーを前リリース側に
+    選んでしまい、本来は不変(=据え置き対象)であるはずのzenken.zip自身の
+    比較が無関係なサイドカーの差分に汚染されて、据え置きが誤って諦められる。
+    """
+    # "zzz..."はzenken.zipより辞書順で後に来る(list_snapshotsはmeta.jsonの
+    # globをsortedで返す——pipeline.py:640-649の既存コメントと同じ罠を、
+    # houjin-bangouのcarry-over判定側で再現する)
+    lake.save("houjin-bangou", DAY1, "zzz-unrelated-sidecar.zip", b"sidecar content DAY1")
+    lake.save("houjin-bangou", DAY1, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
+    out1 = _artifact_dir(DAY1)
+    pipeline.run({"houjin-bangou": DAY1}, out1)
+    _write_fake_manifest(out1, DAY1.isoformat())
+
+    # DAY2: zenken.zip本体は不変(sha256一致)。サイドカーは内容が違う
+    # (異なるsha256)——無関係な変化がzenken.zip自身の据え置き判定に
+    # 影響してはならない
+    lake.save("houjin-bangou", DAY2, "zzz-unrelated-sidecar.zip", b"sidecar content DAY2 different")
+    lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
+    r2 = pipeline.run(
+        {"houjin-bangou": DAY2}, _artifact_dir(DAY2), previous_release=DAY1
+    )
+
+    assert uris.graph_uri("houjin-bangou", DAY1) in r2.carried_over, (
+        "本体(zenken.zip)は不変なのに、無関係なサイドカーの差分で"
+        "据え置きが誤って諦められた"
+    )
+
+
 def test_carry_over_falls_back_to_regeneration_when_the_previous_graph_is_absent():
     """前リリースの成果物(kg.nq)は実在するが、該当グラフが無い
 
@@ -224,6 +413,7 @@ def test_carry_over_falls_back_to_regeneration_when_the_previous_graph_is_absent
     out1 = _artifact_dir(DAY1)
     out1.mkdir(parents=True)
     (out1 / "kg.nq").write_text("", encoding="utf-8")
+    _write_fake_manifest(out1, DAY1.isoformat())
 
     lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
     r2 = pipeline.run(
@@ -275,6 +465,11 @@ def test_carry_over_ignores_unrelated_graphs_present_in_the_previous_kg_nq():
     unrelated_org = uris.org_uri("9000000000001")
     with (out1 / "kg.nq").open("a", encoding="utf-8", newline="\n") as f:
         f.write(f'<{unrelated_org}> <{SKOS.prefLabel}> "無関係法人" <{unrelated_graph}> .\n')
+    # manifestは無関係グラフを追記した**後**の内容に対して書く——実際の
+    # include_all_corporations=Trueの前リリースも、houjin-bangou-allを
+    # 含めたkg.nq全体に対してmanifestを作る(scripts/build.sh参照)ので、
+    # この順序がその実運用を正しく模す
+    _write_fake_manifest(out1, DAY1.isoformat())
 
     lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
     r2 = pipeline.run(
@@ -319,7 +514,9 @@ def test_carry_over_declines_for_egov_law_when_houjin_bangou_changed():
     law_bytes = _egov_laws_jsonl()
     lake.save("houjin-bangou", DAY1, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
     lake.save("egov-law", DAY1, egov_law.FILENAME, law_bytes)
-    pipeline.run({"houjin-bangou": DAY1, "egov-law": DAY1}, _artifact_dir(DAY1))
+    out1 = _artifact_dir(DAY1)
+    pipeline.run({"houjin-bangou": DAY1, "egov-law": DAY1}, out1)
+    _write_fake_manifest(out1, DAY1.isoformat())
 
     # houjin-bangouは変化させる。egov-lawは同一バイト列のまま
     lake.save(
