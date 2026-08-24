@@ -532,3 +532,38 @@ def test_ministry_definition_is_bounded_to_currently_existing_organs():
         f"org:Ministryの定義文に『現存』の限定が無い: {definition}"
         "(裁定B36と同じ型の欠陥 — 廃止済み機関を字義上含んでしまう)"
     )
+
+
+@pytest.mark.parametrize("value", ["NO_CANDIDATE", "OBSOLETE_ORGANIZATION"])
+def test_government_organ_shape_wording_names_every_literal_segment_the_code_accepts(value):
+    """NO_CANDIDATE/OBSOLETE_ORGANIZATIONの説明文が、実装の
+    `_MINISTRY_LITERAL_SEGMENTS` の要素を言い当てていること(裁定B37)。
+
+    両エントリは「政府機関の形」の判定(`_looks_like_government_organ`)の
+    肯定/否定を自然言語で述べている。実装は接尾辞の正規表現
+    (省/府/庁/院/委員会で終わる)に加えて `_MINISTRY_LITERAL_SEGMENTS`
+    (完全一致の集合。現在 `{"人事院", "閣"}`)も受理するが、旧文言は
+    「等」で済ませており実データにある「閣」(10件)がNO_CANDIDATE側に
+    誤って読める欠陥があった(レビューB37)。
+
+    ハードコードした文字列ではなく実装の定数を直接importして比較するので、
+    将来この集合が増減しても定義文と実装のずれをこのテストが検出し続ける。
+
+    **何があれば落ちるか**: `_MINISTRY_LITERAL_SEGMENTS` に新しい要素を
+    足したのに `schema/core.yaml` の説明文を更新し忘れると落ちる。
+    逆に説明文から既存の要素(「人事院」「閣」)を消すと落ちる。
+    """
+    from jgkg.transform.law import _MINISTRY_LITERAL_SEGMENTS
+
+    g = _load(GENERATED / "core.owl.ttl")
+    subject = URIRef(
+        f"https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#{value}"
+    )
+    definition = g.value(subject, SKOS.definition)
+    assert definition is not None, f"core:UnresolvedReasonEnum#{value}のskos:definitionが無い"
+
+    missing = [seg for seg in _MINISTRY_LITERAL_SEGMENTS if seg not in str(definition)]
+    assert not missing, (
+        f"{value}の定義文が_MINISTRY_LITERAL_SEGMENTSの要素を言い当てていない: "
+        f"{missing}(定義文: {definition})"
+    )
