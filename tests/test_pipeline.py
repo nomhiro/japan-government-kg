@@ -656,6 +656,13 @@ def test_run_wires_rs_system_and_reports_budget_and_ratio_observation(
                 "project_id": "2", "fiscal_year": "2025", "project_name": "テスト事業2",
                 "ministry_name": "厚生労働省",
             }),
+            # project 3: 前年度執行額はあるが支出先の記録が1件も無い(合計0)。
+            # advisor2回目レビュー指摘: task-9-report.mdの「Σ[23]==0」枠
+            # (「その他」と別枠)をpipeline.pyでも別枠にできているかの確認
+            _rs_row_for("project_summary", {
+                "project_id": "3", "fiscal_year": "2025", "project_name": "テスト事業3",
+                "ministry_name": "厚生労働省",
+            }),
         ],
         "budget_summary": [
             # project 1: 当年度100・前年度執行額100(=分母100。比を計算できる)
@@ -672,6 +679,13 @@ def test_run_wires_rs_system_and_reports_budget_and_ratio_observation(
                 "project_id": "2", "budget_fiscal_year": "2025",
                 "budget_amount": "50", "executed_amount": "0",
             }),
+            # project 3: 前年度執行額50(分母50>0)。当年度の行は無くてもよい
+            # (_prior_year_executed_amountはproject自身のfiscal_yearから
+            # 前年度を逆算して直接引くだけで、当年度行の有無を問わない)
+            _rs_row_for("budget_summary", {
+                "project_id": "3", "budget_fiscal_year": "2024",
+                "budget_amount": "40", "executed_amount": "50",
+            }),
         ],
         "policy_measure_laws_and_regulations": [],
         "payee_payment_information": [
@@ -687,6 +701,7 @@ def test_run_wires_rs_system_and_reports_budget_and_ratio_observation(
                 "recipient_houjin_bangou": "9999999999999", "expenditure_amount": "10",
                 "recipient_other_flag": "FALSE",
             }),
+            # project 3: 支出先の記録が1件も無い(意図的。合計=0を作る)
         ],
     })
 
@@ -697,13 +712,15 @@ def test_run_wires_rs_system_and_reports_budget_and_ratio_observation(
 
     assert uris.graph_uri("rs-system", DAY) in report.graphs
     assert report.reference_violations == [], report.reference_violations
-    assert report.budget_projects == 2
+    assert report.budget_projects == 3
     assert report.budget_expenditures == 2
     assert report.budget_recipients_resolved_by_houjin_bangou == 1
     assert report.budget_recipients_sentinel == 1
-    assert report.budget_ministries_resolved == 2
-    # B24(6): project 1はΣ(200)/前年度執行額(100)=2.0、project 2は分母欠損
+    assert report.budget_ministries_resolved == 3
+    # B24(6): project 1はΣ(200)/前年度執行額(100)=2.0、project 2は分母欠損、
+    # project 3は分母50>0だが合計0(「その他」と別枠であること。advisor指摘)
     assert report.budget_ratio_exact_2_0 == 1
     assert report.budget_ratio_no_denominator == 1
+    assert report.budget_ratio_total_zero == 1
     assert report.budget_ratio_exact_1_0 == 0
     assert report.budget_ratio_other == 0

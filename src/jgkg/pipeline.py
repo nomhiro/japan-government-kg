@@ -161,10 +161,16 @@ class PipelineReport(BaseModel):
     # amount) ÷ 直前年度の執行額(合計)の比を、ゲートにせず**観測**として
     # 件数だけ載せる。分母が無い(prior_year_executed_amountがNoneまたは
     # 0以下)事業は budget_ratio_no_denominator に分けて数え、「その他」
-    # (1.0/2.0/3.0のいずれでもない)と混同しない
+    # (1.0/2.0/3.0のいずれでもない)と混同しない。
+    # **合計(Σ)が0の事業も別枠にする**(budget_ratio_total_zero)。
+    # task-9-report.mdの実測(「exact 1.0 = 1,488 / それ他 = 2,877 /
+    # Σ[23]==0 = 36」。分母>0の4,646事業に対する集計)がこの3者を
+    # 別々に数えており、その他へ合流させると突き合わせ時に36件分ずれる
+    # (advisor2回目レビュー指摘)
     budget_ratio_exact_1_0: int = 0
     budget_ratio_exact_2_0: int = 0
     budget_ratio_exact_3_0: int = 0
+    budget_ratio_total_zero: int = 0
     budget_ratio_other: int = 0
     budget_ratio_no_denominator: int = 0
 
@@ -807,6 +813,7 @@ def run(
     budget_ratio_exact_1_0 = 0
     budget_ratio_exact_2_0 = 0
     budget_ratio_exact_3_0 = 0
+    budget_ratio_total_zero = 0
     budget_ratio_other = 0
     budget_ratio_no_denominator = 0
     if budget_projects_all:
@@ -820,6 +827,10 @@ def run(
             denom = project.prior_year_executed_amount
             if denom is None or denom <= 0:
                 budget_ratio_no_denominator += 1
+            elif total == 0:
+                # task-9-report.mdの「Σ[23]==0」と同じ枠。分母>0だが合計が
+                # 文字通り0の事業を「その他」に混ぜない(advisor指摘)
+                budget_ratio_total_zero += 1
             elif total == denom:
                 budget_ratio_exact_1_0 += 1
             elif total == 2 * denom:
@@ -1131,6 +1142,7 @@ def run(
         budget_ratio_exact_1_0=budget_ratio_exact_1_0,
         budget_ratio_exact_2_0=budget_ratio_exact_2_0,
         budget_ratio_exact_3_0=budget_ratio_exact_3_0,
+        budget_ratio_total_zero=budget_ratio_total_zero,
         budget_ratio_other=budget_ratio_other,
         budget_ratio_no_denominator=budget_ratio_no_denominator,
     )
