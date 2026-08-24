@@ -893,7 +893,26 @@ manifestが契約の全てである)。この2つのmanifestは**修正前の実
 `houjin-bangou/ministry-codes/rs-system=2026-08-23、egov-law=2026-08-24`
 という**A/Bと全く同じ取得日の組**で、新しいディレクトリ
 `data/artifact/2026-08-27/`に実際にビルドした(`--out-dir`で明示。
-既存リリースを上書きしないため。ビルド自体は支出先限定構成なので約21秒):
+既存リリースを上書きしないため)。**所要時間は、`data/artifact/2026-08-27/
+build.log`を`grep`して直接読んだ(要修正1と同じ方法。伝聞の数字を書かない)**:
+
+```
+[所要] 鮮度監視: 1 秒(開始からの累計 1 秒)
+[所要] スキーマ生成: 35 秒(開始からの累計 36 秒)
+[所要] パイプライン(取得済みスナップショット→kg.nq、検証含む): 422 秒(開始からの累計 458 秒)
+[所要] tdbloader(コンテナのネイティブ層でTDB2構築+tar.gz化): 34 秒(開始からの累計 492 秒)
+[所要] 構築結果の検査: 1 秒(開始からの累計 493 秒)
+[所要] manifest作成: 2 秒(開始からの累計 495 秒)
+完了: data/artifact/2026-08-27(総所要 495 秒)
+```
+
+**総所要は495秒であり、「約21秒」ではない。** この「21秒」という見積りは、
+tdbloaderフェーズ単体(§2の「構築時間21.2秒」)の数字を全体の所要時間と
+混同したものだった——ちょうど要修正2(1つの数字を別の意味の数字と取り違える)
+と同種の誤りである。tdbloaderフェーズ自体は今回34秒で、桁としては21.2秒に
+近い(A/Bの実測との差は自然なばらつきの範囲)。パイプライン実行フェーズ
+(422秒)がA(445秒)・B(458秒)と近い値になっているのは、取得日の組が
+A/Bと全く同じであるため妥当である。
 
 ```
 $ cat data/artifact/2026-08-27/manifest.json
@@ -1572,6 +1591,31 @@ E        +  and   '2026-08-01' = PipelineReport(release='2026-08-01', ...).relea
 `release`は取得日(fixtureの`FETCHED`。2026-08-01)しか見ないため、
 意図どおり衝突して落ちた。`release=out_dir.name`に戻して再実行すると、
 このテストを含め全緑に戻ることを確認した:
+
+**同じ壊し方で、今回変更した他の`release`アサーションも個別に壊し確認した**
+(ブリーフ「追加・変更したテストは、わざと壊して落ちることを実際に見せる」
+は新規テストだけでなく変更したテストにも及ぶため):
+
+```
+$ PYTHONUTF8=1 uv run pytest tests/test_pipeline.py -q -k "test_run_records_a_date_per_source or test_cli_accepts_multiple_sources_and_writes_report"
+FAILED tests/test_pipeline.py::test_run_records_a_date_per_source - AssertionError: リリース名がout_dirのbasenameになっていない: '2026-08-01'
+FAILED tests/test_pipeline.py::test_cli_accepts_multiple_sources_and_writes_report - AssertionError: assert '2026-08-01' == 'out'
+2 failed, 41 deselected in 1.47s
+```
+
+`build.py`の`manifest_version: int = 5`も一時的に`4`に戻し、変更した
+`test_build.py`の2本を実行した(3本目の`test_read_manifest_treats_a_missing_version_field_as_1`
+はこの既定値と無関係なので当然green のままだった):
+
+```
+$ PYTHONUTF8=1 uv run pytest tests/test_build.py -q -k "test_build_manifest_produces_version_5 or test_manifest_version_roundtrips_through_write_and_read or test_read_manifest_treats_a_missing_version_field_as_1"
+FAILED tests/test_build.py::test_build_manifest_produces_version_5 - AssertionError: assert 4 == 5
+FAILED tests/test_build.py::test_manifest_version_roundtrips_through_write_and_read - AssertionError: assert 4 == 5
+2 failed, 1 passed, 11 deselected in 0.79s
+```
+
+いずれも元の値(`out_dir.name`・`5`)に戻して再実行し、全緑に戻ることを
+確認した(コミット済みのファイルとの`git diff`が空であることも確認済み)。
 
 ```
 $ PYTHONUTF8=1 uv run pytest tests/test_pipeline.py -q -k "test_run_same_day_releases_are_distinguishable_by_release_field or release"
