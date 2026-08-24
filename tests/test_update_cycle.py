@@ -274,6 +274,67 @@ def test_carry_over_works_when_the_previous_release_name_is_not_an_iso_date():
     )
 
 
+def test_carry_over_rejects_a_previous_release_name_containing_a_path_separator():
+    r"""`previous_release`にディレクトリの区切り文字(`/`・`\`)が含まれる場合、
+
+    パス結合結果がどうなるかに関わらず即座に`ValueError`にすること。
+
+    `previous_release`は成果物ディレクトリの**basename**という契約であり、
+    パスの断片(例: "../2026-08-25"や"sub/dir")を許すと、成果物ディレクトリ
+    の外を指せてしまう(意図しないパストラバーサル)。basenameという契約を
+    型ではなく実行時チェックで守る(項目1で`str`型に緩めた分だけ、この
+    チェックの必要性が増した)。
+
+    何があれば落ちるか: `_previous_release_manifest`冒頭の`"/" in previous_release
+    or "\\" in previous_release`チェックを削除すると、この呼び出しは
+    `ValueError`ではなく`FileNotFoundError`(存在しないパスのmanifest.jsonを
+    探しに行く)で落ちるようになり、`match="区切り文字"`のアサーションが
+    合致しなくなる。
+    """
+    lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
+    with pytest.raises(ValueError, match="区切り文字"):
+        pipeline.run(
+            {"houjin-bangou": DAY2},
+            _artifact_dir(DAY2),
+            previous_release="../2026-08-25",
+        )
+
+
+def test_carry_over_rejects_a_previous_release_whose_manifest_sources_date_is_not_parseable():
+    """前リリースの`manifest.sources`の値がISO日付として読めない場合、
+
+    `ValueError`にすること(黙ってcarry-overを諦めるのではなく)。
+
+    項目1の設計変更により、carry-over判定は`lake.latest_before`の探索では
+    なく前リリース自身の`manifest.sources`を直接信頼するようになった
+    (`_previous_release_sources`)。信頼する値が壊れていた場合
+    (手動編集・別ツールでの生成・将来の形式変更など)、`datetime.date`
+    としてパースできない値を握ったまま処理を進める(例: 型エラーとして
+    別の場所で不明瞭に落ちる、または黙って据え置きを諦める)のではなく、
+    ここで明示的に`ValueError`にする。
+
+    何があれば落ちるか: `_previous_release_sources`の`try/except ValueError`
+    ブロック(未変換の`datetime.date.fromisoformat`呼び出しの例外を再送する
+    部分)を削除して素通りさせると、この呼び出しは`ValueError`
+    (`match="日付として読めない"`)ではなく元の`fromisoformat`が出す
+    素の`ValueError`(前リリース名の文脈が無いメッセージ)、または
+    `_previous_release_sources`の呼び出し元での別の失敗になり、
+    このテストの`match`アサーションが合致しなくなる。
+    """
+    lake.save("houjin-bangou", DAY1, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
+    out1 = _artifact_dir(DAY1)
+    pipeline.run({"houjin-bangou": DAY1}, out1)
+    _write_fake_manifest(out1, DAY1.isoformat(), source_date="not-a-date")
+
+    lake.save("houjin-bangou", DAY2, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
+    with pytest.raises(ValueError, match="日付として読めない"):
+        pipeline.run(
+            {"houjin-bangou": DAY2},
+            _artifact_dir(DAY2),
+            previous_release=DAY1.isoformat(),
+        )
+
+
 # =============================================================================
 # Task 10修正ラウンド1(Ruling B26): manifest.jsonをコミット印として要求し、
 # kg.nqの完全性(sha256)・内容(SHACL再検証)を照合する。
