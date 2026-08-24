@@ -145,6 +145,83 @@ def test_extract_ministry_names_still_treats_known_non_ministry_ordinance_forms_
 
 
 # =============================================================================
+# 最終レビュー要修正3(裁定B41): 「規則」経路は共管を「・」で分割しない
+# =============================================================================
+
+# 実在の法令番号(data/lake/egov-law/2026-08-24/laws.jsonl。law_id
+# 430M602A1FDA001 / 503M602A1FDA002。実データ9,547法令中この2件だけが
+# 該当する。R45: 法令番号そのものは実データであり合成していない)。
+# どちらも同じ13機関の共管規則で、元号年だけが違う(平成三十年 / 令和三年)。
+REAL_JOINT_RULE_LAW_NUMS = [
+    (
+        "平成三十年内閣府・公正取引委員会・個人情報保護委員会・総務省・法務省・"
+        "財務省・文部科学省・厚生労働省・農林水産省・経済産業省・国土交通省・"
+        "環境省・原子力規制委員会規則第一号"
+    ),
+    (
+        "令和三年内閣府・公正取引委員会・個人情報保護委員会・総務省・法務省・"
+        "財務省・文部科学省・厚生労働省・農林水産省・経済産業省・国土交通省・"
+        "環境省・原子力規制委員会規則第二号"
+    ),
+]
+
+EXPECTED_13_MINISTRIES = [
+    "内閣府", "公正取引委員会", "個人情報保護委員会", "総務省", "法務省",
+    "財務省", "文部科学省", "厚生労働省", "農林水産省", "経済産業省",
+    "国土交通省", "環境省", "原子力規制委員会",
+]
+
+
+@pytest.mark.parametrize("law_num", REAL_JOINT_RULE_LAW_NUMS)
+def test_extract_ministry_names_splits_co_jurisdiction_in_rule_form(law_num):
+    """「規則」経路も「・」で共管を分割すること(最終レビュー要修正3。裁定B41)。
+
+    修正前は`_RULE_RE`の経路が`m.group(1)`を分割せず、13機関の連結が
+    **1件の機関名**として返っていた(実測。`docs/measurements-phase1.md:1448`
+    に「OBSOLETE_ORGANIZATION 内閣府・公正取引委員会・…・原子力規制委員会」
+    として結果だけは記録されていたが、欠陥としては読まれていなかった)。
+
+    何があれば落ちるか: `extract_ministry_names`の「規則」経路
+    (`_RULE_RE.match`が成功したブロック)が`return [m.group(1)]`のまま
+    `.split("・")`を呼ばないと、このテストは13件のリストではなく
+    1件(連結された1つの文字列)のリストを受け取って落ちる。
+    """
+    assert extract_ministry_names(law_num) == EXPECTED_13_MINISTRIES
+
+
+def test_extract_ministry_names_single_institution_rule_forms_are_unaffected_by_the_split_fix():
+    """人事院規則・会計検査院規則(単一機関。「・」を含まない)は、分割を
+    追加しても1要素のリストのまま変わらないこと(要修正3の回帰の護り。
+    裁定B41「人事院/閣の扱いが変わらないこと」に対応。「閣」は令の経路
+    〔CASESの明治二十二年閣令第十二号〕であり規則経路ではないため、
+    ここでは規則経路の人事院・会計検査院で固定する)。
+
+    `"・"`を含まない文字列の`.split("・")`は要素1件のリストを返すので、
+    分割の追加自体はこの2件の既存の振る舞いを変えない——ここではそれを
+    明示的に固定する(CASESの`("人事院規則一―四", ["人事院"])`と合わせて、
+    会計検査院規則も同様に固定する)。
+    """
+    assert extract_ministry_names("人事院規則一―四") == ["人事院"]
+    assert extract_ministry_names("平成十二年会計検査院規則第一号") == ["会計検査院"]
+
+
+def test_extract_ministry_names_non_organ_shaped_rule_name_still_extracts_for_no_candidate():
+    """政府機関の形をしていない規則名は、引き続き`EXTRACTION_FAILED`にせず
+
+    抽出に成功したものとして返すこと(要修正3の回帰の護り)。
+
+    「規則」経路は抽出段で`_looks_like_government_organ`のゲートを
+    掛けない(令の経路とは違う設計。`test_derive_jurisdiction_classifies_non_organ_shaped_name_as_no_candidate`
+    のdocstring参照)。共管分割を追加したことで、令の経路と同じ
+    `all(_looks_like_government_organ(s) for s in segments)` ゲートを
+    誤って持ち込むと、このテスト(1区分・非機関形)は`EXTRACTION_FAILED`
+    に変わり、NO_CANDIDATE分類のテストが壊れる(このタスクで実際に検討し、
+    避けた設計)。
+    """
+    assert extract_ministry_names("ダミー機関規則第一号") == ["ダミー機関"]
+
+
+# =============================================================================
 # Step 3: 解決
 # =============================================================================
 
@@ -270,6 +347,46 @@ def test_derive_jurisdiction_classifies_non_organ_shaped_name_as_no_candidate():
     assert result.unresolved == [
         UnresolvedJurisdiction(name="ダミー機関", reason="NO_CANDIDATE")
     ]
+
+
+def test_derive_jurisdiction_resolves_all_13_ministries_of_a_real_joint_rule_regulation():
+    """実在の13機関共管規則(最終レビュー要修正3。裁定B41)が、修正後は
+
+    13機関すべて`resolved`になり、`unresolved`(OBSOLETE_ORGANIZATION)には
+    1件も残らないこと。
+
+    `law_id`/`law_num`は実データそのもの(law_id=503M602A1FDA002。
+    data/lake/egov-law/2026-08-24/laws.jsonl。R45に抵触しない)。
+    `reference`(現存府省の参照表)は、この解決ロジックだけを検証する
+    ための合成データ(houjin_bangouは検証用のダミー値。R45——実在する
+    ように見せかけない、明らかに連番の合成値にする)。
+
+    修正前は`extract_ministry_names`が13機関の連結を1件の名称として
+    返すため、`reference`にその連結名と一致する行が無く、
+    `_looks_like_government_organ`が真(「委員会」で終わる)と判定されて
+    **`OBSOLETE_ORGANIZATION`1件**になっていた(実測。
+    `docs/measurements-phase1.md:1448`)。26本の`law:jurisdiction`
+    (13機関×2法令)が失われていたことに対応する、法令1件あたり13本の
+    resolvedを、ここで固定する。
+    """
+    reference = to_ministry_reference(
+        [_ministry(f"{9000000000000 + i:013d}", name) for i, name in enumerate(
+            EXPECTED_13_MINISTRIES
+        )]
+    )
+    record = _law_record(
+        "503M602A1FDA002",
+        "令和三年内閣府・公正取引委員会・個人情報保護委員会・総務省・法務省・"
+        "財務省・文部科学省・厚生労働省・農林水産省・経済産業省・国土交通省・"
+        "環境省・原子力規制委員会規則第二号",
+    )
+
+    result = derive_jurisdiction(record, reference, old_ministries=set())
+
+    assert result.unresolved == [], f"未解決が残っている(修正漏れの疑い): {result.unresolved}"
+    assert len(result.resolved) == 13, (
+        f"13機関のうち{len(result.resolved)}件しかresolvedにならなかった"
+    )
 
 
 def test_derive_jurisdiction_classifies_ambiguous_when_reference_has_duplicate_names():

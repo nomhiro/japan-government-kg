@@ -137,7 +137,26 @@ def extract_ministry_names(law_num: str) -> list[str] | None | ExtractionFailed:
     remainder = _ERA_YEAR_PREFIX_RE.sub("", law_num, count=1)
     m = _RULE_RE.match(remainder)
     if m:
-        return [m.group(1)]
+        # 最終レビュー要修正3(裁定B41): 共管(「・」区切り)は令の経路と同じく
+        # 分割する。修正前は`[m.group(1)]`のまま返していたため、複数機関の
+        # 共管規則が「連結された1つの機関名」になっていた(実測: 13機関の
+        # 共管規則2件が該当。data/lake/egov-law/2026-08-24/laws.jsonlの
+        # law_id 430M602A1FDA001/503M602A1FDA002)。
+        #
+        # **令の経路とは違い、ここでは`all(_looks_like_government_organ(...))`
+        # ゲートを掛けない。** 令の経路がそのゲートを持つ理由は、正規表現の
+        # 曖昧さ(「政令」の「政」を機関名区分と誤認する)を切り分けるためで、
+        # 「規則」という語は曖昧さが無く区切りとして十分はっきりしている。
+        # ゲートを掛けると、政府機関の形をしていない規則名(1区分。例:
+        # 「ダミー機関規則」)が`EXTRACTION_FAILED`に変わり、
+        # `derive_jurisdiction`が本来ここに割り振るはずのNO_CANDIDATE分類
+        # (schema/core.yamlの定義そのもの「政府機関の形にも当たらない」)に
+        # 到達できなくなる——既存の
+        # `test_derive_jurisdiction_classifies_non_organ_shaped_name_as_no_candidate`
+        # がこの設計を固定している。ゲート無しでの単一機関(人事院規則・
+        # 会計検査院規則)への影響も無い(「・」を含まない文字列の
+        # `.split("・")`は要素1件のリストを返すため)。
+        return m.group(1).split("・")
     if remainder.startswith("規則"):
         # 元号年接頭辞(あれば剥がした)の直後に「規則」が続き、名称が無い
         return EXTRACTION_FAILED
