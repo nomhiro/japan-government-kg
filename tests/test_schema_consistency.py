@@ -287,42 +287,43 @@ def test_all_shacl_covers_the_classes_emitted_by_the_pipeline():
 OVERLAY = SCHEMA / "overlay"
 
 
-def test_overlay_terms_all_exist_in_generated_owl():
-    """設計書§10: オーバーレイが言及する用語はすべて生成OWLに存在すること。
+def test_overlay_is_empty_pending_new_axioms():
+    """R16(Task 12): オーバーレイは現在トリプル0件であること。
 
-    存在しない用語への公理は、スキーマへの未反映かタイポである。
+    以前ここにあった21本の owl:disjointWith は schema/core.yaml の
+    children_are_mutually_disjoint に移した(R16)。移す前の整合テスト
+    (test_overlay_terms_all_exist_in_generated_owl / test_merged_ontology_
+    contains_both_sources)は、検査対象(オーバーレイの内容)が0件になった
+    時点で「何も主張していないのに合格する」空虚なテストに退化する —
+    これはR16の懸念そのもの、かつこのプロジェクトで繰り返し踏んだ欠陥の型
+    (「対象0件で全て合格」)である。このテストはその退化を逆手に取り、
+    **空であること自体**を主張として固定する。
+
+    **ファイル集合も固定する。** `OVERLAY.glob("*.ttl")` でループするだけの
+    検査に戻すと、将来 `schema/overlay/` に新しいファイルが増えたときに
+    無審査で公開マージ(`merge_ontology`)へ混入する(この検査は対象0件のまま
+    気づかれずに合格を続ける)。ファイル集合をここで明示することで、
+    想定外のファイルが増えたら**このテストの想定から外れて**気づける。
+
+    **何があれば落ちるか**: `core-axioms.ttl` にトリプルを1つでも追加する、
+    `schema/overlay/` に新しいファイルを追加する、のいずれでも落ちる。
+    新しい公理を書くときは、このテストを書き直し、削除した2テスト相当の
+    整合検査(このコミット以前の git history を参照)を復活させること。
     """
-    from jgkg.schema_merge import overlay_terms
-
-    owl_g = Graph()
-    for p in sorted(GENERATED.glob("*.owl.ttl")):
-        owl_g.parse(p, format="turtle")
-    declared = {str(s) for s in owl_g.subjects(RDF.type, OWL.Class)}
-    declared |= {str(s) for s in owl_g.subjects(RDF.type, OWL.ObjectProperty)}
-    declared |= {str(s) for s in owl_g.subjects(RDF.type, OWL.DatatypeProperty)}
-
-    for overlay in sorted(OVERLAY.glob("*.ttl")):
-        referenced = overlay_terms(overlay)
-        # 自分の名前空間の用語だけを検査する。外部語彙(prov: 等)は対象外
-        base = "https://jgkg.norr-tech.com/def/"
-        own = {t for t in referenced if t.startswith(base)}
-        missing = own - declared
-        assert not missing, (
-            f"{overlay} が言及する用語が生成OWLに存在しない: {sorted(missing)}"
-        )
-
-
-def test_merged_ontology_contains_both_sources():
-    from jgkg.schema_merge import merge_ontology
-
-    merged = merge_ontology(
-        generated=sorted(GENERATED.glob("*.owl.ttl")),
-        overlay=sorted(OVERLAY.glob("*.ttl")),
+    files = sorted(OVERLAY.glob("*.ttl"))
+    assert files == [OVERLAY / "core-axioms.ttl"], (
+        f"オーバーレイのファイル集合が想定と異なる: {[f.name for f in files]}。"
+        " 新しいオーバーレイファイルを追加したなら、対応する整合テスト"
+        "(旧 test_overlay_terms_all_exist_in_generated_owl 相当)を復活させること"
     )
-    # 生成側由来
-    assert (None, RDF.type, OWL.Class) in merged
-    # オーバーレイ由来
-    assert any(merged.triples((None, OWL.disjointWith, None))), "オーバーレイの公理が入っていない"
+
+    g = Graph()
+    g.parse(files[0], format="turtle")
+    assert len(g) == 0, (
+        f"{files[0]} が空でない({len(g)}トリプル)。オーバーレイに公理が"
+        " 復活したなら、対応する整合テスト(旧 test_merged_ontology_contains_"
+        "both_sources 相当)を復活させること"
+    )
 
 
 def _disjoint_with_pairs(g: Graph) -> set[frozenset[str]]:

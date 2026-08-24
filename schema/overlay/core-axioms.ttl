@@ -11,15 +11,20 @@
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix core: <https://jgkg.norr-tech.com/def/core#> .
 
-# 6軸と未解決参照は互いに素である。7クラスの全組み合わせ21ペアを網羅する。
-# 上三角の形で書き、重複なく数えられるようにしている(6+5+4+3+2+1 = 21)。
+# R16(Task 12・2026-08-24): このファイルはこれまで、6軸+UnresolvedReference
+# (7クラス。全組み合わせ21ペア)の owl:disjointWith を手書きしていた。
+# LinkML 1.11.1 の gen-owl が `children_are_mutually_disjoint` を実装している
+# ことを実機で確認したため(owlgen.py:_add_disjoint_children。実測: 7クラスの
+# owl:AllDisjointClasses/owl:members が生成OWLに出る)、単一ソース原則
+# (このファイル冒頭の規約そのもの)に従い schema/core.yaml の Entity へ移した。
+# 21ペアという意味は変わらない — 表現の場所と構文(pairwiseの
+# owl:disjointWith → n項の owl:AllDisjointClasses)だけが変わった。
 #
-# Agent と Place の排他は特に意味がある: 「東京都」という行政区域(Place)と、
-# 「東京都」という地方公共団体(Agent、法人番号を持つ)は別のものであり、
-# 別のURIで表す。この公理がその区別を強制する。
-core:Agent        owl:disjointWith core:Work , core:Place , core:Event , core:MonetaryItem , core:Concept , core:UnresolvedReference .
-core:Work         owl:disjointWith core:Place , core:Event , core:MonetaryItem , core:Concept , core:UnresolvedReference .
-core:Place        owl:disjointWith core:Event , core:MonetaryItem , core:Concept , core:UnresolvedReference .
-core:Event        owl:disjointWith core:MonetaryItem , core:Concept , core:UnresolvedReference .
-core:MonetaryItem owl:disjointWith core:Concept , core:UnresolvedReference .
-core:Concept      owl:disjointWith core:UnresolvedReference .
+# その結果、このファイルは意図的にトリプル0件になっている(冒頭の規約と
+# @prefix だけの、妥当なTurtle)。**新しい公理をここに書くときは、以下を
+# 復活させること**:
+#   - tests/test_schema_consistency.py の
+#     test_overlay_terms_all_exist_in_generated_owl 相当の整合検査
+#     (このコミット以前の git history を参照)
+#   - test_overlay_is_empty_pending_new_axioms(このファイルが空である
+#     ことだけを主張する現在のテスト)をその新しい内容に合わせて書き直す
