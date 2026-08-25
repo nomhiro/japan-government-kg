@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     lake_dir: str = "data/lake"
     artifact_dir: str = "data/artifact"
     quarantine_dir: str = "data/quarantine"
+    # 法人番号 全件データのURL。月次で変わる selDlFileNo を含むため、
+    # ソースコードには書けない(.env.example のコメントに取得手順がある)。
+    # 空文字列も「未設定」として扱う(.env.example が `JGKG_HOUJIN_BANGOU_URL=`
+    # という空値をコミットしており、.env にそのままコピーされると
+    # pydantic-settings は None ではなく "" を読む——jgkg.fetch のガードは
+    # 両方を弾く必要がある)
+    houjin_bangou_url: str = ""
 
     @field_validator("base_uri")
     @classmethod
