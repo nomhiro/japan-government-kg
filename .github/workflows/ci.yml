@@ -69,3 +69,83 @@ jobs:
 
       - name: Test
         run: uv run pytest tests/ -v
+
+  # ---------------------------------------------------------------------------
+  # 継続的デリバリ: main に入ったらサイトを自動で配信する
+  #
+  # **なぜサイトはCIで配信できるのか**: `site/def/` はコミット済みの
+  # `schema/generated/*.ttl` から完全に導出できる。だからCIが手元と同じものを
+  # 作れる。**データ成果物(`data/artifact/`)はこれができない** —
+  # `.gitignore` 対象で、作り直すにはレイク(政府データそのもの)が必要だから。
+  # 配布は `scripts/publish-release.sh` でローカルから行う(B-1)。
+  #
+  # **配信後に本番を検査する**のがこのジョブの要点である。このセッションで
+  # 2つの失敗を踏んだ:
+  #   1. 公開物が2日間陳腐化(law/budgetがHTTP 200のままHTMLを返し続けた)
+  #   2. `wrangler pages deploy` がブランチ名を推論してプレビューに配信し、
+  #      `16 files uploaded` と成功を出したのに本番は2日前のままだった
+  # 配信直後に verify-site.py を回せば、**どちらも即座に赤くなる**。
+  # ---------------------------------------------------------------------------
+  deploy:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # 連続pushでデプロイが競合しないよう直列化する(後勝ちで良い)
+    concurrency:
+      group: pages-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Build the static site
+        run: bash scripts/build-site.sh
+
+      - name: Check the site build before shipping it
+        # test ジョブでも同じ検査をしているが、**配信するその成果物**を
+        # 配信直前に検査する。ビルドは決定的なので同じ結果になるはずで、
+        # ならなければそれ自体が発見である。
+        run: uv run python scripts/check-site-build.py
+
+      - name: Deploy to Cloudflare Pages
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::warning::CLOUDFLARE_API_TOKEN が未設定なのでデプロイを飛ばす。リポジトリの Settings > Secrets and variables > Actions に CLOUDFLARE_API_TOKEN(スコープ: Account > Cloudflare Pages > Edit)と CLOUDFLARE_ACCOUNT_ID を設定すること。設定するまで本番は更新されない(site-check.yml が翌日に検出する)"
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # **--branch main は必須。** 省略すると wrangler が現在のブランチ名を
+          # 使い、本番ではなくそのブランチのプレビュー配信になる(独自ドメインは
+          # 更新されない)。2026-08-25に実際に踏んだ。
+          # wrangler はメジャー固定にする(配信ツールでデータに影響しないため、
+          # linkml や Jena のような厳密固定はしない)。
+          npx --yes wrangler@4 pages deploy site --project-name jgkg --branch main
+
+      - name: Verify production after deploying
+        if: steps.deploy.outputs.skipped != 'true'
+        run: |
+          # Cloudflare Pages の反映は速いが即時ではない。有限回試して、
+          # 最後まで通らなければ**落とす**(通るまで待ち続けたり、
+          # 通らないのに緑にしたりしない)。
+          for attempt in 1 2 3 4 5 6; do
+            if uv run python scripts/verify-site.py https://jgkg.norr-tech.com; then
+              echo "本番の検査に合格した(${attempt}回目)"
+              exit 0
+            fi
+            echo "検査が通らない。10秒待って再試行する(${attempt}/6)"
+            sleep 10
+          done
+          echo "::error::配信は成功したが、本番の検査が通らない。配信先が本番でない(プレビューに入った)可能性がある"
+          exit 1
