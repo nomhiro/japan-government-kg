@@ -7,8 +7,23 @@ import datetime
 import hashlib
 from dataclasses import dataclass
 
-GOV_STANDARD_TERMS = "政府標準利用規約(第2.0版)"
-GOV_STANDARD_TERMS_URL = "https://www.digital.go.jp/resources/terms_of_use"
+# **B-1修正(2026-08-26。一次資料調査で発見)**: 以前はここに
+# `GOV_STANDARD_TERMS = "政府標準利用規約(第2.0版)"`
+# `GOV_STANDARD_TERMS_URL = "https://www.digital.go.jp/resources/terms_of_use"`
+# があり、`egov-law`・`houjin-bangou`の2ソースがこれを使っていた。**政府標準
+# 利用規約は令和6年7月5日(2024-07-05)をもって「公共データ利用規約(第1.0版)」
+# (PDL1.0)へ改訂され、廃止されている**(PDL1.0原文自身が「既に以前の政府標準
+# 利用規約にしたがって…」と過去形で言及。`GOV_STANDARD_TERMS_URL`は
+# 2026-08-26時点で実際に404)。egov-law・houjin-bangouいずれも、規約ページ
+# 本文を一次資料で直接確認すると「公共データ利用規約(第1.0版)」を明記して
+# おり、「政府標準利用規約」という語自体が出現しない(rs-systemは元々PDL1.0で
+# 正しかった。詳細は
+# `.superpowers/sdd/2026-08-23-phase1-vertical-slice-data-layer/source-terms-research.md`)。
+# **KGのprovenanceグラフ(`dcterms:license`/`dcterms:rights`。rdf/provenance.py)
+# はSourceのこの値をそのまま書くため、この訂正前に構築したリリースは
+# 404のURLと廃止された規約名を「現在有効な出典」として主張していた。**
+PUBLIC_DATA_LICENSE_1_0 = "公共データ利用規約(第1.0版)(PDL1.0)"
+PUBLIC_DATA_LICENSE_1_0_URL = "https://www.digital.go.jp/resources/open_data/public_data_license_v1.0"
 
 
 def content_digest(data: bytes) -> str:
@@ -59,12 +74,17 @@ SOURCES: dict[str, Source] = {
         id="houjin-bangou",
         name="国税庁 法人番号公表サイト 全件データ",
         url="https://www.houjin-bangou.nta.go.jp/download/zenken/",
-        license=GOV_STANDARD_TERMS,
-        license_url=GOV_STANDARD_TERMS_URL,
+        # 規約ページ(https://www.houjin-bangou.nta.go.jp/riyokiyaku/index.html)
+        # を一次資料で確認(2026-08-26)。本文は「公共データ利用規約(第1.0版)」
+        # に準拠すると明記し、「政府標準利用規約」という語は出現しない
+        license=PUBLIC_DATA_LICENSE_1_0,
+        license_url=PUBLIC_DATA_LICENSE_1_0_URL,
         frequency="monthly",
         access="bulk",
         encoding="utf-8",
-        note="全件データは月次(前月末時点)。差分は日次。商用・再配布可。"
+        note="全件データは月次(前月末時点)。差分は日次。商用・再配布可"
+             "(PDL1.0原文の「商用利用も可能です」の記載による——houjin-bangou"
+             "自身の規約ページ本文にこの語自体は無い)。"
              "Shift_JIS版とUnicode版の両方が配布されているため、Unicode(UTF-8)版を取得すること",
         expected_cadence_days=31,
     ),
@@ -72,8 +92,14 @@ SOURCES: dict[str, Source] = {
         id="egov-law",
         name="e-Gov法令API v2 全法令メタデータ",
         url="https://laws.e-gov.go.jp/api/2/laws",
-        license=GOV_STANDARD_TERMS,
-        license_url=GOV_STANDARD_TERMS_URL,
+        # 規約ページ(https://laws.e-gov.go.jp/terms)を一次資料で確認
+        # (2026-08-26。SPAのためPlaywrightでレンダリングして本文を取得)。
+        # 本文は「公共データ利用規約(第1.0版)」に準拠すると明記し、
+        # 「政府標準利用規約」という語は出現しない。法令API自体に固有の
+        # 追加規約は見つからなかった(APIドキュメントページにあったのは
+        # サンプルコードの免責事項のみ)
+        license=PUBLIC_DATA_LICENSE_1_0,
+        license_url=PUBLIC_DATA_LICENSE_1_0_URL,
         frequency="monthly",
         access="api",
         encoding="utf-8",
@@ -89,12 +115,15 @@ SOURCES: dict[str, Source] = {
         # 単一のurlフィールドでは表現できないため、主要な出典をurlに置きnoteで
         # 補う(裁定B12。judgment call。詳細はtask-5-report.md)
         url="https://rssystem.go.jp",
-        # RSのライセンスは政府標準利用規約ではなく「公共データ利用規約
-        # (第1.0版)」(rs-systemソースの note 参照)。名簿の37/40行はRS由来
-        # なのでこちらを名簿全体の代表ライセンスとする。残り3行の出典
-        # (e-Gov法令API)は政府標準利用規約(GOV_STANDARD_TERMS)
-        license="公共データ利用規約(第1.0版)(PDL1.0)",
-        license_url="https://www.digital.go.jp/resources/open_data/public_data_license_v1.0",
+        # **B-1修正(2026-08-26)**: 以前はここに「名簿37/40行はRS由来なので
+        # PDL1.0を代表値とする。残り3行(e-Gov法令API由来)は政府標準利用規約」
+        # という、規約が異なる前提のコメントがあった。**その前提は誤りだった**
+        # ——e-Gov法令API側の規約ページを一次資料で確認すると、実際にはこちらも
+        # PDL1.0だった(上記PUBLIC_DATA_LICENSE_1_0のコメント参照)。
+        # **40行全てが同じPDL1.0の下にある**。「規約が異なる3行」という構造
+        # 自体が存在しなかった
+        license=PUBLIC_DATA_LICENSE_1_0,
+        license_url=PUBLIC_DATA_LICENSE_1_0_URL,
         frequency="ondemand",
         access="bulk",
         note="小規模で安定した名簿のため data/reference/ にコミットして管理する。"
@@ -132,11 +161,15 @@ SOURCES: dict[str, Source] = {
         url="https://rssystem.go.jp/download-csv",
         # 政府標準利用規約(第2.0版)ではない。RSは「公共データ利用規約(第1.0版)」
         # (PDL1.0)に準拠する、と当サイトの利用規約ページ自体が明記している
-        # (2026-08-23 実測。JSバンドル main-Cyt4dzWq.js の i18n 文字列
-        # "ps-terms-page-intro-text-2/3" より)。出典記載例(同ページより):
-        # 「出典：行政事業レビュー見える化サイト」
-        license="公共データ利用規約(第1.0版)(PDL1.0)",
-        license_url="https://www.digital.go.jp/resources/open_data/public_data_license_v1.0",
+        # (2026-08-23 実測・2026-08-26再確認。JSバンドル main-Cyt4dzWq.js の
+        # i18n 文字列 "ps-terms-page-intro-text-2/3" より)。出典記載例
+        # (同ページより): 「出典：行政事業レビュー見える化サイト」
+        # **RS自身の規約ページは「法人番号列・根拠法令名列は提供元(国税庁の
+        # 法人番号公表サイト/e-Gov法令検索)の利用条件に従う」と明記している**
+        # ——このPDL1.0宣言はCSV内の全列を無条件にカバーするわけではない
+        # (2026-08-26。source-terms-research.md参照)
+        license=PUBLIC_DATA_LICENSE_1_0,
+        license_url=PUBLIC_DATA_LICENSE_1_0_URL,
         frequency="annual",
         access="bulk",
         encoding="utf-8-sig",

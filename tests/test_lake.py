@@ -23,6 +23,30 @@ def test_registry_has_houjin_bangou_with_license():
     assert src.frequency == "monthly"
 
 
+def test_all_four_sources_share_the_same_pdl1_0_license():
+    """B-1修正(2026-08-26): 4ソースとも「公共データ利用規約(第1.0版)」(PDL1.0)であること。
+
+    以前は`egov-law`・`houjin-bangou`が「政府標準利用規約(第2.0版)」
+    (URL: `https://www.digital.go.jp/resources/terms_of_use`)を記録していたが、
+    一次資料(規約ページ本文)を直接確認すると、この2ソースも実際にはPDL1.0
+    だった(政府標準利用規約は2024-07-05にPDL1.0へ改訂され廃止されている。
+    旧URLは2026-08-26時点で404)。**何があれば落ちるか**: 4ソースのいずれか
+    が古い「政府標準利用規約」に戻ると、あるいはURLが
+    `terms_of_use`(旧・404)に戻ると落ちる。KGのprovenanceグラフ
+    (`dcterms:license`/`dcterms:rights`)はここの値をそのまま書くため、
+    ここが正しいことが公開KGの出典表示が正しいことの前提になる。
+    """
+    expected_license = "公共データ利用規約(第1.0版)(PDL1.0)"
+    expected_url = "https://www.digital.go.jp/resources/open_data/public_data_license_v1.0"
+    for source_id in ("houjin-bangou", "egov-law", "ministry-codes", "rs-system"):
+        src = sources.get_source(source_id)
+        assert src.license == expected_license, (source_id, src.license)
+        assert src.license_url == expected_url, (source_id, src.license_url)
+    assert "terms_of_use" not in sources.get_source("egov-law").license_url, (
+        "廃止済み・404の旧URL(政府標準利用規約)に戻っていないこと"
+    )
+
+
 def test_get_unknown_source_raises():
     with pytest.raises(KeyError):
         sources.get_source("no-such-source")
