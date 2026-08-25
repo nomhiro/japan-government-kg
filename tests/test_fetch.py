@@ -6,6 +6,7 @@
 正しく拒否するか」だけを検証する(ディスパッチの責務に絞る)。
 """
 import datetime
+from collections.abc import Callable
 
 import pytest
 
@@ -23,6 +24,34 @@ def tmp_lake(tmp_path, monkeypatch):
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
+
+
+class ConnectorCalledUnexpectedly(Exception):
+    """「呼ばれてはならない」スタブが実際に呼ばれたことを示す専用の例外型。
+
+    **A-1レビュー指摘への対応。** 以前は`AssertionError`に日本語の文言を
+    持たせ、`fetch.py`の`except Exception`を経由したあとcapsysで捕捉した
+    出力を部分文字列一致で検査していた——検出が**文言の一致**に依存して
+    いた(別の理由での失敗が偶然同じ部分文字列を含めば「検出した」と
+    誤認しうる)。ここでは専用の例外型と`calls`リストの2つを組み合わせ、
+    `assert calls == []`という**型・文言に依存しない**判定で「呼ばれたか」
+    そのものを検査する(このスタブが実際に踏んだ事故——A-1壊し確認4での
+    実ネットワークアクセス——を二度と検出漏れさせないためのテスト)。
+    """
+
+
+def _forbidden(calls: list) -> Callable:
+    """呼ばれたら`calls`に記録してから`ConnectorCalledUnexpectedly`を投げるスタブ。
+
+    呼び出し側は`assert calls == []`で「呼ばれなかったこと」を検査する
+    (`fetch.py`側が例外をどう処理するかに関係なく判定できる)。
+    """
+    def stub(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise ConnectorCalledUnexpectedly(
+            f"呼ばれてはならないコネクタが呼ばれた: args={args!r} kwargs={kwargs!r}"
+        )
+    return stub
 
 
 def _stub_result(source_id: str, day: datetime.date) -> FetchResult:
@@ -124,17 +153,16 @@ def test_ministry_codes_is_rejected_without_attempting_any_fetch(monkeypatch, ca
     ministry-codesが無いため KeyError で落ちるか、あるいは黙って何もせず
     exit 0 になる——いずれも「成功したように見せない」を満たさない。
     """
-    def _must_not_be_called(*args, **kwargs):
-        raise AssertionError("ministry-codes はコネクタを呼んではならない")
-
+    calls: list = []
     # そもそもDISPATCHにministry-codesは無いが、念のため他の源が
     # 誤って呼ばれていないことも保証する
-    monkeypatch.setattr(fetch_module.egov_law, "fetch", _must_not_be_called)
+    monkeypatch.setattr(fetch_module.egov_law, "fetch", _forbidden(calls))
 
     with pytest.raises(SystemExit) as exc_info:
         fetch_module.main(["--source", "ministry-codes"])
 
     assert exc_info.value.code != 0
+    assert calls == []
     err = capsys.readouterr().err
     assert "取得対象ではない" in err
     assert "data/reference/ministry-codes.csv" in err
@@ -154,15 +182,14 @@ def test_year_flag_on_a_non_rs_system_source_is_rejected(monkeypatch, capsys):
     そのため、この検査が外れても実ネットワークに触れないよう、コネクタを
     明示的に「呼ばれてはならない」スタブに差し替えておく。
     """
-    def _must_not_be_called(*args, **kwargs):
-        raise AssertionError("--year の誤用が通ったのに egov_law.fetch を呼んではならない")
-
-    monkeypatch.setattr(fetch_module.egov_law, "fetch", _must_not_be_called)
+    calls: list = []
+    monkeypatch.setattr(fetch_module.egov_law, "fetch", _forbidden(calls))
 
     with pytest.raises(SystemExit) as exc_info:
         fetch_module.main(["--source", "egov-law", "--year", "2025"])
 
     assert exc_info.value.code != 0
+    assert calls == []
     assert "rs-system 以外" in capsys.readouterr().err
 
 
@@ -174,15 +201,14 @@ def test_rs_system_without_year_is_rejected(monkeypatch, capsys):
     そのため、この検査が外れても実ネットワークに触れないよう、コネクタを
     明示的に「呼ばれてはならない」スタブに差し替えておく。
     """
-    def _must_not_be_called(*args, **kwargs):
-        raise AssertionError("--year が無いのに rs_system.fetch_all を呼んではならない")
-
-    monkeypatch.setattr(fetch_module.rs_system, "fetch_all", _must_not_be_called)
+    calls: list = []
+    monkeypatch.setattr(fetch_module.rs_system, "fetch_all", _forbidden(calls))
 
     with pytest.raises(SystemExit) as exc_info:
         fetch_module.main(["--source", "rs-system"])
 
     assert exc_info.value.code != 0
+    assert calls == []
     assert "--year が必要" in capsys.readouterr().err
 
 
@@ -204,13 +230,12 @@ def test_houjin_bangou_url_unset_gives_an_actionable_error(monkeypatch, capsys):
     monkeypatch.setenv("JGKG_HOUJIN_BANGOU_URL", "")
     get_settings.cache_clear()
 
-    def _must_not_be_called(*args, **kwargs):
-        raise AssertionError("URLが無いのにコネクタを呼んではならない")
-
-    monkeypatch.setattr(fetch_module.houjin_bangou, "fetch", _must_not_be_called)
+    calls: list = []
+    monkeypatch.setattr(fetch_module.houjin_bangou, "fetch", _forbidden(calls))
 
     rc = fetch_module.main(["--source", "houjin-bangou"])
     assert rc == 1
+    assert calls == []
     err = capsys.readouterr().err
     assert "JGKG_HOUJIN_BANGOU_URL" in err
     assert "houjin-bangou.nta.go.jp/download/zenken" in err
@@ -227,13 +252,12 @@ def test_overwrite_guard_rejects_without_the_flag_and_the_connector_is_never_cal
 ):
     lake.save("egov-law", DAY, "laws.jsonl", b"existing-snapshot-stub")
 
-    def _must_not_be_called(*args, **kwargs):
-        raise AssertionError("既存スナップショットがあるのにコネクタを呼んではならない")
-
-    monkeypatch.setattr(fetch_module.egov_law, "fetch", _must_not_be_called)
+    calls: list = []
+    monkeypatch.setattr(fetch_module.egov_law, "fetch", _forbidden(calls))
 
     rc = fetch_module.main(["--source", "egov-law", "--fetched-on", "2026-08-20"])
     assert rc == 1
+    assert calls == []
     err = capsys.readouterr().err
     assert "既にコミット済みのスナップショットがある" in err
     assert "--allow-overwrite" in err
