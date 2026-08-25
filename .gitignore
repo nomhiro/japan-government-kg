@@ -64,3 +64,9 @@ site/_headers
 
 # wrangler のローカル実行が作る一時ファイル
 .wrangler/
+
+# Playwright MCP(ブラウザ操作ツール)がセッションごとに作る作業ディレクトリ。
+# 一次資料調査(SPAページのレンダリング)等で使うたびに生成され、内容に
+# 再現性・保存価値が無い。B-2でmanifestにgit_commit/git_dirtyを記録する
+# ようになったため、これを無視しないと「毎回dirty」という嘘の記録になる
+.playwright-mcp/
