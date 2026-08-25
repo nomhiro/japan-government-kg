@@ -83,6 +83,30 @@
 
 一次データはすべて政府公開データです。ソースごとの利用規約は機械可読メタデータとしてKGに保持し、アプリ表示時に出典と規約を自動表示する設計です。Phase 1 で使うソースはいずれも商用・再配布可(政府標準利用規約準拠、またはCC BY相当)です。
 
+## KGをダウンロードして使う
+
+ビルド済みのKGは [GitHub Releases](https://github.com/nomhiro/japan-government-kg/releases) から配布します(公開の仕組みは `scripts/publish-release.sh` / `src/jgkg/publish.py`)。各リリースには3つの資産が付きます: `kg.nq.gz`(N-Quads本体)・`tdb2.tar.gz`(Jena TDB2の索引済みデータ)・`manifest.json`(トリプル数・グラフ一覧・各ソースの取得日・各資産のsha256)。リリースノートに出典表示・ライセンス・sha256を全量載せています。
+
+### N-Quadsから読む(どのRDFストアでも読める。長く使えるのはこちら)
+
+```sh
+gunzip kg.nq.gz
+# 任意のトリプルストア(Fuseki以外でも)にN-Quadsとしてロードする
+```
+
+`tdb2.tar.gz` はJenaのバージョンに縛られますが、`kg.nq.gz` は標準のN-Quads形式なので、将来別のRDFストアに載せ替えたくなった場合にはこちらが本体になります。
+
+### TDB2から読む(即起動できるが**Jena 6.2.0に固定される**)
+
+```sh
+tar xzf tdb2.tar.gz
+# Jena 6.2.0 の Fuseki にこの tdb2/ ディレクトリを指させて起動する
+```
+
+**注意**: TDB2のオンディスク形式はJenaのバージョンに紐づきます。このリポジトリが配布するTDB2成果物は Jena 6.2.0 で構築したものなので、別バージョンのJena/Fusekiでは読めない可能性があります(`scripts/serve.sh` は配置前にJenaバージョンの一致を照合します)。バージョンに縛られたくない場合はN-Quads経路を使ってください。
+
+いずれの経路でも、読み込んだ後は同じSPARQLエンドポイントとして使えます(`queries/cq/` のコンピテンシー質問を参照)。ダウンロードした資産のsha256は `manifest.json` およびリリースノートに記載の値と照合できます。
+
 ## ライセンス
 
 - **コード**: [MIT License](LICENSE)
