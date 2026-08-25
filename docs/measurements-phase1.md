@@ -1802,3 +1802,148 @@ old-ministries.csv出典・EXTRACTION_FAILED内訳・内閣官房令実在)も
 本記録(§6〜§11)で全て実データにより確認済み。詳細な経緯・気になる点は
 `.superpowers/sdd/2026-08-23-phase1-vertical-slice-data-layer/task-11-report.md`
 を参照。
+
+**追記(A-4。2026-08-25)**: 上記(C)の実データ検証(§5)は、いずれも
+要修正3(法令所管の`law:jurisdiction`欠落。26本)の**修正前**のコードで
+作られたリリース(`2026-08-25`・`2026-08-26`)を使っていた。判定(C)自体
+——一巡の機構(取得→差分検出→検証→切替→鮮度反映)が実データで動く
+という結論——は変わらないが、**修正後のコードで一巡を実際に通したのは
+今回(§16)が初めて**である。
+
+---
+
+## 16. A-4: 修正後コードによる一巡の再実行(初めて正しいリリース。`2026-08-25-corrected`)
+
+要修正3の修正(A-2)後、その修正が実際の政府サーバからの新規取得・
+carry-over・実Fusekiの全経路を通しても正しく効くことを確認するため、
+`jgkg.fetch`によるe-Gov法令の実取得(このCLIの初の本番実使用)から
+リリース構築・配置・CQ実行・`compare_releases.py`による前リリースとの
+差分確認までを実データで一巡させた。詳細な経緯は
+`.superpowers/sdd/2026-08-23-phase1-vertical-slice-data-layer/task-A4-report.md`
+参照。ここでは礎定(A-4ブリーフ)が明示した5項目を転記する。
+
+### 16.1 叩いたURLと回数(政府サーバへの礼儀の記録)
+
+| URL | 回数 | 結果 |
+|---|---|---|
+| `https://laws.e-gov.go.jp/api/2/laws?limit=100&offset={0,100,...,9500}` | **96回**(ページング。offset 0刻み100、最終offset=9500) | 成功。全9,550件取得 |
+| `https://rssystem.go.jp/files/2026/rs/1-1_RS_2026_基本情報_組織情報.zip` | **1回**(2026年度が公開されているかの確認) | 失敗(SPAフォールバック検出。`UnexpectedResponseError`)。2026年度は未公開と判断し、以降RSへの追加リクエストは行っていない |
+
+合計97リクエスト。houjin-bangou・ministry-codesへの新規リクエストは0件
+(既存スナップショット・参照表を流用)。並列実行はしていない。RS
+2026年度probeの失敗は`fetch_group`内の`_get()`(zip署名検査)で発生し、
+`lake.save`に到達する前に例外化するため、`data/lake/rs-system/`には
+何も書き込まれていない(`ls`で実測確認済み)。
+
+### 16.2 B31ガードの拒否出力
+
+`--out-dir`を明示せずに実行(既定出力先が保護対象`data/artifact/2026-08-25`
+と衝突):
+
+```
+$ bash scripts/build.sh --source houjin-bangou=2026-08-23 --source egov-law=2026-08-25 \
+    --source rs-system=2026-08-23 --include-all-corporations --corporations-scope payees \
+    --previous-release 2026-08-26
+エラー: 出力先 data/artifact/2026-08-25 には既に何らかのファイルがある(既存リリース
+または失敗したビルドの残骸の疑い)。上書きするなら --allow-overwrite を
+明示すること。失敗したビルドのやり直しも --allow-overwrite を明示する
+(既存リリースとの区別をディレクトリの中身だけでは判定できないため)
+終了コード: 1
+```
+
+ガードは`mkdir`より前の判定なので拒否は即時かつ副作用が無い(実測:
+拒否後も`data/artifact/2026-08-25/`の内容は変化していない)。その後
+`--out-dir data/artifact/2026-08-25-corrected`を明示して実行した
+(`--source ministry-codes=...`は`pipeline.py:1731`のヘルプ文言
+「リポジトリにコミットした参照表は渡さない」に従い渡していない)。
+
+### 16.3 carry-overの判定
+
+`--previous-release 2026-08-26`で実行した`pipeline-report.json`の
+`carried_over`:
+
+```json
+"carried_over": [
+  "https://jgkg.norr-tech.com/graph/houjin-bangou/2026-08-23"
+]
+```
+
+houjin-bangouグラフのみが「差分検出により再生成をスキップされた」対象。
+他の3グラフ(houjin-bangou-payees・ministry-codes・rs-system)は
+recomputeされたが入力が変わらなかったため出力がバイト同一になった
+(下記16.4のsha256一致)——「carried_overに載る」ことと「結果が同一で
+ある」ことは別の仕組みである。ministry-codesは設計上そもそもcarry-over
+の対象外(毎回再計算)。houjin-bangou-payees・rs-systemは`pipeline.py`の
+依存関係定義上egov-lawの変化に依存するため、今回はcarry-over対象になら
+ず再計算された(が入力自体は変わっていないので結果はバイト同一)。
+「一部のソースだけ変化した」分岐が実データで実際に踏まれた——ただし
+A-4ブリーフが想定していた「e-Gov法令とRSが両方新規」ではなく、RS 2026
+年度が未公開だったため「e-Gov法令のみ新規」という1ソース変化になった。
+
+### 16.4 CQ1〜10の結果
+
+`scripts/serve.sh 2026-08-25-corrected`で配置し実行。**全10本が非0件で
+回答**。行数・構造(変数名・出力形式)は§4と同一のため行内容は再転記せず、
+値が変化した項目のみ示す:
+
+| CQ | 行数 | 補足 |
+|---|---|---|
+| CQ1 | 1 | 厚生労働省令の所管=厚生労働省(§4と同じ答え) |
+| CQ7 | 1 | `fetchedOn=2026-08-25`(egov-lawの新しい取得日を正しく反映。§4は`2026-08-24`) |
+| CQ8 | 1 | `417M60000100021`の2026-04-01の版(provenance由来のカットオフでも同じ正答を再現) |
+| CQ9 | 6,541 | §4(旧リリース2026-08-26)では6,517行だった(+24。16.5参照) |
+| CQ10 | 5 | egov-law取得日=2026-08-25として正しく反映 |
+| CQ2〜6 | §4と同数 | jurisdiction解決には依存しない経路のため変化なし |
+
+### 16.5 compare_releases の差分(26本の予想との一致/不一致)
+
+`uv run python scripts/compare_releases.py data/artifact/2026-08-26 data/artifact/2026-08-25-corrected`:
+
+```
+DIFFER https://jgkg.norr-tech.com/graph/egov-law/2026-08-24  (A: 140,430行 / B: 0行)
+DIFFER https://jgkg.norr-tech.com/graph/egov-law/2026-08-25  (A: 0行 / B: 140,482行)
+SAME   https://jgkg.norr-tech.com/graph/houjin-bangou-payees/2026-08-23  (113,616行、両者sha256一致)
+SAME   https://jgkg.norr-tech.com/graph/houjin-bangou/2026-08-23  (5,088行、両者sha256一致)
+SAME   https://jgkg.norr-tech.com/graph/ministry-codes/2026-08-23  (40行、両者sha256一致)
+DIFFER https://jgkg.norr-tech.com/graph/provenance  (40行、40行。値が違う——egov-lawの取得日が変わったため)
+SAME   https://jgkg.norr-tech.com/graph/rs-system/2026-08-23  (558,768行、両者sha256一致)
+残余行: A=0 / B=0
+内容が一致しないグラフ: 3件(egov-law新旧2つの改名+provenance)
+判定: 不一致あり(既定は失敗)
+```
+
+`compare_releases.py`はグラフ単位のハッシュ一致/不一致しか見ないため、
+述語単位の実数は別に`kg.nq`へ直接`grep -c`した:
+
+```
+$ grep -c "def/law#jurisdiction>" data/artifact/2026-08-26/kg.nq
+4243
+$ grep -c "def/law#jurisdiction>" data/artifact/2026-08-25-corrected/kg.nq
+4269
+```
+
+**+26。予想と一致した。** `pipeline-report.json`の集計値
+(`law_jurisdiction_resolved`)も**別の測り方(kg.nqのトリプル行を数える
+vs パイプラインが解決イベントを数える)で同じ4243→4269**になっている
+(トートロジーではなく、独立した2つの測定が一致した):
+
+| 指標 | 2026-08-26(旧) | 2026-08-25-corrected(新) | Δ |
+|---|---|---|---|
+| law_records | 9,547 | 9,550 | +3 |
+| law_jurisdiction_resolved | 4,243 | 4,269 | **+26** |
+| law_jurisdiction_unresolved | 2,274 | 2,272 | -2 |
+| law_jurisdiction_extraction_failed | 13 | 13 | 0 |
+
+**正直な限定**: 今回のegov-law再取得では法令総数自体も9,547→9,550(+3)
+と実データが動いている(政府側の通常の更新。要修正3の効果とは別の変数)。
+したがって「+26のすべてが要修正3の修正効果」とは断定しない——分離する
+には修正後のコードを古いegov-lawスナップショット(2026-08-24)に対して
+別途実行し比較する必要があり、今回はそこまでは行っていない。それでも、
+**「予想された26という数字が、実際の比較で正確に再現された」という
+事実は実測どおり成立している。**
+
+`law_jurisdiction_unresolved_by_reason`(A-2以降の形)は新リリースに
+存在し(`{"OLD_MINISTRY": 1995, "OBSOLETE_ORGANIZATION": 274,
+"NO_CANDIDATE": 3, "AMBIGUOUS": 0}`)、旧リリース
+(`2026-08-26/pipeline-report.json`)にはこのフィールド自体が無かった
+(grep確認済み)。
