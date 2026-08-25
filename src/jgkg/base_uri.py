@@ -79,6 +79,8 @@ ALLOWED_EXTERNAL_HOSTS: frozenset[str] = frozenset({
     "laws.e-gov.go.jp",
     "rssystem.go.jp",
     "github.com",
+    # `gh` コマンド自体が無いときのインストール案内(B-1: publish.py)
+    "cli.github.com",
     # `wrangler pages dev` のローカル再現サーバ。**ポート込みで限定する。**
     # ここをポート無しの "localhost" と書くと、移行前の開発用ベースURI
     # (別ポートの localhost)が再び紛れ込んでも検出できなくなる。
