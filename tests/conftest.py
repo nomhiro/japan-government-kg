@@ -26,8 +26,11 @@ e-Gov法令APIへの完全な取得(約96ページ)とrssystem.go.jpへの1リ�
    (`NetworkBlockedError`ではない)になる。つまり**「`NetworkBlockedError`が
    出ない」ことは「遮断が効いていない」ことの証明にはならない**――名前解決に
    失敗する宛先は、そもそも遮断を試す前に別の理由で失敗する。この遮断が
-   実際に効いていることを確かめたいテストは、名前解決に成功する宛先
-   (`tests/test_network_block.py`は`example.com`を使う)を使うこと。
+   実際に効いていることを確かめたいテストは、名前解決を経ない宛先
+   (`tests/test_network_block.py`はRFC 5737のリテラルIP`192.0.2.1`を使う。
+   当初は名前解決に成功する`example.com`を使ったが、オフライン環境では
+   `example.com`自体も`getaddrinfo`で失敗して同じ問題が起きると指摘され、
+   名前解決を要しないリテラルIPに変更した)を使うこと。
 2. **UDP等、`connect()`を経由しない送信(`socket.sendto`によるconnectionless送信)
    は対象外。** 現在のコネクタ・スクリプトはいずれもTCP(HTTP/HTTPS)のみを使う。
 3. **`subprocess`で外部コマンド(`curl`・`git fetch`等)を呼ぶテストは対象外**

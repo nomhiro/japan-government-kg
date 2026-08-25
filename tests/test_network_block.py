@@ -36,18 +36,19 @@ def tmp_lake(tmp_path, monkeypatch):
 def test_network_is_blocked_by_default():
     """`httpx`経由の外向き接続は既定で`NetworkBlockedError`になる。
 
-    **`example.invalid`ではなく`example.com`を使う(実測で判明した理由)。**
-    最初は名前解決自体が失敗する`example.invalid`(RFC 2606予約)で書いたが、
-    実行すると`socket.socket.connect`まで届く前に`getaddrinfo`が失敗し、
-    `httpx.ConnectError`(`NetworkBlockedError`ではない)になった――この遮断は
-    `connect`/`connect_ex`だけを塞ぐ設計であり、名前解決止まりの失敗は
-    そもそも遮断を試す前に終わる(conftest.pyの「迂回できる経路」参照)。
-    `example.com`はIANAが実運用する実在ドメインなので名前解決は成功し、
-    `connect()`まで届いてから塞がれる――遮断そのものを検査できる。
-    (接続先が実在しても、`connect()`自体を塞ぐのでTCPパケットは一切出ない。)
+    **リテラルIP `192.0.2.1`(RFC 5737 TEST-NET-1)を使う。名前解決を経ない。**
+    最初は`example.com`(名前解決に成功する実在ドメイン)で書いたが、
+    A-2レビューで「オフラインだと`getaddrinfo`自体が失敗して別の例外になる」
+    という同じ限界がこのテスト自身にも現れると指摘された。`socket.socket.connect`
+    を塞いでいるので、名前解決を経ない宛先(リテラルIP)なら`connect()`に
+    直接届き、DNSの成否に依存せずこの遮断だけを検査できる。
+
+    **`192.0.2.1`は文書用に予約され、経路が実在しない**(RFC 5737)ため、
+    `example.com`より安全側でもある――遮断が万が一効いていなくても、
+    どこにも実際には到達しない(パケットは送出されるが応答する実サーバが無い)。
     """
     with pytest.raises(conftest.NetworkBlockedError):
-        httpx.get("http://example.com/", timeout=2)
+        httpx.get("http://192.0.2.1/", timeout=2)
 
 
 def test_a1s_actual_incident_path_is_stopped_before_reaching_the_government_server():
