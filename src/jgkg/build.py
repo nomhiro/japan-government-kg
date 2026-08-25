@@ -50,6 +50,21 @@ class Manifest(BaseModel):
     # **旧形式(manifest_version<4)のmanifestにはこの欄が無いため`None`**
     # (nquads_sha256と同じ「照合/判定できないことを0と区別する」作法)
     tdb2_expanded_bytes: int | None = None
+    # B-2裁定: 配布物をダウンロードした人が、それを作ったコードのコミットを
+    # 特定できるようにする。`gh release create`が(`--target`未指定のため)
+    # publish時点のリモートデフォルトブランチHEADにタグを作るだけでは、
+    # そのタグが後から動かされたりリリース自体が消されたりすると手がかりを
+    # 失う——manifest自体に焼き込むのがより頑丈な記録先になる。**片方だけでは
+    # 意味がない**: 作業ツリーが汚れていた(コミットに無い変更が混ざっている
+    # かもしれない)状態で記録したSHAは、それ単独では「嘘」になる。そのため
+    # `git_dirty`と必ずペアで追加した。**旧形式(manifest_version<6)の
+    # manifestにはこの2欄が無いため`None`**(nquads_sha256/tdb2_expanded_bytes
+    # と同じ「照合/判定できないことを既定値〔空文字/False〕と区別する」作法)
+    git_commit: str | None = None
+    # `git status --porcelain`の素の判定(追跡対象外のファイルも汚れとみなす。
+    # `-uno`等で除外しない) — 追跡されていない`.py`等の変更でもビルド結果に
+    # 影響しうるため、コミット済みかどうかだけでは不十分
+    git_dirty: bool | None = None
     graphs: list[str]
     # 成果物に**実際に入っている**ソースと、その「いつ時点か」。
     # 隔離されたソースはここに載せない(載せると「この日付のデータを含む」という嘘になる)
@@ -70,8 +85,8 @@ class Manifest(BaseModel):
     # 「最新ソース取得日」から「成果物ディレクトリのbasename」に変えたため
     # (同日に作った複数リリースがmanifestだけで区別できなかった不具合の修正)、
     # manifestの読み手が旧versionと新versionで`release`の意味を区別できるように
-    # 5に上げる
-    manifest_version: int = 5
+    # 5に上げる。B-2裁定: `git_commit`/`git_dirty`欄の追加で6に上げる
+    manifest_version: int = 6
 
 
 def file_sha256(path: Path) -> str:
@@ -117,6 +132,8 @@ def build_manifest(
     sources: dict[str, str],
     graphs: list[str],
     tdb2_expanded_bytes: int,
+    git_commit: str,
+    git_dirty: bool,
     quarantined_sources: list[str] | None = None,
 ) -> Manifest:
     if not jena_version:
@@ -136,6 +153,19 @@ def build_manifest(
             "(§6.3の一時ディスク8GiB判定にこの数値を使うため、0や負値のまま"
             "manifestに記録してはならない)"
         )
+    # B-2裁定: jena_versionと同じ「既定は止まる側」。呼び出し側(build.sh)が
+    # `git rev-parse HEAD`を読み取れなかった場合に空文字を静かに記録すると、
+    # この欄を追加した目的(配布物とコードを結ぶ手がかり)そのものが最初から
+    # 欠けたまま出荷されてしまう。**gitコマンド自体の実行はここでは行わない**
+    # (build.pyはチェックサム計算等と同様、渡された値を記録するだけの層に
+    # 留める。jena_version/tdb2_expanded_bytesと同じ「計算は呼び出し側、
+    # 検証と記録はここ」という分担)
+    if not git_commit:
+        raise ValueError(
+            "git_commit が空である。配布物をダウンロードした人がそれを作った"
+            "コードのコミットを特定できるようにするため、記録を省略できない"
+            "(B-2裁定)。git rev-parse HEAD を読み取れていない疑いがある"
+        )
     return Manifest(
         release=release,
         created_on=release,
@@ -148,6 +178,8 @@ def build_manifest(
         graphs=sorted(graphs),
         sources=sources,
         quarantined_sources=sorted(quarantined_sources or []),
+        git_commit=git_commit,
+        git_dirty=git_dirty,
     )
 
 

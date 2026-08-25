@@ -1154,6 +1154,7 @@ def test_run_payees_scope_carry_over_regenerates_the_payees_graph_but_carries_th
         release=DAY.isoformat(),
         sources={k: v.isoformat() for k, v in fetched.items()},
         graphs=r1.graphs, tdb2_expanded_bytes=4,
+        git_commit="a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2", git_dirty=False,
     )
     build.write_manifest(m, out1 / "manifest.json")
 

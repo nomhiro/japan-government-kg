@@ -84,6 +84,8 @@ def _write_fake_manifest(out_dir: Path, release: str, source_date: str | None = 
         sources={"houjin-bangou": source_date},
         graphs=[],
         tdb2_expanded_bytes=4,
+        git_commit="a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+        git_dirty=False,
     )
     build.write_manifest(m, out_dir / "manifest.json")
 

@@ -30,6 +30,8 @@ def _make_artifact(tmp_path, jena_version="6.2.0", payload=b"index bytes"):
         sources={"houjin-bangou": "2026-08-01"},
         graphs=[],
         tdb2_expanded_bytes=len(payload),
+        git_commit="a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+        git_dirty=False,
     )
     build.write_manifest(m, art / serve.MANIFEST_NAME)
     return art

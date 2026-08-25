@@ -42,6 +42,8 @@ def _make_release_dir(tmp_path, name="2026-08-01", nquads_text=None, sources_map
         sources=sources_map or {"egov-law": "2026-08-01", "houjin-bangou": "2026-08-01"},
         graphs=graphs if graphs is not None else [f"https://jgkg.norr-tech.com/graph/egov-law/{name}"],
         tdb2_expanded_bytes=1234,
+        git_commit="a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+        git_dirty=False,
     )
     build.write_manifest(m, release_dir / build.MANIFEST_NAME)
     return release_dir, m

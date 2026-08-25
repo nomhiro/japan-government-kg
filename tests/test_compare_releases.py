@@ -58,6 +58,7 @@ def _write_release(out_dir: Path, lines: list[str]) -> None:
     m = build.build_manifest(
         nquads=kg_nq, tarball=tarball, jena_version="6.2.0",
         release=out_dir.name, sources={}, graphs=[G1], tdb2_expanded_bytes=1,
+        git_commit="a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2", git_dirty=False,
     )
     build.write_manifest(m, out_dir / "manifest.json")
 
