@@ -1,0 +1,33 @@
+name: Site check (production)
+
+# **毎コミットではなく1日1回、本番URLに対して回す(A-2)。**
+# モジュールを追加してデプロイする前の状態は正常なので、それをコミット毎の
+# ゲートにすると正しい変更が落ちる。「成果物には決定的なゲート
+# (ci.ymlのcheck-site-build.py)、現実にはスケジュール検査」という切り分け。
+#
+# 2026-08-23、公開物が2日間陳腐化していた(law/budgetがHTTP 200のままHTMLを
+# 返し続けた)。このワークフローがあれば翌日に検出できていた。
+
+on:
+  schedule:
+    # 21:00 UTC = 06:00 JST(翌日)。GitHub Actionsのcronは常にUTC。
+    - cron: "0 21 * * *"
+  workflow_dispatch:  # 手動でも回せるようにする
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Verify the production site (read-only)
+        run: uv run python scripts/verify-site.py https://jgkg.norr-tech.com
