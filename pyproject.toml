@@ -25,6 +25,9 @@ packages = ["src/jgkg"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "network: 実ネットワークへの接続を許可する(既定は tests/conftest.py が禁止する)。仕様§10により、2026-08-25時点で使用例は無いはず。",
+]
 
 [tool.ruff]
 line-length = 100

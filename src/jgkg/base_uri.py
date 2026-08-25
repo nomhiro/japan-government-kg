@@ -97,6 +97,14 @@ ALLOWED_EXTERNAL_HOSTS: frozenset[str] = frozenset({
     # テスト専用のダミー(RFC 2606 / RFC 6761 の予約名)
     "example.test",
     "uri-test.invalid",
+    # 上の2つと違い、`example.com`はIANAが実運用し実際に名前解決できる
+    # (RFC 2606が意図的にそう用意した実在ドメイン)。`tests/test_network_block.py`
+    # がconftest.pyの遮断(`socket.socket.connect`レベル)を検証するには、
+    # 名前解決に成功して`connect()`まで届く宛先が要る——名前解決自体が
+    # 失敗する`.invalid`では、遮断より先に`getaddrinfo`が失敗して
+    # `httpx.ConnectError`になり、遮断そのものを検査できない(実測で判明。
+    # 同ファイルのテストのdocstring参照)
+    "example.com",
 })
 
 # 絶対IRIの抜き出し。Turtleの `<...>`、YAMLの素の値、Pythonの文字列リテラル、
