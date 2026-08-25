@@ -51,25 +51,35 @@ def _parse_date(s: str) -> datetime.date:
 
 
 def _already_fetched(source_id: str, fetched_on: datetime.date) -> bool:
-    """`data/lake/<source_id>/<fetched_on>/` に、既にコミット済みのスナップショットがあるか。
+    """`data/lake/<source_id>/<fetched_on>/` に、既にコミット済みのスナップショットが
 
-    **`scripts/build.sh` の裁定B31ガードとは検出条件を変えている
-    (ディレクトリが空でないか、ではなく`lake.list_snapshots`——つまり
-    `.meta.json`の有無で判定する)。** B31の教訓「ディレクトリの中身の
-    有無だけでは、保護すべき対象とビルド残骸を区別できない」は、
-    `data/artifact/<release>/`(`manifest.json`を書けなかった旧いbuild.shが
-    作った、manifest無しの保護対象が実在した)向けの教訓であり、レイクの
-    スナップショットには当てはまらない——`lake.save()`自身が「データ本体→
-    メタデータの順にアトミックに書き、メタデータが無ければ未コミットと
-    判定して再保存を許す」設計を持つ(`lake.save`のdocstring: 「一度の失敗が
-    恒久的な再取得不能を生むことを避ける」)。つまりレイクには**設計された
-    コミット印(.meta.json)が既にある**。ディレクトリの非空判定を使うと、
-    クラッシュで一部ファイルだけ残った中途半端な取得(例: rs-systemの
-    5本中3本目で失敗)の再開が、常に`--allow-overwrite`を要求される
-    (=正当な再開のはずが「上書き」に見えてしまう)。`list_snapshots`
-    (`.meta.json`基準)なら、コミット済みの部分だけを検出し、未コミットの
-    残骸は`_existing`(`connectors/base.py`)と同じ基準で再取得対象のまま
-    残せる。
+    **1件でも**あるか。rs-systemのように複数ファイルを持つ源では、ファイル
+    単位ではなく source_id + fetched_on 単位で判定する——**この関数の粒度は
+    「その日付に何か1つでもコミット済みならTrue」であり、rs-systemが5本中
+    3本目で失敗した場合も1・2本目が既にコミットされているためTrueを返す**
+    (=4本目以降を取りに行く再開にも`--allow-overwrite`が必要になる。
+    `--allow-overwrite`のヘルプ文言参照)。
+
+    **ただし`--allow-overwrite`を明示して再開しても、1・2本目が政府の
+    サーバへ再度取得されるわけではない。** この関数(CLIの事前拒否)と、
+    `rs_system.fetch_all`が内部で呼ぶ`fetch_to_lake`(`connectors/base.py`)の
+    ファイル単位の冪等性は**別の層**である。前者は「進める前に確認するか」
+    だけを判定し、後者が実際にネットワークへ触れるかを決める。1・2本目は
+    後者によって実際にスキップされる(実測。
+    `tests/test_connector_rs.py::test_fetch_all_resumes_after_a_partial_failure_without_refetching_committed_groups`)。
+    「このCLIの事前拒否がsource_id+fetched_on単位までしか見ない粗さ」と
+    「実際に再取得が起きるか」は別の問いであり、後者は起きない。
+
+    **`scripts/build.sh` の裁定B31ガード(ディレクトリが空でないか)とは
+    検出条件を変えている(`lake.list_snapshots`——つまり`.meta.json`の
+    有無で判定する)。** この違いが効くのは、**1本もコミットされていない**
+    状態(`lake.save()`はデータ本体→メタデータの順にアトミックに書くため、
+    データ本体だけが残ってメタデータが無いことがある。`lake.save`の
+    docstring: 「一度の失敗が恒久的な再取得不能を生むことを避ける」)。
+    この場合、非空ディレクトリ判定(B31方式)なら中途半端なファイルの
+    存在だけで拒否してしまうが、`list_snapshots`(`.meta.json`基準)なら
+    「何もコミットされていない」と正しく判定し、`--allow-overwrite`無しで
+    そのまま再開できる。
     """
     return any(s.fetched_on == fetched_on for s in lake.list_snapshots(source_id))
 

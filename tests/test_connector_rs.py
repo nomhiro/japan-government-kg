@@ -217,6 +217,58 @@ def test_fetch_all_fetches_every_requested_group_with_correct_filenames():
         assert lake.load(rs_system.SOURCE_ID, DAY, filename) == payload
 
 
+def test_fetch_all_resumes_after_a_partial_failure_without_refetching_committed_groups():
+    """5本中3本目が失敗して`fetch_all`が例外で止まったあと、再度呼ぶと
+
+    **既にコミット済みの1・2本目はネットワークに触れず**、3本目以降だけが
+    実際に取得されること(jgkg.fetch A-1レビューでの指摘。政府のサーバへの
+    礼儀の問題として実際の挙動を確かめる)。
+
+    `fetch_all`自体には「途中から再開する」ような特別な機能は無い——
+    `fetch_group`が内部で使う`fetch_to_lake`のファイル単位の冪等性
+    (`connectors/base.py`)だけで、この性質が成立する。
+    """
+    groups = rs_system.FETCHED_GROUPS
+    payload = _zip_of(PAYEE_SAMPLE, "dummy.csv")
+    good_urls = {rs_system.url_for(g, YEAR): payload for g in groups[:2]}
+
+    def _first_attempt(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url in good_urls:
+            return httpx.Response(200, content=payload, headers={"content-type": "application/zip"})
+        # 3本目以降はSPAフォールバック(既知の罠)で応答し、途中で失敗させる
+        return httpx.Response(200, content=b"<!doctype html>", headers={"content-type": "text/html"})
+
+    with pytest.raises(rs_system.UnexpectedResponseError):
+        rs_system.fetch_all(YEAR, DAY, groups=groups, client=_client(_first_attempt))
+
+    # 1・2本目は実際にコミットされている(3本目で例外が伝播して止まった)
+    for group in groups[:2]:
+        assert lake.load(rs_system.SOURCE_ID, DAY, rs_system.filename_for(group, YEAR)) == payload
+
+    # 再開: 1・2本目のURLを叩いたら即失敗するクライアントで、それでも通ること
+    remaining_payload = _zip_of(PAYEE_SAMPLE, "dummy2.csv")
+    remaining_urls = {rs_system.url_for(g, YEAR): remaining_payload for g in groups[2:]}
+
+    def _resume(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url in good_urls:
+            raise AssertionError(
+                f"既にコミット済みの{url}へ再度ネットワークアクセスしてはならない"
+            )
+        return httpx.Response(
+            200, content=remaining_urls[url], headers={"content-type": "application/zip"}
+        )
+
+    results = rs_system.fetch_all(YEAR, DAY, groups=groups, client=_client(_resume))
+
+    for group in groups[:2]:
+        assert results[group].skipped is True
+    for group in groups[2:]:
+        assert results[group].skipped is False
+        assert lake.load(rs_system.SOURCE_ID, DAY, rs_system.filename_for(group, YEAR)) == remaining_payload
+
+
 def test_fetch_all_sleeps_between_files_but_not_before_the_first(monkeypatch):
     """ファイル間に待機を挟むこと(公共のCDNへの礼儀。このタスクのネットワーク特例が要求する)。"""
     sleeps: list[float] = []
