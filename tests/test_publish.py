@@ -261,6 +261,86 @@ def test_release_notes_license_text_is_derived_from_sources_py(tmp_path, monkeyp
     assert real_license not in notes, "元のライセンス文字列がテンプレートに直書きされていれば残ってしまう"
 
 
+def test_release_notes_citation_is_derived_from_sources_py(tmp_path, monkeypatch):
+    """出典の記載例(`citation`)も`sources.py`から導出されていること(直書き禁止)。
+
+    ライセンス文字列の検査(上のテスト)と同じ「両方向」確認:
+    偽の`citation`が出力に現れ、元の(本物の)`citation`が消えていること。
+    """
+    release_dir, m = _make_release_dir(
+        tmp_path, sources_map={"egov-law": "2026-08-01"},
+    )
+    gz_path, gz_sha256, gz_size = publish.make_kg_nq_gz(release_dir, m)
+
+    real_citation = sources.get_source("egov-law").citation
+    fake_source = sources.Source(
+        id="egov-law",
+        name="架空のテスト用ソース名",
+        url="https://example.test/fake-source",
+        license="架空のテスト用ライセンス",
+        license_url="https://example.test/fake-license",
+        frequency="monthly",
+        access="api",
+        citation="架空のテスト用出典記載例QWERTY789",
+    )
+    monkeypatch.setitem(sources.SOURCES, "egov-law", fake_source)
+
+    notes = publish.render_release_notes(release_dir, m, gz_path, gz_sha256, gz_size)
+
+    assert "架空のテスト用出典記載例QWERTY789" in notes
+    assert real_citation not in notes, "元の出典記載例がテンプレートに直書きされていれば残ってしまう"
+
+
+def test_release_notes_include_editing_disclosure_and_processor_identity(tmp_path):
+    """PDL1.0が要求する「編集・加工を行ったこと及びその主体」の記載があること。
+
+    出典表示だけでは足りない(PDL1.0原文: 「編集・加工等して利用する場合は、
+    上記出典とは別に、編集・加工等を行ったことを記載してください」)。
+    このKGは解析・正規化・RDF化という編集・加工そのものなので、この開示が
+    必須になる。
+    """
+    release_dir, m = _make_release_dir(tmp_path)
+    gz_path, gz_sha256, gz_size = publish.make_kg_nq_gz(release_dir, m)
+    notes = publish.render_release_notes(release_dir, m, gz_path, gz_sha256, gz_size)
+
+    assert "編集" in notes and "加工" in notes
+    assert "japan-government-kg" in notes.lower(), "加工の主体(このプロジェクト自身)を名指しすること"
+
+
+def test_release_notes_include_third_party_rights_caveat(tmp_path):
+    """PDL1.0の第三者権利の注意と、RS自身の「法人番号列・根拠法令名列は提供元の条件に従う」旨があること。
+
+    **空虚にしない注意**: 冒頭の定型文(「日本国政府が公開するデータを
+    第三者が構造化したものであり」)にも偶然「第三者」という文字列が
+    含まれるため、`"第三者" in notes` だけでは常に真になり空虚な検査になる
+    (実際に確認して気づいた)。PDL1.0原文の第三者条項に特有の言い回し
+    (「著作権その他の権利」)で検査する。
+    """
+    release_dir, m = _make_release_dir(tmp_path)
+    gz_path, gz_sha256, gz_size = publish.make_kg_nq_gz(release_dir, m)
+    notes = publish.render_release_notes(release_dir, m, gz_path, gz_sha256, gz_size)
+
+    assert "著作権その他の権利" in notes
+    assert "法人番号" in notes and "根拠法令" in notes, "RS自身の列単位の注意も載ること"
+
+
+def test_release_notes_do_not_claim_to_relicense_the_underlying_government_data(tmp_path):
+    """成果物全体を無条件にCC BY 4.0と主張しないこと(元データの再ライセンスは出来ない)。
+
+    何が問題になりうるか: 「この成果物はCC BY 4.0です」だけを書くと、政府が
+    公開した元データ自体を私たちがCC BY 4.0へ再ライセンスしたかのように
+    読める。元データは各出典元のPDL1.0に基づき、それを私たちが変える権限は
+    無い。
+    """
+    release_dir, m = _make_release_dir(tmp_path)
+    gz_path, gz_sha256, gz_size = publish.make_kg_nq_gz(release_dir, m)
+    notes = publish.render_release_notes(release_dir, m, gz_path, gz_sha256, gz_size)
+
+    assert "CC BY 4.0" in notes
+    assert "再ライセンス" in notes, "元データの再ライセンスはできないことを明記すること"
+    assert "公共データ利用規約" in notes or "PDL1.0" in notes
+
+
 def test_release_notes_labels_ministry_codes_as_recorded_on_not_fetched_on(tmp_path):
     """`local_path`を持つソース(ministry-codes)は「記録日」、それ以外は「取得日」と表示すること。
 

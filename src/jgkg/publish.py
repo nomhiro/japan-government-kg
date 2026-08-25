@@ -180,6 +180,46 @@ def render_release_notes(
         )
     lines.append("")
 
+    lines.append("### 出典の記載例(各出典元が規約ページで指定する書式による)")
+    for source_id in sorted(manifest.sources):
+        src = sources.get_source(source_id)
+        lines.append(f"- {src.citation}")
+    lines.append("")
+
+    lines.append("### 編集・加工について")
+    lines.append(
+        "本リリースの各資産(`kg.nq.gz`・`tdb2.tar.gz`)は、上記の出典データを"
+        "解析・正規化し、RDF/OWLオントロジーの形式へ変換したものです。"
+        "**編集・加工を行ったこと、及びその主体はJapan Government Knowledge "
+        "Graph(JGKG)プロジェクトであることを、ここに明記します**"
+        "(https://github.com/nomhiro/japan-government-kg 。このプロジェクトは"
+        "日本国政府とは無関係です)。編集・加工した情報を、あたかも国"
+        "(又は府省等)が作成したかのような態様で公表・利用しないでください。"
+    )
+    lines.append("")
+
+    lines.append("### 第三者の権利について")
+    lines.append(
+        "公共データ利用規約(第1.0版)は「本コンテンツの中には、第三者(国以外の"
+        "者)が著作権その他の権利を有している場合があります」と述べています。"
+        "行政事業レビュー見える化サイト(RS)自身も、**法人番号列・根拠法令名列に"
+        "ついては提供元(国税庁法人番号公表サイト/e-Gov法令検索)の利用条件に"
+        "従うこと**を明記しています——本KGでも同様に、これらの列の出典・利用"
+        "条件は各提供元のものが適用されると考えてください。"
+    )
+    lines.append("")
+
+    lines.append("### この成果物のライセンス")
+    lines.append(
+        "この成果物(データの構造化・RDF化・オントロジー設計そのもの)は "
+        "**CC BY 4.0** で提供します。**ただし元データ(各府省庁・機関が公開した"
+        "内容そのもの)を私たちが再ライセンスすることはできません**——元データは"
+        "各出典元の公共データ利用規約(第1.0版)に基づくものであり、出典表示・"
+        "編集加工の記載義務はそちらの規約に従います。PDL1.0はCC BY 4.0と"
+        "互換性があります(PDL1.0原文に明記)。"
+    )
+    lines.append("")
+
     lines.append("## 資産とsha256")
     lines.append("| ファイル | サイズ | sha256 |")
     lines.append("|---|---|---|")
