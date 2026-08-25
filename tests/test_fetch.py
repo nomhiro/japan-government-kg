@@ -83,10 +83,15 @@ def test_dispatches_egov_law_with_the_resolved_fetched_on(monkeypatch, capsys):
     rc = fetch_module.main(["--source", "egov-law", "--fetched-on", "2026-08-20"])
     assert rc == 0
     assert calls == [DAY]
-    assert "取得完了" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "取得完了" in out
+    # A-1レビュー指摘: 単一ファイルの源はsource_idを2回表示しない
+    # ("egov-law (egov-law): ..."という冗長な体裁にしない)
+    assert "egov-law (egov-law)" not in out
+    assert "egov-law: 取得完了" in out
 
 
-def test_dispatches_rs_system_with_the_year(monkeypatch):
+def test_dispatches_rs_system_with_the_year(monkeypatch, capsys):
     calls = []
 
     def stub_fetch_all(year, fetched_on):
@@ -99,6 +104,9 @@ def test_dispatches_rs_system_with_the_year(monkeypatch):
         ["--source", "rs-system", "--year", "2025", "--fetched-on", "2026-08-20"]
     )
     assert rc == 0
+    # rs-systemはgroup名がsource_idと異なるため、単一ファイルの源とは違い
+    # 括弧内の表示が残ってよい(むしろ無いと5本のどれかが分からなくなる)
+    assert "rs-system (organization_information)" in capsys.readouterr().out
     assert calls == [(2025, DAY)]
 
 
@@ -260,6 +268,12 @@ def test_overwrite_guard_rejects_without_the_flag_and_the_connector_is_never_cal
     assert calls == []
     err = capsys.readouterr().err
     assert "既にコミット済みのスナップショットがある" in err
+    # エラー文言のパスが実際のlake_dir設定を反映していること(手書きの
+    # "data/lake"文字列に戻すとJGKG_LAKE_DIRを変えた実行環境で誤ったパスを
+    # 案内してしまう。このテスト自身がtmp_lakeフィクスチャでJGKG_LAKE_DIRを
+    # 変えているため、既定値"data/lake"が出たら検出できる)
+    assert get_settings().lake_dir in err
+    assert "data/lake/egov-law" not in err
     assert "--allow-overwrite" in err
 
 

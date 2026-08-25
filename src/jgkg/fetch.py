@@ -19,6 +19,12 @@
 **このモジュールは実際に外部へアクセスしない場面でも安全に import できる。**
 実取得はA-4(別タスク)で行う。ここは経路を作るところまで(テストに実
 ネットワークを含めない。仕様§10)。
+
+**検査の粒度に非対称がある(A-1レビュー指摘。安全側なので挙動は変えていない)。**
+`--source`を複数渡したとき、事前検査(上書き拒否・URL未設定)は**1つでも
+引っかかればバッチ全体を止める**が、実行時の取得失敗は**源ごとに独立**
+していて他の源は試みられる(下記`main`のtry/except参照)。利用者が
+気づきにくい非対称であることに注意すること。
 """
 import argparse
 import datetime
@@ -178,8 +184,9 @@ def main(argv: list[str] | None = None) -> int:
     if not args.allow_overwrite:
         for source_id in requested:
             if _already_fetched(source_id, fetched_on):
+                lake_dir = get_settings().lake_dir
                 print(
-                    f"エラー: data/lake/{source_id}/{fetched_on.isoformat()}/ には"
+                    f"エラー: {lake_dir}/{source_id}/{fetched_on.isoformat()}/ には"
                     "既にコミット済みのスナップショットがある。続行するなら"
                     "--allow-overwrite を明示すること"
                     "(実際に上書きはしない——コネクタは同じ取得日なら"
@@ -230,7 +237,11 @@ def main(argv: list[str] | None = None) -> int:
 
         for label, r in results.items():
             state = "スキップ(既にコミット済み。ネットワークに触れていない)" if r.skipped else "取得完了"
-            print(f"{source_id} ({label}): {state} — {r.snapshot.path}")
+            # 単一ファイルの源(egov-law/houjin-bangou)はlabel==source_idで
+            # 冗長になる(例: "egov-law (egov-law): ..."。A-1レビュー指摘)。
+            # rs-systemのようにgroup名がlabelになる場合だけ括弧で示す
+            name = source_id if label == source_id else f"{source_id} ({label})"
+            print(f"{name}: {state} — {r.snapshot.path}")
 
     return 1 if failed else 0
 
