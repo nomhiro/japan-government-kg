@@ -41,7 +41,7 @@ P0-6 は特に重要である。`org:houjinBangou` は `required: true` にし�
 | CQ5 | ある法令を根拠とする事業を所管する府省はどこか | `cq05-ministry-of-basis-law.rq` |
 | CQ6 | ある事業の支出先のうち、解決できていない(束ね・センチネルとは別の)ものはどれだけあるか | `cq06-unresolved-recipients-per-project.rq` |
 | CQ7 | ある関係(エッジ)は、どの一次資料の何日取得分に基づくか(P0-3の一般化) | `cq07-provenance-of-edge.rq` |
-| CQ8 | ある法令の、**このリリースが持つデータの時点**における版はどれか(任意の時点を外から指定する形も同じクエリパターンで実現できるが、それはAPI層〔計画C〕の課題とする。下記参照) | `cq08-law-revision-as-of-date.rq` |
+| CQ8 | ある法令の、**そのLawRevisionが載っている名前付きグラフのprovenance時点(取得時点)**における版はどれか(carry-over時はソースごとにこの時点が異なりうる——リリース全体で単一の日付ではない。任意の時点を外から指定する形も同じクエリパターンで実現できるが、それはAPI層〔計画C〕の課題とする。下記参照) | `cq08-law-revision-as-of-date.rq` |
 | CQ9 | 法令の jurisdiction 未解決のうち、旧・現存外の機関名によるもの(OLD_MINISTRY/OBSOLETE_ORGANIZATION)と解決済みを分けて数える | `cq09-jurisdiction-resolution-status.rq` |
 | CQ10 | KGのこのリリースは、各ソースについていつ時点のデータを含むか(P0-4の全ソース版) | `cq10-release-freshness.rq` |
 

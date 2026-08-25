@@ -1,4 +1,5 @@
-# CQ8: ある法令の、指定した時点における版はどれか
+# CQ8: ある法令の、そのLawRevisionが載っている名前付きグラフのprovenance時点
+# (取得時点)における版はどれか
 #
 # law:LawRevisionを law:lawId(法令ID。文字列。法令間の同一性はこのリテラルの
 # 一致で決まる — LawRevisionはLawへのオブジェクトプロパティを持たない。
