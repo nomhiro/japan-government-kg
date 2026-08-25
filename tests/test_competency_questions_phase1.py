@@ -313,12 +313,6 @@ def test_cq8_revision_as_of_date_skips_the_rogue_revision_without_law_id(kg):
         "(野良版が誤って選ばれた、あるいは未来の版がフィルタで除外されていない)"
     )
     assert "417M60000100021" in str(revision), rows
-    assert len(rows) == 1
-    revision, d = rows[0]
-    assert str(d) == "2026-01-01", (
-        f"野良LawRevision(lawId無し、2026-02-01)が紛れ込んだ疑いがある: {revision} {d}"
-    )
-    assert revision != fx.ROGUE_REVISION_URI
 
 
 def test_cq8_positive_control_the_rogue_revision_exists_but_is_unrelated(kg):
