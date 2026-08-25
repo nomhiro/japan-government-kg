@@ -10,7 +10,7 @@ import datetime
 import pytest
 
 from jgkg import fetch as fetch_module
-from jgkg import lake
+from jgkg import lake, sources
 from jgkg.config import get_settings
 from jgkg.connectors.base import FetchResult
 
@@ -314,3 +314,41 @@ def test_one_source_failing_does_not_prevent_the_other_from_being_attempted(monk
     )
     assert rc == 1  # 全体としては失敗を報告する
     assert rs_calls == [(2025, DAY)]  # が、rs-systemは実際に試みられている
+
+
+# =============================================================================
+# sources.py に登録されているが DISPATCH に結線されていない源(利用者の
+# 入力ミスではなく、このリポジトリ側の欠陥として区別する経路)
+# =============================================================================
+
+
+def test_a_registered_but_undispatched_source_gives_a_repo_bug_error_not_a_crash(
+    monkeypatch, capsys
+):
+    """何があれば落ちるか: このテストが無いと、`unwired`検査を削除しても
+
+    (`choices=sorted(sources.SOURCES)`はmain()の中で毎回評価されるため)
+    502件のテストは全部greenのまま——将来ソースが増えてDISPATCHへの追加を
+    忘れたとき、利用者が打ったコマンドが`KeyError`という生の例外で
+    落ちる(このリポジトリ側の結線漏れだと分からない形で)。fake-sourceを
+    一時的にレジストリへ注入し、「登録されているのに使えない」を経路として
+    再現する(要修正7と同じ理屈: mutation testingで実際に検出する)。
+    """
+    fake = sources.Source(
+        id="fake-source",
+        name="テスト用の未結線ソース",
+        url="https://example.test/fake-source",
+        license="dummy",
+        license_url="https://example.test/license",
+        frequency="ondemand",
+        access="api",
+    )
+    monkeypatch.setitem(sources.SOURCES, "fake-source", fake)
+
+    with pytest.raises(SystemExit) as exc_info:
+        fetch_module.main(["--source", "fake-source"])
+
+    assert exc_info.value.code != 0
+    err = capsys.readouterr().err
+    assert "結線されていない" in err
+    assert "fake-source" in err
