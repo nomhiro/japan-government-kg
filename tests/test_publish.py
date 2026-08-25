@@ -14,7 +14,8 @@ import pytest
 from jgkg import build, publish, sources
 
 
-def _make_release_dir(tmp_path, name="2026-08-01", nquads_text=None, sources_map=None, graphs=None):
+def _make_release_dir(tmp_path, name="2026-08-01", nquads_text=None, sources_map=None, graphs=None,
+                       git_commit="a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2", git_dirty=False):
     """kg.nq・tdb2.tar.gz・manifest.json を持つ、本物と同じ形の release_dir を作る。
 
     `tests/test_build.py` の既存の作り方(`build.build_manifest`→
@@ -42,8 +43,8 @@ def _make_release_dir(tmp_path, name="2026-08-01", nquads_text=None, sources_map
         sources=sources_map or {"egov-law": "2026-08-01", "houjin-bangou": "2026-08-01"},
         graphs=graphs if graphs is not None else [f"https://jgkg.norr-tech.com/graph/egov-law/{name}"],
         tdb2_expanded_bytes=1234,
-        git_commit="a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
-        git_dirty=False,
+        git_commit=git_commit,
+        git_dirty=git_dirty,
     )
     build.write_manifest(m, release_dir / build.MANIFEST_NAME)
     return release_dir, m
@@ -360,6 +361,89 @@ def test_release_notes_labels_ministry_codes_as_recorded_on_not_fetched_on(tmp_p
 
     assert "記録日" in notes
     assert "取得日" in notes
+
+
+def test_release_notes_include_the_git_commit_that_built_it(tmp_path):
+    """B-2裁定: manifestのgit_commitがそのままリリースノートに載ること。
+
+    「manifestから導出する」というこのモジュールの作法どおり、手書きの
+    固定文字列ではないことを両方向で確認する——コミットAで作ったリリースの
+    ノートにはAが載ってBは載らず、逆も成り立つ(片方向だけの確認では
+    「AとBを両方書いた定型文」を検出できない)。
+    """
+    commit_a = "a" * 40
+    commit_b = "b" * 40
+    release_dir_a, m_a = _make_release_dir(tmp_path, name="2026-08-01", git_commit=commit_a)
+    gz_path_a, gz_sha256_a, gz_size_a = publish.make_kg_nq_gz(release_dir_a, m_a)
+    notes_a = publish.render_release_notes(release_dir_a, m_a, gz_path_a, gz_sha256_a, gz_size_a)
+
+    release_dir_b, m_b = _make_release_dir(tmp_path, name="2026-08-02", git_commit=commit_b)
+    gz_path_b, gz_sha256_b, gz_size_b = publish.make_kg_nq_gz(release_dir_b, m_b)
+    notes_b = publish.render_release_notes(release_dir_b, m_b, gz_path_b, gz_sha256_b, gz_size_b)
+
+    assert commit_a in notes_a
+    assert commit_b not in notes_a
+    assert commit_b in notes_b
+    assert commit_a not in notes_b
+
+
+def test_release_notes_flag_a_dirty_build(tmp_path):
+    """作業ツリーが汚れた状態でビルドされたリリースには、その旨の注意が載ること。
+
+    **空虚でないことの確認**: クリーンなビルドのノートにはこの注意文が
+    出ないことも確認する(常に出る定型文だと、汚れの有無を実際には見ていない
+    テストになってしまう)。
+    """
+    release_dir_dirty, m_dirty = _make_release_dir(tmp_path, name="2026-08-01", git_dirty=True)
+    gz_path, gz_sha256, gz_size = publish.make_kg_nq_gz(release_dir_dirty, m_dirty)
+    notes_dirty = publish.render_release_notes(release_dir_dirty, m_dirty, gz_path, gz_sha256, gz_size)
+
+    release_dir_clean, m_clean = _make_release_dir(tmp_path, name="2026-08-02", git_dirty=False)
+    gz_path_c, gz_sha256_c, gz_size_c = publish.make_kg_nq_gz(release_dir_clean, m_clean)
+    notes_clean = publish.render_release_notes(release_dir_clean, m_clean, gz_path_c, gz_sha256_c, gz_size_c)
+
+    assert "未コミットの変更" in notes_dirty
+    assert "未コミットの変更" not in notes_clean
+
+
+def test_release_notes_disclose_missing_git_commit_for_old_manifests(tmp_path):
+    """`git_commit`欄が無い旧形式(manifest_version<6)のmanifestでも、リリース
+    ノート生成が落ちず、「記録が無い」ことを明示すること。
+
+    B-1裁定(旧形式は公開を拒否する)とは別に、リリースノート生成自体は
+    `verify_release_assets`より前の層で呼ばれるため、Noneをここで
+    落ちずに処理できる必要がある——ただし黙って欄を消すのではなく、
+    「このリリースにはコミット情報が無い」と明示する(quarantined_sources
+    等と同じ「未解決を無かったことにしない」作法)。
+    """
+    release_dir = tmp_path / "2026-08-01"
+    release_dir.mkdir()
+    (release_dir / "kg.nq").write_text("", encoding="utf-8")
+    tarball_path = release_dir / publish.TARBALL_NAME
+    tarball_path.write_bytes(b"x")
+    manifest_path = release_dir / build.MANIFEST_NAME
+    manifest_path.write_text(
+        json.dumps({
+            "release": "2026-08-01",
+            "created_on": "2026-08-01",
+            "jena_version": "6.2.0",
+            "sha256": hashlib.sha256(b"x").hexdigest(),
+            "byte_size": 1,
+            "triple_count": 0,
+            "nquads_sha256": hashlib.sha256(b"").hexdigest(),
+            "tdb2_expanded_bytes": 1,
+            "graphs": [],
+            "sources": {},
+            "manifest_version": 5,
+        }),
+        encoding="utf-8",
+    )
+    m = build.read_manifest(manifest_path)
+    assert m.git_commit is None, "この検査自体の前提(旧形式の読込)を確認する"
+
+    gz_path, gz_sha256, gz_size = publish.make_kg_nq_gz(release_dir, m)
+    notes = publish.render_release_notes(release_dir, m, gz_path, gz_sha256, gz_size)
+    assert "記録なし" in notes
 
 
 # =============================================================================

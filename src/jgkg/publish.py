@@ -163,6 +163,20 @@ def render_release_notes(
         lines.append(f"  - `{g}`")
     if manifest.quarantined_sources:
         lines.append(f"- 検証に失敗し隔離されたソース: {sorted(manifest.quarantined_sources)}")
+    # B-2裁定: 配布物をダウンロードした人が、それを作ったコードを特定できる
+    # ようにする。**旧形式(manifest_version<6)は黙って欄を消さず、記録が
+    # 無いことを明示する**(quarantined_sources等と同じ「未解決を無かった
+    # ことにしない」作法)
+    if manifest.git_commit is not None:
+        dirty_note = (
+            "(**注意**: 作業ツリーに未コミットの変更が含まれた状態でビルドされた)"
+            if manifest.git_dirty else ""
+        )
+        lines.append(f"- ビルド元コミット: `{manifest.git_commit}`{dirty_note}")
+    else:
+        lines.append(
+            "- ビルド元コミット: 記録なし(manifest_version<6の旧形式でビルドされたリリース)"
+        )
     lines.append("")
 
     lines.append("## 出典・ライセンス")
