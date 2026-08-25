@@ -47,6 +47,18 @@ def test_all_four_sources_share_the_same_pdl1_0_license():
     )
 
 
+def test_all_four_sources_have_a_citation_string():
+    """B-1: 4ソースとも出典記載例(`citation`)が空でないこと。
+
+    リリースノート(publish.py)はここから出典表示を導出する。空のまま
+    リリースノートが作られると「出典を書かない」という規約違反を機械的に
+    起こしてしまう。
+    """
+    for source_id in ("houjin-bangou", "egov-law", "ministry-codes", "rs-system"):
+        src = sources.get_source(source_id)
+        assert src.citation, source_id
+
+
 def test_get_unknown_source_raises():
     with pytest.raises(KeyError):
         sources.get_source("no-such-source")

@@ -47,6 +47,14 @@ class Source:
     access: str     # api / bulk / scrape
     encoding: str = "utf-8"
     note: str = ""
+    # B-1: 各出典元が規約ページで**指定している書式そのまま**の出典記載例
+    # (一次資料から逐語で採る。source-terms-research.md参照)。`name`/`url`は
+    # このプロジェクトの内部呼称・実際に叩くURLであり、サイトが「出典として
+    # こう書いてほしい」と指定する文言と厳密には一致しない場合がある
+    # (例: rs-systemの`url`はCSVダウンロードのURLだが、出典記載例はサイトの
+    # トップURL)。**リリースノートの出典表示はこの`citation`から導出する**
+    # (手書きしない)
+    citation: str = ""
     # 鮮度監視(Task 10。src/jgkg/freshness.py)が「最終取得日からこの日数を
     # 超えたら陳腐化」と判定する基準。**Noneは「無期限(監視対象外)」であって
     # 「毎日更新」ではない** — コミット済み参照表(ministry-codes)は手動更新
@@ -87,6 +95,10 @@ SOURCES: dict[str, Source] = {
              "自身の規約ページ本文にこの語自体は無い)。"
              "Shift_JIS版とUnicode版の両方が配布されているため、Unicode(UTF-8)版を取得すること",
         expected_cadence_days=31,
+        # 規約ページの出典記載例(逐語)の「当該ページのURL」を、実際に使った
+        # ダウンロードページのURLに差し替えたもの
+        citation="出典：国税庁法人番号公表サイト（国税庁）"
+                 "（https://www.houjin-bangou.nta.go.jp/download/zenken/）",
     ),
     "egov-law": Source(
         id="egov-law",
@@ -106,6 +118,14 @@ SOURCES: dict[str, Source] = {
         note="limit/offsetのページングで全法令のメタデータ(law_info/revision_info等)を取得する。"
              "所管府省を示すフィールドは存在しない(実測済み)。条文本文(all_xml.zip)は対象外",
         expected_cadence_days=31,
+        # 規約ページの出典記載例3件(e-Govポータル/パブリックコメント/電子申請API)
+        # のいずれも「e-Gov法令検索」自体を名指ししていない(一次資料で確認済み。
+        # 「別紙」の実体も見つからなかった)。**サイトが明示した書式
+        # 「出典：「名称」（URL）」に、実際に叩いたAPIの名称・URLを当てはめた**
+        # (site-provided verbatimではないことを明記する)
+        citation="出典：「e-Gov法令検索 法令API」（https://laws.e-gov.go.jp/api/2/laws）"
+                 "※e-Gov利用規約ページに本APIを名指しした記載例は無く、"
+                 "同ページが示す書式に実際のURLを当てはめたもの",
     ),
     "ministry-codes": Source(
         id="ministry-codes",
@@ -145,6 +165,12 @@ SOURCES: dict[str, Source] = {
              "参照表として扱うため、他のコミット済み参照表と同じ規約で"
              "prov:generatedAtTime には"
              "『このリポジトリに記録した日』を入れる(取得日そのものではない)",
+        # この参照表自体はどの単一サイトの「コンテンツ」でもない
+        # (rs-system・egov-lawの公開データから本プロジェクトが作成した独自の
+        # 集計表)ため、単独の出典記載例は存在しない。構成元の2出典を指す
+        citation="府省名簿(ministry-codes)は、行政事業レビュー見える化サイトと"
+                 "e-Gov法令検索の公開データから本プロジェクトが作成した参照表です。"
+                 "個別の出典表示は上記2件(rs-system・egov-law)を参照してください。",
         local_path="data/reference/ministry-codes.csv",
         # git log --diff-filter=AM で確認した、この版(B15: [5][6]和集合40行+
         # kensei_jun列)をリポジトリに記録した日
@@ -183,6 +209,8 @@ SOURCES: dict[str, Source] = {
         # 年1回(事業年度ごと)。365ではなく366にするのは、閏年を跨ぐ実運用で
         # 「年1回の更新」を1日差で陳腐化と誤検知させないため
         expected_cadence_days=366,
+        # 規約ページの出典記載例(逐語)そのもの
+        citation="出典：行政事業レビュー見える化サイト（https://rssystem.go.jp）",
     ),
 }
 

@@ -109,6 +109,28 @@ def test_check_detects_an_unregistered_external_host(tmp_path):
     assert UNREGISTERED_HOST in problems[0].iri
 
 
+def test_iri_extraction_stops_before_a_fullwidth_closing_paren(tmp_path):
+    """全角の閉じ括弧`）`がURLの一部として誤って取り込まれないこと。
+
+    B-1で実際に踏んだ欠陥: `sources.py`の出典記載(`citation`)に、政府サイト
+    自身の出典記載例と同じ書式「（URL）」を採ったところ、`_IRI_RE`が半角の
+    閉じ括弧`)`しか除外しておらず、全角`）`がホスト名の一部として誤って
+    取り込まれた。結果、既に許可済みのホスト(github.com)が
+    「未登録の外部ホスト(host='github.com）')」として誤検出された。
+    """
+    (tmp_path / "schema").mkdir()
+    # パスを持たない**裸のホスト**であることが再現の条件(実際のsources.pyの
+    # 欠陥も裸ホスト`https://rssystem.go.jp）`だった)。パスがあると
+    # `urlparse`がその全角括弧をpath側に落とすため、netloc自体は汚染されず
+    # 再現しない
+    (tmp_path / "schema" / "core.yaml").write_text(
+        "note: 出典：GitHub（https://github.com）\n",
+        encoding="utf-8",
+    )
+    problems = base_uri.find_inconsistencies(tmp_path, base_uri=NEW)
+    assert problems == [], [str(p) for p in problems]
+
+
 def test_rewrite_replaces_every_occurrence(tmp_path):
     """差し替えが1コマンドで完結すること(取りこぼしが無いこと)。"""
     (tmp_path / "schema" / "overlay").mkdir(parents=True)
