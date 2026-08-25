@@ -226,7 +226,7 @@ Phase 0 の全体レビューで出た指摘のうち、マージ前に直さず
   **このラウンドで両方直した**(`site.module_names()`からの導出に
   変更・_headersも生成物化)。ローカル再ビルド(15パス)には合格する
   ことを実測で確認済みだが、**live側の反映には利用者による
-  `npx wrangler pages deploy site --project-name jgkg` の実行が必要**
+  `npx wrangler pages deploy site --project-name jgkg --branch main` の実行が必要**
   (公開は外向き操作のため、実行者が意図して行う設計。このコミット時点
   ではまだ実行されていない)。
   **設計書の原則1「本体はオントロジーとKG、アプリは検証装置」の本体が、

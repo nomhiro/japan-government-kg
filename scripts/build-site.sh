@@ -58,6 +58,10 @@ print(f'  {headers_path} ({len(made) - 1} パス分のブロック + 共通ブ�
 echo
 echo "完了: site/ を Cloudflare Pages に配信する"
 echo "  プレビュー: npx wrangler pages dev site"
-echo "  公開:       npx wrangler pages deploy site --project-name jgkg"
+echo "  公開:       npx wrangler pages deploy site --project-name jgkg --branch main"
+echo "              **--branch main は必須。** 省略すると wrangler が現在のgitブランチ名を"
+echo "              使い、本番ではなくそのブランチのプレビュー配信になる(独自ドメインは"
+echo "              更新されない)。2026-08-25に実際に踏んだ: worktreeのブランチ名で"
+echo "              デプロイが成功したのに jgkg.norr-tech.com は古いままだった。"
 echo
 echo "**公開は外向きの操作なので、実行者が意図して行うこと。**"
