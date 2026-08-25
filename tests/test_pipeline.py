@@ -1270,6 +1270,29 @@ def test_cli_rejects_same_source_with_two_dates(tmp_path):
     assert exc.value.code == 2
 
 
+def test_cli_rejects_a_date_for_a_committed_reference_table_source(tmp_path):
+    """`--source ministry-codes=<日付>` を黙って受理しないこと(block-A-review 項目2)。
+
+    **何が壊れるか(修正前)**: `_parse_source`はソースIDが`sources.SOURCES`に
+    実在するかしか検査せず、`local_path`を持つ源(コミット済み参照表。現状
+    ministry-codesのみ)にも任意の日付を素通りさせていた。この日付は
+    `fetched_on["ministry-codes"]`としてグラフURIと
+    `prov:generatedAtTime`(rdf/provenance.py)に流れ込むが、`core:recordedOn`
+    は別途`sources.get_source("ministry-codes").recorded_on`から取得される
+    ため、両者が食い違う——1つのグラフが自分自身について2つの矛盾する日付を
+    主張する状態を作れた。A-3以降`prov:generatedAtTime`はCQ8のカットオフの
+    入力にもなっているため、誤った日付が黙ってCQ8の答えを狂わせる経路になる。
+
+    修正: `fetch.py:148-157`と同じ判定条件(`source.local_path is not None`。
+    "ministry-codes"という文字列比較にしない)で`_parse_source`が拒否する。
+    """
+    with pytest.raises(SystemExit) as exc:
+        pipeline.main([
+            "--source", "ministry-codes=2020-01-01", "--out-dir", str(tmp_path / "o"),
+        ])
+    assert exc.value.code == 2
+
+
 def test_cli_writes_report_before_the_gate_raises(lake_with_duplicate_label, tmp_path):
     """隔離で落ちる実行でも、例外の**前に**レポートが書かれていること。
 

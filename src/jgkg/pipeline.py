@@ -1696,6 +1696,21 @@ def _parse_source(spec: str) -> tuple[str, datetime.date]:
     **未登録のソースIDを黙って受けない**(`sources.get_source`が弾く)。
     タイプミスした`--source houjin-banogu=...`が「そのソースを含めない
     リリース」として静かに成功するのが、このCLIで最も踏みやすい欠陥である。
+
+    **コミット済みの参照表(`local_path`を持つソース。現状ministry-codesのみ)
+    に対する日付は拒否する(block-A-review 項目2)。** 以前はここを素通り
+    させていた。この関数が返す日付は`fetched_on[source_id]`としてグラフURIと
+    `prov:generatedAtTime`(`rdf/provenance.py`)に流れ込むが、`core:recordedOn`
+    は別途`sources.get_source(source_id).recorded_on`から取得される
+    (`_source_date`参照)ため、`--source ministry-codes=<recorded_onと違う
+    日付>`を渡すと1つのグラフが自分自身について矛盾する2つの日付
+    (誤ったprov:generatedAtTimeと正しいcore:recordedOn)を主張する状態を
+    黙って作れた。A-3以降`prov:generatedAtTime`はCQ8のカットオフの入力にも
+    なっているため、誤った日付が黙ってCQ8の答えを狂わせる経路になる。
+    `fetch.py:148-157`と同じ判定条件(`local_path is not None`。
+    "ministry-codes"という文字列比較にしない——手書きの1要素除外リストに
+    しないため。この源の日付は常に`sources.py`の`recorded_on`から決まり、
+    呼び出し側が指定する余地は無い)で拒否する。
     """
     source_id, sep, date_str = spec.partition("=")
     if not sep or not source_id or not date_str:
@@ -1704,9 +1719,17 @@ def _parse_source(spec: str) -> tuple[str, datetime.date]:
             "(例: --source houjin-bangou=2026-08-23)"
         )
     try:
-        sources.get_source(source_id)
+        source = sources.get_source(source_id)
     except KeyError as exc:
         raise argparse.ArgumentTypeError(str(exc)) from exc
+    if source.local_path is not None:
+        raise argparse.ArgumentTypeError(
+            f"{source.id!r} には --source で日付を渡せない(コミット済みの参照表。"
+            f"{source.local_path} を直接編集し、sources.py の recorded_on を更新する)。"
+            "この源の日付は常に sources.py の recorded_on から決まる——誤った日付を"
+            "渡すと、そのグラフの prov:generatedAtTime(誤り)と core:recordedOn"
+            "(正しい記録日)が矛盾したグラフを作ってしまう"
+        )
     try:
         date = datetime.date.fromisoformat(date_str)
     except ValueError as exc:
