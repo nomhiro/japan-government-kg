@@ -366,9 +366,31 @@ fi
 echo "TDB2展開後サイズ: ${TDB2_EXPANDED_BYTES} bytes"
 phase_done "構築結果の検査"
 
+# B-2裁定: 「配布物をダウンロードした人が、それを作ったコードを特定できない」
+# 穴を塞ぐため、manifestにコミットSHAと作業ツリーの汚れフラグを記録する
+# (git_commit/git_dirty。manifest_version 6)。gh release create がタグを
+# リモートのデフォルトブランチHEADに作るだけでは、タグが動かされたり
+# リリース自体が消されたりすると手がかりを失う——manifest自体に焼き込む
+# 方が頑丈。**汚れフラグは`--porcelain`の素の判定**(追跡対象外のファイルも
+# 汚れとみなす。`-uno`等で除外しない)。set -euo pipefail により、gitが
+# リポジトリの外で失敗した場合はここで(GIT_COMMITが空になる前に)止まる
+GIT_COMMIT=$(git rev-parse HEAD)
+if [ -z "$GIT_COMMIT" ]; then
+  echo "エラー: git rev-parse HEAD が空を返した" \
+       "(gitリポジトリの外で実行している疑いがある)" >&2
+  exit 1
+fi
+if [ -n "$(git status --porcelain)" ]; then
+  GIT_DIRTY=true
+else
+  GIT_DIRTY=false
+fi
+echo "ビルド元コミット: ${GIT_COMMIT} (dirty=${GIT_DIRTY})"
+
 echo "== manifest作成 =="
 JGKG_OUT="$OUT" JGKG_JENA_VERSION_FOR_MANIFEST="$JENA_VERSION" \
-  JGKG_TDB2_EXPANDED_BYTES="$TDB2_EXPANDED_BYTES" uv run python -c "
+  JGKG_TDB2_EXPANDED_BYTES="$TDB2_EXPANDED_BYTES" \
+  JGKG_GIT_COMMIT="$GIT_COMMIT" JGKG_GIT_DIRTY="$GIT_DIRTY" uv run python -c "
 import json, os, pathlib
 from jgkg import build, pipeline
 out = pathlib.Path(os.environ['JGKG_OUT'])
@@ -392,6 +414,10 @@ m = build.build_manifest(
     # 「232MiB」表記を実測値に訂正——docs/measurements-phase1.md参照)を
     # リリースごとにmanifestから読めるようにする
     tdb2_expanded_bytes=int(os.environ['JGKG_TDB2_EXPANDED_BYTES']),
+    # B-2裁定: 上でシェル側が計算した値をそのまま記録する(build.py自身は
+    # gitを呼ばない。jena_version/tdb2_expanded_bytesと同じ分担)
+    git_commit=os.environ['JGKG_GIT_COMMIT'],
+    git_dirty=os.environ['JGKG_GIT_DIRTY'] == 'true',
 )
 build.write_manifest(m, out / 'manifest.json')
 print(m.model_dump_json(indent=2))
