@@ -180,3 +180,66 @@ def missing_paths(generated_dir: Path, out_dir: Path) -> set[str]:
     """生成物が要求しているのに配信物に無いパスを返す。空集合なら整合している。"""
     required = required_paths(generated_dir)
     return {p for p in required if not (out_dir / p.lstrip("/")).is_file()}
+
+
+# --- A-2: ビルド成果物のCI検査(`scripts/check-site-build.py`)向け。 -------
+#
+# 以下の3関数は「導出」ではなく**観測**である。`module_names()`や
+# `def_entry_count()`のように`build()`の内部計算と同じ式を再利用するの
+# ではなく、`out_dir`に実際に書かれたファイル・`_headers`・`sitemap.txt`
+# を、それぞれ独立にファイルシステム/テキストから読み直す。
+#
+# 理由: `check-site-build.py`がしたいのは「`_headers`とsitemap.txtは、
+# build()が実際に作った実体と一致しているか」の検査であり、その一致を
+# `build()`が最初に何を`made`へ入れたかの式で測ると、`build()`自身の
+# バグ(例: `made`には入れたが実ファイルは書き損じた)を検査が原理的に
+# 見逃す(循環検証になる)。そこで基準点を`out_dir/def/`の**実際の
+# ディレクトリ一覧**(`built_def_paths`)に固定し、`_headers`と
+# `sitemap.txt`という**別々の2つのテキスト**をそれぞれ独立にこの基準点
+# と突き合わせる。
+
+
+def built_def_paths(out_dir: Path) -> set[str]:
+    """`out_dir/def/`に実在するファイルから`/def/`パスの集合を得る(観測)。"""
+    def_dir = out_dir / "def"
+    if not def_dir.is_dir():
+        return set()
+    return {f"/def/{p.name}" for p in def_dir.iterdir() if p.is_file()}
+
+
+def headers_declared_paths(out_dir: Path) -> set[str]:
+    """`out_dir/_headers`の実テキストから、turtleを名乗る`/def/`パスの集合を読む。
+
+    `build_headers()`の出力形式(空行区切りのブロック、各ブロック先頭行が
+    パス)をそのまま解釈するだけで、`build_headers()`を呼び直しはしない。
+    """
+    path = out_dir / "_headers"
+    if not path.is_file():
+        return set()
+    declared: set[str] = set()
+    for block in path.read_text(encoding="utf-8").split("\n\n"):
+        lines = block.splitlines()
+        if lines and lines[0].strip().startswith("/def/"):
+            declared.add(lines[0].strip())
+    return declared
+
+
+def sitemap_declared_paths(out_dir: Path) -> set[str]:
+    """`out_dir/sitemap.txt`の実テキストから、`/def/`配下のURLの集合を読む。
+
+    各行からbase URIの接頭辞を剥がすだけで、`build()`のsitemap生成ロジック
+    (`made`の集計)は呼び直しはしない。ルート行(`{base}/`)は対象外。
+    """
+    path = out_dir / "sitemap.txt"
+    if not path.is_file():
+        return set()
+    base = _base()
+    declared: set[str] = set()
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line.startswith(base):
+            continue
+        rest = line[len(base) :]
+        if rest.startswith("/def/"):
+            declared.add(rest)
+    return declared

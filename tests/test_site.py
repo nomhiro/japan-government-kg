@@ -168,3 +168,80 @@ def test_def_entry_count_agrees_with_the_actual_def_paths_build_makes(tmp_path):
     made = site.build(GENERATED, tmp_path)
     actual_def_paths = len([p for p in made if p.startswith("/def/")])
     assert site.def_entry_count(GENERATED) == actual_def_paths
+
+
+# =============================================================================
+# A-2: `scripts/check-site-build.py` が使う観測用の関数
+# (built_def_paths/headers_declared_paths/sitemap_declared_paths)。
+# `build()`/`build_headers()`の内部計算を再利用せず、実際に書かれたファイル・
+# テキストを読み直すだけであること(循環検証にしないための土台)を確認する。
+# =============================================================================
+
+
+def test_built_def_paths_matches_the_def_paths_build_actually_makes(tmp_path):
+    made = site.build(GENERATED, tmp_path)
+    expected = {p for p in made if p.startswith("/def/")}
+    assert site.built_def_paths(tmp_path) == expected
+
+
+def test_built_def_paths_is_empty_when_there_is_no_def_directory(tmp_path):
+    """空虚な合格を作らない土台: ビルドされていない`out_dir`では空集合を返す
+
+    (`_headers`/`sitemap.txt`との一致比較が「0件同士で一致」という
+    見た目だけの合格にならないよう、`scripts/check-site-build.py`側で
+    この空集合自体を明示的に検査する――実測: 空の`out_dir`に対して
+    実行すると、`missing_paths`とこの非空検査の2件がNGになり、
+    `_headers`/`sitemap`の一致検査だけは「0件同士で一致」してOKになる
+    ことを確認した。全体としては失敗になるので空虚な合格にはならない)。
+    """
+    assert site.built_def_paths(tmp_path) == set()
+
+
+def test_headers_declared_paths_matches_built_def_paths_after_a_real_build(tmp_path):
+    made = site.build(GENERATED, tmp_path)
+    site.write_headers(made, tmp_path)
+    assert site.headers_declared_paths(tmp_path) == site.built_def_paths(tmp_path)
+
+
+def test_sitemap_declared_paths_matches_built_def_paths_after_a_real_build(tmp_path):
+    site.build(GENERATED, tmp_path)
+    assert site.sitemap_declared_paths(tmp_path) == site.built_def_paths(tmp_path)
+
+
+def test_headers_declared_paths_detects_a_stale_headers_file_with_the_real_file_untouched(tmp_path):
+    """`_headers`だけが古くなった場合(実ファイルは残っている)を検出できること。
+
+    何があれば落ちるか: `_headers`の内容を一度も読まない検査
+    (`missing_paths()`のように生成物から要求パスを再計算するだけの形)では、
+    この種の劣化(`_headers`だけが古い/手で欠落させた)を原理的に見逃す。
+    """
+    made = site.build(GENERATED, tmp_path)
+    site.write_headers(made, tmp_path)
+    victim = min(site.built_def_paths(tmp_path))
+
+    headers_path = tmp_path / "_headers"
+    blocks = headers_path.read_text(encoding="utf-8").split("\n\n")
+    kept = [b for b in blocks if not b.startswith(f"{victim}\n")]
+    headers_path.write_text("\n\n".join(kept), encoding="utf-8")
+
+    assert victim not in site.headers_declared_paths(tmp_path)
+    assert victim in site.built_def_paths(tmp_path), "実ファイルは消していないはず"
+
+
+def test_sitemap_declared_paths_detects_a_stale_sitemap_with_the_real_file_untouched(tmp_path):
+    """`sitemap.txt`だけが古くなった場合を検出できること
+
+    (このセッションで実際に起きた欠陥――law/budget追加後もsitemapが9件の
+    まま追従しなかった――と同じ形を、実ファイルは残したまま再現する)。
+    """
+    site.build(GENERATED, tmp_path)
+    victim = min(site.built_def_paths(tmp_path))
+    base = get_settings().base_uri.rstrip("/")
+
+    sitemap_path = tmp_path / "sitemap.txt"
+    lines = sitemap_path.read_text(encoding="utf-8").splitlines()
+    kept = [line for line in lines if line != f"{base}{victim}"]
+    sitemap_path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+
+    assert victim not in site.sitemap_declared_paths(tmp_path)
+    assert victim in site.built_def_paths(tmp_path), "実ファイルは消していないはず"

@@ -43,5 +43,29 @@ jobs:
           # 検査を本物にする(設計書§4.2 / レビューC1)
           uv run python -m jgkg.base_uri --check
 
+      - name: Build the static site (schema/generated/ -> site/)
+        run: bash scripts/build-site.sh
+
+      - name: Check the site build's content (no server needed; A-2)
+        run: |
+          # verify-site.py(別ワークフロー・毎日1回)はHTTP越しに配信済みの
+          # サイトを検査する。ここはビルド成果物をファイルシステムから直接
+          # 検査するだけで、コミット毎に決定的に回せる(このセッションで
+          # 実際に踏んだ欠陥――law/budgetモジュールがビルド成果物に無かった・
+          # sitemapが9件で期待15件――はどちらもこれで捕まえられる)。
+          uv run python scripts/check-site-build.py
+
+      - name: Assert building the site left the working tree clean
+        run: |
+          # site/def/・site/sitemap.txt・site/_headers は.gitignore対象だが、
+          # ビルドがそれ以外の追跡ファイルを変えていないことを確認する
+          # (schema/generated/ の差分は1つ上のステップで既に確認済みだが、
+          # ここは「site構築の副作用」という別の観点の確認)。
+          if [ -n "$(git status --porcelain)" ]; then
+            git status --porcelain
+            echo "::error::site/ のビルドが追跡ファイルを変えた。想定外の副作用がある"
+            exit 1
+          fi
+
       - name: Test
         run: uv run pytest tests/ -v
