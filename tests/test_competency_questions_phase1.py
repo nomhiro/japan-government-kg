@@ -284,21 +284,34 @@ def test_cq7_provenance_of_a_law_jurisdiction_edge(kg):
 
 
 def test_cq8_revision_as_of_date_skips_the_rogue_revision_without_law_id(kg):
-    """2026-04-01時点の版は2026-01-01施行のものであり、lawIdを持たない
-    2026-02-01の野良LawRevision(Task 2レビュー申し送りの正のコントロール)
-    が誤って選ばれないこと。
+    """カットオフ(このグラフのprov:generatedAtTime=DAY=2026-08-01)時点の版は
+    2026-01-01施行のものであり、lawIdを持たない2026-02-01の野良LawRevision
+    (Task 2レビュー申し送りの正のコントロール)も、カットオフより後
+    (2026-09-01施行)の版も、誤って選ばれないこと。
 
-    **Task 11修正ラウンド: 日付を2023-01-01/2020-04-01/2022-06-01から
-    2026-04-01/2026-01-01/2026-02-01へ平行移動した**(CQ8のカットオフを
-    実データ(法令417M60000100021の実際の改正が2026-04-01の1件のみ)に
-    合わせたため。相対的な前後関係は不変。
-    queries/cq/cq08-law-revision-as-of-date.rq参照)。
+    **A-3(O9)修正ラウンド: カットオフを手書きの2026-04-01からこのグラフ自身の
+    prov:generatedAtTimeへ変更した**(queries/cq/cq08-law-revision-as-of-date.rq
+    参照)。これに伴い「カットオフより後」の版の日付を2026-05-01から
+    2026-09-01へ平行移動した(相対的な前後関係は不変。tests/phase1_fixture.py
+    参照)。
 
-    何があれば落ちるか: law:lawIdでの絞り込みが外れたら、日付だけで見て
-    2026-02-01(野良)が「指定日以下の最新」として選ばれてしまう。
+    **何があれば落ちるか(空虚な検査にしない)**:
+    - `rows`が空になる: 完了条件A(0件を作らない)への回帰
+    - law:lawIdでの絞り込みが外れる: 日付だけで見て2026-02-01(野良)が
+      「カットオフ以下の最新」として誤って選ばれ、`?d`が"2026-02-01"になる
+    - 日付フィルタ(`?d <= ?asOf`)が外れる/`ORDER BY DESC LIMIT 1`が
+      効かない: カットオフより後のはずの2026-09-01が選ばれる
+    どちらの誤答も`?d`の値で判別できるため、非空だけでなく値そのものを見る。
     """
     rows = _query(kg, "cq08-law-revision-as-of-date.rq")
     assert rows, "CQ8に答えられない"
+    assert len(rows) == 1, f"1件のはず: {rows}"
+    revision, d = rows[0]
+    assert str(d) == "2026-01-01", (
+        f"カットオフ以下最新の版は2026-01-01のはずが{d}が選ばれた"
+        "(野良版が誤って選ばれた、あるいは未来の版がフィルタで除外されていない)"
+    )
+    assert "417M60000100021" in str(revision), rows
     assert len(rows) == 1
     revision, d = rows[0]
     assert str(d) == "2026-01-01", (

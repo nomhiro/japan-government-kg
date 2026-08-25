@@ -103,8 +103,15 @@ CQ8がlawIdでの絞り込みを外すと、この版が誤って「最新版」
 カットオフを実データ(法令417M60000100021の実際の改正が2026-04-01の1件
 しかない)に合わせて2023-01-01→2026-04-01に変えたため、この正のコントロール
 一式(KOUSEIROUDOU_LAW_IDの2版・この野良版)も同じカットオフを挟む配置へ
-平行移動した(相対的な前後関係は不変。queries/cq/cq08-law-revision-as-of-date.rq
-参照)。
+平行移動した(相対的な前後関係は不変)。
+
+**A-3(O9): カットオフを手書きの2026-04-01からKG自身のprovenanceへ変更した。**
+このfixtureのegov-lawグラフの`prov:generatedAtTime`は`DAY`
+(2026-08-01。下記`_law_records_and_jurisdictions`が`emit_laws`へ渡す
+`fetched_on`と、この野良版を注入するグラフURIの両方に使われる)になるため、
+「カットオフより後(除外されるべき)」の版の日付を2026-05-01から`DAY`より
+後の2026-09-01へ平行移動した(この野良版の日付・相対的な前後関係は不変。
+queries/cq/cq08-law-revision-as-of-date.rq参照)。
 """
 ROGUE_REVISION_DATE = datetime.date(2026, 2, 1)
 
@@ -147,7 +154,13 @@ def _law_records_and_jurisdictions() -> tuple[list[LawRecord], dict[str, Jurisdi
             # 実データをこのタスクは持たない)。
             # Task 11修正ラウンド: 2020-04-01/2024-04-01から2026-01-01/
             # 2026-05-01へ平行移動(CQ8のカットオフを実データに合わせて
-            # 2026-04-01にしたため。queries/cq/cq08-law-revision-as-of-date.rq参照)
+            # 2026-04-01にしたため)。
+            # A-3(O9)修正ラウンド: 2026-05-01から2026-09-01へ再び平行移動
+            # (カットオフを手書きの2026-04-01からこのグラフ自身の
+            # prov:generatedAtTime=DAY=2026-08-01へ変えたため。この版は
+            # 「カットオフ〔=DAY〕より後なので除外される」ことを示す役割
+            # なので、DAYより後である必要がある。
+            # queries/cq/cq08-law-revision-as-of-date.rq参照)
             Revision(
                 amendment_law_num="令和二年厚生労働省令第一号",
                 amendment_enforcement_date="2026-01-01",
@@ -155,7 +168,7 @@ def _law_records_and_jurisdictions() -> tuple[list[LawRecord], dict[str, Jurisdi
             ),
             Revision(
                 amendment_law_num="令和六年厚生労働省令第一号",
-                amendment_enforcement_date="2026-05-01",
+                amendment_enforcement_date="2026-09-01",
                 revision_status="Enforced",
             ),
         ],

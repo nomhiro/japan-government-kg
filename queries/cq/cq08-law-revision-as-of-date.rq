@@ -9,35 +9,44 @@
 # law:lawId を持たない LawRevision が1件ある(emit_lawsは常に親Lawのlaw_idを
 # 書くため、本番コードパスでは作れない状態。schema/generated/law.owl.ttlの
 # LawRevision.lawIdはminCardinality 0=任意であり、この状態はスキーマ上
-# 合法)。その版の施行日は、この法令の2版の間(2026-01-01 < 2026-02-01 <
-# 2026-05-01)にあるため、law:lawIdでの絞り込みが外れる/壊れると誤って
-# 選ばれる位置に置いている(fixtureはこのカットオフ日2026-04-01を前提に
-# 組んでいる)。
+# 合法)。その版の施行日は、この法令の2版の間にあるため、law:lawIdでの
+# 絞り込みが外れる/壊れると誤って選ばれる位置に置いている
+# (tests/phase1_fixture.py参照)。
 #
-# **Task 11修正ラウンド(advisor指摘。実データでの完了条件A確認で発見):
-# 元のカットオフ(2023-01-01)・fixtureの2版(2020-04-01/2024-04-01)では
-# 実データが0件になる。** e-Gov法令APIコネクタは「現在の改正情報」1件しか
-# 取得しない(1法令1版。task-6-report.md指摘4と同種の「実データはfixture
-# より単純」の型)ため、実データの417M60000100021(石綿障害予防規則)には
-# amendmentEnforcementDate="2026-04-01"の版が1件しかない。元のカットオフ
-# (2023-01-01)のままでは、実データの唯一の版がカットオフより後という
-# 別の結果になり、完了条件A(答えが非0で返る)を満たせない。
+# **A-3(O9): カットオフを手書きの日付リテラルからKG自身のprovenanceへ
+# 変更した。** 以前はここに`FILTER (?d <= "2026-04-01"^^xsd:date)`という
+# 手書きの日付があった(Task 11修正ラウンドで2023-01-01から変更したもの)。
+# この法令が次に改正されて施行日が2026-04-01より後になると、この手書きの
+# 日付は実データより古くなり、CQ8は再び0件を返す
+# (docs/measurements-phase1.md 最終レビュー観察O9で park されていた既知の
+# 再発)。「導出すべき値を手書きしている」という、このプロジェクトで
+# 5回目の型(schema/competency-questions.md参照)。
 #
-# 対応: カットオフを実データの唯一の版の施行日(2026-04-01)に変更し、
-# fixture側の2版の施行日もこのカットオフを挟むよう平行移動した
-# (2020-04-01→2026-01-01、2024-04-01→2026-05-01。野良版も2022-06-01→
-# 2026-02-01。相対的な前後関係・「カットオフより前が1件、後が1件、
-# 野良はカットオフより前だがlawId無しで除外される」という構造は不変
-# ——tests/phase1_fixture.py・test_competency_questions_phase1.py参照)。
-# これで実データ(唯一の版が2026-04-01<=カットオフ)・fixture(2026-01-01の
-# 版のみがカットオフ以下かつlawId有り)の両方が意図した1件を返す。
+# **「指定した時点」をどこから引くか**: CQの問いの形(「ある法令の」と
+# 並行する「指定した時点」)は本来どちらも呼び手が指定する自由変数だが、
+# `run_cq.py`はクエリファイルをそのまま実行するだけで置換機構を持たず
+# (新設しない裁定)、`tests/`のfixture実行(`_query`)も同様に置換機構を
+# 持たない。そこで「指定した時点」を**このLawRevisionが実際に載っている
+# 名前付きグラフ自身のprov:generatedAtTime(このデータを取得した時点)**に
+# 固定する——「今のところ判明している最新の改正情報を、取得した時点を
+# 基準に選ぶ」という読み方であり、データが更新されるたびにこの基準点も
+# 一緒に動く(手書きの値が1つも残らない)。
+#
+# 出典は名前付きグラフ単位(設計書§8.4)。同じグラフ内のLawRevisionと
+# provenance(`prov:generatedAtTime`)を`?graph`で結び付ける形は、CQ7
+# (cq07-provenance-of-edge.rq)がすでに実データ・fixtureの両方で確認済みの
+# パターンと同じ(`?graph`をGRAPH{}内外の両方で束縛する)。
+PREFIX prov: <http://www.w3.org/ns/prov#>
 PREFIX law: <https://jgkg.norr-tech.com/def/law#>
 
 SELECT ?revision ?d WHERE {
-  ?revision a law:LawRevision ;
-            law:lawId "417M60000100021" ;
-            law:amendmentEnforcementDate ?d .
-  FILTER (?d <= "2026-04-01"^^<http://www.w3.org/2001/XMLSchema#date>)
+  GRAPH ?graph {
+    ?revision a law:LawRevision ;
+              law:lawId "417M60000100021" ;
+              law:amendmentEnforcementDate ?d .
+  }
+  ?graph prov:generatedAtTime ?asOf .
+  FILTER (?d <= ?asOf)
 }
 ORDER BY DESC(?d)
 LIMIT 1
