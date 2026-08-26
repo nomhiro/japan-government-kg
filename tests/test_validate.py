@@ -2,7 +2,8 @@ import datetime
 from pathlib import Path
 
 import pytest
-from rdflib import RDF, Dataset, Literal, URIRef
+from rdflib import RDF, XSD, Dataset, Literal, URIRef
+from rdflib.namespace import SKOS
 
 from jgkg import validate
 from jgkg.rdf import emit
@@ -698,3 +699,89 @@ def test_passing_dataset_excludes_failing_graphs():
 
     contexts = {str(c.identifier) for c in clean.graphs() if len(c) > 0}
     assert str(broken_gid) not in contexts, "不合格グラフがロード対象に残っている"
+
+
+# =============================================================================
+# AbolishedGovernmentOrgan(C-2)。succeededBy・abolitionDateの必須制約と
+# 閉じた形状が生成されたttlの文字列だけでなく、実際のSHACL検証で効くこと。
+# パイプラインへの結線(emit関数)はまだ無い(C-3の範囲)ため、トリプルを
+# 直接組み立てる
+# =============================================================================
+
+_ABOLISHED_SUBJECT = "https://jgkg.norr-tech.com/id/org/test-old-ministry"
+_ABOLISHED_GRAPH = URIRef("https://jgkg.norr-tech.com/graph/test-abolished/2026-08-26")
+
+
+def _abolished_organ_dataset(
+    successors: list[str], abolition_date: datetime.date | None, extra_undeclared_property: bool = False,
+) -> Dataset:
+    ds = Dataset()
+    g = ds.graph(_ABOLISHED_GRAPH)
+    ns_org = emit.NS["org"]
+    subj = URIRef(_ABOLISHED_SUBJECT)
+    g.add((subj, RDF.type, ns_org["AbolishedGovernmentOrgan"]))
+    g.add((subj, SKOS.prefLabel, Literal("テスト用の廃止組織", lang="ja")))
+    for succ in successors:
+        g.add((subj, ns_org["succeededBy"], URIRef(succ)))
+    if abolition_date is not None:
+        g.add((subj, ns_org["abolitionDate"], Literal(abolition_date, datatype=XSD.date)))
+    if extra_undeclared_property:
+        # AbolishedGovernmentOrganが宣言していない、無関係なプロパティ
+        # (law:lawId)を1つ足す。閉じた形状(sh:closed true)が実際に
+        # 効くかどうかの検査
+        g.add((subj, emit.NS["law"]["lawId"], Literal("NOT-A-DECLARED-PROPERTY")))
+    return ds
+
+
+def test_abolished_government_organ_with_both_required_fields_conforms():
+    """完全な形(succeededBy 1件以上・abolitionDateあり)は合格すること。
+
+    これが落ちると、以降の3件の壊し確認が「常に不合格」という別の欠陥で
+    空虚に成功してしまう(何を変えても不合格なら、要求している制約を
+    検査したことにならない)。
+    """
+    ds = _abolished_organ_dataset(
+        successors=["https://jgkg.norr-tech.com/id/org/test-new-ministry"],
+        abolition_date=datetime.date(2001, 1, 6),
+    )
+    results = validate.validate_dataset(ds, SHAPES)
+    assert results, "検証対象のグラフが無い"
+    assert all(r.conforms for r in results), [r.report_text for r in results if not r.conforms]
+
+
+def test_abolished_government_organ_without_succeeded_by_fails_validation():
+    """壊し確認: succeededByが必須(多値・minCount 1)であることが、生成された
+
+    ttlの文字列を見るだけでなく、実際にpyshaclを走らせて効くこと。
+    """
+    ds = _abolished_organ_dataset(successors=[], abolition_date=datetime.date(2001, 1, 6))
+    results = validate.validate_dataset(ds, SHAPES)
+    assert results, "検証対象のグラフが無い"
+    assert not any(r.conforms for r in results), [r.report_text for r in results]
+
+
+def test_abolished_government_organ_without_abolition_date_fails_validation():
+    """壊し確認: abolitionDateが必須であることが実際にpyshaclで効くこと。"""
+    ds = _abolished_organ_dataset(
+        successors=["https://jgkg.norr-tech.com/id/org/test-new-ministry"],
+        abolition_date=None,
+    )
+    results = validate.validate_dataset(ds, SHAPES)
+    assert results, "検証対象のグラフが無い"
+    assert not any(r.conforms for r in results), [r.report_text for r in results]
+
+
+def test_abolished_government_organ_shape_is_closed():
+    """壊し確認: 閉じた形状(sh:closed true)が実際に効くこと。
+
+    AbolishedGovernmentOrganが宣言していない任意のプロパティ(law:lawId)を
+    1つ足すと不合格になる。
+    """
+    ds = _abolished_organ_dataset(
+        successors=["https://jgkg.norr-tech.com/id/org/test-new-ministry"],
+        abolition_date=datetime.date(2001, 1, 6),
+        extra_undeclared_property=True,
+    )
+    results = validate.validate_dataset(ds, SHAPES)
+    assert results, "検証対象のグラフが無い"
+    assert not any(r.conforms for r in results), [r.report_text for r in results]
