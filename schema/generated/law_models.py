@@ -284,6 +284,35 @@ class Ministry(GovernmentOrgan):
         return v
 
 
+class AbolishedGovernmentOrgan(GovernmentOrgan):
+    """
+    中央省庁等改革(2001年)等により廃止された、かつて国の行政機関で あった組織。旧省庁名の判定集合(`data/reference/old-ministries.csv`) に載る名称のうち、法令の対応表(`412CO0000000315`等)から後継が 解決できたものがこのクラスのインスタンスになる想定(C-1の `ministry_succession`参照)。解決できない名称は`OLD_MINISTRY`の 未解決参照のままで、このクラスのインスタンスにはならない (data/reference/old-ministries.csv・transform/old_ministries.py参照)
+    """
+    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/org'})
+
+    succeededBy: list[str] = Field(default=..., description="""この廃止された行政機関の事務を承継した現存の行政機関。**多値** (1つ以上)——1つの旧機関の異なる部分が異なる承継先を持つ実例がある (412CO0000000315「従前の府省等の相当の新府省等を定める政令」の対応表。 例: 総理府国土庁のうち防災局は内閣府へ、それ以外は国土交通省へ)。 C-1(ministry_succession)が抽出した対応表からの解決を想定するが、 このスロット自体は出典を限定しない""", json_schema_extra = { "linkml_meta": {'domain_of': ['AbolishedGovernmentOrgan']} })
+    abolitionDate: date = Field(default=..., description="""この行政機関が廃止された日付""", json_schema_extra = { "linkml_meta": {'domain_of': ['AbolishedGovernmentOrgan']} })
+    houjinBangou: Optional[str] = Field(default=None, description="""国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
+    organizationKindCode: Optional[str] = Field(default=None, description="""法人番号公表サイトの法人種別コード""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
+    prefectureName: Optional[str] = Field(default=None, description="""所在地の都道府県名""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
+    cityName: Optional[str] = Field(default=None, description="""所在地の市区町村名""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
+    id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
+    label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
+
+    @field_validator('houjinBangou')
+    def pattern_houjinBangou(cls, v):
+        pattern=re.compile(r"^[0-9]{13}$")
+        if isinstance(v, list):
+            for element in v:
+                if isinstance(element, str) and not pattern.match(element):
+                    err_msg = f"Invalid houjinBangou format: {element}"
+                    raise ValueError(err_msg)
+        elif isinstance(v, str) and not pattern.match(v):
+            err_msg = f"Invalid houjinBangou format: {v}"
+            raise ValueError(err_msg)
+        return v
+
+
 class Law(Work):
     """
     法令。版(LawRevision)とは独立に、法令IDで同一性を持つ
@@ -332,5 +361,6 @@ UnresolvedReference.model_rebuild()
 Organization.model_rebuild()
 GovernmentOrgan.model_rebuild()
 Ministry.model_rebuild()
+AbolishedGovernmentOrgan.model_rebuild()
 Law.model_rebuild()
 LawRevision.model_rebuild()

@@ -26,5 +26,9 @@
   {
     "expected_class": "https://jgkg.norr-tech.com/def/org#Organization",
     "path": "https://jgkg.norr-tech.com/def/law#jurisdiction"
+  },
+  {
+    "expected_class": "https://jgkg.norr-tech.com/def/org#GovernmentOrgan",
+    "path": "https://jgkg.norr-tech.com/def/org#succeededBy"
   }
 ]

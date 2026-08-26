@@ -7,7 +7,7 @@
 <https://jgkg.norr-tech.com/def/core#Agent> a sh:NodeShape ;
     rdfs:comment "「誰が」の軸。行為の主体。組織と人の上位" ;
     sh:closed true ;
-    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/org#cityName> <https://jgkg.norr-tech.com/def/org#houjinBangou> <https://jgkg.norr-tech.com/def/org#ministryCode> <https://jgkg.norr-tech.com/def/org#organizationKindCode> <https://jgkg.norr-tech.com/def/org#prefectureName> ) ;
+    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/org#abolitionDate> <https://jgkg.norr-tech.com/def/org#cityName> <https://jgkg.norr-tech.com/def/org#houjinBangou> <https://jgkg.norr-tech.com/def/org#ministryCode> <https://jgkg.norr-tech.com/def/org#organizationKindCode> <https://jgkg.norr-tech.com/def/org#prefectureName> <https://jgkg.norr-tech.com/def/org#succeededBy> ) ;
     sh:property [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
@@ -41,7 +41,7 @@
 <https://jgkg.norr-tech.com/def/core#Entity> a sh:NodeShape ;
     rdfs:comment "本KGが扱うすべての事物の基底" ;
     sh:closed false ;
-    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/core#amount_jpy> <https://jgkg.norr-tech.com/def/core#involves_agent> <https://jgkg.norr-tech.com/def/core#occurred_on> <https://jgkg.norr-tech.com/def/core#unresolvedFor> <https://jgkg.norr-tech.com/def/core#unresolved_key> <https://jgkg.norr-tech.com/def/core#unresolved_reason> <https://jgkg.norr-tech.com/def/core#unresolved_text> <https://jgkg.norr-tech.com/def/org#cityName> <https://jgkg.norr-tech.com/def/org#houjinBangou> <https://jgkg.norr-tech.com/def/org#ministryCode> <https://jgkg.norr-tech.com/def/org#organizationKindCode> <https://jgkg.norr-tech.com/def/org#prefectureName> ) ;
+    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/core#amount_jpy> <https://jgkg.norr-tech.com/def/core#involves_agent> <https://jgkg.norr-tech.com/def/core#occurred_on> <https://jgkg.norr-tech.com/def/core#unresolvedFor> <https://jgkg.norr-tech.com/def/core#unresolved_key> <https://jgkg.norr-tech.com/def/core#unresolved_reason> <https://jgkg.norr-tech.com/def/core#unresolved_text> <https://jgkg.norr-tech.com/def/org#abolitionDate> <https://jgkg.norr-tech.com/def/org#cityName> <https://jgkg.norr-tech.com/def/org#houjinBangou> <https://jgkg.norr-tech.com/def/org#ministryCode> <https://jgkg.norr-tech.com/def/org#organizationKindCode> <https://jgkg.norr-tech.com/def/org#prefectureName> <https://jgkg.norr-tech.com/def/org#succeededBy> ) ;
     sh:property [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
@@ -179,10 +179,64 @@
             sh:path <https://jgkg.norr-tech.com/def/core#id> ] ;
     sh:targetClass <https://jgkg.norr-tech.com/def/core#Work> .
 
+<https://jgkg.norr-tech.com/def/org#AbolishedGovernmentOrgan> a sh:NodeShape ;
+    rdfs:comment "中央省庁等改革(2001年)等により廃止された、かつて国の行政機関で あった組織。旧省庁名の判定集合(`data/reference/old-ministries.csv`) に載る名称のうち、法令の対応表(`412CO0000000315`等)から後継が 解決できたものがこのクラスのインスタンスになる想定(C-1の `ministry_succession`参照)。解決できない名称は`OLD_MINISTRY`の 未解決参照のままで、このクラスのインスタンスにはならない (data/reference/old-ministries.csv・transform/old_ministries.py参照)" ;
+    sh:closed true ;
+    sh:ignoredProperties ( rdf:type ) ;
+    sh:property [ sh:datatype rdf:langString ;
+            sh:description "人間が読む名称"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 7 ;
+            sh:path skos:prefLabel ],
+        [ sh:description "この廃止された行政機関の事務を承継した現存の行政機関。**多値** (1つ以上)——1つの旧機関の異なる部分が異なる承継先を持つ実例がある (412CO0000000315「従前の府省等の相当の新府省等を定める政令」の対応表。 例: 総理府国土庁のうち防災局は内閣府へ、それ以外は国土交通省へ)。 C-1(ministry_succession)が抽出した対応表からの解決を想定するが、 このスロット自体は出典を限定しない"@ja ;
+            sh:minCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 0 ;
+            sh:path <https://jgkg.norr-tech.com/def/org#succeededBy> ],
+        [ sh:datatype rdf:langString ;
+            sh:description "所在地の都道府県名"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 4 ;
+            sh:path <https://jgkg.norr-tech.com/def/org#prefectureName> ],
+        [ sh:datatype xsd:string ;
+            sh:description "国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 2 ;
+            sh:path <https://jgkg.norr-tech.com/def/org#houjinBangou> ;
+            sh:pattern "^[0-9]{13}$" ],
+        [ sh:datatype rdf:langString ;
+            sh:description "所在地の市区町村名"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 5 ;
+            sh:path <https://jgkg.norr-tech.com/def/org#cityName> ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 6 ;
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ],
+        [ sh:datatype xsd:string ;
+            sh:description "法人番号公表サイトの法人種別コード"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 3 ;
+            sh:path <https://jgkg.norr-tech.com/def/org#organizationKindCode> ],
+        [ sh:datatype xsd:date ;
+            sh:description "この行政機関が廃止された日付"@ja ;
+            sh:maxCount 1 ;
+            sh:minCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 1 ;
+            sh:path <https://jgkg.norr-tech.com/def/org#abolitionDate> ] ;
+    sh:targetClass <https://jgkg.norr-tech.com/def/org#AbolishedGovernmentOrgan> .
+
 <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> a sh:NodeShape ;
     rdfs:comment "法人種別が国の機関である組織" ;
     sh:closed true ;
-    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/org#ministryCode> ) ;
+    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/org#abolitionDate> <https://jgkg.norr-tech.com/def/org#ministryCode> <https://jgkg.norr-tech.com/def/org#succeededBy> ) ;
     sh:property [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
@@ -272,7 +326,7 @@
 <https://jgkg.norr-tech.com/def/org#Organization> a sh:NodeShape ;
     rdfs:comment "法人番号を持つ組織" ;
     sh:closed true ;
-    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/org#ministryCode> ) ;
+    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/org#abolitionDate> <https://jgkg.norr-tech.com/def/org#ministryCode> <https://jgkg.norr-tech.com/def/org#succeededBy> ) ;
     sh:property [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;

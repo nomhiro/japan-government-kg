@@ -150,6 +150,27 @@
     dcterms:title "日本政府ナレッジグラフ 法令モジュール" ;
     skos:definition "法令(Law)と、その改正イベント(LawRevision)を表すクラスとプロパティ。正準IDは 法令ID(e-Gov法令API が付与する)であり、法令番号や題名は改正で変わり得るため 同一性の根拠にしない。 このオントロジーは日本国政府が公開するデータを第三者が構造化したものであり、日本国政府による公式なデータセットではない。"@ja .
 
+<https://jgkg.norr-tech.com/def/org#AbolishedGovernmentOrgan> a owl:Class ;
+    rdfs:label "AbolishedGovernmentOrgan" ;
+    rdfs:subClassOf [ a owl:Restriction ;
+            owl:allValuesFrom <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#succeededBy> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:date ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#abolitionDate> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#succeededBy> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#abolitionDate> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#abolitionDate> ],
+        <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> ;
+    skos:definition "中央省庁等改革(2001年)等により廃止された、かつて国の行政機関で あった組織。旧省庁名の判定集合(`data/reference/old-ministries.csv`) に載る名称のうち、法令の対応表(`412CO0000000315`等)から後継が 解決できたものがこのクラスのインスタンスになる想定(C-1の `ministry_succession`参照)。解決できない名称は`OLD_MINISTRY`の 未解決参照のままで、このクラスのインスタンスにはならない (data/reference/old-ministries.csv・transform/old_ministries.py参照)"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/org> .
+
 <https://jgkg.norr-tech.com/def/org#Ministry> a owl:Class ;
     rdfs:label "Ministry" ;
     rdfs:subClassOf [ a owl:Restriction ;
@@ -163,12 +184,6 @@
             owl:onProperty <https://jgkg.norr-tech.com/def/org#ministryCode> ],
         <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> ;
     skos:definition "府省及び外局等、行政事業レビューシステム(RS)実データの所管府省庁欄・ 府省庁欄に現れるか、又は法令(府省令・規則)の発令機関としてe-Gov法令API 実データに現れる、現存する国の行政機関(名称が主キーで、府省コードは 分かる場合のみ持つ。廃止済みの名称は`old-ministries.csv`により OLD_MINISTRYの未解決参照になり、このクラスのインスタンスにはならない)"@ja ;
-    skos:inScheme <https://jgkg.norr-tech.com/def/org> .
-
-<https://jgkg.norr-tech.com/def/org#GovernmentOrgan> a owl:Class ;
-    rdfs:label "GovernmentOrgan" ;
-    rdfs:subClassOf <https://jgkg.norr-tech.com/def/org#Organization> ;
-    skos:definition "法人種別が国の機関である組織"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
 <https://jgkg.norr-tech.com/def/core#Concept> a owl:Class ;
@@ -273,6 +288,12 @@
     rdfs:range <https://jgkg.norr-tech.com/def/org#Organization> ;
     skos:definition "この法令を所管する府省等。法令番号からの解析(経路1)等で解決できた場合のみ設定する。 共管(複数府省の並記。例:「総理府・大蔵省令」)は府省ごとに複数のエッジを張る (設計書§7.2)。解決できない場合はこのスロットを設定せず、 core:UnresolvedReference を別に立てて unresolved_reason(OLD_MINISTRY/NO_CANDIDATE/ AMBIGUOUS)で理由を分類する(このスロット自体は未解決を表さない)"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/law> .
+
+<https://jgkg.norr-tech.com/def/org#succeededBy> a owl:ObjectProperty ;
+    rdfs:label "succeededBy" ;
+    rdfs:range <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> ;
+    skos:definition "この廃止された行政機関の事務を承継した現存の行政機関。**多値** (1つ以上)——1つの旧機関の異なる部分が異なる承継先を持つ実例がある (412CO0000000315「従前の府省等の相当の新府省等を定める政令」の対応表。 例: 総理府国土庁のうち防災局は内閣府へ、それ以外は国土交通省へ)。 C-1(ministry_succession)が抽出した対応表からの解決を想定するが、 このスロット自体は出典を限定しない"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
 skos:prefLabel a owl:DatatypeProperty ;
     rdfs:label "label" ;
@@ -447,6 +468,12 @@ skos:prefLabel a owl:DatatypeProperty ;
     skos:definition "法人番号を持つ組織"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
+<https://jgkg.norr-tech.com/def/org#abolitionDate> a owl:DatatypeProperty ;
+    rdfs:label "abolitionDate" ;
+    rdfs:range xsd:date ;
+    skos:definition "この行政機関が廃止された日付"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/org> .
+
 <https://jgkg.norr-tech.com/def/org#cityName> a owl:DatatypeProperty ;
     rdfs:label "cityName" ;
     rdfs:range rdf:langString ;
@@ -475,6 +502,12 @@ skos:prefLabel a owl:DatatypeProperty ;
     rdfs:label "prefectureName" ;
     rdfs:range rdf:langString ;
     skos:definition "所在地の都道府県名"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/org> .
+
+<https://jgkg.norr-tech.com/def/org#GovernmentOrgan> a owl:Class ;
+    rdfs:label "GovernmentOrgan" ;
+    rdfs:subClassOf <https://jgkg.norr-tech.com/def/org#Organization> ;
+    skos:definition "法人種別が国の機関である組織"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
 <https://jgkg.norr-tech.com/def/core#Agent> a owl:Class ;

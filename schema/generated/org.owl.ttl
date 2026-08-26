@@ -30,6 +30,27 @@
     skos:definition "この記述が真である期間の終わり"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
+<https://jgkg.norr-tech.com/def/org#AbolishedGovernmentOrgan> a owl:Class ;
+    rdfs:label "AbolishedGovernmentOrgan" ;
+    rdfs:subClassOf [ a owl:Restriction ;
+            owl:allValuesFrom <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#succeededBy> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:date ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#abolitionDate> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#succeededBy> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#abolitionDate> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/org#abolitionDate> ],
+        <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> ;
+    skos:definition "中央省庁等改革(2001年)等により廃止された、かつて国の行政機関で あった組織。旧省庁名の判定集合(`data/reference/old-ministries.csv`) に載る名称のうち、法令の対応表(`412CO0000000315`等)から後継が 解決できたものがこのクラスのインスタンスになる想定(C-1の `ministry_succession`参照)。解決できない名称は`OLD_MINISTRY`の 未解決参照のままで、このクラスのインスタンスにはならない (data/reference/old-ministries.csv・transform/old_ministries.py参照)"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/org> .
+
 <https://jgkg.norr-tech.com/def/org#Ministry> a owl:Class ;
     rdfs:label "Ministry" ;
     rdfs:subClassOf [ a owl:Restriction ;
@@ -50,12 +71,6 @@
     dcterms:license "https://creativecommons.org/licenses/by/4.0/" ;
     dcterms:title "日本政府ナレッジグラフ 組織モジュール" ;
     skos:definition "組織(府省・法人)を表すクラスとプロパティ。正準IDは法人番号。 このオントロジーは日本国政府が公開するデータを第三者が構造化したものであり、日本国政府による公式なデータセットではない。"@ja .
-
-<https://jgkg.norr-tech.com/def/org#GovernmentOrgan> a owl:Class ;
-    rdfs:label "GovernmentOrgan" ;
-    rdfs:subClassOf <https://jgkg.norr-tech.com/def/org#Organization> ;
-    skos:definition "法人種別が国の機関である組織"@ja ;
-    skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
 <https://jgkg.norr-tech.com/def/org#Organization> a owl:Class ;
     rdfs:label "Organization" ;
@@ -225,6 +240,12 @@
     skos:definition "「何を」の軸。法令・政策・事業・文書・司法判断の上位"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
+<https://jgkg.norr-tech.com/def/org#succeededBy> a owl:ObjectProperty ;
+    rdfs:label "succeededBy" ;
+    rdfs:range <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> ;
+    skos:definition "この廃止された行政機関の事務を承継した現存の行政機関。**多値** (1つ以上)——1つの旧機関の異なる部分が異なる承継先を持つ実例がある (412CO0000000315「従前の府省等の相当の新府省等を定める政令」の対応表。 例: 総理府国土庁のうち防災局は内閣府へ、それ以外は国土交通省へ)。 C-1(ministry_succession)が抽出した対応表からの解決を想定するが、 このスロット自体は出典を限定しない"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/org> .
+
 skos:prefLabel a owl:DatatypeProperty ;
     rdfs:label "label" ;
     rdfs:range rdf:langString ;
@@ -278,6 +299,12 @@ skos:prefLabel a owl:DatatypeProperty ;
     skos:definition "正準IDに解決できなかった元の参照文字列"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
+<https://jgkg.norr-tech.com/def/org#abolitionDate> a owl:DatatypeProperty ;
+    rdfs:label "abolitionDate" ;
+    rdfs:range xsd:date ;
+    skos:definition "この行政機関が廃止された日付"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/org> .
+
 <https://jgkg.norr-tech.com/def/org#cityName> a owl:DatatypeProperty ;
     rdfs:label "cityName" ;
     rdfs:range rdf:langString ;
@@ -306,6 +333,12 @@ skos:prefLabel a owl:DatatypeProperty ;
     rdfs:label "prefectureName" ;
     rdfs:range rdf:langString ;
     skos:definition "所在地の都道府県名"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/org> .
+
+<https://jgkg.norr-tech.com/def/org#GovernmentOrgan> a owl:Class ;
+    rdfs:label "GovernmentOrgan" ;
+    rdfs:subClassOf <https://jgkg.norr-tech.com/def/org#Organization> ;
+    skos:definition "法人種別が国の機関である組織"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
 <https://jgkg.norr-tech.com/def/core#Agent> a owl:Class ;
