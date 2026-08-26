@@ -387,10 +387,19 @@ else
 fi
 echo "ビルド元コミット: ${GIT_COMMIT} (dirty=${GIT_DIRTY})"
 
+# 観察O8の修正: created_on は「ビルドした日付」であり、release(basename。
+# 上でreport['release']から手書きせずに決めている識別子)とは別の意味を持つ。
+# **以前は`created_on=release`という実装で、この欄もbasenameを持って
+# しまっていた**(team-leadが公開直前に実際のmanifestで発見)。ここで
+# 今日の日付をシェル側で計算し、build_manifest()に別欄として渡す
+BUILD_DATE=$(date +%Y-%m-%d)
+echo "ビルド日付(created_on): ${BUILD_DATE}"
+
 echo "== manifest作成 =="
 JGKG_OUT="$OUT" JGKG_JENA_VERSION_FOR_MANIFEST="$JENA_VERSION" \
   JGKG_TDB2_EXPANDED_BYTES="$TDB2_EXPANDED_BYTES" \
-  JGKG_GIT_COMMIT="$GIT_COMMIT" JGKG_GIT_DIRTY="$GIT_DIRTY" uv run python -c "
+  JGKG_GIT_COMMIT="$GIT_COMMIT" JGKG_GIT_DIRTY="$GIT_DIRTY" \
+  JGKG_BUILD_DATE="$BUILD_DATE" uv run python -c "
 import json, os, pathlib
 from jgkg import build, pipeline
 out = pathlib.Path(os.environ['JGKG_OUT'])
@@ -403,6 +412,9 @@ m = build.build_manifest(
     # (max(取得日))。シェル側で別に組み立てると、--out-dir を渡した実行で
     # ディレクトリ名とリリースIDが食い違ったまま manifest に焼き込まれる
     release=report['release'],
+    # 観察O8の修正: releaseとは別の欄。上でシェル側が計算した「ビルドした
+    # 日付」をそのまま記録する(release〔basename〕をここに書いてはならない)
+    created_on=os.environ['JGKG_BUILD_DATE'],
     # **手書きしない。** 以前は {'houjin-bangou': FETCHED_ON} と決め打ちで、
     # KGに入っている ministry-codes グラフが manifest に現れなかった
     sources=report['sources'],
