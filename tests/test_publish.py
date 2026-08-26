@@ -134,6 +134,53 @@ def test_verify_release_assets_rejects_a_missing_asset(tmp_path, missing_name):
         publish.verify_release_assets(release_dir)
 
 
+def test_verify_release_assets_rejects_a_release_with_no_git_commit(tmp_path):
+    """`git_commit`が無い(旧形式。manifest_version<6)manifestは拒否すること。
+
+    team-lead裁定: 「配布物をダウンロードした人が、それを作ったコードを
+    特定できる」ことを公開の要件として採用したため、それを満たせない
+    リリースは公開できない。**版番号(manifest_version)ではなく、
+    `git_commit`という性質そのもので判定する**——旧形式(v5以前)は
+    この欄を持たないため、版番号を明示的に見なくても自然に弾かれる。
+    """
+    release_dir, _m = _make_release_dir(tmp_path)
+    manifest_path = release_dir / build.MANIFEST_NAME
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    del data["git_commit"]
+    del data["git_dirty"]
+    data["manifest_version"] = 5
+    manifest_path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="git_commit"):
+        publish.verify_release_assets(release_dir)
+
+
+def test_verify_release_assets_rejects_a_dirty_build_by_default(tmp_path):
+    """`git_dirty=true`のリリースは既定では拒否されること(team-lead裁定)。
+
+    汚れた作業ツリーからのビルドは、コミットSHAだけでは完全な説明に
+    ならない(コミットに無い変更が混ざっているかもしれない)。公開する
+    なら`allow_dirty=True`という明示の意図表明を要求する
+    (`--allow-overwrite`と同じ作法)。
+    """
+    release_dir, _m = _make_release_dir(tmp_path, git_dirty=True)
+
+    with pytest.raises(ValueError, match="dirty|汚れ"):
+        publish.verify_release_assets(release_dir)
+
+
+def test_verify_release_assets_accepts_a_dirty_build_when_explicitly_allowed(tmp_path):
+    """`allow_dirty=True`を明示すれば、`git_dirty=true`のリリースも通ること。
+
+    (空虚でないことの確認は上のテストと対で成立する: 既定では拒否され、
+    明示すれば通る——両方向を見て初めて`allow_dirty`が実際に効いている
+    ことが分かる。)
+    """
+    release_dir, _m = _make_release_dir(tmp_path, git_dirty=True)
+    result = publish.verify_release_assets(release_dir, allow_dirty=True)
+    assert result.git_dirty is True
+
+
 # =============================================================================
 # make_kg_nq_gz: kg.nq.gz の作成(元のkg.nqは消さない)
 # =============================================================================
@@ -551,3 +598,35 @@ def test_cli_publish_is_rejected_before_touching_gh_when_assets_are_broken(tmp_p
 
     with pytest.raises(ValueError, match="sha256"):
         publish.main([str(release_dir), "--publish"])
+
+
+def test_cli_rejects_a_dirty_build_before_touching_gh_without_allow_dirty(tmp_path, monkeypatch):
+    """`git_dirty=true`のリリースは、`--allow-dirty`無しではgh関連の関数に
+    一切到達しないこと(壊し確認)。dry-run(`--publish`無し)でも拒否される
+    ——このモジュールの「検査は常に行う」という既定の作法どおり。
+    """
+    release_dir, _m = _make_release_dir(tmp_path, git_dirty=True)
+
+    def _must_not_be_called(*args, **kwargs):
+        pytest.fail("dirtyなリリースなのにgh関連の関数に到達した")
+
+    monkeypatch.setattr(publish, "_gh_auth_status", _must_not_be_called)
+    monkeypatch.setattr(publish, "_gh_release_create", _must_not_be_called)
+
+    with pytest.raises(ValueError, match="dirty|汚れ"):
+        publish.main([str(release_dir)])
+
+
+def test_cli_allow_dirty_flag_permits_a_dirty_build_through_dry_run(tmp_path, monkeypatch):
+    """`--allow-dirty`を明示すれば、`git_dirty=true`のリリースもdry-runが
+    通ること(ただし`--publish`を渡していないのでghはまだ呼ばれない)。
+    """
+    release_dir, _m = _make_release_dir(tmp_path, git_dirty=True)
+
+    def _must_not_be_called(*args, **kwargs):
+        pytest.fail("--publish無しのdry-runでgh関連の関数が呼ばれた")
+
+    monkeypatch.setattr(publish, "_gh_auth_status", _must_not_be_called)
+    monkeypatch.setattr(publish, "_gh_release_create", _must_not_be_called)
+
+    assert publish.main([str(release_dir), "--allow-dirty"]) == 0

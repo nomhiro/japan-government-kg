@@ -28,13 +28,22 @@ KG_NQ_GZ_NAME = "kg.nq.gz"
 NOTES_NAME = "RELEASE_NOTES.md"
 
 
-def verify_release_assets(release_dir: Path) -> build.Manifest:
+def verify_release_assets(release_dir: Path, allow_dirty: bool = False) -> build.Manifest:
     """3資産の存在と、manifestが記録するsha256・releaseとの一致を確かめる。
 
     **一致しない/欠けている場合は公開してはならない**(B-1ブリーフの本題)。
     ここで検査した`Manifest`をそのまま返す(呼び出し側が同じファイルを
     もう一度読み直さないため——読み直すと、検査と使用の間でファイルが
     書き換わる余地〔TOCTOU〕がわずかに生まれる)。
+
+    team-lead裁定: 「配布物をダウンロードした人が、それを作ったコードを
+    特定できる」ことを公開の要件として採用したため、`git_commit`が無い
+    (旧形式。manifest_version<6)リリースは公開できない。**版番号ではなく
+    `git_commit`という性質そのもので判定する**(旧形式は自然に弾かれる)。
+    `git_dirty=true`(作業ツリーが汚れた状態でビルドされた)リリースも
+    既定では拒否する——コミットSHAだけでは完全な説明にならないため。
+    公開するなら`allow_dirty=True`(CLIでは`--allow-dirty`)という明示の
+    意図表明を要求する(`build.sh`の`--allow-overwrite`と同じ作法)。
     """
     manifest_path = release_dir / build.MANIFEST_NAME
     tarball_path = release_dir / TARBALL_NAME
@@ -83,6 +92,28 @@ def verify_release_assets(release_dir: Path) -> build.Manifest:
             f"kg.nqのsha256(nquads_sha256)がmanifestと一致しない: "
             f"manifest={manifest.nquads_sha256} actual={actual_nquads_sha256}。"
             " 転送・保管中に壊れた疑いがある。壊れた資産を公開してはならない"
+        )
+
+    # team-lead裁定: 配布物とコードを結ぶ手がかり(git_commit)が無い
+    # リリースは公開しない。旧形式(manifest_version<6)はこの欄自体が
+    # 無いため、版番号を明示的に見なくても`not manifest.git_commit`で
+    # 自然に弾かれる
+    if not manifest.git_commit:
+        raise ValueError(
+            "manifestにgit_commitが無い(旧形式のmanifest。"
+            " manifest_version<6、またはgit_commitが空)。配布物をダウンロード"
+            "した人がそれを作ったコードを特定できないため公開できない"
+            "(team-lead裁定)"
+        )
+    # 汚れた作業ツリーからのビルドは、コミットSHAだけでは完全な説明に
+    # ならない(コミットに無い変更が混ざっているかもしれない)。既定は
+    # 止まる側——`allow_dirty=True`という明示の意図表明があれば通す
+    if manifest.git_dirty and not allow_dirty:
+        raise ValueError(
+            "作業ツリーが汚れた状態(git_dirty=true)でビルドされている。"
+            "コミットSHAだけではビルドしたコードの完全な説明にならない。"
+            "汚れを承知の上で公開するなら allow_dirty=True(CLIでは"
+            "--allow-dirty)を明示する(team-lead裁定)"
         )
     return manifest
 
@@ -334,12 +365,18 @@ def main(argv: list[str] | None = None) -> int:
         help="実際に `gh release create` を実行する。**既定はdry-run**"
         "(検査結果と公開予定の内容を表示するだけで、何もアップロードしない)",
     )
+    parser.add_argument(
+        "--allow-dirty", action="store_true",
+        help="作業ツリーが汚れた状態(git_dirty=true)でビルドされたリリース"
+        "も通す。**既定は拒否**(team-lead裁定: コミットSHAだけでは完全な"
+        "説明にならない)。`build.sh`の`--allow-overwrite`と同じ作法",
+    )
     args = parser.parse_args(argv)
 
     # 公開前検査は dry-run でも常に行う。「見せて終わる」dry-runが、
     # 実際には公開できない壊れたリリースを正常な計画として見せるのは
     # dry-runの意味に反する。
-    manifest = verify_release_assets(args.release_dir)
+    manifest = verify_release_assets(args.release_dir, allow_dirty=args.allow_dirty)
     gz_path, gz_sha256, gz_size = make_kg_nq_gz(args.release_dir, manifest)
     notes = render_release_notes(args.release_dir, manifest, gz_path, gz_sha256, gz_size)
     notes_path = args.release_dir / NOTES_NAME
