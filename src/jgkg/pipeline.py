@@ -20,6 +20,7 @@ Pythonソースへ文字列展開しており、(a) houjin-bangou 以外のソ�
 """
 import argparse
 import datetime
+import json
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Literal
@@ -34,6 +35,7 @@ from jgkg.rdf import emit, stream_emit
 from jgkg.rdf.provenance import provenance_graph
 from jgkg.transform import law as law_mod
 from jgkg.transform import ministry as ministry_mod
+from jgkg.transform import ministry_succession as succession_mod
 from jgkg.transform import old_ministries
 from jgkg.transform import organization as org_mod
 from jgkg.transform import rs as rs_mod
@@ -78,10 +80,17 @@ SHAPES_DIR = Path("schema/generated")
 # (下記 run() 参照。再計算コストが自明に軽いため、carry-overの対象に
 # する理由が無い)だが、他ソースの依存集合には含める(そのグラフが
 # ministry-codesの内容にも依存するため)。
+#
+# egov-law-dataも同じ扱い(C-3)。ministry_succession(C-1/C-2)が解決する
+# AbolishedGovernmentOrganは58行規模で毎回再計算する前提——carry-overの
+# 対象にしない(_carry_over_source_dateの`dep == "ministry-codes"`の
+# skip条件にegov-law-dataも加える)。ただしegov-lawのjurisdictionが
+# AbolishedGovernmentOrganを指す(裁定2)ようになったため、egov-lawの
+# 依存集合には含める——ministry-codesと同型の理由
 # =============================================================================
 _GRAPH_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     "houjin-bangou": ("houjin-bangou",),
-    "egov-law": ("houjin-bangou", "ministry-codes", "egov-law"),
+    "egov-law": ("houjin-bangou", "ministry-codes", "egov-law", "egov-law-data"),
     "rs-system": ("houjin-bangou", "ministry-codes", "egov-law", "rs-system"),
 }
 
@@ -191,6 +200,10 @@ class PipelineReport(BaseModel):
     # =========================================================================
     law_records: int | None = None
     law_jurisdiction_resolved: int | None = None    # JurisdictionResult.resolved の延べ数
+    # C-3: JurisdictionResult.resolved_abolished の延べ数(旧省庁名を当時の
+    # 組織=AbolishedGovernmentOrganへ解決できた件数。現存府省への
+    # resolvedとは別に数える——型が違う値を1つの数字に混ぜない)
+    law_jurisdiction_resolved_abolished: int | None = None
     law_jurisdiction_unresolved: int | None = None  # JurisdictionResult.unresolved の延べ数
     # 最終レビュー要修正5(完了条件「未解決の件数がpipeline-reportとCQ9の
     # 両方から見える」の未達への対応): 理由別(law_mod.UNRESOLVED_REASONSの
@@ -453,8 +466,8 @@ def _carry_over_source_date(
         return None
     result: datetime.date | None = None
     for dep in _GRAPH_DEPENDENCIES[own_source_id]:
-        if dep == "ministry-codes":
-            continue  # 常に再計算する前提。依存判定には数えない
+        if dep in ("ministry-codes", "egov-law-data"):
+            continue  # 常に再計算する前提。依存判定には数えない(C-3。上のコメント参照)
         dep_date = fetched_on.get(dep)
         if dep_date is None:
             # 依存元ソースが今回の実行対象に含まれていない。保守的に
@@ -892,6 +905,16 @@ def run(
         raise ValueError(
             "取得日が1件も渡されていない。例: {'houjin-bangou': date(2026, 8, 1)}"
         )
+    if "egov-law" in fetched_on and "egov-law-data" not in fetched_on:
+        raise ValueError(
+            "egov-law を含むリリースは egov-law-data も必須である(C-3)。"
+            "law:jurisdiction が旧省庁名をAbolishedGovernmentOrganへ解決する際に"
+            "ministry_succession(412CO0000000315の対応表)が必要であり、無いと"
+            "全て従来通りOLD_MINISTRYへ黙って後退する——それ自体は動作するが、"
+            "意図せず後退したことに気づけない。egov-law-data を明示的に含めるか、"
+            "先に `uv run python -m jgkg.fetch --law-id "
+            f"{succession_mod.SUCCESSION_LAW_ID}` を実行する"
+        )
     if "rs-system" in fetched_on and not include_all_corporations:
         raise ValueError(
             "rs-system を含むリリースは include_all_corporations=True が必須である"
@@ -1091,8 +1114,62 @@ def run(
         reason: 0 for reason in law_mod.UNRESOLVED_REASONS
     }
     law_jurisdiction_extraction_failed = 0
+    law_jurisdiction_resolved_abolished = 0
     egov_date: datetime.date | None = None
     egov_snapshot = None
+
+    # =========================================================================
+    # C-3: egov-law-data結線。旧省庁名→AbolishedGovernmentOrganの解決
+    # (ministry_succession/C-1・C-2)を、egov-lawのjurisdiction分類より
+    # 前に済ませる(3a分岐がabolished_ministry_namesを必要とするため)。
+    # **carry-overの対象にしない**(58行規模で毎回再計算する前提。
+    # ministry-codesと同じ理由。_GRAPH_DEPENDENCIES/_carry_over_source_date
+    # 参照)——常にfetched_onにあれば再計算・再emitする
+    # =========================================================================
+    egov_law_data_date: datetime.date | None = None
+    abolished_ministry_records: list[succession_mod.AbolishedMinistryRecord] = []
+    abolished_ministry_names: frozenset[str] = frozenset()
+    egov_law_data_snapshot = None
+
+    if "egov-law-data" in fetched_on:
+        egov_law_data_date = _source_date("egov-law-data", fetched_on)
+        law_data_filename = egov_law.law_data_filename(succession_mod.SUCCESSION_LAW_ID)
+        egov_law_data_snapshot = next(
+            (
+                s
+                for s in lake.list_snapshots(egov_law.LAW_DATA_SOURCE_ID)
+                if s.fetched_on == egov_law_data_date and s.path.name == law_data_filename
+            ),
+            None,
+        )
+        if egov_law_data_snapshot is None:
+            raise FileNotFoundError(
+                f"{succession_mod.SUCCESSION_LAW_ID} のレイクスナップショットが無い"
+                f"(取得日 {egov_law_data_date})。先に `uv run python -m jgkg.fetch"
+                f" --law-id {succession_mod.SUCCESSION_LAW_ID}` を実行する"
+            )
+        law_data = json.loads(egov_law_data_snapshot.path.read_bytes())
+        extraction = succession_mod.extract_succession_rows(
+            law_data["law_full_text"], source_law_id=succession_mod.SUCCESSION_LAW_ID
+        )
+        old_ministry_names_for_succession = old_ministries.load_old_ministries()
+        coverage = succession_mod.resolve_old_ministries(
+            extraction.rows, frozenset(old_ministry_names_for_succession)
+        )
+        # 現存府省・外局等の名称集合はministries(houjin-bangou×ministry-codes.csv
+        # の突合が成功した行だけ)を使う——build_abolished_ministriesの
+        # houjin_bangou解決と同じ集合を使わないと、分解できても法人番号が
+        # 引けない、という食い違いが起きうる
+        current_ministry_names = frozenset(m.name for m in ministries)
+        successors = succession_mod.resolve_successor_names(
+            coverage.resolved, current_ministry_names
+        )
+        abolition_date = succession_mod.derive_abolition_date(law_data["revision_info"])
+        ministry_houjin_bangou_by_name = {m.name: m.houjin_bangou for m in ministries}
+        abolished_ministry_records = succession_mod.build_abolished_ministries(
+            successors, ministry_houjin_bangou_by_name, abolition_date
+        )
+        abolished_ministry_names = frozenset(r.name for r in abolished_ministry_records)
 
     if "egov-law" in fetched_on:
         egov_date = _source_date("egov-law", fetched_on)
@@ -1119,13 +1196,16 @@ def run(
         old_ministry_names = old_ministries.load_old_ministries()
         for record in law_mod.parse_laws(egov_snapshot_path):
             law_records.append(record)
-            jr = law_mod.derive_jurisdiction(record, ministry_reference_by_name, old_ministry_names)
+            jr = law_mod.derive_jurisdiction(
+                record, ministry_reference_by_name, old_ministry_names, abolished_ministry_names
+            )
             if jr is None or jr is law_mod.EXTRACTION_FAILED:
                 if jr is law_mod.EXTRACTION_FAILED:
                     law_jurisdiction_extraction_failed += 1
                 continue
             jurisdictions[record.law_id] = jr
             law_jurisdiction_resolved += len(jr.resolved)
+            law_jurisdiction_resolved_abolished += len(jr.resolved_abolished)
             law_jurisdiction_unresolved += len(jr.unresolved)
             for ur in jr.unresolved:
                 law_jurisdiction_unresolved_by_reason[ur.reason] += 1
@@ -1411,6 +1491,18 @@ def run(
                 law_records, jurisdictions, "egov-law", egov_date, sha256=egov_snapshot.sha256
             ),
         )
+    # C-3: carry-overの対象にしない(上のコメント参照)。egov-law-dataが
+    # fetched_onにあれば常に再emitする
+    if "egov-law-data" in fetched_on:
+        _merge(
+            ds,
+            emit.emit_abolished_ministries(
+                abolished_ministry_records,
+                "egov-law-data",
+                egov_law_data_date,
+                sha256=egov_law_data_snapshot.sha256,
+            ),
+        )
     if "rs-system" in fetched_on and rs_carry_date is None:
         _merge(
             ds,
@@ -1566,6 +1658,10 @@ def run(
         effective_source_dates["egov-law"] = (
             egov_carry_date if egov_carry_date is not None else egov_date
         )
+    if "egov-law-data" in fetched_on:
+        # carry-overの対象にしないため、常に今回の取得日そのもの(上の
+        # コメント「Task 10: 据え置きしたソースは…」の対象外)
+        effective_source_dates["egov-law-data"] = egov_law_data_date
     if "rs-system" in fetched_on:
         effective_source_dates["rs-system"] = (
             rs_carry_date if rs_carry_date is not None else rs_date
@@ -1628,6 +1724,9 @@ def run(
         carried_over=carried_over,
         law_records=len(law_records) if egov_law_ran else None,
         law_jurisdiction_resolved=law_jurisdiction_resolved if egov_law_ran else None,
+        law_jurisdiction_resolved_abolished=(
+            law_jurisdiction_resolved_abolished if egov_law_ran else None
+        ),
         law_jurisdiction_unresolved=law_jurisdiction_unresolved if egov_law_ran else None,
         law_jurisdiction_unresolved_by_reason=(
             law_jurisdiction_unresolved_by_reason if egov_law_ran else None

@@ -60,6 +60,13 @@ import dataclasses
 import re
 from collections.abc import Iterator, Mapping
 
+# この対応表の出典法令(C-1)。「導出すべき値を手書きしている」の対象は
+# ツリー上の位置・パス・件数等の**派生値**であり、この法令IDは主要な入力の
+# 識別子そのもの(sources.pyのURL群と同じ層)——1箇所で正として持ち、
+# scripts/extract_ministry_succession.py・pipeline.pyの両方がここから
+# importする(以前は各ファイルに同じ文字列リテラルが散っていた)
+SUCCESSION_LAW_ID = "412CO0000000315"
+
 _OLD_HEADER_MARKER = "従前"
 _NEW_HEADER_MARKER = "新"
 

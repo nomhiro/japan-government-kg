@@ -26,7 +26,7 @@ from jgkg.transform import ministry_succession as ms
 from jgkg.transform.ministry import load_reference
 from jgkg.transform.old_ministries import load_old_ministries
 
-DEFAULT_LAW_ID = "412CO0000000315"
+DEFAULT_LAW_ID = ms.SUCCESSION_LAW_ID
 # OUTPUT_PATHはcwd相対のままにする(呼び出し元の作業ディレクトリに書き出す、
 # テストが依拠している既存の挙動)。一方MINISTRY_CODES_PATHは常に「実際に
 # コミットされている参照表」を読みたいので、old_ministries.pyのDEFAULT_PATHと
