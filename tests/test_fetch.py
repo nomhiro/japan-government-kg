@@ -9,6 +9,7 @@ import datetime
 import io
 import sys
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
@@ -484,7 +485,9 @@ def test_law_id_fetch_is_not_blocked_by_an_unrelated_existing_bulk_metadata_snap
 # =============================================================================
 
 
-def test_a_success_message_with_an_em_dash_does_not_crash_on_a_cp932_console(monkeypatch):
+def test_a_success_message_with_an_em_dash_does_not_crash_regardless_of_the_ambient_stream_encoding(
+    monkeypatch,
+):
     """何があれば落ちるか: 2026-08-26のC-1実取得で実際に踏んだ
 
     `UnicodeEncodeError`(Windowsの既定コンソールcp932は成功メッセージの
@@ -494,7 +497,9 @@ def test_a_success_message_with_an_em_dash_does_not_crash_on_a_cp932_console(mon
 
     pytestの既定の`capsys`はこの制約を持たない(実コンソールのcp932を
     経由しない)ため、それだけでは検出できない。`sys.stdout`をcp932で
-    エンコードする実物の`TextIOWrapper`に差し替えて実際の失敗条件を再現する。
+    エンコードする実物の`TextIOWrapper`に差し替えて実際の失敗条件を再現する
+    (`main()`が明示的にUTF-8へreconfigureするので、この初期値は上書きされる
+    ——「どんな既定に始まっても壊れない」ことの検査)。
     """
     cp932_stdout = io.TextIOWrapper(io.BytesIO(), encoding="cp932", errors="strict")
     monkeypatch.setattr(sys, "stdout", cp932_stdout)
@@ -512,12 +517,51 @@ def test_a_success_message_with_an_em_dash_does_not_crash_on_a_cp932_console(mon
 
     cp932_stdout.flush()
     cp932_stdout.buffer.seek(0)
-    out = cp932_stdout.buffer.read().decode("cp932")
+    # main()がUTF-8へreconfigureしているので、cp932ではなくUTF-8で読む
+    out = cp932_stdout.buffer.read().decode("utf-8")
     assert "取得完了" in out
-    # em dashはcp932で表現できないので、reconfigure後はbackslashreplaceで
-    # `—`のような形にエスケープされる(クラッシュしないことが本質で、
-    # 見た目の劣化は許容する)
-    assert "\\u2014" in out
+    # UTF-8はem dashをそのまま表現できるので、エスケープ無しでそのまま出る
+    assert "—" in out
+
+
+def test_stderr_is_valid_utf8_when_piped_to_a_subprocess():
+    """何があれば落ちるか: `errors="backslashreplace"`だけでencodingを
+
+    変えないと、Windows上でstdout/stderrがパイプ(このテストのような
+    subprocess、または`| tee log.txt`等)に繋がっている場合、既定の文字
+    コードがコンソールのUTF-8ではなくシステムのANSIコードページ
+    (このマシンではcp932)に落ちることがある。子プロセスがcp932で
+    書き出すと、`encoding="utf-8"`を期待して読む側(このテストや、ログを
+    読む他のツール)が`UnicodeDecodeError`で落ちる——2026-08-26、姉妹
+    スクリプト`scripts/extract_ministry_succession.py`のテストで実際に
+    踏んだ。
+
+    実ネットワークに触れないよう、既に取得済みのスナップショットを
+    用意してから同じ(law_id, fetched_on)を指定する(上書き拒否ガードが
+    コネクタを呼ぶ前に日本語の理由文言をstderrへ出して非0終了する経路。
+    ネットワークは一切発生しない)。`tmp_lake`フィクスチャ(autouse)が
+    `JGKG_LAKE_DIR`を`monkeypatch.setenv`で設定しているので、子プロセスも
+    (`os.environ`を継承する限り)同じレイクを見る。
+    """
+    import os
+    import subprocess
+
+    lake.save("egov-law", DAY, "law_data_412CO0000000315.json", b"existing")
+
+    result = subprocess.run(
+        [
+            sys.executable, "-m", "jgkg.fetch",
+            "--law-id", "412CO0000000315", "--fetched-on", "2026-08-20",
+        ],
+        capture_output=True, text=True, encoding="utf-8", check=False,
+        cwd=Path(__file__).resolve().parent.parent,
+        env=os.environ.copy(),
+    )
+    # encoding="utf-8"を渡した時点でPythonが既にデコードを試みているので、
+    # 子プロセスがcp932で書き出していればこのassert到達前に
+    # UnicodeDecodeErrorで落ちている
+    assert result.returncode == 1
+    assert "既にコミット済みのスナップショットがある" in result.stderr
 
 
 # =============================================================================

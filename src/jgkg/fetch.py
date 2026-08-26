@@ -131,7 +131,14 @@ def main(argv: list[str] | None = None) -> int:
     # いた)。テストのcapsys等、reconfigureを持たないストリームには触れない
     for _stream in (sys.stdout, sys.stderr):
         if hasattr(_stream, "reconfigure"):
-            _stream.reconfigure(errors="backslashreplace")
+            # errorsだけでなくencodingも明示する。ambientの文字コードを
+            # 保つ(errorsだけ変える)方式だと、出力先がパイプ(subprocess、
+            # `| tee`等)の場合に子プロセスがcp932で書き出してしまい、
+            # UTF-8を期待して読む側(他のツール・テスト)が
+            # UnicodeDecodeErrorで落ちる(2026-08-26、姉妹スクリプト
+            # scripts/extract_ministry_succession.pyのテストで実際に踏んだ。
+            # tests/test_fetch.pyのsubprocessテスト参照)
+            _stream.reconfigure(encoding="utf-8", errors="backslashreplace")
 
     parser = argparse.ArgumentParser(
         description="取得段(コネクタ)を呼ぶディスパッチャ。source_idごとに"
