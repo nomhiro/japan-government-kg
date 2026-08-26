@@ -1,13 +1,16 @@
 import datetime
+import json
 
 import pytest
 from rdflib import RDF, XSD, Dataset, Literal, URIRef
 from rdflib.namespace import PROV, SKOS
 
 from jgkg.rdf import emit
+from jgkg.transform import ministry_succession as ms
 from jgkg.transform.law import JurisdictionResult, LawRecord, Revision, UnresolvedJurisdiction
-from jgkg.transform.ministry import Ministry, UnmatchedMinistry
+from jgkg.transform.ministry import Ministry, UnmatchedMinistry, load_reference
 from jgkg.transform.ministry_succession import AbolishedMinistryRecord
+from jgkg.transform.old_ministries import load_old_ministries
 from jgkg.transform.organization import Organization
 from jgkg.uris import abolished_organ_uri, law_version_uri, org_uri, unresolved_ministry_uri
 
@@ -186,6 +189,89 @@ def test_abolished_ministry_succeeded_by_is_multivalued_in_synthetic_data():
 
     successors = set(ds.objects(s, org["succeededBy"]))
     assert successors == {URIRef(org_uri(FSA_HOUJIN_BANGOU)), URIRef(org_uri("6000012070001"))}
+
+
+# 実データ412CO0000000315(中央省庁再編に伴う関係法律の整備等に関する法律)を
+# resolve_old_ministries→resolve_successor_namesまで通した実際の出力
+# (2026-08-26、tests/test_transform_ministry_succession.pyの
+# test_build_abolished_ministries_from_the_real_18_namesと同じ経路を実行して
+# 確認した。数だけでなく18件の値そのものを固定する——団体レベルの解決層は
+# 別ファイルで検査済みだが、emitted triplesへの反映はここでしか検査しない)
+REAL_18_SUCCESSOR_NAMES = {
+    "労働省": "厚生労働省",
+    "北海道開発庁": "国土交通省",
+    "厚生省": "厚生労働省",
+    "国土庁": "国土交通省",
+    "大蔵省": "財務省",
+    "建設省": "国土交通省",
+    "文部省": "文部科学省",
+    "沖縄開発庁": "内閣府",
+    "環境庁": "環境省",
+    "科学技術庁": "文部科学省",
+    "経済企画庁": "内閣府",
+    "総務庁": "総務省",
+    "総理府": "内閣府",
+    "自治省": "総務省",
+    "通商産業省": "経済産業省",
+    "運輸省": "国土交通省",
+    "郵政省": "総務省",
+    "金融再生委員会": "金融庁",
+}
+
+
+def test_emit_abolished_ministries_covers_all_18_real_names_with_correct_triples():
+    """裁定4(2026-08-26レビュー指摘。C-3裁定1の対): 18件のsucceededByを
+
+    「1件以上」のような弱いアサートではなく、18件を個別に列挙して検査する
+    ——現データはいずれも後継1件のみで、弱いアサートは事実上恒真になる。
+
+    resolve_old_ministries/resolve_successor_namesの実データ出力
+    (test_transform_ministry_succession.py参照。ここで再実行するのは
+    build_abolished_ministries以降がemitted triplesへ正しく反映されることを
+    確認するため——後継名→houjin_bangouの対応は合成の決定的な写像を使う
+    (R45: houjin_bangouの値そのものは検査対象ではない。resolve_successor_names
+    の実データ出力とemit_abolished_ministriesの結線が対象)。
+    """
+    fixtures = Path(__file__).parent / "fixtures"
+    data = json.loads(
+        (fixtures / "egov_law_data_412CO0000000315.json").read_text(encoding="utf-8")
+    )
+    extraction = ms.extract_succession_rows(data["law_full_text"], source_law_id="412CO0000000315")
+    target_names = load_old_ministries()
+    coverage = ms.resolve_old_ministries(extraction.rows, frozenset(target_names))
+    reference_names = frozenset(
+        r.name for r in load_reference(Path("data/reference/ministry-codes.csv"))
+    )
+    successors = ms.resolve_successor_names(coverage.resolved, reference_names)
+    abolition_date = ms.derive_abolition_date(data["revision_info"])
+
+    distinct_successor_names = sorted({r.successor_name for r in successors.resolved})
+    houjin_bangou_by_name = {
+        name: f"{i + 1:013d}" for i, name in enumerate(distinct_successor_names)
+    }
+    records = ms.build_abolished_ministries(successors, houjin_bangou_by_name, abolition_date)
+    assert len(records) == 18, "本テストの前提(実データは18件)が崩れている"
+
+    ds = emit.emit_abolished_ministries(records, "egov-law-data", DAY)
+    org = emit.NS["org"]
+
+    assert {r.name for r in records} == set(REAL_18_SUCCESSOR_NAMES), (
+        "解決された18名称が、このテストが固定する実データの集合と一致しない"
+    )
+    for old_name, successor_name in REAL_18_SUCCESSOR_NAMES.items():
+        s = URIRef(abolished_organ_uri(old_name))
+        assert (s, RDF.type, org["AbolishedGovernmentOrgan"]) in ds, old_name
+        assert (s, SKOS.prefLabel, Literal(old_name, lang="ja")) in ds, old_name
+        assert (
+            s, org["abolitionDate"], Literal(datetime.date(2001, 1, 6), datatype=XSD.date),
+        ) in ds, old_name
+        expected_successor_uri = URIRef(org_uri(houjin_bangou_by_name[successor_name]))
+        assert (s, org["succeededBy"], expected_successor_uri) in ds, (
+            f"{old_name} の succeededBy が {successor_name} の法人番号を指していない"
+        )
+        # 裁定5: 現データは後継1件のみ(前段のtest_build_abolished_ministries_
+        # from_the_real_18_namesと同じ確認をemitted triples側でも取る)
+        assert len(list(ds.objects(s, org["succeededBy"]))) == 1, old_name
 
 
 def test_write_nquads_roundtrips(tmp_path):
