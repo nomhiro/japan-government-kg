@@ -297,7 +297,14 @@ UNRESOLVED_REASONS: tuple[str, ...] = get_args(
 class JurisdictionResult(BaseModel):
     law_id: str
     ministry_names: list[str]  # 法令番号から抽出した名称(共同省令は複数)
-    resolved: list[str]  # 解決できた府省の法人番号
+    resolved: list[str]  # 解決できた現存府省の法人番号
+    # C-3: 旧省庁名のうち、ministry_succession(C-1/C-2)が後継・廃止日を
+    # 解決できたもの。houjin_bangouを持たないため`resolved`(法人番号の
+    # リスト)とは型が違う——別の一覧として持つ(裁定: jurisdictionは
+    # 発令した当時の組織を指す。現存府省の法人番号のリストに廃止済み機関の
+    # 名称を混ぜない)。値は名称(`AbolishedGovernmentOrgan`のURIは
+    # `uris.abolished_organ_uri`が名称から導出する)
+    resolved_abolished: list[str] = []
     unresolved: list[UnresolvedJurisdiction]
 
 
@@ -305,6 +312,7 @@ def derive_jurisdiction(
     record: LawRecord,
     reference: Mapping[str, list[Ministry]],
     old_ministries: set[str],
+    abolished_ministries: frozenset[str] = frozenset(),
 ) -> JurisdictionResult | None | ExtractionFailed:
     """法令番号から府省を導く(経路1)。
 
@@ -321,16 +329,28 @@ def derive_jurisdiction(
       ネットワークを使えない。test_pipeline.pyの既存コメントの通りTask 7/9/11
       で分担する。全経路の実行と実測はTask 11)。現時点でもlawはpipeline
       未結線のままなので、ここでは戻り値を区別できる形にするところまでを行う)
-    - `JurisdictionResult`: 対象内。抽出した名称は**必ず** `resolved` か
-      `unresolved` のどちらかに振り分ける(§8.2「解決できた分だけ返す」
-      設計にしない — このタスクで踏みやすい欠陥の型の2番目)
+    - `JurisdictionResult`: 対象内。抽出した名称は**必ず** `resolved`・
+      `resolved_abolished`・`unresolved` のいずれかに振り分ける
+      (§8.2「解決できた分だけ返す」設計にしない — このタスクで踏みやすい
+      欠陥の型の2番目)
 
-    分類の優先順位(レビュー指摘3・裁定B7で3〜4を分割):
+    分類の優先順位(レビュー指摘3・裁定B7で3〜4を分割。C-3でC-3aを追加):
       1. 参照表に同名が正確に1件 → `resolved`(法人番号を積む)
       2. 参照表に同名が2件以上 → `AMBIGUOUS`(実行前スキャンで見つかった
          Step 3 の要求。反対に0件のときは3へ進む)
+      3a. (C-3裁定) `abolished_ministries`(ministry_succession/C-1・C-2が
+          後継・廃止日を解決できた旧省庁名)に載っている →
+          `resolved_abolished`(名称を積む)。**現存府省への読み替えでは
+          ない**——「昭和二十六年大蔵省令」の所管は大蔵省であり、財務省が
+          1951年に発したと主張するのは偽であるため(裁定)。当時の組織
+          (`AbolishedGovernmentOrgan`)自身を指し、そこから
+          `org:succeededBy`を辿れば現存の後継に到達できる、という2段の
+          構造にする
       3. 旧省庁名の判定集合(`old-ministries.csv`。**2001年の中央省庁再編で
-         廃止された名称に限る**)に載っている → `OLD_MINISTRY`
+         廃止された名称に限る**)に載っているが`abolished_ministries`には
+         無い → `OLD_MINISTRY`(後継・廃止日をまだ解決できていない旧省庁名。
+         現時点では18/18が3aで解決するため実質0件になるが、将来
+         old-ministries.csvが広がった場合に備えてこの分岐は残す)
       4. 参照表にも旧省庁名の判定集合にも無いが、政府機関の形
          (`_looks_like_government_organ`。省/府/庁/院/委員会で終わる、
          または人事院/閣)をしている → `OBSOLETE_ORGANIZATION`
@@ -348,7 +368,9 @@ def derive_jurisdiction(
     I/Oを純粋な変換関数に持ち込まない)。ブリーフ本文の署名は
     `(record, reference)` の2引数だが、`old_ministries` を無しに
     OLD_MINISTRY の判定はできないため、明示的な第3引数として追加した
-    (このタスクで確定した、ブリーフ本文からの意図的な逸脱)。
+    (このタスクで確定した、ブリーフ本文からの意図的な逸脱)。`abolished_ministries`
+    の既定値は空集合(呼び出し側がC-3の解決結果を渡さなければ、C-2以前と
+    完全に同じ動作——OLD_MINISTRYへ分類される——に後方互換で戻る)。
     """
     names = extract_ministry_names(record.law_num)
     if names is None:
@@ -357,6 +379,7 @@ def derive_jurisdiction(
         return EXTRACTION_FAILED
 
     resolved: list[str] = []
+    resolved_abolished: list[str] = []
     unresolved: list[UnresolvedJurisdiction] = []
 
     for name in names:
@@ -365,6 +388,8 @@ def derive_jurisdiction(
             resolved.append(matches[0].houjin_bangou)
         elif len(matches) > 1:
             unresolved.append(UnresolvedJurisdiction(name=name, reason="AMBIGUOUS"))
+        elif name in abolished_ministries:
+            resolved_abolished.append(name)
         elif name in old_ministries:
             unresolved.append(UnresolvedJurisdiction(name=name, reason="OLD_MINISTRY"))
         elif _looks_like_government_organ(name):
@@ -378,6 +403,7 @@ def derive_jurisdiction(
         law_id=record.law_id,
         ministry_names=names,
         resolved=resolved,
+        resolved_abolished=resolved_abolished,
         unresolved=unresolved,
     )
 

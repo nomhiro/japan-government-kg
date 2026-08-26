@@ -258,6 +258,30 @@ def test_emit_laws_resolved_jurisdiction_points_at_the_ministry_uri():
     assert (s, emit.NS["law"]["jurisdiction"], ministry) in ds
 
 
+def test_emit_laws_resolved_abolished_jurisdiction_points_at_the_abolished_organ_not_the_successor():
+    """C-3裁定: `resolved_abolished`は当時の組織(AbolishedGovernmentOrgan)
+
+    自身を指すこと。現存の後継(財務省)への読み替えではない
+    (「昭和二十六年大蔵省令」の所管は大蔵省)。
+    """
+    record = _law_record(OKURASHO_LAW_ID, "昭和二十六年大蔵省令第百号")
+    jr = JurisdictionResult(
+        law_id=OKURASHO_LAW_ID,
+        ministry_names=["大蔵省"],
+        resolved=[],
+        resolved_abolished=["大蔵省"],
+        unresolved=[],
+    )
+
+    ds = emit.emit_laws([record], {OKURASHO_LAW_ID: jr}, "egov-law", DAY)
+
+    s = URIRef("https://jgkg.norr-tech.com/id/law/326M50000400100")
+    abolished = URIRef(abolished_organ_uri("大蔵省"))
+    successor = URIRef(org_uri("2000012050002"))  # 財務省(合成)。ここを指してはならない
+    assert (s, emit.NS["law"]["jurisdiction"], abolished) in ds
+    assert (s, emit.NS["law"]["jurisdiction"], successor) not in ds
+
+
 def test_emit_laws_unresolved_jurisdiction_is_not_dropped():
     """未解決は law:jurisdiction を設定せず、UnresolvedReference として残る(§8.2)。
 

@@ -217,6 +217,11 @@ def emit_laws(
         if jr is not None:
             for houjin_bangou in jr.resolved:
                 data.add((s, ns["law"]["jurisdiction"], URIRef(org_uri(houjin_bangou))))
+            # C-3裁定: 発令した当時の組織(AbolishedGovernmentOrgan)自身を
+            # 指す。現存の後継への読み替えではない(「昭和二十六年大蔵省令」の
+            # 所管は大蔵省であり、財務省が1951年に発したと主張するのは偽)
+            for name in jr.resolved_abolished:
+                data.add((s, ns["law"]["jurisdiction"], URIRef(abolished_organ_uri(name))))
             for u in jr.unresolved:
                 node = URIRef(unresolved_jurisdiction_uri(record.law_id, u.name))
                 data.add((node, RDF.type, ns["core"]["UnresolvedReference"]))

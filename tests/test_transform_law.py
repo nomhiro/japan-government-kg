@@ -302,6 +302,47 @@ def test_derive_jurisdiction_classifies_old_ministry():
     assert result.unresolved == [UnresolvedJurisdiction(name="大蔵省", reason="OLD_MINISTRY")]
 
 
+def test_derive_jurisdiction_classifies_abolished_ministry_when_succession_is_resolved():
+    """C-3裁定: `abolished_ministries`(ministry_succession/C-1・C-2が
+
+    後継・廃止日を解決できた旧省庁名)に載っている名称は、現存府省への
+    読み替えではなく`resolved_abolished`(当時の組織自身)に入ること。
+    「昭和二十六年大蔵省令」の所管は大蔵省であり、財務省が1951年に発した
+    と主張するのは偽(裁定)。
+    """
+    record = _law_record("326M50000400100", "昭和二十六年大蔵省令第百号")
+
+    result = derive_jurisdiction(
+        record,
+        reference={},
+        old_ministries={"大蔵省"},
+        abolished_ministries=frozenset({"大蔵省"}),
+    )
+
+    assert result.resolved == []
+    assert result.resolved_abolished == ["大蔵省"]
+    assert result.unresolved == []
+
+
+def test_derive_jurisdiction_still_classifies_old_ministry_when_not_in_abolished_ministries():
+    """`old_ministries`に載っているが`abolished_ministries`には無い名称は、
+
+    C-2以前と同じくOLD_MINISTRYのまま(将来old-ministries.csvが広がった
+    場合の後方互換。現時点では18/18が解決するため実質起こらない分岐)。
+    """
+    record = _law_record("326M50000400100", "昭和二十六年大蔵省令第百号")
+
+    result = derive_jurisdiction(
+        record,
+        reference={},
+        old_ministries={"大蔵省"},
+        abolished_ministries=frozenset(),
+    )
+
+    assert result.resolved_abolished == []
+    assert result.unresolved == [UnresolvedJurisdiction(name="大蔵省", reason="OLD_MINISTRY")]
+
+
 def test_derive_jurisdiction_classifies_unlisted_organ_shaped_name_as_obsolete_organization():
     """名称が参照表にも旧省庁名リストにも無い場合は OBSOLETE_ORGANIZATION(裁定B7)。
 
