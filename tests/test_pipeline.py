@@ -736,6 +736,100 @@ def test_run_wires_egov_law_data_and_resolves_a_law_to_the_abolished_organ(
     assert uris.org_uri(KOUSEIROUDOU_BANGOU) not in jurisdiction_values
 
 
+def test_run_does_not_carry_over_egov_law_when_egov_law_data_is_newly_added(
+    houjin_with_a_company, tmp_path, monkeypatch
+):
+    """回帰確認(2026-08-27、C-4のリリース再構築で発見した実バグ)。
+
+    `_carry_over_source_date`が"egov-law-data"を"ministry-codes"と同じ
+    skip対象にしていたため、egov-law-dataを**初めて**含むリリースでも、
+    前リリース(egov-law-data無し)のegov-lawグラフがそのまま据え置かれて
+    いた。この状態では`report.law_jurisdiction_resolved_abolished`は
+    (carry-overと無関係に毎回計算されるため)正しい値を示すのに、
+    kg.nq自身のjurisdictionトリプルは前リリースのまま(旧OLD_MINISTRY側)
+    という内部矛盾が生じる——レポートだけが「先に」正しくなる、という
+    このプロジェクトが警戒する型そのもの。
+
+    前リリース(egov-law-data無し)→今回(egov-law-data有り)の2段リリースを
+    組み、(1) egov-lawがcarried_overに載らないこと、(2) kg.nq自身に
+    resolved_abolishedのjurisdictionトリプルが実際に反映されていること、
+    の両方を固定する(reportの数値だけでは(2)を検出できない)。
+    """
+    import tarfile
+
+    from jgkg import build, uris
+    from jgkg.config import get_settings
+
+    # previous_release(basename)の実在確認がJGKG_ARTIFACT_DIR配下の
+    # manifest.jsonを見るため、前リリースをそこに置く
+    # (test_run_payees_scope_carry_over_...と同じ形)
+    monkeypatch.setenv("JGKG_ARTIFACT_DIR", str(tmp_path / "artifact"))
+    get_settings.cache_clear()
+
+    egov_law_data_day2 = DAY + datetime.timedelta(days=1)
+
+    lake.save(
+        "egov-law", DAY, egov_law.FILENAME,
+        _egov_law_jsonl([_minimal_law_record("323M60000100010", "昭和三十五年厚生省令第一号")]),
+    )
+
+    # 前リリース: 実行自体は現行コード(egov-law-dataが空(0行)の対応表——
+    # 必須ペアリングガードだけ満たす形で用意する。C-2以前は概念自体が
+    # 無かったが、現行コードでegov-lawだけ渡すとガードで止まるため)で
+    # 作る。0行=abolished_ministries空集合なので厚生省はOLD_MINISTRYの
+    # まま未解決になり、これがC-3導入前のリリースの内容そのものと一致する。
+    # **manifest.sourcesにはegov-law-dataを載せない**——「前リリースの
+    # manifestがegov-law-dataを知らない」という条件そのものが再現対象で
+    # あり、実在した2026-08-26-manifest-v6等はまさにこの形のmanifestを持つ
+    _save_minimal_egov_law_data_snapshot(DAY)  # 0行
+    fetched1 = {"houjin-bangou": DAY, "egov-law": DAY, "egov-law-data": DAY}
+    out1 = Path(get_settings().artifact_dir) / DAY.isoformat()
+    r1 = pipeline.run(fetched1, out1)
+    assert r1.law_jurisdiction_unresolved == 1, "前リリースでは厚生省がOLD_MINISTRYで未解決のはず"
+
+    (out1 / "tdb2").mkdir()
+    (out1 / "tdb2" / "x").write_bytes(b"x")
+    tarball = out1 / "tdb2.tar.gz"
+    with tarfile.open(tarball, "w:gz") as tf:
+        tf.add(out1 / "tdb2", arcname="tdb2")
+    sources_without_egov_law_data = {
+        k: v.isoformat() for k, v in fetched1.items() if k != "egov-law-data"
+    }
+    m = build.build_manifest(
+        nquads=out1 / "kg.nq", tarball=tarball, jena_version="6.2.0",
+        release=DAY.isoformat(), created_on=DAY.isoformat(),
+        sources=sources_without_egov_law_data,
+        graphs=r1.graphs, tdb2_expanded_bytes=4,
+        git_commit="a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2", git_dirty=False,
+    )
+    build.write_manifest(m, out1 / "manifest.json")
+
+    # 今回: egov-law-dataに実際に解決できる行を持たせる(C-3導入相当。
+    # 別日付のスナップショットにする——同日への再lake.save()は不変性違反
+    # になるため。houjin-bangou/egov-lawは前リリースと同じ取得日〔無変更〕
+    # のままにし、egov-law-data**だけ**が新規追加の差分になるようにする)
+    _save_minimal_egov_law_data_snapshot(egov_law_data_day2, rows=[("厚生省", "厚生労働省")])
+    fetched2 = {"houjin-bangou": DAY, "egov-law": DAY, "egov-law-data": egov_law_data_day2}
+    out2 = tmp_path / "out2"
+    r2 = pipeline.run(fetched2, out2, previous_release=DAY.isoformat())
+
+    assert uris.graph_uri("egov-law", DAY) not in r2.carried_over, (
+        "egov-law-dataを新たに含めたのにegov-lawグラフが据え置かれた"
+        f"(carried_over={r2.carried_over})"
+    )
+    assert r2.law_jurisdiction_resolved_abolished == 1
+
+    kg = Dataset(default_union=True)
+    kg.parse(out2 / "kg.nq", format="nquads")
+    law_subject = URIRef(uris.law_uri("323M60000100010"))
+    jurisdiction_pred = URIRef("https://jgkg.norr-tech.com/def/law#jurisdiction")
+    jurisdiction_values = {str(o) for o in kg.objects(law_subject, jurisdiction_pred)}
+    assert jurisdiction_values == {uris.abolished_organ_uri("厚生省")}, (
+        "reportはresolved_abolishedを報告しているのに、"
+        f"kg.nq自身のjurisdictionトリプルには反映されていない: {jurisdiction_values}"
+    )
+
+
 def test_run_wires_egov_law_counts_unresolved_and_extraction_failed(
     houjin_with_a_company, tmp_path
 ):

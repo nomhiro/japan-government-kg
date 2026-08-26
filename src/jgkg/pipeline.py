@@ -81,12 +81,25 @@ SHAPES_DIR = Path("schema/generated")
 # する理由が無い)だが、他ソースの依存集合には含める(そのグラフが
 # ministry-codesの内容にも依存するため)。
 #
-# egov-law-dataも同じ扱い(C-3)。ministry_succession(C-1/C-2)が解決する
-# AbolishedGovernmentOrganは58行規模で毎回再計算する前提——carry-overの
-# 対象にしない(_carry_over_source_dateの`dep == "ministry-codes"`の
-# skip条件にegov-law-dataも加える)。ただしegov-lawのjurisdictionが
-# AbolishedGovernmentOrganを指す(裁定2)ようになったため、egov-lawの
-# 依存集合には含める——ministry-codesと同型の理由
+# egov-law-data(C-3。ministry_succession/C-1・C-2が解決するAbolishedGovern
+# mentOrganの元)も58行規模で毎回再計算する前提——egov-law-data自身の
+# グラフはcarry-overの対象にしない(下記run()参照。常に再emitする)。
+#
+# **ただしこれはministry-codesと同型ではない。** egov-lawの依存集合には
+# egov-law-dataを含めており(egov-lawのjurisdictionがAbolishedGovernment
+# Organを指す〔裁定2〕ようになったため)、かつ_carry_over_source_date側は
+# egov-law-dataについて**通常の日付比較を行う**(ministry-codesだけを
+# skipし、egov-law-dataはskipしない)。理由: ministry-codesは「内容が
+# 毎回同じなら結果も同じ」という前提が成り立つ決定的な40行だが、
+# egov-law-dataは**その有無自体**がegov-lawのjurisdiction解決結果を
+# 左右する(abolished_ministriesが空か18件かで、同じ法令番号が同じ
+# 府省名を指していてもOLD_MINISTRY/resolved_abolishedのどちらになるかが
+# 変わる)。ここをministry-codesと同じskip対象にしていた実装は、
+# egov-law-dataを初めて含めたリリースで旧リリース(egov-law-data無し)の
+# egov-lawグラフをそのまま据え置いてしまい、pipeline-report.jsonの
+# law_jurisdiction_resolved_abolishedだけが正しく更新され、kg.nq自身には
+# 反映されないという内部矛盾を実際に発生させた(2026-08-27、C-4のリリース
+# 再構築で発見。docs/measurements-phase1.md参照)
 # =============================================================================
 _GRAPH_DEPENDENCIES: dict[str, tuple[str, ...]] = {
     "houjin-bangou": ("houjin-bangou",),
@@ -101,9 +114,17 @@ _GRAPH_DEPENDENCIES: dict[str, tuple[str, ...]] = {
 # 既に同じ罠に対して`s.path.name == houjin_bangou.FILENAME`の絞り込みを
 # 持っているのと同じ理由。rs-systemは`_rs_system_file_digests`が既に
 # 「その日付の全ファイル」を集めるので対象外)
+#
+# **egov-law-data(C-3)**: `egov_law.LAW_DATA_SOURCE_ID`のファイル名は
+# 本来`f"law_data_{law_id}.json"`とlaw_id可変(同じ日に複数law_idのファイル
+# が共存しうる。`fetch.py`のコメント参照)。**このパイプラインが実際に
+# 読むのは`ministry_succession.SUCCESSION_LAW_ID`(412CO0000000315)1件
+# だけ**なので、その1件に固定する——一般のegov-law-data全体の同一性では
+# なく、このパイプラインが依存する対象そのものの同一性を見る
 _SINGLE_FILE_SOURCE_FILENAMES: dict[str, str] = {
     "houjin-bangou": houjin_bangou.FILENAME,
     "egov-law": egov_law.FILENAME,
+    "egov-law-data": egov_law.law_data_filename(succession_mod.SUCCESSION_LAW_ID),
 }
 
 
@@ -466,8 +487,22 @@ def _carry_over_source_date(
         return None
     result: datetime.date | None = None
     for dep in _GRAPH_DEPENDENCIES[own_source_id]:
-        if dep in ("ministry-codes", "egov-law-data"):
-            continue  # 常に再計算する前提。依存判定には数えない(C-3。上のコメント参照)
+        if dep == "ministry-codes":
+            continue  # 常に再計算する前提。依存判定には数えない
+        # **C-3実測で発見した回帰(2026-08-27)**: ここに"egov-law-data"も
+        # ministry-codesと同じ理由でスキップに加えていたが、それは誤りだった。
+        # ministry-codesは「内容が毎回同じなら結果も同じ」という前提が成立する
+        # (40行規模で決定的)。egov-law-dataは違う——**その「有無」自体**が
+        # egov-lawのjurisdiction解決結果を左右する(裁定2: abolished_ministries
+        # が空か18件かで、同じ法令が同じ府省名を指していてもOLD_MINISTRY/
+        # resolved_abolishedのどちらになるかが変わる)。このスキップにより、
+        # egov-law-dataを初めて含めたリリースでも旧リリース(egov-law-data無し)
+        # のegov-lawグラフがそのまま据え置かれ、pipeline-report.jsonには
+        # 新しいresolved_abolishedの値が出るのにkg.nq自身には反映されない、
+        # という内部矛盾を実際に踏んだ(law_records等の集計はcarry-over判定と
+        # 独立に常に計算されるため、レポートだけが「先に」正しくなっていた)。
+        # egov-law-data自身がcarry-over対象にならないこと(下記run()の
+        # 常時再emit)とは別の問題であり、他の依存元と同じ通常の日付比較に戻す
         dep_date = fetched_on.get(dep)
         if dep_date is None:
             # 依存元ソースが今回の実行対象に含まれていない。保守的に
