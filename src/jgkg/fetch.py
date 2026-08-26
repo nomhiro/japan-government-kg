@@ -42,12 +42,31 @@ from jgkg.config import get_settings
 from jgkg.connectors import egov_law, houjin_bangou, rs_system
 from jgkg.connectors.base import FetchResult
 
+
+def _reject_egov_law_data_via_source(fetched_on: object, year: object, url: object) -> object:
+    """`--source egov-law-data` は意図的に使えない(C-2裁定)。
+
+    `egov-law-data` は law_id ごとに取得する源で、全件走査に相当する意味が
+    無い。DISPATCHに結線しないと`unwired`検査が「このリポジトリ側の欠陥」
+    という誤った主張をしてしまう(実際には意図的な設計であり、結線漏れ
+    ではない)。結線した上で、ここで案内エラーを出す——`main`の
+    `except Exception`経由でsource_id付きのエラーとして表示される。
+    """
+    raise ValueError(
+        "egov-law-dataは法令1件ずつ取得する(全件走査に相当する意味を持たない)。"
+        "--source ではなく --law-id <法令ID> を使うこと"
+        "(例: uv run python -m jgkg.fetch --law-id 412CO0000000315)"
+    )
+
+
 # 取得対象の源とその関数を1箇所に集約する(dictから導出。個々の`if`分岐に
 # ちりばめない)。source_idがここに無ければ「登録済みだがfetch未対応」を
 # 意味する(_reject_if_not_fetchable が local_path で先に弾かないかぎり、
-# それはこのモジュールの結線漏れであり利用者の入力ミスではない——区別する)。
+# それはこのモジュールの結線漏れであり利用者の入力ミスではない——区別する。
+# egov-law-dataは例外で、結線はあるが意図的に案内エラーを返す)。
 DISPATCH: dict[str, Callable[..., object]] = {
     "egov-law": lambda fetched_on, year, url: egov_law.fetch(fetched_on),
+    "egov-law-data": _reject_egov_law_data_via_source,
     "houjin-bangou": lambda fetched_on, year, url: houjin_bangou.fetch(url, fetched_on),
     "rs-system": lambda fetched_on, year, url: rs_system.fetch_all(year, fetched_on),
 }
@@ -101,25 +120,18 @@ def _law_data_already_fetched(law_id: str, fetched_on: datetime.date) -> bool:
 
     **`_already_fetched`(上)とは意図的に別の粒度にしている。** `_already_fetched`は
     source_id + fetched_on単位(ファイル名を見ない、rs-systemの複数ファイルを
-    想定した粗さ)だが、egov-lawという同じsource_idの下に、全件メタデータ
-    (`laws.jsonl`)と法令1件の本文(`law_data_<law_id>.json`)という**無関係な
-    複数のファイルが共存する**。`_already_fetched`をそのまま使うと、同じ日に
-    どちらかが既にあれば他方まで「既に取得済み」と誤って拒否してしまう。
-
-    ここではファイル名まで見て判定することで、**law-id側の誤検出**
-    (無関係な一括メタデータの存在でlaw-id取得が拒否される)を防ぐ。
-
-    **逆方向(law_dataが既にある日に`--source egov-law`の一括取得を試みると、
-    `_already_fetched`の粗さにより誤って拒否されうる)は意図的に直していない。**
-    安全側(取得をスキップするのではなく`--allow-overwrite`の明示を要求する
-    だけ)であり、rs-systemと同じ既存の設計判断の範囲内のため、C-1の
-    スコープ(継承マッピングの抽出)を超えて`_already_fetched`自体の粒度を
-    再設計することはしない。
+    想定した粗さ)。`egov-law`(全件メタデータ)と`egov-law-data`(法令本文)を
+    別のsource_idに分けた(C-2裁定)ため、両者を混同する誤検出は無くなったが、
+    **`egov-law-data`という同じsource_idの下でも、同じ日に複数の異なる
+    law_idを取得することがある**(例: `--law-id A --law-id B`)。ファイル名を
+    見ない粗い判定だと、Aを取得済みの日にBを取りに行くと無関係なAの存在で
+    「既に取得済み」と誤って拒否してしまう。ここではファイル名まで見て
+    判定することで、この誤検出を防ぐ。
     """
     filename = egov_law.law_data_filename(law_id)
     return any(
         s.fetched_on == fetched_on and s.path.name == filename
-        for s in lake.list_snapshots(egov_law.SOURCE_ID)
+        for s in lake.list_snapshots(egov_law.LAW_DATA_SOURCE_ID)
     )
 
 
@@ -264,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
                 lake_dir = get_settings().lake_dir
                 filename = egov_law.law_data_filename(law_id)
                 print(
-                    f"エラー: {lake_dir}/{egov_law.SOURCE_ID}/{fetched_on.isoformat()}/"
+                    f"エラー: {lake_dir}/{egov_law.LAW_DATA_SOURCE_ID}/{fetched_on.isoformat()}/"
                     f"{filename} には既にコミット済みのスナップショットがある。"
                     "続行するなら --allow-overwrite を明示すること"
                     "(実際に上書きはしない——コネクタは同じ取得日なら"

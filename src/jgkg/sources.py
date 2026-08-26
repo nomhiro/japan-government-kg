@@ -127,6 +127,40 @@ SOURCES: dict[str, Source] = {
                  "※e-Gov利用規約ページに本APIを名指しした記載例は無く、"
                  "同ページが示す書式に実際のURLを当てはめたもの",
     ),
+    "egov-law-data": Source(
+        id="egov-law-data",
+        name="e-Gov法令API v2 法令本文(law_data)",
+        # `/api/2/law_data/<law_id>` はlaw_idごとに叩くエンドポイントで、
+        # 単一の固定URLを持たない。ベースURLを代表値として置く
+        # (egov_law.BASE_LAW_DATA_URLと同じ値)
+        url="https://laws.e-gov.go.jp/api/2/law_data",
+        # 規約は`egov-law`(全件メタデータ)と同一サイト・同一規約ページ
+        # (https://laws.e-gov.go.jp/terms)。PDL1.0
+        license=PUBLIC_DATA_LICENSE_1_0,
+        license_url=PUBLIC_DATA_LICENSE_1_0_URL,
+        # **`egov-law`(全件メタデータ)とは別のsource_idにした(C-2裁定)。**
+        # 同じsource_idの下に「全件メタデータ」と「法令1件の本文」という
+        # 意味の異なるスナップショットを混在させると、`lake.latest`が返す
+        # 「最終取得日」が法令本文取得の日付に化け、`freshness`・`build.sh`の
+        # 既定出力先が「メタデータの無い日付」を掴む(=部分的なものが完全な
+        # ものを装う。実際にC-1で起きた懸念をcontrollerが確認して裁定)
+        frequency="ondemand",
+        access="api",
+        encoding="utf-8",
+        note="law_idを指定して法令1件の本文(law_full_text)を取得する"
+             "(egov_law.fetch_law_data。jgkg.fetch --law-id <ID>)。"
+             "全件走査ではない——`--source`経由では取得できない"
+             "(DISPATCHの案内メッセージ参照)",
+        # **判断: 無期限(監視対象外)にした。** 法令の本文は制定後に改正されない
+        # 限り不変で、改正は不定期(周期を持たない)。「N日以内に更新される
+        # はず」という前提がそもそも成り立たないため、`expected_cadence_days`に
+        # 適当な値を入れるより、ministry-codes(手動更新のみの参照表)と同じ
+        # 「無期限」の扱いが実態に合う。これは既定値をそのまま使った結果ではなく、
+        # 明示的にそう判断した
+        expected_cadence_days=None,
+        citation="出典：「e-Gov法令検索 法令API」（https://laws.e-gov.go.jp/api/2/law_data/<law_id>）"
+                 "※egov-lawと同じ理由でサイトの出典記載例を法令本文APIへ当てはめたもの",
+    ),
     "ministry-codes": Source(
         id="ministry-codes",
         name="府省名簿(RS実データの所管府省庁名+府省庁名の和集合 + 法令経路3機関より作成)",

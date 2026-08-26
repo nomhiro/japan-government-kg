@@ -23,14 +23,14 @@ LAW_ID = "412CO0000000315"
 
 def _run(tmp_path: Path, cwd: Path) -> subprocess.CompletedProcess:
     lake_dir = tmp_path / "lake"
-    snap_dir = lake_dir / "egov-law" / "2026-08-26"
+    snap_dir = lake_dir / "egov-law-data" / "2026-08-26"
     snap_dir.mkdir(parents=True)
     content = REAL_FIXTURE.read_bytes()
     (snap_dir / f"law_data_{LAW_ID}.json").write_bytes(content)
     (snap_dir / f"law_data_{LAW_ID}.json.meta.json").write_text(
         json.dumps(
             {
-                "source_id": "egov-law",
+                "source_id": "egov-law-data",
                 "fetched_on": "2026-08-26",
                 "path": str(snap_dir / f"law_data_{LAW_ID}.json"),
                 "sha256": "irrelevant-for-this-test",

@@ -179,6 +179,32 @@ def test_ministry_codes_is_rejected_without_attempting_any_fetch(monkeypatch, ca
     assert "data/reference/ministry-codes.csv" in err
 
 
+def test_egov_law_data_via_source_flag_gives_an_actionable_error_not_a_repo_bug_claim(
+    monkeypatch, capsys,
+):
+    """`--source egov-law-data`は登録されているが、意図的にDISPATCHから
+
+    案内エラーを返す(law_idを指定しないと全件走査になってしまうため)。
+
+    何があれば落ちるか: `egov-law-data`をDISPATCHに結線し忘れると、
+    `unwired`検査が「このリポジトリ側の欠陥」という**誤った**主張をする
+    (実際には意図的に`--source`から使えない設計であり、利用者の入力
+    ミスでもリポジトリの結線漏れでもない)。
+    """
+    calls: list = []
+    monkeypatch.setattr(fetch_module.egov_law, "fetch", _forbidden(calls))
+    monkeypatch.setattr(fetch_module.egov_law, "fetch_law_data", _forbidden(calls))
+
+    rc = fetch_module.main(
+        ["--source", "egov-law-data", "--fetched-on", "2026-08-20"]
+    )
+    assert rc == 1
+    assert calls == []
+    err = capsys.readouterr().err
+    assert "--law-id" in err
+    assert "結線されていない" not in err
+
+
 # =============================================================================
 # 壊し確認2: --year の誤用(rs-system以外への付与・rs-systemへの欠落)
 # =============================================================================
@@ -439,7 +465,7 @@ def test_neither_source_nor_law_id_is_rejected(capsys):
 
 
 def test_law_id_overwrite_guard_rejects_without_the_flag(monkeypatch, capsys):
-    lake.save("egov-law", DAY, "law_data_412CO0000000315.json", b"existing-snapshot-stub")
+    lake.save("egov-law-data", DAY, "law_data_412CO0000000315.json", b"existing-snapshot-stub")
 
     calls: list = []
     monkeypatch.setattr(fetch_module.egov_law, "fetch_law_data", _forbidden(calls))
@@ -546,7 +572,7 @@ def test_stderr_is_valid_utf8_when_piped_to_a_subprocess():
     import os
     import subprocess
 
-    lake.save("egov-law", DAY, "law_data_412CO0000000315.json", b"existing")
+    lake.save("egov-law-data", DAY, "law_data_412CO0000000315.json", b"existing")
 
     result = subprocess.run(
         [

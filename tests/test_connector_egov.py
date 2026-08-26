@@ -304,8 +304,25 @@ def test_fetch_law_data_saves_the_raw_response_under_a_law_id_specific_filename(
 
     assert result.skipped is False
     assert result.snapshot.path.name == "law_data_412CO0000000315.json"
-    saved = json.loads(lake.load("egov-law", DAY, "law_data_412CO0000000315.json"))
+    saved = json.loads(lake.load("egov-law-data", DAY, "law_data_412CO0000000315.json"))
     assert saved["law_info"]["law_id"] == "412CO0000000315"
+
+
+def test_fetch_law_data_uses_a_different_source_id_than_the_bulk_metadata_fetch():
+    """C-2裁定: 全件メタデータ(`fetch`。source_id="egov-law")と法令1件の
+
+    本文(`fetch_law_data`)は別のsource_idにする。同じsource_idの下に
+    意味の異なるスナップショットが混在すると、`lake.latest`が返す
+    「最終取得日」が法令本文取得の日付に化け、`freshness`・`build.sh`が
+    メタデータの無い日付を掴む(C-1で実際に指摘された懸念)。
+    """
+    client = law_data_client_returning(_law_data_response("412CO0000000315"))
+    result = egov_law.fetch_law_data("412CO0000000315", DAY, client=client)
+
+    assert result.snapshot.source_id == "egov-law-data"
+    assert result.snapshot.source_id != egov_law.SOURCE_ID
+    assert lake.list_snapshots("egov-law") == []
+    assert len(lake.list_snapshots("egov-law-data")) == 1
 
 
 def test_fetch_law_data_is_idempotent(monkeypatch):
@@ -341,7 +358,7 @@ def test_fetch_law_data_two_different_law_ids_on_the_same_day_do_not_collide():
     assert result_a.skipped is False
     assert result_b.skipped is False
     assert result_a.snapshot.path != result_b.snapshot.path
-    assert len(lake.list_snapshots("egov-law")) == 2
+    assert len(lake.list_snapshots("egov-law-data")) == 2
 
 
 def test_fetch_law_data_rejects_a_response_missing_law_full_text():
@@ -356,7 +373,7 @@ def test_fetch_law_data_rejects_a_response_missing_law_full_text():
         egov_law.fetch_law_data("412CO0000000315", DAY, client=client)
 
     # 拒否された応答はスナップショットとして残らない(誤ったものを記録しない)
-    assert lake.list_snapshots("egov-law") == []
+    assert lake.list_snapshots("egov-law-data") == []
 
 
 def test_fetch_law_data_rejects_a_non_json_response():
@@ -371,11 +388,11 @@ def test_fetch_law_data_rejects_a_non_json_response():
     )
     with pytest.raises(egov_law.UnexpectedLawDataResponseError, match="JSON"):
         egov_law.fetch_law_data("412CO0000000315", DAY, client=client)
-    assert lake.list_snapshots("egov-law") == []
+    assert lake.list_snapshots("egov-law-data") == []
 
 
 def test_fetch_law_data_raises_on_http_error():
     client = law_data_client_returning({}, status=503)
     with pytest.raises(httpx.HTTPStatusError):
         egov_law.fetch_law_data("412CO0000000315", DAY, client=client)
-    assert lake.list_snapshots("egov-law") == []
+    assert lake.list_snapshots("egov-law-data") == []

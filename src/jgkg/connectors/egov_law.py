@@ -123,9 +123,17 @@ def fetch(fetched_on: datetime.date, client: httpx.Client | None = None) -> Fetc
 # 全件ではなく、指定した law_id 1件だけを取る(政府サーバへの実アクセスを
 # 必要最小限にする制約による)。テーブル抽出・解釈はここでは行わない
 # (パースと取得の失敗を分離する。base.pyの責務分離と同じ理由)
+#
+# **`SOURCE_ID`(上のfetchが使う"egov-law")とは別の source_id を使う
+# (C-2裁定)。** 同じsource_idの下に「全件メタデータ」と「法令1件の本文」
+# という意味の異なるスナップショットを混在させると、`lake.latest`が返す
+# 「最終取得日」が法令本文取得の日付に化け、`freshness`・`build.sh`の
+# 既定出力先がメタデータの無い日付を掴む——C-1で実際にこの懸念が指摘された
+# (部分的なものが完全なものを装う。設計書§11.1の観測性と同じ型)。
 # =============================================================================
 
 BASE_LAW_DATA_URL = "https://laws.e-gov.go.jp/api/2/law_data"
+LAW_DATA_SOURCE_ID = "egov-law-data"
 
 
 class UnexpectedLawDataResponseError(RuntimeError):
@@ -190,7 +198,7 @@ def fetch_law_data(
         return content
 
     try:
-        return fetch_to_lake(SOURCE_ID, fetched_on, law_data_filename(law_id), _get)
+        return fetch_to_lake(LAW_DATA_SOURCE_ID, fetched_on, law_data_filename(law_id), _get)
     finally:
         if owns_client:
             c.close()
