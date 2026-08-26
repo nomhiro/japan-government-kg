@@ -18,14 +18,22 @@
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from jgkg import lake
 from jgkg.connectors import egov_law
 from jgkg.transform import ministry_succession as ms
+from jgkg.transform.ministry import load_reference
 from jgkg.transform.old_ministries import load_old_ministries
 
 DEFAULT_LAW_ID = "412CO0000000315"
+# OUTPUT_PATHはcwd相対のままにする(呼び出し元の作業ディレクトリに書き出す、
+# テストが依拠している既存の挙動)。一方MINISTRY_CODES_PATHは常に「実際に
+# コミットされている参照表」を読みたいので、old_ministries.pyのDEFAULT_PATHと
+# 同じ理由・同じ手法でcwd非依存にする(レビュー指摘11の再発防止)
 OUTPUT_PATH = "data/reference/ministry-succession.csv"
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+MINISTRY_CODES_PATH = _REPO_ROOT / "data" / "reference" / "ministry-codes.csv"
 
 _HEADER_COMMENT = """\
 # source: {law_id}「中央省庁等改革のための国の行政組織関係法律の整備等に
@@ -43,12 +51,25 @@ _HEADER_COMMENT = """\
 #   (ヘッダ行が0。レイクの生JSONを開いて children[row_index] を数えれば
 #   同じ行にたどり着ける)
 #
-# 注意: 全59行のうち8行(総理府の外局だった庁・委員会)は「総理府」+
+# 注意: 全58行のうち8行(総理府の外局だった庁・委員会)は「総理府」+
 #   外局名を連結した形でしか現れない(例:「総理府北海道開発庁」)。
 #   old_name列はこの連結を分解していない生の抽出結果であり、
 #   data/reference/old-ministries.csv の18名称への解決(prefix-
 #   decomposition。同モジュールのresolve_old_ministries参照)は
 #   このファイルの行そのものには反映していない
+#
+# 注意2(2026-08-26レビュー指摘3): new_name列も同様に生の抽出結果であり、
+#   18名称のうち金融再生委員会の1件(new_name="内閣府金融庁")は新側でも
+#   「内閣府」+「金融庁」の連結でしか現れない(resolve_successor_names参照)。
+#   さらに、この対応表は2000年時点のスナップショットのため、new_name側には
+#   その後さらに廃止・独立行政法人化された機関を指す行が多数ある(例:
+#   防衛庁→2007年防衛省、社会保険庁→2010年廃止、造幣局・印刷局→2003年
+#   独立行政法人化)。58行のnew_nameは43種類に正規化されるが、そのうち
+#   ministry-codes.csv(現行40件)の名称に一致するのは11件(素の名称)+
+#   15件(連結の分解可能)の26件のみで、残り17件はどの現存組織にも一致
+#   しない。**この対応表の全58行はここに出典として残すが、KGに符号化するの
+#   は18名称の解決分だけに限る**(全58行をそのまま符号化すると、KGに存在
+#   しない組織を指す参照整合性の失敗を生む)
 #
 # scope: このファイルは「対応表を抽出した、出典付きの参照データ」まで
 #   (C-1)。オントロジー側の変更(AbolishedGovernmentOrgan・succeededBy)や
@@ -133,9 +154,23 @@ def main() -> int:
 
     target_names = load_old_ministries()
     coverage = ms.resolve_old_ministries(extraction.rows, frozenset(target_names))
+
+    reference_names = frozenset(r.name for r in load_reference(MINISTRY_CODES_PATH))
+    successors = ms.resolve_successor_names(coverage.resolved, reference_names)
+    successor_by_target = {r.target_name: r for r in successors.resolved}
+
     print(f"\n18名称の網羅({len(target_names)}件中):")
     for r in sorted(coverage.resolved, key=lambda r: r.target_name):
-        print(f"  解決: {r.target_name} -> {r.row.new_name}  [{r.mechanism}]")
+        successor = successor_by_target.get(r.target_name)
+        if successor is not None:
+            print(
+                f"  解決: {r.target_name} -> {successor.successor_name}"
+                f"  [旧:{r.mechanism} / 新:{successor.successor_mechanism}]"
+            )
+        else:
+            # 新側がministry-codes.csvに対して解決できなかった場合。
+            # 推測で埋めず、生のnew_nameのまま報告する
+            print(f"  解決(新側は要確認): {r.target_name} -> {r.row.new_name}  [旧:{r.mechanism}]")
     if coverage.unresolved:
         for name in coverage.unresolved:
             print(f"  未解決: {name}")

@@ -23,7 +23,7 @@
    入れ替わっても、ヘッダ文言が変わらなければ動作し続ける
 
 抽出後の18名称(`data/reference/old-ministries.csv`)への解決についても
-同じ発想を使う。実データを確認すると、59行のうち8行
+同じ発想を使う。実データを確認すると、58行のうち8行
 (例:「総理府北海道開発庁」「総理府金融再生委員会」)は
 「総理府」+外局名を**区切り文字なしで連結した**形をしている(2001年改革
 前、これらの庁・委員会は総理府の外局だった実際の行政組織上の事実)。
@@ -32,6 +32,29 @@
 「対象名Aが対象名Bを先頭から取り除いた残りと一致する」形で導出する
 (ヘッダ文言から列の意味を導出するのと同じ「既存の参照データから導出する」
 という発想の繰り返し)。
+
+**新側(`new_name`)にも同じ発想を適用する(2026-08-26レビュー指摘で発覚)。**
+18名称のうち17件はnew_nameがそのまま現行の府省・外局等の参照集合
+(`ministry-codes.csv`)の名称と一致するが、金融再生委員会の1件だけは
+「内閣府金融庁」という、旧側の「総理府北海道開発庁」と同じ**区切り文字
+なしの連結**の形をしている。旧側の分解と同じ発想で、`reference_names`
+(ministry-codes.csvの全名称)自体を接頭辞の候補として使い、新側も分解する
+(`resolve_successor_names`)。「総理府」を決め打ちにしないのと同じ理由で、
+ここでも「内閣府」を決め打ちの接頭辞にしない。
+
+**58データ行のうちKGに符号化するのは18名称の分だけ、という設計上の制約。**
+この対応表は2000年時点のスナップショットである(法令自体は2001年1月6日
+施行)。new_name側には、この時点では現存していたがその後さらに別の改革で
+廃止・独立行政法人化された機関を指す行が多数ある(例: 防衛庁→2007年に
+防衛省へ、社会保険庁→2010年廃止、郵政事業庁・食糧庁→2003年廃止、
+造幣局・印刷局→2003年独立行政法人化)。実際、58行のnew_nameは43種類に
+正規化され、そのうち`ministry-codes.csv`(現行40件)の名称と一致するのは
+11件(素の名称)+15件(2名称の連結として分解可能)=26件のみで、**残り17件は
+どの現存組織の名称にも一致しない**。したがって全58行をそのまま
+succeededByのエッジとして符号化すると、KGに存在しない組織を指す参照整合性
+の失敗を生む。**この対応表の全58行はCSV(`ministry-succession.csv`)に出典
+として残すが、KGへ符号化するのは`old-ministries.csv`の18名称の解決分だけに
+限る**(パイプラインへの実際の結線はC-3で行う。ここでは境界を明記するのみ)。
 """
 import dataclasses
 import re
@@ -72,6 +95,14 @@ class AmbiguousResolutionError(RuntimeError):
     1つの対象名が複数行に一致した、または1行が複数の対象名に一致した
     場合にここに落ちる。どちらを正としてよいか自明ではないので、
     黙って先着で決めない。
+    """
+
+
+class AmbiguousSuccessorDecompositionError(RuntimeError):
+    """新側(`new_name`)を参照集合(ministry-codes.csv)へ分解する際、
+
+    複数の分解が成立した。どちらを後継として選ぶべきかが自明ではない
+    ので、`AmbiguousResolutionError` と同じ立場を取り、黙って選ばない。
     """
 
 
@@ -319,3 +350,103 @@ def resolve_old_ministries(
         )
 
     return CoverageResult(resolved=resolved, unresolved=unresolved)
+
+
+@dataclasses.dataclass(frozen=True)
+class ResolvedSuccessor:
+    """`ResolvedMinistry.row.new_name` を、現行の府省・外局等の参照集合
+
+    (`ministry-codes.csv`)に対して分解した結果。
+    """
+
+    target_name: str
+    row: SuccessionRow
+    #: 旧側の解決機序。`ResolvedMinistry.mechanism` をそのまま引き継ぐ
+    old_mechanism: str
+    #: 参照集合に実在する後継名(分解後)
+    successor_name: str
+    #: "exact"、または "suffix-decomposition(<取り除いた接頭辞>)"
+    successor_mechanism: str
+
+
+@dataclasses.dataclass(frozen=True)
+class SuccessorResolutionResult:
+    resolved: list[ResolvedSuccessor]
+    #: (target_name, new_name) の組。参照集合のどの名称とも一致せず、
+    #: 既知の2名称の連結としても分解できなかったもの。**推測で埋めない**
+    unresolved: list[tuple[str, str]]
+
+
+def _resolve_name_against_reference(
+    name: str, reference_names: frozenset[str]
+) -> tuple[str, str] | None:
+    """名称1つを参照集合に対して解決する(素の一致→分解の順)。
+
+    `resolve_old_ministries` の「対象名を対象名自身の接頭辞候補で分解する」
+    のと同じ発想を、対象を`reference_names`全体に広げて適用したもの。
+
+    **分解は1段に決め打ちにせず、繰り返し適用する。** 実データに
+    「内閣府国家公安委員会警察庁」(内閣府→国家公安委員会→警察庁の3段)
+    のような例がある——警察庁は国家公安委員会の、国家公安委員会は内閣府の
+    外局という実際の行政組織上の入れ子がそのまま文字列の連結段数になっている
+    ため、段数を1段に決め打ちにするとこの実例を見落とす(このモジュールが
+    禁じる「導出すべき値を手書きしている」の変種になる)。
+
+    一致も分解もできない場合は None(推測で埋めない。呼び出し側が扱う)。
+    どの段でも複数の接頭辞が成立する場合は `AmbiguousSuccessorDecompositionError`
+    (自動で選ばない)。
+    """
+    stripped: list[str] = []
+    remainder = name
+    while remainder not in reference_names:
+        candidates = [
+            prefix
+            for prefix in reference_names
+            if remainder.startswith(prefix) and remainder != prefix
+        ]
+        if len(candidates) > 1:
+            raise AmbiguousSuccessorDecompositionError(
+                f"{name!r} の分解(残り{remainder!r})に複数の接頭辞が成立した"
+                f"(自動で選ばない): {sorted(candidates)}"
+            )
+        if not candidates:
+            return None
+        prefix = candidates[0]
+        stripped.append(prefix)
+        remainder = remainder[len(prefix) :]
+
+    if not stripped:
+        return remainder, "exact"
+    return remainder, f"suffix-decomposition({'+'.join(stripped)})"
+
+
+def resolve_successor_names(
+    resolved: list[ResolvedMinistry], reference_names: frozenset[str]
+) -> SuccessorResolutionResult:
+    """`resolve_old_ministries` が解決した各行の `new_name` を、現行の
+
+    府省・外局等の参照集合(`ministry-codes.csv`)に対して分解する。
+
+    旧側のprefix-decompositionと新側のこの分解は同じ発想の繰り返しである
+    (モジュールdocstring参照)。18名称のうち17件は素の一致で解決し、
+    金融再生委員会の1件(new_name="内閣府金融庁")だけがsuffix-decomposition
+    経由になる(実データで確認済み)。
+    """
+    out: list[ResolvedSuccessor] = []
+    unresolved: list[tuple[str, str]] = []
+    for rm in resolved:
+        outcome = _resolve_name_against_reference(rm.row.new_name, reference_names)
+        if outcome is None:
+            unresolved.append((rm.target_name, rm.row.new_name))
+            continue
+        successor_name, successor_mechanism = outcome
+        out.append(
+            ResolvedSuccessor(
+                target_name=rm.target_name,
+                row=rm.row,
+                old_mechanism=rm.mechanism,
+                successor_name=successor_name,
+                successor_mechanism=successor_mechanism,
+            )
+        )
+    return SuccessorResolutionResult(resolved=out, unresolved=unresolved)
