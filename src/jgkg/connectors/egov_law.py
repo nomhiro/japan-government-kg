@@ -115,3 +115,82 @@ def fetch(fetched_on: datetime.date, client: httpx.Client | None = None) -> Fetc
     finally:
         if owns_client:
             c.close()
+
+
+# =============================================================================
+# fetch_law_data: 特定の法令1件の本文を取得する経路(C-1)。
+# `/api/2/laws`(上のfetch。全件メタデータ)とは別のエンドポイント。
+# 全件ではなく、指定した law_id 1件だけを取る(政府サーバへの実アクセスを
+# 必要最小限にする制約による)。テーブル抽出・解釈はここでは行わない
+# (パースと取得の失敗を分離する。base.pyの責務分離と同じ理由)
+# =============================================================================
+
+BASE_LAW_DATA_URL = "https://laws.e-gov.go.jp/api/2/law_data"
+
+
+class UnexpectedLawDataResponseError(RuntimeError):
+    """200 OKだが、期待した法令本文の応答ではない。
+
+    `fetch`(上)のIncompleteSnapshotError、rs_system.UnexpectedResponseError
+    (zipでない応答を弾く)と同型の防御。laws.e-gov.go.jpはSPAであり、
+    本来のAPI応答ではないHTML(フォールバックシェル)や、存在しない
+    law_idへのエラー応答をJSONとして読めても、`law_full_text`キーが
+    無ければテーブル抽出が後段で意味不明な形で壊れる。無検査で
+    スナップショットに保存しない。
+    """
+
+
+def law_data_filename(law_id: str) -> str:
+    """レイクに保存するローカルファイル名。law_idごとに分ける。
+
+    固定名にすると、同じ source_id + fetched_on で別の law_id を取得した
+    とき、`connectors.base._existing`(ファイル名単位の冪等判定)が
+    「既にある」と誤認し、2件目を1件目のスナップショットとして
+    スキップしてしまう。
+    """
+    return f"law_data_{law_id}.json"
+
+
+def fetch_law_data(
+    law_id: str,
+    fetched_on: datetime.date,
+    client: httpx.Client | None = None,
+) -> FetchResult:
+    """1件の法令本文(law_full_text)を取得してレイクに保存する。
+
+    取得したバイト列をそのまま保存する(sha256が配布物と一致し、出典として
+    追跡できる)。保存前に「JSONとして読めるか」「law_full_textキーが
+    あるか」だけを確かめる——構造の中身(Tableノードの位置など)は見ない
+    (見た瞬間にそれはテーブル抽出の責務になる。ここは取得段)。
+    """
+    owns_client = client is None
+    c = client or httpx.Client(timeout=TIMEOUT)
+    url = f"{BASE_LAW_DATA_URL}/{law_id}"
+
+    def _get() -> bytes:
+        resp = c.get(url)
+        resp.raise_for_status()
+        content = resp.content
+        try:
+            parsed = json.loads(content)
+        except ValueError as exc:
+            raise UnexpectedLawDataResponseError(
+                f"law_id={law_id!r} の応答がJSONとして読めない: {url} "
+                f"(content-type={resp.headers.get('content-type')!r}, "
+                f"先頭64バイト={content[:64]!r})。"
+                "SPAのフォールバックHTMLを取得した可能性がある"
+            ) from exc
+        if not isinstance(parsed, dict) or "law_full_text" not in parsed:
+            keys = sorted(parsed.keys()) if isinstance(parsed, dict) else type(parsed).__name__
+            raise UnexpectedLawDataResponseError(
+                f"law_id={law_id!r} の応答に law_full_text が無い: {url} "
+                f"(応答のキー: {keys})。"
+                "存在しない law_id へのエラー応答、またはAPIの仕様変更の可能性がある"
+            )
+        return content
+
+    try:
+        return fetch_to_lake(SOURCE_ID, fetched_on, law_data_filename(law_id), _get)
+    finally:
+        if owns_client:
+            c.close()
