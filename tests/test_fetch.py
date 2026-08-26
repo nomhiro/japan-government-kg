@@ -6,6 +6,8 @@
 正しく拒否するか」だけを検証する(ディスパッチの責務に絞る)。
 """
 import datetime
+import io
+import sys
 from collections.abc import Callable
 
 import pytest
@@ -475,6 +477,47 @@ def test_law_id_fetch_is_not_blocked_by_an_unrelated_existing_bulk_metadata_snap
     )
     assert rc == 0
     assert calls == ["412CO0000000315"]
+
+
+# =============================================================================
+# 壊し確認: Windowsの既定コンソール(cp932)で成功メッセージが落ちない
+# =============================================================================
+
+
+def test_a_success_message_with_an_em_dash_does_not_crash_on_a_cp932_console(monkeypatch):
+    """何があれば落ちるか: 2026-08-26のC-1実取得で実際に踏んだ
+
+    `UnicodeEncodeError`(Windowsの既定コンソールcp932は成功メッセージの
+    区切りに使うem dash「—」をエンコードできない)。取得自体は成功し
+    レイクへの保存も完了していたのに、その後の出力整形だけでCLI全体が
+    非0終了(実際には未処理の例外で落ちる)していた。
+
+    pytestの既定の`capsys`はこの制約を持たない(実コンソールのcp932を
+    経由しない)ため、それだけでは検出できない。`sys.stdout`をcp932で
+    エンコードする実物の`TextIOWrapper`に差し替えて実際の失敗条件を再現する。
+    """
+    cp932_stdout = io.TextIOWrapper(io.BytesIO(), encoding="cp932", errors="strict")
+    monkeypatch.setattr(sys, "stdout", cp932_stdout)
+
+    def stub_fetch_law_data(law_id, fetched_on):
+        snap = lake.save("egov-law", fetched_on, f"law_data_{law_id}.json", b"stub")
+        return FetchResult(snapshot=snap, skipped=False)
+
+    monkeypatch.setattr(fetch_module.egov_law, "fetch_law_data", stub_fetch_law_data)
+
+    rc = fetch_module.main(
+        ["--law-id", "412CO0000000315", "--fetched-on", "2026-08-20"]
+    )
+    assert rc == 0
+
+    cp932_stdout.flush()
+    cp932_stdout.buffer.seek(0)
+    out = cp932_stdout.buffer.read().decode("cp932")
+    assert "取得完了" in out
+    # em dashはcp932で表現できないので、reconfigure後はbackslashreplaceで
+    # `—`のような形にエスケープされる(クラッシュしないことが本質で、
+    # 見た目の劣化は許容する)
+    assert "\\u2014" in out
 
 
 # =============================================================================

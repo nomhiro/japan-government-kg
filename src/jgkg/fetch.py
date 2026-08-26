@@ -124,6 +124,15 @@ def _law_data_already_fetched(law_id: str, fetched_on: datetime.date) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Windowsの既定コンソール(cp932)は成功メッセージに使う em dash(—)を
+    # エンコードできず、UnicodeEncodeErrorでCLI全体が落ちる(2026-08-26、
+    # C-1の実取得——`--law-id 412CO0000000315`——で実際に踏んだ。取得自体は
+    # 成功しレイクへの保存も完了していたが、その後の出力整形だけで落ちて
+    # いた)。テストのcapsys等、reconfigureを持たないストリームには触れない
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(errors="backslashreplace")
+
     parser = argparse.ArgumentParser(
         description="取得段(コネクタ)を呼ぶディスパッチャ。source_idごとに"
         "必要な引数が違う(--year はrs-systemのみ、houjin-bangouは.envのURL)"
