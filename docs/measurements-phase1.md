@@ -1947,3 +1947,67 @@ vs パイプラインが解決イベントを数える)で同じ4243→4269**に
 "NO_CANDIDATE": 3, "AMBIGUOUS": 0}`)、旧リリース
 (`2026-08-26/pipeline-report.json`)にはこのフィールド自体が無かった
 (grep確認済み)。
+
+## 17. C-3: ministry_succession結線の実測(2026-08-26)
+
+C-1/C-2が抽出した18件の旧省庁→現存府省の対応(412CO0000000315の対応表)を
+`pipeline.py`へ結線し、`law:jurisdiction`が旧省庁名を`AbolishedGovernmentOrgan`
+(`succeededBy`で現在の後継を持つ)へ解決できるようにした。新たな政府サーバ
+アクセスは0件(houjin-bangou 2026-08-23・egov-law 2026-08-25・
+egov-law-data 2026-08-26のレイクスナップショットに対して`pipeline.run`を
+直接実行。出力先はビルド成果物ではなく一時ディレクトリ)。
+
+### 17.1 jurisdiction解決率の変化
+
+| 指標 | 値 |
+|---|---|
+| law_records | 9,550 |
+| law_jurisdiction_resolved(現存府省) | 4,269 |
+| law_jurisdiction_resolved_abolished(AbolishedGovernmentOrgan、新設) | 1,995 |
+| law_jurisdiction_unresolved | 277(OBSOLETE_ORGANIZATION 274・NO_CANDIDATE 3・OLD_MINISTRY 0・AMBIGUOUS 0) |
+| law_jurisdiction_extraction_failed | 13 |
+| graphs_quarantined | 0 |
+| reference_violations(裁定1の和集合参照整合ゲート含む) | `[]` |
+
+解決率(resolved + resolved_abolished ÷ 分類対象総数): **65.27%(4,269/6,541。
+C-2以前の分類基準相当)→ 95.77%(6,264/6,541)。OLD_MINISTRYは1,995件→0件**
+——team-leadの事前予想(65%→約96%)と一致。**1,995という数字は独立な
+2つの測定で一致している**: 本表の`law_jurisdiction_resolved_abolished`と、
+§16(C-3導入前の2026-08-25-correctedリリース)の
+`law_jurisdiction_unresolved_by_reason.OLD_MINISTRY`——後者はC-3導入前に
+「OLD_MINISTRYとして未解決」だった件数そのものであり、C-3後にそれが
+すべて`resolved_abolished`側へ移ったことをトートロジーでなく裏付ける。
+
+18機関すべてに`skos:prefLabel`・`org:abolitionDate`
+(`2001-01-06`。412CO0000000315自身の`revision_info.amendment_enforcement_date`
+から導出。手書きではない)・`org:succeededBy`が付くことを確認済み
+(§17.2のCQ11実行結果も参照)。
+
+### 17.2 CQ1・CQ5・CQ11を実データに対して実行(2026-08-26)
+
+上記と同じ`kg.nq`(rs-systemは含まない。houjin-bangou/egov-law/
+egov-law-dataのみ)に対して、C-3で追加・変更した3本のCQを直接実行した:
+
+```
+cq01-jurisdiction-of-ordinance.rq: 1行
+  厚生労働省(6000012070001)。successor/successorNameは未束縛
+  (焼き込んだ417M60000100021は現存府省を指すため、実データでも
+  fixtureと同じく負のコントロール側になる)
+
+cq05-ministry-of-basis-law.rq: 0行
+  この実行にrs-system(budget:basisLaw/budget:ministryの源)を含めて
+  いないため0件——CQ5の答えではなく、この実行の入力範囲による0件である
+  (test_cq5_*のfixtureテストが答え自体は別途保証している)
+
+cq11-succession-of-abolished-ministry.rq: 1,995行
+  distinct AbolishedGovernmentOrgan数 = 11/18
+  (労働省・厚生省・大蔵省・建設省・文部省・総理府・自治省・通商産業省・
+  運輸省・郵政省・金融再生委員会。残り7機関
+  〔北海道開発庁・国土庁・沖縄開発庁・環境庁・科学技術庁・経済企画庁・
+  総務庁〕を発令機関とするe-Gov法令が、この9,550件の中に1件も無い
+  ——18機関すべてが解決可能なことと、実際にそれらを引用する現行法令が
+  データ中に存在するかは別の話であることの実例)
+```
+
+行数1,995は§17.1の`law_jurisdiction_resolved_abolished`と完全一致する
+(SPARQL側とパイプライン集計側、独立な2つの経路が同じ数字に達した)。
