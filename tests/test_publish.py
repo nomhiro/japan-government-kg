@@ -134,6 +134,38 @@ def test_verify_release_assets_rejects_a_missing_asset(tmp_path, missing_name):
         publish.verify_release_assets(release_dir)
 
 
+def test_verify_release_assets_rejects_a_non_date_created_on(tmp_path):
+    """`created_on`が日付でない(観察O8)manifestは公開前検査でも拒否すること。
+
+    **これは指示されていない拡張**: team-lead裁定はgit_commit/git_dirtyを
+    公開ゲートの対象として明示したが、`created_on`の日付形状はここでは
+    明示されていない。ただし、`build_manifest()`側だけで検証すると、
+    **観察O8の修正が入る前にビルドされた(git_commit/git_dirtyは正しい)
+    manifestがそのまま公開ゲートを素通りしてしまう**——実際に
+    `2026-08-26-manifest-v6`がこの状態だった(git_commit有り・
+    git_dirty=false・manifest_version=6だが、`created_on`は
+    `"2026-08-26-manifest-v6"`のまま)。「性質で判定する」「採用した
+    要件の執行」というteam-lead裁定の原則をそのまま適用した。
+
+    **上書き用の許可フラグは用意しない**(`--allow-dirty`とは違う扱い)。
+    汚れた作業ツリーには「承知の上で公開する」という正当な意図があり得る
+    が、非日付の`created_on`を公開したい正当な理由は無い——直し方は
+    「現行コードで全再構築する」の一つしかない。
+    """
+    # release名はteam-leadが実際に見つけた欠陥のディレクトリと同じ形
+    # (非日付のサフィックス付き)にする——既定の"2026-08-01"は偶然にも
+    # 日付として妥当な文字列なので、それをcreated_onへ流用しても
+    # このテストは空虚に成立してしまう(実際に検証してこの落とし穴に気づいた)
+    release_dir, _m = _make_release_dir(tmp_path, name="2026-08-26-manifest-v6")
+    manifest_path = release_dir / build.MANIFEST_NAME
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    data["created_on"] = data["release"]  # 実際に検出された欠陥の形そのもの
+    manifest_path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="created_on"):
+        publish.verify_release_assets(release_dir)
+
+
 def test_verify_release_assets_rejects_a_release_with_no_git_commit(tmp_path):
     """`git_commit`が無い(旧形式。manifest_version<6)manifestは拒否すること。
 

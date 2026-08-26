@@ -105,6 +105,16 @@ def verify_release_assets(release_dir: Path, allow_dirty: bool = False) -> build
             "した人がそれを作ったコードを特定できないため公開できない"
             "(team-lead裁定)"
         )
+    # **指示されていない拡張**: team-lead裁定はgit_commit/git_dirtyを公開
+    # ゲートの対象として明示したが、created_onの日付形状はここでは明示
+    # されていない。ただし検証をbuild_manifest()側だけに置くと、観察O8の
+    # 修正が入る前にビルドされた(git_commit/git_dirtyは正しい)manifestが
+    # そのまま素通りしてしまう(実例: 2026-08-26-manifest-v6)。「性質で
+    # 判定する」「採用した要件の執行」という裁定の原則をそのまま適用した。
+    # **上書き用の許可フラグは無い**(allow_dirtyとは違う扱い)——非日付の
+    # created_onを公開したい正当な理由は無く、直し方は現行コードでの
+    # 全再構築の一つしかない
+    build.validate_created_on(manifest.created_on)
     # 汚れた作業ツリーからのビルドは、コミットSHAだけでは完全な説明に
     # ならない(コミットに無い変更が混ざっているかもしれない)。既定は
     # 止まる側——`allow_dirty=True`という明示の意図表明があれば通す

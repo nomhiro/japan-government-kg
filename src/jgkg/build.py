@@ -134,6 +134,34 @@ def _count_triples(path: Path) -> int:
     return count
 
 
+def validate_created_on(created_on: str) -> None:
+    """`created_on`が日付(YYYY-MM-DD)であることを確かめる(観察O8の修正)。
+
+    **空文字チェックだけでは不十分**——実際に検出された欠陥の値
+    (`"2026-08-26-license-fix"`)は空文字ではないため、空文字チェックだけ
+    では素通りしてしまう。`date.fromisoformat`は末尾の余分な文字も拒否
+    する(`"2026-08-26-license-fix"`は`"2026-08-26"`を含むが、これも例外
+    になる)。
+
+    `build_manifest()`(新規構築時)と`publish.verify_release_assets()`
+    (公開前検査。すでにビルドされた旧いmanifestを読む経路)の両方から
+    呼ぶ——**検証を構築時だけに置くと、この関数が追加される前にビルド
+    された(修正前コードによる)manifestがそのまま公開ゲートを素通り
+    してしまう**(`2026-08-26-manifest-v6`で実際に確認: git_commit/
+    git_dirtyは正しいがcreated_onは旧い欠陥を持ったまま、というリリース
+    が実在した)。
+    """
+    try:
+        datetime.date.fromisoformat(created_on)
+    except ValueError as exc:
+        raise ValueError(
+            f"created_on が日付(YYYY-MM-DD)ではない: {created_on!r}。"
+            "releaseディレクトリのbasename(識別子)をそのまま渡していないか"
+            "確認する(観察O8: この2つの欄は意味が異なる。releaseは同一性、"
+            "created_onはビルドした日付)"
+        ) from exc
+
+
 def build_manifest(
     nquads: Path,
     tarball: Path,
@@ -147,20 +175,7 @@ def build_manifest(
     git_dirty: bool,
     quarantined_sources: list[str] | None = None,
 ) -> Manifest:
-    # 観察O8の修正: `created_on`は日付でなければならない。**空文字チェック
-    # だけでは不十分**——実際に検出された欠陥の値(`"2026-08-26-license-fix"`)
-    # は空文字ではないため、空文字チェックだけでは素通りしてしまう。
-    # `date.fromisoformat`は末尾の余分な文字も拒否する(`"2026-08-26-license-
-    # fix"`は`"2026-08-26"`を含むが、これも例外になる)
-    try:
-        datetime.date.fromisoformat(created_on)
-    except ValueError as exc:
-        raise ValueError(
-            f"created_on が日付(YYYY-MM-DD)ではない: {created_on!r}。"
-            "releaseディレクトリのbasename(識別子)をそのまま渡していないか"
-            "確認する(観察O8: この2つの欄は意味が異なる。releaseは同一性、"
-            "created_onはビルドした日付)"
-        ) from exc
+    validate_created_on(created_on)
     if not jena_version:
         raise ValueError(
             "Jenaバージョンが空である。TDB2のオンディスク形式はJenaのバージョンに"
