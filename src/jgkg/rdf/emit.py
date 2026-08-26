@@ -14,9 +14,11 @@ from jgkg.config import get_settings
 from jgkg.rdf.provenance import provenance_graph
 from jgkg.transform.law import JurisdictionResult, LawRecord
 from jgkg.transform.ministry import Ministry, UnmatchedMinistry
+from jgkg.transform.ministry_succession import AbolishedMinistryRecord
 from jgkg.transform.organization import Organization
 from jgkg.transform.rs import BudgetProjectRecord, ExpenditureRecord, UnresolvedBudgetReference
 from jgkg.uris import (
+    abolished_organ_uri,
     budget_uri,
     expenditure_uri,
     graph_uri,
@@ -143,6 +145,32 @@ def emit_ministries(
 
 def _iso_date_literal(value: str) -> Literal:
     return Literal(datetime.date.fromisoformat(value), datatype=XSD.date)
+
+
+def emit_abolished_ministries(
+    records: Iterable[AbolishedMinistryRecord],
+    source_id: str,
+    fetched_on: datetime.date,
+    sha256: str | None = None,
+    recorded_on: datetime.date | None = None,
+) -> Dataset:
+    """C-1(ministry_succession)が解決した`AbolishedGovernmentOrgan`を出す(C-3)。
+
+    `emit_organizations`/`emit_ministries`と同じ、変換とemitの分離
+    (`build_abolished_ministries`が組み立てた記録をそのまま書くだけで、
+    後継名→houjin_bangouの解決や裁定2の除外はここでは行わない)。
+    """
+    ns = _ns()
+    ds, data = _new_dataset(source_id, fetched_on, sha256, recorded_on)
+
+    for rec in records:
+        s = URIRef(abolished_organ_uri(rec.name))
+        data.add((s, RDF.type, ns["org"]["AbolishedGovernmentOrgan"]))
+        data.add((s, SKOS.prefLabel, Literal(rec.name, lang="ja")))
+        data.add((s, ns["org"]["abolitionDate"], _iso_date_literal(rec.abolition_date)))
+        for houjin_bangou in rec.successor_houjin_bangou:
+            data.add((s, ns["org"]["succeededBy"], URIRef(org_uri(houjin_bangou))))
+    return ds
 
 
 def emit_laws(

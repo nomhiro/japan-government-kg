@@ -58,7 +58,7 @@ succeededByのエッジとして符号化すると、KGに存在しない組織�
 """
 import dataclasses
 import re
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 
 _OLD_HEADER_MARKER = "従前"
 _NEW_HEADER_MARKER = "新"
@@ -450,3 +450,112 @@ def resolve_successor_names(
             )
         )
     return SuccessorResolutionResult(resolved=out, unresolved=unresolved)
+
+
+# =============================================================================
+# C-3: AbolishedGovernmentOrgan として符号化する記録を組み立てる
+# =============================================================================
+
+
+class MissingAmendmentEnforcementDateError(RuntimeError):
+    """法令の`revision_info`に`amendment_enforcement_date`が無い。
+
+    廃止日を手書きの定数にしない代わりにこのフィールドから導出するため、
+    無い場合は推測で埋めず、ここで名指しして落とす(このタスク自身が
+    禁じている「導出すべき値を手書きしている」の9件目を避けるための境界)。
+    """
+
+
+class MissingSuccessorMinistryError(RuntimeError):
+    """`resolve_successor_names`が解決した後継名が、実際に符号化された
+
+    `Ministry`(houjin-bangou×ministry-codes.csvの突合結果)のどれにも
+    一致しない。黙って対象外にすると、参照整合ゲート(裁定B4)が拾う前に
+    このタスクの中で欠落が握り潰されるため、名指しで落とす。
+    """
+
+
+def derive_abolition_date(revision_info: Mapping[str, object]) -> str:
+    """法令データの`revision_info`から、この法令の施行日を導出する(ISO8601)。
+
+    **手書きの定数にしない。** `412CO0000000315`(この対応表そのものの出典)
+    の`revision_info.amendment_enforcement_date`が"2001-01-06"であり、
+    かつ`amendment_law_id`がNone(この法令自身の制定時点の版であり、後の
+    別法令による改正ではない)であることを実データで確認済み——つまり
+    この日付は「2001年の中央省庁再編がいつ施行されたか」そのものを表す。
+    `old-ministries.csv`は2001年再編で廃止された名称に限る集合と裁定B7で
+    明示的に狭められているため、この対応表から解決した18名称は全て同じ
+    廃止日を共有する(コホート自体が単一の施行イベントで定義されている
+    ため、「一部だけ導出できない」という分岐は構造上起こらない)。
+    """
+    value = revision_info.get("amendment_enforcement_date")
+    if not value or not isinstance(value, str):
+        raise MissingAmendmentEnforcementDateError(
+            "revision_info.amendment_enforcement_date が無い(または空)。"
+            "廃止日を推測で埋めない——法令データの取得元を確認すること"
+        )
+    return value
+
+
+@dataclasses.dataclass(frozen=True)
+class AbolishedMinistryRecord:
+    """`AbolishedGovernmentOrgan`インスタンス1件分の、符号化に必要な情報。
+
+    `successor_houjin_bangou`は複数のministry.Ministryの法人番号(裁定:
+    succeededByは多値・必須)。**現データでは18件とも常に1件だけ**——
+    多値を実際に行使する例は現データに無い(裁定5。合成データでのみ
+    確認する。`tests/test_transform_ministry_succession.py`参照)。
+    """
+
+    name: str
+    successor_houjin_bangou: list[str]
+    abolition_date: str
+
+
+def build_abolished_ministries(
+    successors: SuccessorResolutionResult,
+    ministry_houjin_bangou_by_name: Mapping[str, str],
+    abolition_date: str,
+) -> list[AbolishedMinistryRecord]:
+    """`resolve_successor_names`の結果を、符号化できる形にまとめる。
+
+    **府省レベルの`succeededBy`に、除外された下位組織の後継を含めない
+    (裁定2)。** 例えば厚生省の対応表の行には、厚生省自身の後継である
+    厚生労働省だけでなく、除外された1課(生活衛生局水道環境部環境整備課)
+    の後継である環境省も実データに存在する(C-2報告の「除外パターンの
+    再帰」参照)。しかし「厚生省令」は厚生省が全体として発した法令であり、
+    後にその1課だけが環境省へ移った事実は、**省令の所管という意味では
+    環境省を後継にしない**——含めると、あらゆる厚生省令のCQ1が環境省を
+    併記して誤導する。この関数の入力が`SuccessorResolutionResult`
+    (`resolve_old_ministries`が返す**府省レベルの**18行だけを経由した
+    `resolve_successor_names`の出力)である時点で、除外された下位組織の
+    行はそもそも入力に現れない——「含めない」は個別の除外ロジックではなく、
+    **入力の構成そのもので保証されている**。情報自体は失われない
+    (`ministry-succession.csv`に58行全て残る。将来、機関レベルの粒度を
+    モデル化する日が来たらそちらを使える)。
+
+    後継名(`successor_name`)を実際に符号化された`Ministry`の法人番号に
+    変換する。**一致しない後継名があれば黙って落とさず
+    `MissingSuccessorMinistryError`で名指しする**(推測で埋めない。
+    参照整合ゲートより手前でここで検出する)。
+    """
+    missing: list[str] = []
+    out: list[AbolishedMinistryRecord] = []
+    for r in successors.resolved:
+        houjin_bangou = ministry_houjin_bangou_by_name.get(r.successor_name)
+        if houjin_bangou is None:
+            missing.append(r.successor_name)
+            continue
+        out.append(
+            AbolishedMinistryRecord(
+                name=r.target_name,
+                successor_houjin_bangou=[houjin_bangou],
+                abolition_date=abolition_date,
+            )
+        )
+    if missing:
+        raise MissingSuccessorMinistryError(
+            f"次の後継名が実際に符号化されたMinistryのどれにも一致しない"
+            f"(自動で対象外にしない): {sorted(missing)}"
+        )
+    return out

@@ -73,6 +73,22 @@ def unresolved_ministry_uri(name: str) -> str:
     return f"{_base()}/id/unresolved/ministry/{quote(name, safe='')}"
 
 
+def abolished_organ_uri(name: str) -> str:
+    """`org:AbolishedGovernmentOrgan`インスタンスのURI(C-3)。
+
+    houjin_bangouを持たない(2001年より前に廃止された組織には法人番号の
+    制度自体が無かった)ため、`org_uri`と同じ`/id/org/`配下ではなく、
+    `unresolved_ministry_uri`と同じ考え方で名称を鍵にする——ただし
+    `/id/unresolved/ministry/`とは別の(「未解決」ではなく「実在する
+    廃止済み機関」を表す)専用のサブパスにする。houjin_bangouは常に
+    13桁のASCII数字(`HOUJIN_BANGOU_RE`)なので数字としての衝突は
+    起こらないが、サブパスを分けることで両者の違いを明示する。
+    """
+    if not name:
+        raise ValueError("name が空である")
+    return f"{_base()}/id/org/abolished/{quote(name, safe='')}"
+
+
 def budget_uri(fiscal_year: str, project_id: str) -> str:
     """`budget:BudgetProject` のURI。
 
