@@ -15,6 +15,12 @@
     uv run python -m jgkg.fetch --source rs-system --year 2025
     uv run python -m jgkg.fetch --source houjin-bangou
     uv run python -m jgkg.fetch --source egov-law --source rs-system --year 2025
+    uv run python -m jgkg.fetch --law-id 412CO0000000315
+
+**`--law-id`(C-1)は`--source`とは独立した軸。** `--source egov-law`は
+全件メタデータ(`/api/2/laws`)を取るが、`--law-id`は指定した法令1件の
+本文(`/api/2/law_data/<law_id>`)だけを取る。両方を同じ呼び出しで
+指定できる。
 
 **このモジュールは実際に外部へアクセスしない場面でも安全に import できる。**
 実取得はA-4(別タスク)で行う。ここは経路を作るところまで(テストに実
@@ -90,6 +96,33 @@ def _already_fetched(source_id: str, fetched_on: datetime.date) -> bool:
     return any(s.fetched_on == fetched_on for s in lake.list_snapshots(source_id))
 
 
+def _law_data_already_fetched(law_id: str, fetched_on: datetime.date) -> bool:
+    """特定の法令1件の本文(law_id)のスナップショットが既にあるか。
+
+    **`_already_fetched`(上)とは意図的に別の粒度にしている。** `_already_fetched`は
+    source_id + fetched_on単位(ファイル名を見ない、rs-systemの複数ファイルを
+    想定した粗さ)だが、egov-lawという同じsource_idの下に、全件メタデータ
+    (`laws.jsonl`)と法令1件の本文(`law_data_<law_id>.json`)という**無関係な
+    複数のファイルが共存する**。`_already_fetched`をそのまま使うと、同じ日に
+    どちらかが既にあれば他方まで「既に取得済み」と誤って拒否してしまう。
+
+    ここではファイル名まで見て判定することで、**law-id側の誤検出**
+    (無関係な一括メタデータの存在でlaw-id取得が拒否される)を防ぐ。
+
+    **逆方向(law_dataが既にある日に`--source egov-law`の一括取得を試みると、
+    `_already_fetched`の粗さにより誤って拒否されうる)は意図的に直していない。**
+    安全側(取得をスキップするのではなく`--allow-overwrite`の明示を要求する
+    だけ)であり、rs-systemと同じ既存の設計判断の範囲内のため、C-1の
+    スコープ(継承マッピングの抽出)を超えて`_already_fetched`自体の粒度を
+    再設計することはしない。
+    """
+    filename = egov_law.law_data_filename(law_id)
+    return any(
+        s.fetched_on == fetched_on and s.path.name == filename
+        for s in lake.list_snapshots(egov_law.SOURCE_ID)
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="取得段(コネクタ)を呼ぶディスパッチャ。source_idごとに"
@@ -106,6 +139,17 @@ def main(argv: list[str] | None = None) -> int:
         "--source rs-system --year 2025)。data/reference/ にコミットして"
         "管理する参照表(ministry-codesなど。sources.py の local_path 参照)は"
         "取得対象ではない",
+    )
+    parser.add_argument(
+        "--law-id",
+        action="append",
+        dest="law_ids",
+        default=None,
+        metavar="ID",
+        help="法令1件の本文(law_full_text)を取得するe-Gov法令ID"
+        "(例: --law-id 412CO0000000315)。**--sourceとは独立した軸**"
+        "(egov-lawの全件メタデータではなく、指定した法令だけを取る)。"
+        "複数回指定できる",
     )
     parser.add_argument(
         "--year",
@@ -136,11 +180,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    if not args.sources:
-        parser.error("--source を1つ以上渡す(例: --source egov-law)")
+    if not args.sources and not args.law_ids:
+        parser.error(
+            "--source を1つ以上、または --law-id を1つ以上渡す"
+            "(例: --source egov-law / --law-id 412CO0000000315)"
+        )
 
-    # 同じ源が複数回渡されても1回だけ扱う(順序は最初の出現を保つ)
-    requested = list(dict.fromkeys(args.sources))
+    # 同じ源・同じ法令IDが複数回渡されても1回だけ扱う(順序は最初の出現を保つ)
+    requested = list(dict.fromkeys(args.sources or []))
+    requested_law_ids = list(dict.fromkeys(args.law_ids or []))
 
     # --- 引数の形だけで判定できる検査(exit 2。argparseの使い方の誤り) ---
     # ここは静的なレジストリ(sources.py)と argv だけで判定できるので、
@@ -195,6 +243,19 @@ def main(argv: list[str] | None = None) -> int:
                     file=sys.stderr,
                 )
                 return 1
+        for law_id in requested_law_ids:
+            if _law_data_already_fetched(law_id, fetched_on):
+                lake_dir = get_settings().lake_dir
+                filename = egov_law.law_data_filename(law_id)
+                print(
+                    f"エラー: {lake_dir}/{egov_law.SOURCE_ID}/{fetched_on.isoformat()}/"
+                    f"{filename} には既にコミット済みのスナップショットがある。"
+                    "続行するなら --allow-overwrite を明示すること"
+                    "(実際に上書きはしない——コネクタは同じ取得日なら"
+                    "ネットワークに触れずスキップする)",
+                    file=sys.stderr,
+                )
+                return 1
 
     url = ""
     if "houjin-bangou" in requested:
@@ -242,6 +303,19 @@ def main(argv: list[str] | None = None) -> int:
             # rs-systemのようにgroup名がlabelになる場合だけ括弧で示す
             name = source_id if label == source_id else f"{source_id} ({label})"
             print(f"{name}: {state} — {r.snapshot.path}")
+
+    for law_id in requested_law_ids:
+        try:
+            law_result = egov_law.fetch_law_data(law_id, fetched_on)
+        except Exception as exc:  # noqa: BLE001 — 上のDISPATCHループと同じ理由
+            print(f"law-id {law_id}: 失敗 — {exc}", file=sys.stderr)
+            failed.append(f"law-id:{law_id}")
+            continue
+        state = (
+            "スキップ(既にコミット済み。ネットワークに触れていない)"
+            if law_result.skipped else "取得完了"
+        )
+        print(f"law-id {law_id}: {state} — {law_result.snapshot.path}")
 
     return 1 if failed else 0
 

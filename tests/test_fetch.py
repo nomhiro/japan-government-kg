@@ -360,6 +360,128 @@ def test_one_source_failing_does_not_prevent_the_other_from_being_attempted(monk
 # =============================================================================
 
 
+def test_dispatches_a_law_id_fetch_with_the_resolved_fetched_on(monkeypatch, capsys):
+    """`--law-id 412CO0000000315`(C-1)。`--source`とは独立した軸。"""
+    calls = []
+
+    def stub_fetch_law_data(law_id, fetched_on):
+        calls.append((law_id, fetched_on))
+        snap = lake.save("egov-law", fetched_on, f"law_data_{law_id}.json", b"stub")
+        return FetchResult(snapshot=snap, skipped=False)
+
+    monkeypatch.setattr(fetch_module.egov_law, "fetch_law_data", stub_fetch_law_data)
+
+    rc = fetch_module.main(
+        ["--law-id", "412CO0000000315", "--fetched-on", "2026-08-20"]
+    )
+    assert rc == 0
+    assert calls == [("412CO0000000315", DAY)]
+    assert "取得完了" in capsys.readouterr().out
+
+
+def test_multiple_law_ids_are_all_fetched(monkeypatch):
+    calls = []
+
+    def stub_fetch_law_data(law_id, fetched_on):
+        calls.append(law_id)
+        snap = lake.save("egov-law", fetched_on, f"law_data_{law_id}.json", b"stub")
+        return FetchResult(snapshot=snap, skipped=False)
+
+    monkeypatch.setattr(fetch_module.egov_law, "fetch_law_data", stub_fetch_law_data)
+
+    rc = fetch_module.main(
+        ["--law-id", "412CO0000000315", "--law-id", "410AC0000000103",
+         "--fetched-on", "2026-08-20"]
+    )
+    assert rc == 0
+    assert calls == ["412CO0000000315", "410AC0000000103"]
+
+
+def test_source_and_law_id_can_be_combined_in_one_invocation(monkeypatch):
+    """`--source`(全件メタデータ)と`--law-id`(法令1件本文)は独立した軸であり、
+    同じ呼び出しで両方指定できること。
+    """
+    source_calls, law_id_calls = [], []
+    monkeypatch.setattr(
+        fetch_module.egov_law, "fetch",
+        lambda fetched_on: (source_calls.append(fetched_on), _stub_result("egov-law", fetched_on))[1],
+    )
+
+    def stub_fetch_law_data(law_id, fetched_on):
+        law_id_calls.append((law_id, fetched_on))
+        snap = lake.save("egov-law", fetched_on, f"law_data_{law_id}.json", b"stub")
+        return FetchResult(snapshot=snap, skipped=False)
+
+    monkeypatch.setattr(fetch_module.egov_law, "fetch_law_data", stub_fetch_law_data)
+
+    rc = fetch_module.main(
+        ["--source", "egov-law", "--law-id", "412CO0000000315", "--fetched-on", "2026-08-20"]
+    )
+    assert rc == 0
+    assert source_calls == [DAY]
+    assert law_id_calls == [("412CO0000000315", DAY)]
+
+
+def test_neither_source_nor_law_id_is_rejected(capsys):
+    """`--source`も`--law-id`も無い呼び出しは拒否されること(既存の
+
+    test_no_source_given_is_rejectedと同じ意図だが、ゲートを`--source`単独の
+    真偽値から`--source`と`--law-id`のORに変えたことそのものを検査する)。
+    """
+    with pytest.raises(SystemExit) as exc_info:
+        fetch_module.main([])
+    assert exc_info.value.code != 0
+    err = capsys.readouterr().err
+    assert "--law-id" in err
+
+
+def test_law_id_overwrite_guard_rejects_without_the_flag(monkeypatch, capsys):
+    lake.save("egov-law", DAY, "law_data_412CO0000000315.json", b"existing-snapshot-stub")
+
+    calls: list = []
+    monkeypatch.setattr(fetch_module.egov_law, "fetch_law_data", _forbidden(calls))
+
+    rc = fetch_module.main(
+        ["--law-id", "412CO0000000315", "--fetched-on", "2026-08-20"]
+    )
+    assert rc == 1
+    assert calls == []
+    assert "既にコミット済みのスナップショットがある" in capsys.readouterr().err
+
+
+def test_law_id_fetch_is_not_blocked_by_an_unrelated_existing_bulk_metadata_snapshot(
+    monkeypatch,
+):
+    """何があれば落ちるか: law-id向けの事前検査を`_already_fetched`
+
+    (source_id + fetched_on単位、粗い)のまま流用すると、`--source egov-law`の
+    一括メタデータが同じ日に既にある場合、無関係な`--law-id`の取得まで
+    「既に取得済み」として誤って拒否される。実際に取りたい
+    law_data_412CO0000000315.jsonはまだ存在しないので、これは誤検出。
+    """
+    lake.save("egov-law", DAY, "laws.jsonl", b"unrelated-bulk-metadata-snapshot")
+
+    calls = []
+
+    def stub_fetch_law_data(law_id, fetched_on):
+        calls.append(law_id)
+        snap = lake.save("egov-law", fetched_on, f"law_data_{law_id}.json", b"stub")
+        return FetchResult(snapshot=snap, skipped=False)
+
+    monkeypatch.setattr(fetch_module.egov_law, "fetch_law_data", stub_fetch_law_data)
+
+    rc = fetch_module.main(
+        ["--law-id", "412CO0000000315", "--fetched-on", "2026-08-20"]
+    )
+    assert rc == 0
+    assert calls == ["412CO0000000315"]
+
+
+# =============================================================================
+# 壊し確認5: sources.py に登録されているが DISPATCH に結線されていない源
+# =============================================================================
+
+
 def test_a_registered_but_undispatched_source_gives_a_repo_bug_error_not_a_crash(
     monkeypatch, capsys
 ):
