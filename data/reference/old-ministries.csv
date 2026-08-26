@@ -23,8 +23,12 @@
 # 継承マッピング(旧省庁名→現存府省)は設計書§7.2 / 本計画B-5により作らない。
 # ここは「現存しない」という判定のための集合のみ(transform/old_ministries.py 参照)
 # **C-1/C-2(2026-08-26)で、この18名称のうち法令の対応表から解決できた
-# ものを別ファイルに抽出した: data/reference/ministry-succession.csv
-# (この判断自体は変えていない。パイプラインへの結線はまだ無い)**
+# ものを別ファイルに抽出した: data/reference/ministry-succession.csv。**
+# 継承マッピングを一般には作らないという上記の判断自体は変えていない——
+# 対象は常にこの2001年再編分18件に限る。
+# **C-3(2026-08-26)でこの18件をAbolishedGovernmentOrgan/succeededByとして
+# パイプラインへ結線した**(`jgkg.transform.law.derive_jurisdiction`の
+# `abolished_ministries`引数。詳細はschema/competency-questions.mdのC-3節参照)
 # **このファイルは2001年の中央省庁再編で廃止された名称に限る**(裁定B7でenumの
 # 定義文を狭めた)。「閣」(閣令。明治期の法形式)はこれより前に無くなっているため
 # ここには載せない — old_ministries に無い政府機関の形をした名称は
