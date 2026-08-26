@@ -9,6 +9,7 @@ from jgkg import validate
 from jgkg.rdf import emit
 from jgkg.transform.law import JurisdictionResult, LawRecord, UnresolvedJurisdiction
 from jgkg.transform.ministry import Ministry
+from jgkg.transform.ministry_succession import AbolishedMinistryRecord
 from jgkg.transform.organization import Organization
 
 DAY = datetime.date(2026, 8, 1)
@@ -277,6 +278,96 @@ def test_check_reference_integrity_catches_the_wrong_type():
     assert any(
         v.path.endswith("/def/law#jurisdiction")
         and v.expected_class.endswith("/def/org#Organization")
+        for v in violations
+    ), violations
+
+
+# =============================================================================
+# C-3裁定1: org:succeededByも和集合の参照整合ゲート(裁定B4)の対象になること。
+#
+# **新規のゲートコードは無い。** succeededByのrangeが自名前空間クラス
+# (org:GovernmentOrgan)であるため、schema_lang.process()の既存の後処理
+# (裁定B4実装(a))が`scripts/generate-schema.sh`実行時に自動でreference-
+# classes.jsonへ登録済み(実測: cat schema/generated/reference-classes.json
+# で確認)。check_reference_integrity(裁定B4実装(c))はreference-classes.json
+# を汎用的に読むだけなので、既にゲートの対象に入っている。以下はそれを
+# 実際に確認するテスト(正例2件・反例1件)
+# =============================================================================
+
+
+def test_check_reference_integrity_passes_a_correct_succeeded_by_reference():
+    """succeededByが実在するMinistryを指せば和集合ゲートは合格すること。"""
+    ministry = Ministry(
+        uri="https://jgkg.norr-tech.com/id/org/5000012060001",
+        houjin_bangou="5000012060001",
+        name="金融庁",
+    )
+    abolished = AbolishedMinistryRecord(
+        name="金融再生委員会",
+        successor_houjin_bangou=["5000012060001"],
+        abolition_date="2001-01-06",
+    )
+
+    ds = Dataset(default_union=True)
+    _merge_into(
+        ds, emit.emit_ministries([ministry], [], "ministry-codes", datetime.date(2026, 8, 22))
+    )
+    _merge_into(ds, emit.emit_abolished_ministries([abolished], "egov-law-data", DAY))
+
+    violations = validate.check_reference_integrity(ds, SHAPES)
+    assert violations == [], violations
+
+
+def test_check_reference_integrity_passes_a_jurisdiction_pointing_at_an_abolished_organ():
+    """law:jurisdictionがAbolishedGovernmentOrganを指す場合も合格すること
+
+    (期待クラスはorg:Organizationで、AbolishedGovernmentOrganはその
+    サブクラス閉包に含まれる)。C-3裁定2の「所管は当時の組織を指す」形が
+    ゲートを通ることの確認。
+    """
+    law_id = "326M50000400100"
+    record = _law_record(law_id, "昭和二十六年大蔵省令第百号")
+    jr = JurisdictionResult(
+        law_id=law_id, ministry_names=["大蔵省"], resolved=[], resolved_abolished=["大蔵省"],
+        unresolved=[],
+    )
+    abolished = AbolishedMinistryRecord(
+        name="大蔵省", successor_houjin_bangou=["2000012050002"], abolition_date="2001-01-06",
+    )
+    zaimusho = Ministry(
+        uri="https://jgkg.norr-tech.com/id/org/2000012050002",
+        houjin_bangou="2000012050002",
+        name="財務省",
+    )
+
+    ds = Dataset(default_union=True)
+    _merge_into(ds, emit.emit_laws([record], {law_id: jr}, "egov-law", DAY))
+    _merge_into(ds, emit.emit_abolished_ministries([abolished], "egov-law-data", DAY))
+    _merge_into(
+        ds, emit.emit_ministries([zaimusho], [], "ministry-codes", datetime.date(2026, 8, 22))
+    )
+
+    violations = validate.check_reference_integrity(ds, SHAPES)
+    assert violations == [], violations
+
+
+def test_check_reference_integrity_catches_a_succeeded_by_pointing_at_a_typeless_node():
+    """壊し確認: succeededByが型を持たないノードを指せば和集合ゲートが
+
+    違反を報告すること(裁定1本体)。
+    """
+    abolished = AbolishedMinistryRecord(
+        name="金融再生委員会",
+        successor_houjin_bangou=["9999999999999"],  # 型付けされたグラフに存在しない
+        abolition_date="2001-01-06",
+    )
+    ds = emit.emit_abolished_ministries([abolished], "egov-law-data", DAY)
+
+    violations = validate.check_reference_integrity(ds, SHAPES)
+    assert violations, "型の無いsucceededByの参照先が和集合ゲートを素通りしてしまった"
+    assert any(
+        v.path.endswith("/def/org#succeededBy")
+        and v.expected_class.endswith("/def/org#GovernmentOrgan")
         for v in violations
     ), violations
 
@@ -704,8 +795,10 @@ def test_passing_dataset_excludes_failing_graphs():
 # =============================================================================
 # AbolishedGovernmentOrgan(C-2)。succeededBy・abolitionDateの必須制約と
 # 閉じた形状が生成されたttlの文字列だけでなく、実際のSHACL検証で効くこと。
-# パイプラインへの結線(emit関数)はまだ無い(C-3の範囲)ため、トリプルを
-# 直接組み立てる
+# ここでは`emit.emit_abolished_ministries`(C-3で追加)を経由せず、SHACLの
+# 挙動そのものを狙って壊すためにトリプルを直接組み立てる(閉じた形状の
+# 壊し確認は、実際のemit関数からは出ない「無関係なプロパティ」を意図的に
+# 足す必要があるため)
 # =============================================================================
 
 _ABOLISHED_SUBJECT = "https://jgkg.norr-tech.com/id/org/test-old-ministry"
