@@ -3,7 +3,7 @@
 #   相当の新府省等を定める政令」(C-1、controller実機確認・実装者再取得)
 #   https://laws.e-gov.go.jp/api/2/law_data/412CO0000000315
 #   実測: status=200, 39092 bytes, sha256=6b7f6b88d827d1071fda2f6fbed7e14ae3b6deb653debb1c2609d5374bab5060
-#   取得日: 2026-08-26(レイク: data/lake/egov-law/2026-08-26/law_data_412CO0000000315.json)
+#   取得日: 2026-08-26(レイク: data/lake/egov-law-data/2026-08-26/law_data_412CO0000000315.json)
 #
 # 抽出方法: law_full_textを再帰的に走査してtag=="Table"のノードを見つけ、
 #   ヘッダ行の文言(「従前」「新」)で列の意味を導出する(列の位置を

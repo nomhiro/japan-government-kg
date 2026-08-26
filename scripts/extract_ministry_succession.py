@@ -3,7 +3,7 @@
 `data/reference/ministry-succession.csv` を書き出す。
 
 `jgkg.fetch --law-id <law_id>` で取得済みのレイクスナップショット
-(`data/lake/egov-law/<date>/law_data_<law_id>.json`)を読み、
+(`egov-law-data` source_idの下。egov_law.LAW_DATA_SOURCE_ID参照)を読み、
 `jgkg.transform.ministry_succession` でTableノードを抽出したのち、
 `data/reference/old-ministries.csv` の18名称のうち何件を解決できたかを
 表示する(C-1ブリーフの受け入れ条件)。
@@ -33,7 +33,7 @@ _HEADER_COMMENT = """\
 #   相当の新府省等を定める政令」(C-1、controller実機確認・実装者再取得)
 #   https://laws.e-gov.go.jp/api/2/law_data/{law_id}
 #   実測: status=200, {byte_size} bytes, sha256={sha256}
-#   取得日: {fetched_on}(レイク: data/lake/egov-law/{fetched_on}/{filename})
+#   取得日: {fetched_on}(レイク: {lake_path})
 #
 # 抽出方法: law_full_textを再帰的に走査してtag=="Table"のノードを見つけ、
 #   ヘッダ行の文言(「従前」「新」)で列の意味を導出する(列の位置を
@@ -65,7 +65,9 @@ def _csv_field(value: str) -> str:
 
 def _latest_law_data_snapshot(law_id: str) -> lake.Snapshot:
     filename = egov_law.law_data_filename(law_id)
-    candidates = [s for s in lake.list_snapshots(egov_law.SOURCE_ID) if s.path.name == filename]
+    candidates = [
+        s for s in lake.list_snapshots(egov_law.LAW_DATA_SOURCE_ID) if s.path.name == filename
+    ]
     if not candidates:
         raise FileNotFoundError(
             f"law_id={law_id!r} のレイクスナップショットが無い。"
@@ -101,7 +103,12 @@ def main() -> int:
             byte_size=snapshot.byte_size,
             sha256=snapshot.sha256,
             fetched_on=snapshot.fetched_on.isoformat(),
-            filename=snapshot.path.name,
+            # snapshot.path から直接導出する(テンプレート文字列に
+            # source_id/日付/ファイル名を書き分けて再構築しない)。
+            # C-2で law_data の source_id を移した際、ここが手書きの
+            # テンプレートのままだと存在しないパスを報告してしまう
+            # ところだった(レビュー指摘)
+            lake_path=snapshot.path.as_posix(),
         )
     ]
     for row in extraction.rows:
