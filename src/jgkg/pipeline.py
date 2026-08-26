@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel
-from rdflib import Dataset, Graph, URIRef
+from rdflib import RDF, Dataset, Graph, URIRef
 
 from jgkg import build, lake, sources, uris, validate
 from jgkg.config import get_settings
@@ -172,6 +172,15 @@ class PipelineReport(BaseModel):
     # `clean`)に対して別途検査する。空でなければ enforce_release_gate が
     # quarantine と同じ扱いで止める
     reference_violations: list[str]
+    # 裁定B54(2026-08-27): 本レポートの集計(常にjurisdictionsから独立に
+    # 計算する)が、実際に出力された`clean`(=kg.nq)と食い違わないこと。
+    # carry-overがegov-lawを意図せず据え置くと、resolved_abolishedだけが
+    # 正しい値を報告し、kg.nq自身には反映されないという「レポートが嘘を
+    # つく」状態が実際に発生した(C-4のリリース再構築で発見。
+    # docs/measurements-phase1.md参照)。参照整合ゲート(型は合っている)
+    # では検出できない(数が食い違うだけ)ため別枠にする。空でなければ
+    # enforce_release_gate が reference_violations と同じ扱いで止める
+    report_graph_mismatches: list[str]
     # Task 8: `--include-all-corporations`(相当のフラグ)が指定されたときだけ
     # 意味を持つ。フラグ未指定なら3つとも既定値0のまま(全法人ストリームに
     # 触れていないことがそのまま分かる)
@@ -320,6 +329,7 @@ def enforce_release_gate(report: PipelineReport, *, allow_partial: bool = False)
     if (
         report.graphs_quarantined == 0
         and not report.reference_violations
+        and not report.report_graph_mismatches
         and report.corporations_all_quarantined == 0
     ):
         return
@@ -335,6 +345,14 @@ def enforce_release_gate(report: PipelineReport, *, allow_partial: bool = False)
         parts.append(
             f"参照整合ゲートで {len(report.reference_violations)} 件の違反"
             f"(例: {report.reference_violations[0]})"
+        )
+    if report.report_graph_mismatches:
+        # 裁定B54: レポートの主張とkg.nq自身の食い違い(PipelineReport.
+        # report_graph_mismatchesのdocstring参照)。型は合っているため
+        # 参照整合ゲートでは検出できない——別枠で同じ扱いで止める
+        parts.append(
+            f"レポートと出力グラフの不整合が {len(report.report_graph_mismatches)} 件"
+            f"(例: {report.report_graph_mismatches[0]})"
         )
     if report.corporations_all_quarantined:
         parts.append(
@@ -1717,6 +1735,35 @@ def run(
     egov_law_ran = "egov-law" in fetched_on
     rs_resolution_ran = "rs-system" in fetched_on and rs_carry_date is None
 
+    # 裁定B54(2026-08-27。PipelineReport.report_graph_mismatchesの
+    # docstring参照): law_jurisdiction_resolved_abolishedの主張が、実際に
+    # 出力される`clean`(=kg.nq)と食い違わないことを検査する。**導出
+    # (レポートの数値をclean自身から計算する形に置き換える)ではなく
+    # 突き合わせにした**——houjin-bangou-all/payeesはclean(rdflib
+    # Dataset)に載らない設計(裁定B21。全法人規模はメモリに載せられない)
+    # のため、レポート全体をclean由来で導出する経路はこの構造と両立しない。
+    # carry-overでegov-lawが意図せず据え置かれると、この集計(常に
+    # jurisdictionsから独立に計算する)だけが正しい値を報告し、kg.nq自身
+    # には反映されないという「レポートが嘘をつく」状態が実際に発生した
+    # (C-4のリリース再構築で発見。docs/measurements-phase1.md参照)。
+    # 参照整合ゲート(型は合っている)では検出できない(数が食い違うだけ)
+    report_graph_mismatches: list[str] = []
+    if egov_law_ran:
+        law_jurisdiction_pred = URIRef(f"{settings.base_uri}/def/law#jurisdiction")
+        abolished_organ_class = URIRef(f"{settings.base_uri}/def/org#AbolishedGovernmentOrgan")
+        actual_resolved_abolished = sum(
+            1
+            for _, _, o in clean.triples((None, law_jurisdiction_pred, None))
+            if (o, RDF.type, abolished_organ_class) in clean
+        )
+        if actual_resolved_abolished != law_jurisdiction_resolved_abolished:
+            report_graph_mismatches.append(
+                f"law_jurisdiction_resolved_abolished={law_jurisdiction_resolved_abolished}"
+                "と報告しているが、kg.nq自身でAbolishedGovernmentOrganを指す"
+                f"jurisdictionトリプルは{actual_resolved_abolished}件"
+                "(carry-overでegov-lawが意図せず据え置かれた疑いがある)"
+            )
+
     return PipelineReport(
         # リリース名は**成果物ディレクトリのbasename**(Ruling B31)。
         # 以前は`max(fetched_on.values())`(=最も新しいソース取得日)だったが、
@@ -1752,6 +1799,7 @@ def run(
         sources=surviving_sources,
         quarantined_sources=quarantined_sources,
         reference_violations=[str(v) for v in reference_violations],
+        report_graph_mismatches=report_graph_mismatches,
         corporations_all=corporations_all,
         corporations_all_dedup_removed=corporations_all_dedup_removed,
         corporations_all_quarantined=corporations_all_quarantined,

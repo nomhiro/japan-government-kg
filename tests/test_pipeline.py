@@ -160,11 +160,48 @@ def test_enforce_release_gate_stops_on_reference_violations():
         reference_violations=[
             ".../id/law/1 -.../jurisdiction-> .../unresolved/x: 型が無い(期待クラス: .../Organization)"
         ],
+        report_graph_mismatches=[],
     )
     with pytest.raises(pipeline.QuarantineNotEmptyError, match="参照整合"):
         pipeline.enforce_release_gate(report)
 
     # 明示的に指定した場合だけ続行する(既定は止まる側。既存のSHACL隔離と同じ契約)
+    pipeline.enforce_release_gate(report, allow_partial=True)
+
+
+def test_enforce_release_gate_stops_on_report_graph_mismatches():
+    """裁定B54: レポートの主張がkg.nq自身と食い違っていたら止まること。
+
+    `reference_violations`が空でも`report_graph_mismatches`が非空なら
+    止まる(2026-08-27に実際に発生した「egov-lawが誤って据え置かれ、
+    resolved_abolishedだけが正しい値を報告する」状態を、ゲート側で
+    再現する)。
+    """
+    report = pipeline.PipelineReport(
+        release="2026-08-01",
+        rows_seen=1,
+        rows_rejected=0,
+        rows_short=0,
+        organizations=1,
+        government_organs=1,
+        ministries=1,
+        unmatched_ministries=0,
+        graphs_validated=2,
+        graphs_quarantined=0,
+        graphs=["https://jgkg.norr-tech.com/graph/egov-law/2026-08-01"],
+        sources={},
+        quarantined_sources=[],
+        reference_violations=[],
+        report_graph_mismatches=[
+            (
+                "law_jurisdiction_resolved_abolished=1と報告しているが、"
+                "kg.nq自身でAbolishedGovernmentOrganを指すjurisdictionトリプルは0件"
+            )
+        ],
+    )
+    with pytest.raises(pipeline.QuarantineNotEmptyError, match="レポートと出力グラフの不整合"):
+        pipeline.enforce_release_gate(report)
+
     pipeline.enforce_release_gate(report, allow_partial=True)
 
 
@@ -818,6 +855,9 @@ def test_run_does_not_carry_over_egov_law_when_egov_law_data_is_newly_added(
         f"(carried_over={r2.carried_over})"
     )
     assert r2.law_jurisdiction_resolved_abolished == 1
+    # 裁定B54: この回帰そのものをreport_graph_mismatchesも検出できること
+    # (carry-overの症状〔carried_over〕とは独立の、別の検出経路)
+    assert r2.report_graph_mismatches == []
 
     kg = Dataset(default_union=True)
     kg.parse(out2 / "kg.nq", format="nquads")
