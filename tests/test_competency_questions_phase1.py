@@ -55,12 +55,21 @@ def _uri(kind: str, value: str) -> URIRef:
 
 
 def test_cq1_jurisdiction_of_ordinance(kg):
+    """C-3でsuccessor/successorNameを追加。焼き込んだこの法令は現存府省
+    (厚生労働省)を指すため、この2列は常に未束縛のはず(負のコントロール)。
+    廃止済み側の正のコントロールはCQ11が引き受ける(このファイル末尾の
+    test_cq11_succession_of_abolished_ministry参照)。
+    """
     rows = _query(kg, "cq01-jurisdiction-of-ordinance.rq")
     assert rows, "CQ1に答えられない"
     assert len(rows) == 1, f"厚生労働省令の所管は1件のはず: {rows}"
-    ministry, name = rows[0]
+    ministry, name, successor, successor_name = rows[0]
     assert ministry == _uri("org", fx.KOUSEIROUDOU_BANGOU)
     assert str(name) == "厚生労働省"
+    assert successor is None, f"現存府省のはずがsuccessorが束縛された: {successor}"
+    assert successor_name is None, (
+        f"現存府省のはずがsuccessorNameが束縛された: {successor_name}"
+    )
 
 
 # =============================================================================
@@ -189,15 +198,28 @@ def test_cq5_ministry_of_basis_law(kg):
 
     根拠法令自身のjurisdictionが未解決(OLD_MINISTRY)であっても、事業の
     budget:ministryから直接答えられることを確認する(CQ4とは別の軸)。
+
+    C-3でissuingOrgan/issuingOrganName/successor/successorNameを追加。
+    OLD_KOUSEISHO_LAW_ID自身のJurisdictionResultは変更していない
+    (tests/phase1_fixture.pyのモジュールdocstring参照)ため、この4列は
+    引き続きすべて未束縛のはず——「jurisdictionが未解決でもCQ5は答えられる」
+    という上のdocstringの主張そのものが、新しい列を追加した後も崩れて
+    いないことの負のコントロール。
     """
     rows = _query(kg, "cq05-ministry-of-basis-law.rq")
     assert rows, "CQ5に答えられない"
     matches = [r for r in rows if r[0] == _uri("law", fx.OLD_KOUSEISHO_LAW_ID)]
     assert len(matches) == 1, f"旧厚生省令を根拠とする事業は1件のはず: {matches}"
-    _law, project, ministry, ministry_name = matches[0]
+    _law, project, ministry, ministry_name, issuing_organ, issuing_organ_name, successor, successor_name = matches[0]
     assert project == URIRef(f"{BASE}/id/budget/2025/{fx.PROJECT_CORE}")
     assert ministry == _uri("org", fx.KOUSEIROUDOU_BANGOU)
     assert str(ministry_name) == "厚生労働省"
+    assert issuing_organ is None, (
+        f"OLD_KOUSEISHO_LAW_IDのjurisdictionは未解決のはずがissuingOrganが束縛された: {issuing_organ}"
+    )
+    assert issuing_organ_name is None
+    assert successor is None
+    assert successor_name is None
 
 
 # =============================================================================
@@ -365,13 +387,18 @@ def test_cq9_distinguishes_resolved_from_old_ministry_unresolved(kg):
 # =============================================================================
 
 
-def test_cq10_release_freshness_covers_all_four_sources(kg):
-    """P0-4は2ソースだったが、law/budgetを加えたこのfixtureでは4ソース
-    (houjin-bangou・ministry-codes・egov-law・rs-system)すべてが返ること。
+def test_cq10_release_freshness_covers_all_five_sources(kg):
+    """P0-4は2ソースだったが、law/budgetを加えたこのfixtureでは5ソース
+    (houjin-bangou・ministry-codes・egov-law・rs-system・egov-law-data)
+    すべてが返ること。
 
-    何があれば落ちるか: ソースが1つでも欠けたら落ちる。egov-law/rs-system
-    はrecorded_onを持たないため両方「取得日」になるはず — 「記録日」に
-    化けたら(ministry-codesの値を誤って流用したら)落ちる。
+    **C-3で4ソースから5ソースに増えた。** egov-law-data(ministry_succession。
+    AbolishedGovernmentOrganの元)を追加したため(tests/phase1_fixture.py
+    のbuild_dataset参照)。
+
+    何があれば落ちるか: ソースが1つでも欠けたら落ちる。egov-law/rs-system/
+    egov-law-dataはrecorded_onを持たないため3つとも「取得日」になるはず
+    — 「記録日」に化けたら(ministry-codesの値を誤って流用したら)落ちる。
     """
     from jgkg.sources import get_source
 
@@ -384,4 +411,49 @@ def test_cq10_release_freshness_covers_all_four_sources(kg):
         get_source("ministry-codes").name: "記録日",
         get_source("egov-law").name: "取得日",
         get_source("rs-system").name: "取得日",
+        get_source("egov-law-data").name: "取得日",
     }, by_source
+
+
+# =============================================================================
+# CQ11: 発令機関が既に廃止された法令は、現在のどの府省が引き継いだか
+# (C-3: 継承そのものを問うCQ。CQ1の姉妹CQ)
+# =============================================================================
+
+
+def test_cq11_succession_of_abolished_ministry(kg):
+    """CQ1(この法令の所管はどこか)では持てなかった、廃止済み側の正の
+    コントロール。fixtureのSUCCESSION_DEMO_LAW_ID(厚生省発令・既に
+    AbolishedGovernmentOrganへ解決済み)が、名称"厚生省"・後継
+    "厚生労働省"(KOUSEIROUDOU_BANGOU)として1件だけ返ること。
+
+    何があれば落ちるか: law:jurisdictionの型チェック(a org:AbolishedGovernmentOrgan)
+    が外れたら、現存府省を指す2法令(KOUSEIROUDOU_LAW_ID・NO_CANDIDATE_LAW_IDは
+    未解決なので混ざらないが、KOUSEIROUDOU_LAW_IDは現存府省を指すため型が
+    無いと混ざる)も返ってしまい件数がずれる。OPTIONALのsucceededByホップが
+    外れたらsuccessor列が常に未束縛になる。
+    """
+    rows = _query(kg, "cq11-succession-of-abolished-ministry.rq")
+    assert rows, "CQ11に答えられない"
+    assert len(rows) == 1, f"廃止機関を指す法令は1件(fixture)のはず: {rows}"
+    from jgkg.uris import abolished_organ_uri
+
+    law, organ, organ_name, successor, successor_name = rows[0]
+    assert law == _uri("law", fx.SUCCESSION_DEMO_LAW_ID)
+    assert organ == URIRef(abolished_organ_uri(fx.OLD_KOUSEISHO_NAME)), organ
+    assert str(organ_name) == fx.OLD_KOUSEISHO_NAME
+    assert successor == _uri("org", fx.KOUSEIROUDOU_BANGOU)
+    assert str(successor_name) == "厚生労働省"
+
+
+def test_cq11_does_not_include_the_still_unresolved_old_ministry_law(kg):
+    """OLD_KOUSEISHO_LAW_ID(厚生省発令・jurisdiction未解決のまま)は、
+    org:AbolishedGovernmentOrganを指していないためCQ11には現れないこと。
+
+    2つの厚生省発令法令(OLD_KOUSEISHO_LAW_IDとSUCCESSION_DEMO_LAW_ID)を
+    意図的に別の解決状態にしているfixtureの前提(tests/phase1_fixture.py
+    モジュールdocstring参照)が、CQ11の型フィルタで正しく分かれることの確認。
+    """
+    rows = _query(kg, "cq11-succession-of-abolished-ministry.rq")
+    laws = {str(law) for law, *_ in rows}
+    assert str(_uri("law", fx.OLD_KOUSEISHO_LAW_ID)) not in laws, laws

@@ -1,0 +1,29 @@
+# CQ11: 発令機関が既に廃止された法令は、何という機関の名称で、現在の
+# どの府省が引き継いだか(C-3: 継承そのものを問うCQ)
+#
+# CQ1(この府省令の所管府省はどこか)の姉妹CQ。CQ1は固有の1法令について
+# 「所管が現存すればその名称、廃止済みなら後継も」を問うが、焼き込んだ
+# その1件(417M60000100021)は現存府省(厚生労働省)を指すため、廃止済み側の
+# 正のコントロールをCQ1では持てない。ここでは固有名を焼き込まず全件を
+# 対象に問い、その正のコントロールを引き受ける。
+#
+# law:jurisdictionの先が org:AbolishedGovernmentOrgan である法令だけを
+# 対象にする(現存府省を指す法令はCQ1が扱う)。succeededByは多値必須だが、
+# 実データの18件はいずれも後継1件のみで、複数件を返す経路は合成データ
+# でのみ検証されている(裁定5。tests/test_rdf_emit.py参照。このクエリ
+# 自体はカーディナリティに依存しない書き方であり、多値でも1行に複数の
+# ?successorが束ねられるだけで壊れない)。
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX law:  <https://jgkg.norr-tech.com/def/law#>
+PREFIX org:  <https://jgkg.norr-tech.com/def/org#>
+
+SELECT ?law ?organ ?organName ?successor ?successorName WHERE {
+  ?law a law:Law ;
+       law:jurisdiction ?organ .
+  ?organ a org:AbolishedGovernmentOrgan ;
+         skos:prefLabel ?organName .
+  OPTIONAL {
+    ?organ org:succeededBy ?successor .
+    ?successor skos:prefLabel ?successorName .
+  }
+}

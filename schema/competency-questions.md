@@ -28,29 +28,30 @@ P0-6 は特に重要である。`org:houjinBangou` は `required: true` にし�
 ## Phase 1(計画Bで実装。設計書§5.6)
 
 法令(law)・予算(budget)ドメインが入り、CQ1〜CQ10がすべて答えられる
-(設計書§1.2完了条件Aそのもの)。fixtureの構築は`tests/phase1_fixture.py`
-(実在値の出典はそのdocstringを正とする)。テストは
-`tests/test_competency_questions_phase1.py`。
+(設計書§1.2完了条件Aそのもの)。**C-3でCQ11を追加した(下記参照)。**
+fixtureの構築は`tests/phase1_fixture.py`(実在値の出典はそのdocstringを
+正とする)。テストは`tests/test_competency_questions_phase1.py`。
 
 | ID | 質問 | クエリ |
 |---|---|---|
-| CQ1 | この府省令の所管府省はどこか | `cq01-jurisdiction-of-ordinance.rq` |
+| CQ1 | この府省令の所管府省はどこか。所管が既に廃止されていれば現在の後継府省も | `cq01-jurisdiction-of-ordinance.rq` |
 | CQ2 | この府省が所管する予算事業は何か。年度(レビューシート年度。下記B19)ごとの当初予算総額はいくらか | `cq02-ministry-budget-by-year.rq` |
 | CQ3 | この法人はどの事業からいくら支出を受けたか。年度(レビューシート年度。下記B19)別に並べられるか | `cq03-recipient-expenditures-by-year.rq` |
 | CQ4 | ある法人に流れた資金をさかのぼると、どの府省・(その府省が経路1で所管を持つ)どの法令に行き着くか | `cq04-money-trace-to-ministry-and-law.rq` |
-| CQ5 | ある法令を根拠とする事業を所管する府省はどこか | `cq05-ministry-of-basis-law.rq` |
+| CQ5 | ある法令を根拠とする事業を所管する府省はどこか。根拠法令自身の発令機関と、それが廃止されていれば現在の後継も併せて | `cq05-ministry-of-basis-law.rq` |
 | CQ6 | ある事業の支出先のうち、解決できていない(束ね・センチネルとは別の)ものはどれだけあるか | `cq06-unresolved-recipients-per-project.rq` |
 | CQ7 | ある関係(エッジ)は、どの一次資料の何日取得分に基づくか(P0-3の一般化) | `cq07-provenance-of-edge.rq` |
 | CQ8 | ある法令の、**そのLawRevisionが載っている名前付きグラフのprovenance時点(取得時点)**における版はどれか(carry-over時はソースごとにこの時点が異なりうる——リリース全体で単一の日付ではない。任意の時点を外から指定する形も同じクエリパターンで実現できるが、それはAPI層〔計画C〕の課題とする。下記参照) | `cq08-law-revision-as-of-date.rq` |
 | CQ9 | 法令の jurisdiction 未解決のうち、旧・現存外の機関名によるもの(OLD_MINISTRY/OBSOLETE_ORGANIZATION)と解決済みを分けて数える | `cq09-jurisdiction-resolution-status.rq` |
 | CQ10 | KGのこのリリースは、各ソースについていつ時点のデータを含むか(P0-4の全ソース版) | `cq10-release-freshness.rq` |
+| CQ11 | 発令機関が既に廃止された法令は、何という機関の名称で、現在のどの府省が引き継いだか(C-3。CQ1の姉妹CQ) | `cq11-succession-of-abolished-ministry.rq` |
 
 CQ6・CQ9・CQ10は「データの欠けと鮮度そのものを問える」ことを要求している
 (P0-3〜5と同じ設計思想。§Phase 0の説明を参照)。
 
 固有名(URI・法令ID)を直接クエリに焼き込むのはCQ1・CQ3・CQ4・CQ7・CQ8
-(「あるXの」型)。CQ2は所管府省を焼き込む(骨子どおり)。CQ5・CQ6・CQ9・CQ10は
-一般形(全件を返し、テスト側が特定の行にフィルタして確認する)。
+(「あるXの」型)。CQ2は所管府省を焼き込む(骨子どおり)。CQ5・CQ6・CQ9・CQ10・
+CQ11は一般形(全件を返し、テスト側が特定の行にフィルタして確認する)。
 
 ### 答えの例(fixtureに対して実行した結果)
 
@@ -65,7 +66,8 @@ CQ6・CQ9・CQ10は「データの欠けと鮮度そのものを問える」こ�
 | CQ7 | 厚生労働省令のjurisdictionエッジの出典は`egov-law`、取得日2026-08-01 |
 | CQ8 | (カットオフはこのデータを取得した時点=KG自身のprovenance)時点の版は2026-01-01施行分(2026-09-01施行分〔fixtureでは取得時点より未来〕、lawId無しの野良版は対象外。実データでは417M60000100021の唯一の版2026-04-01が答え。A-3〔O9〕修正ラウンド: カットオフを手書き日付からprovenanceの導出に変更。§実在値の根拠 参照) |
 | CQ9 | 厚生労働省令=resolved、旧厚生省令=unresolved_old_or_obsolete_ministry(OLD_MINISTRY)、ダミー機関規則=unresolved_other(NO_CANDIDATE) |
-| CQ10 | houjin-bangou/egov-law/rs-system=取得日2026-08-01、ministry-codes=記録日2026-08-23 |
+| CQ10 | houjin-bangou/egov-law/rs-system/egov-law-data=取得日2026-08-01、ministry-codes=記録日2026-08-23 |
+| CQ11 | (fixture実演用の架空法令)を発令した「厚生省」は既に廃止されており、現在の後継は「厚生労働省」 |
 
 ### 実在値の根拠(B-S3。CQ1/CQ7/CQ8/CQ9で使う法令アンカー)
 
@@ -375,3 +377,55 @@ NO_CANDIDATE(ダミー機関規則。`jgkg.transform.law.derive_jurisdiction`に
 置き換えてもテストがPASSしていた(NO_CANDIDATEという抽出段の誤りを示す
 警報が「昔の省庁名だから仕方ない」に化けて消えても検出できない状態)。
 実際に定数へ置き換えて確認したRed出力はtask-9-report.mdに記録している。
+
+**CQ9はC-3で変更していない。** 「resolved」の分岐(`?law law:jurisdiction
+?detail`)は`?detail`が現存府省・`AbolishedGovernmentOrgan`のどちらでも
+束縛されるため、C-3後もそのまま正しく動く——`law:jurisdiction`という
+1つの述語の先が増えたことにCQ9のクエリは無関心である。
+
+### C-3: CQ1・CQ5への後継府省の追加、CQ11の新設
+
+**背景**: C-1/C-2までは、旧省庁名(`old-ministries.csv`記載の18件)は
+すべて`OLD_MINISTRY`として未解決のままだった。C-3で`ministry-succession`
+(法令412CO0000000315の対応表)を結線し、この18件を`org:AbolishedGovernmentOrgan`
+(`org:succeededBy`で現在の後継・`org:abolitionDate`を持つ)へ解決できる
+ようにした。これに伴い、CQ1・CQ5に「発令機関が廃止されていれば、現在の
+後継も併せて返す」という要求(2026-08-26レビュー指摘3)が生じ、CQ11
+(継承そのものを問うCQ)を新設した。
+
+**CQ1**: `?ministry`が`org:AbolishedGovernmentOrgan`であればOPTIONALで
+`org:succeededBy`を辿り`?successor`/`?successorName`を追加で返す。焼き込んだ
+唯一の法令(417M60000100021)は現存府省(厚生労働省)を指すため、この2列は
+常に未束縛(負のコントロール)。廃止済み側の正のコントロールはCQ11が持つ。
+
+**CQ5**: `?law law:jurisdiction ?issuingOrgan`をOPTIONALで追加し、発令機関
+(`?issuingOrgan`/`?issuingOrganName`)を返す。さらにそれが
+`org:AbolishedGovernmentOrgan`であればOPTIONALで後継も返す。この2段の
+OPTIONALは「根拠法令自身のjurisdictionが未解決でもCQ5は答えられる」という
+既存の性質(上記CQ5節)を変えない——fixtureのOLD_KOUSEISHO_LAW_ID(旧厚生省令。
+jurisdiction未解決のまま)がその負のコントロールを引き続き担う
+(`tests/phase1_fixture.py`のモジュールdocstring参照。C-3では変更していない)。
+2026-08-26の実測(houjin-bangou/egov-law/egov-law-data、法令9,550件)では、
+jurisdiction未解決277件のうちOBSOLETE_ORGANIZATION 274件・NO_CANDIDATE 3件
+が残る(OLD_MINISTRYは0件)——CQ5のこのOPTIONALが効かない事業はC-3後も
+basisLaw経由で実在しうる。
+
+**CQ11(新設)**: `law:jurisdiction`の先が`org:AbolishedGovernmentOrgan`
+である法令だけを対象に、機関名と現在の後継を返す一般形のCQ。CQ1が
+固有の1法令でしか持てなかった「廃止済み側」の正のコントロールをここで
+担う。fixtureはOLD_KOUSEISHO_NAME(厚生省)が発令した別の架空法令
+(SUCCESSION_DEMO_LAW_ID)を使い、厚生省→厚生労働省(KOUSEIROUDOU_BANGOU)
+の1件を返す。`succeededBy`は多値必須だが、実データの18件はいずれも
+後継1件のみで、多値を実際に行使する経路は合成データでのみ検証されている
+(裁定5。`tests/test_rdf_emit.py`参照)。
+
+**実測(2026-08-26。houjin-bangou 2026-08-23・egov-law 2026-08-25・
+egov-law-data 2026-08-26のレイクスナップショットに対して`pipeline.run`
+を直接実行。新たな政府サーバアクセスは0件)**: jurisdiction解決率が
+65.27%(4,269/6,541。C-2以前の分類基準)→95.77%(6,264/6,541。resolved
+4,269+resolved_abolished 1,995)に向上し、`OLD_MINISTRY`は1,995件→0件
+になった。`graphs_quarantined: 0`・`reference_violations: []`(裁定1の
+和集合参照整合ゲートを含む)。18機関すべてに`skos:prefLabel`・
+`org:abolitionDate`(2001-01-06。412CO0000000315自身の
+`revision_info.amendment_enforcement_date`から導出。手書きではない)・
+`org:succeededBy`が付くことを確認済み。

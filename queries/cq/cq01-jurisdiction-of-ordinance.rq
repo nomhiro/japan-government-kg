@@ -1,13 +1,27 @@
-# CQ1: この府省令の所管府省はどこか
+# CQ1: この府省令の所管府省はどこか。所管が既に廃止されていれば現在の
+# 後継府省も併せて返す(C-3)。
 #
 # 実在の府省令(2026-08-24、レイクの実データ policy_measure_laws_and_regulations
 # を走査して見つけた、RS project_id=1953が引用する法令ID・法令番号の組。
 # 詳細は schema/competency-questions.md)。値は fixture(tests/phase1_fixture.py)
 # にも同じ組で存在する(B-S3)。
+#
+# **C-3で successor/successorName を追加。** law:jurisdiction の先が
+# org:AbolishedGovernmentOrgan であれば org:succeededBy を辿って現在の
+# 後継府省も返す。焼き込んだこの法令は現存府省(厚生労働省)を指すため、
+# この分岐の正のコントロールはここでは持てない(successor/successorNameが
+# 常に未束縛になる負のコントロールのみ)。廃止済み側の正のコントロールは
+# CQ11が引き受ける(queries/cq/cq11-succession-of-abolished-ministry.rq)。
 PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
 PREFIX law:  <https://jgkg.norr-tech.com/def/law#>
+PREFIX org:  <https://jgkg.norr-tech.com/def/org#>
 
-SELECT ?ministry ?ministryName WHERE {
+SELECT ?ministry ?ministryName ?successor ?successorName WHERE {
   <https://jgkg.norr-tech.com/id/law/417M60000100021> law:jurisdiction ?ministry .
   ?ministry skos:prefLabel ?ministryName .
+  OPTIONAL {
+    ?ministry a org:AbolishedGovernmentOrgan ;
+              org:succeededBy ?successor .
+    ?successor skos:prefLabel ?successorName .
+  }
 }

@@ -6,11 +6,32 @@
 # law:jurisdictionが未解決であっても(例: 廃止された旧省庁の省令を今も
 # 根拠として引用している事業)、このCQは正しく答えられる — CQ4(府省→
 # jurisdictionの経路)とは別の軸であることの証拠にもなる。
+#
+# **C-3で issuingOrgan/issuingOrganName/successor/successorName を追加。**
+# basisLaw自身のjurisdictionが解決していれば(現存府省・廃止府省いずれでも)
+# 発令機関を併せて返す。発令機関が org:AbolishedGovernmentOrgan であれば
+# さらに org:succeededBy を辿って現在の後継も返す。いずれもOPTIONALであり、
+# 上記の「jurisdictionが未解決でも答えられる」という性質は変えない
+# (2026-08-26実測: 法令9,550件中、jurisdiction未解決277件のうち
+# OBSOLETE_ORGANIZATION 274件・NO_CANDIDATE 3件が残る——いずれもC-3が
+# 解決した18の旧省庁名〔OLD_MINISTRY〕とは別枠であり、このOPTIONALが
+# 効かない事業がbasisLaw経由で今も存在しうる)。
 PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
 PREFIX skos:   <http://www.w3.org/2004/02/skos/core#>
+PREFIX law:    <https://jgkg.norr-tech.com/def/law#>
+PREFIX org:    <https://jgkg.norr-tech.com/def/org#>
 
-SELECT ?law ?project ?ministry ?ministryName WHERE {
+SELECT ?law ?project ?ministry ?ministryName ?issuingOrgan ?issuingOrganName ?successor ?successorName WHERE {
   ?project budget:basisLaw ?law ;
            budget:ministry ?ministry .
   ?ministry skos:prefLabel ?ministryName .
+  OPTIONAL {
+    ?law law:jurisdiction ?issuingOrgan .
+    ?issuingOrgan skos:prefLabel ?issuingOrganName .
+    OPTIONAL {
+      ?issuingOrgan a org:AbolishedGovernmentOrgan ;
+                    org:succeededBy ?successor .
+      ?successor skos:prefLabel ?successorName .
+    }
+  }
 }

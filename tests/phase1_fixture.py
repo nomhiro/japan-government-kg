@@ -49,6 +49,7 @@ from jgkg.rdf import emit
 from jgkg.transform import rs
 from jgkg.transform.law import JurisdictionResult, LawRecord, Revision, UnresolvedJurisdiction
 from jgkg.transform.ministry import Ministry
+from jgkg.transform.ministry_succession import AbolishedMinistryRecord
 from jgkg.transform.organization import Organization
 
 DAY = datetime.date(2026, 8, 1)
@@ -66,6 +67,24 @@ OLD_KOUSEISHO_LAW_NUM = "昭和二十七年厚生省令第十号"
 OLD_KOUSEISHO_NAME = "厚生省"
 # 昭和二十七年=1952年。KOUSEIROUDOU_PROMULGATION_DATEと同じ理由でプレースホルダ
 OLD_KOUSEISHO_PROMULGATION_DATE = "1952-01-01"
+
+# C-3(CQ1/CQ11実演用): OLD_KOUSEISHO_NAME(厚生省)が発令した別の省令を、
+# 既にAbolishedGovernmentOrganとして解決済みの状態で用意する。
+# OLD_KOUSEISHO_LAW_ID自身のJurisdictionResultは変更しない——CQ5/CQ9の
+# 既存の正のコントロール(「jurisdictionが未解決(OLD_MINISTRY)でも
+# CQ5は答えられる」「CQ9のOLD_MINISTRY分類」)がこれに依存しているため
+# (下記jurisdictions辞書参照)。本番のderive_jurisdictionは同一名称に
+# 単一の分類しか出さないが、ここは法令ごとに独立したJurisdictionResultを
+# 手組みするfixtureであり、「同じ機関名の別の法令では既に解決されている」
+# という状態を独立に示せる(NO_CANDIDATE_LAW_IDと同種の、明らかに架空の
+# 追加法令。R45)。
+SUCCESSION_DEMO_LAW_ID = "998RS0000000001"
+SUCCESSION_DEMO_LAW_NUM = "架空厚生省令第一号(CQ11実演用)"
+# 412CO0000000315(中央省庁再編に伴う関係法律の整備等に関する法律)自身の
+# revision_info.amendment_enforcement_dateから導出される実在の値であり、
+# 18機関すべてこの1日付を共有する(tests/test_transform_ministry_succession.py
+# 参照。手書きではなくderive_abolition_dateの実測結果をそのまま転記した)
+ABOLISHED_KOUSEISHO_ABOLITION_DATE = "2001-01-06"
 
 WOLFSTYLE_BANGOU = "3010001137944"
 WOLFSTYLE_NAME = "株式会社ウルフスタイル"
@@ -200,6 +219,19 @@ def _law_records_and_jurisdictions() -> tuple[list[LawRecord], dict[str, Jurisdi
         repeal_status="None",
         revisions=[],
     )
+    # C-3(CQ1/CQ11実演用。モジュールdocstring参照): 厚生省発令の別の省令を、
+    # 既にAbolishedGovernmentOrganへ解決済みの状態で追加する
+    succession_demo = LawRecord(
+        law_id=SUCCESSION_DEMO_LAW_ID,
+        law_num=SUCCESSION_DEMO_LAW_NUM,
+        law_num_type="MinisterialOrdinance",
+        law_type="MinisterialOrdinance",
+        law_title="架空の題名(CQ11: 廃止機関への解決の正のコントロール)",
+        abbrev=[],
+        promulgation_date=OLD_KOUSEISHO_PROMULGATION_DATE,
+        repeal_status="None",
+        revisions=[],
+    )
     jurisdictions = {
         KOUSEIROUDOU_LAW_ID: JurisdictionResult(
             law_id=KOUSEIROUDOU_LAW_ID,
@@ -223,8 +255,18 @@ def _law_records_and_jurisdictions() -> tuple[list[LawRecord], dict[str, Jurisdi
                 UnresolvedJurisdiction(name=NO_CANDIDATE_NAME, reason="NO_CANDIDATE"),
             ],
         ),
+        # C-3: resolved_abolishedはhoujin_bangouでなく名称のリスト(law.py
+        # JurisdictionResultのdocstring参照)。AbolishedGovernmentOrgan自体は
+        # build_dataset()がemit_abolished_ministries経由で別途emitする
+        SUCCESSION_DEMO_LAW_ID: JurisdictionResult(
+            law_id=SUCCESSION_DEMO_LAW_ID,
+            ministry_names=[OLD_KOUSEISHO_NAME],
+            resolved=[],
+            resolved_abolished=[OLD_KOUSEISHO_NAME],
+            unresolved=[],
+        ),
     }
-    return [current, old, no_candidate], jurisdictions
+    return [current, old, no_candidate, succession_demo], jurisdictions
 
 
 def build_budget_result() -> rs.BuildResult:
@@ -360,6 +402,25 @@ def build_dataset(out_dir: Path) -> Dataset:
 
     records, jurisdictions = _law_records_and_jurisdictions()
     _merge_into(ds, emit.emit_laws(records, jurisdictions, "egov-law", DAY))
+
+    # C-3: SUCCESSION_DEMO_LAW_IDのjurisdictionが指すAbolishedGovernmentOrgan
+    # (厚生省)本体。succeededByはKOUSEIROUDOU_BANGOU(厚生労働省。現存)1件のみ
+    # ——実データの18件も常に1件だけであり、多値の実演はtest_rdf_emit.py側の
+    # 合成データが引き受ける(裁定5)
+    _merge_into(
+        ds,
+        emit.emit_abolished_ministries(
+            [
+                AbolishedMinistryRecord(
+                    name=OLD_KOUSEISHO_NAME,
+                    successor_houjin_bangou=[KOUSEIROUDOU_BANGOU],
+                    abolition_date=ABOLISHED_KOUSEISHO_ABOLITION_DATE,
+                )
+            ],
+            "egov-law-data",
+            DAY,
+        ),
+    )
 
     # 正のコントロール: lawIdを持たないLawRevision(Task 2レビュー申し送り)。
     # emit_lawsは常にlawIdを書くため本番コードパスでは作れず、ここで直接注入する
