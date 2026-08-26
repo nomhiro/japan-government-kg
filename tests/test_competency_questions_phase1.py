@@ -13,7 +13,9 @@ from pathlib import Path
 
 import phase1_fixture as fx
 import pytest
-from rdflib import Dataset, URIRef
+from rdflib import RDF, Dataset, URIRef
+
+from jgkg.rdf import emit
 
 CQ_DIR = Path("queries/cq")
 BASE = "https://jgkg.norr-tech.com"
@@ -49,6 +51,34 @@ def _uri(kind: str, value: str) -> URIRef:
     return URIRef(f"{BASE}/id/{kind}/{value}")
 
 
+@pytest.fixture
+def kg_with_ministry_marked_as_abolished(kg):
+    """cq01のOPTIONAL(succeededByを辿る側)自身の正のコントロール専用。
+
+    通常のkgでは417M60000100021のjurisdiction先(厚生労働省)は常に現存府省
+    であり、この分岐は他のどのテストでも一度も発火しない——OPTIONAL内部の
+    述語名(org:AbolishedGovernmentOrgan・org:succeededBy)を誤字っても
+    test_cq1_jurisdiction_of_ordinanceの負のコントロール(succeededByが
+    未束縛)は崩れない(2026-08-26レビュー指摘1と同型。C-3裁定4参照)。
+
+    **厚生労働省が実際に廃止されたという主張ではない**(R45に抵触しない
+    合成の注入。P0-6の`kg_without_houjin_bangou`と同じ手法——kgのコピー上に
+    テスト専用の型・トリプルを直接注入し、クエリのOPTIONAL構文そのものが
+    正しく発火することだけを確認する)。後継の代わりに使う値は
+    WOLFSTYLE(既にkgに実在するOrganization)を流用し、新規の組織を
+    増やさない。
+    """
+    org = emit.NS["org"]
+    ministry_uri = _uri("org", fx.KOUSEIROUDOU_BANGOU)
+    successor_uri = _uri("org", fx.WOLFSTYLE_BANGOU)
+    graph = kg.graph(
+        URIRef(f"{BASE}/graph/egov-law/{fx.DAY.isoformat()}")
+    )
+    graph.add((ministry_uri, RDF.type, org["AbolishedGovernmentOrgan"]))
+    graph.add((ministry_uri, org["succeededBy"], successor_uri))
+    return kg
+
+
 # =============================================================================
 # CQ1: この府省令の所管府省はどこか
 # =============================================================================
@@ -57,8 +87,9 @@ def _uri(kind: str, value: str) -> URIRef:
 def test_cq1_jurisdiction_of_ordinance(kg):
     """C-3でsuccessor/successorNameを追加。焼き込んだこの法令は現存府省
     (厚生労働省)を指すため、この2列は常に未束縛のはず(負のコントロール)。
-    廃止済み側の正のコントロールはCQ11が引き受ける(このファイル末尾の
-    test_cq11_succession_of_abolished_ministry参照)。
+    このOPTIONAL自身が実際に発火することの正のコントロールは
+    test_cq1_optional_successor_branch_fires_when_jurisdiction_target_is_abolished
+    (直後)が注入データで、CQ11が実データ形の法令で、それぞれ引き受ける。
     """
     rows = _query(kg, "cq01-jurisdiction-of-ordinance.rq")
     assert rows, "CQ1に答えられない"
@@ -70,6 +101,25 @@ def test_cq1_jurisdiction_of_ordinance(kg):
     assert successor_name is None, (
         f"現存府省のはずがsuccessorNameが束縛された: {successor_name}"
     )
+
+
+def test_cq1_optional_successor_branch_fires_when_jurisdiction_target_is_abolished(
+    kg_with_ministry_marked_as_abolished,
+):
+    """cq01-jurisdiction-of-ordinance.rq自身のOPTIONAL構文の正のコントロール。
+
+    上のtest_cq1_jurisdiction_of_ordinanceは負のコントロール(発火しない
+    こと)しか持たず、OPTIONAL内部の述語名の誤字を検出できない
+    (2026-08-26レビュー指摘1。C-3裁定4と同型)。kg_with_ministry_marked_
+    as_abolished(このファイル参照)が厚生労働省のURIにテスト専用で注入した
+    状態に対し、cq01を実際に流してsuccessor/successorNameが正しく束縛
+    されることを確認する。
+    """
+    rows = _query(kg_with_ministry_marked_as_abolished, "cq01-jurisdiction-of-ordinance.rq")
+    assert len(rows) == 1, rows
+    _ministry, _name, successor, successor_name = rows[0]
+    assert successor == _uri("org", fx.WOLFSTYLE_BANGOU), successor
+    assert str(successor_name) == fx.WOLFSTYLE_NAME
 
 
 # =============================================================================
@@ -220,6 +270,35 @@ def test_cq5_ministry_of_basis_law(kg):
     assert issuing_organ_name is None
     assert successor is None
     assert successor_name is None
+
+
+def test_cq5_optional_issuing_organ_and_successor_columns_are_populated(kg):
+    """cq05のOPTIONAL(issuingOrgan→succeededBy)自身の正のコントロール。
+
+    上のtest_cq5_ministry_of_basis_lawはOLD_KOUSEISHO_LAW_ID(jurisdiction
+    未解決のまま)しか見ないため、この2段のOPTIONAL自体は一度も発火せず、
+    OPTIONAL内部の述語名(law:jurisdiction・org:AbolishedGovernmentOrgan・
+    org:succeededBy)の誤字をどのテストも検出できない(C-3裁定4と同型の
+    「弱いアサートが事実上恒真になる」欠陥。2026-08-26レビュー指摘1)。
+
+    PROJECT_MULTI_YEARがSUCCESSION_DEMO_LAW_ID(厚生省発令・既に
+    AbolishedGovernmentOrganへ解決済み)を根拠法令として引用する
+    (tests/phase1_fixture.py参照)ため、この行では4列すべてが束縛される。
+    """
+    rows = _query(kg, "cq05-ministry-of-basis-law.rq")
+    matches = [r for r in rows if r[0] == _uri("law", fx.SUCCESSION_DEMO_LAW_ID)]
+    assert len(matches) == 1, f"SUCCESSION_DEMO_LAW_IDを根拠とする事業は1件のはず: {matches}"
+    _law, project, ministry, ministry_name, issuing_organ, issuing_organ_name, successor, successor_name = matches[0]
+
+    from jgkg.uris import abolished_organ_uri
+
+    assert project == URIRef(f"{BASE}/id/budget/2024/{fx.PROJECT_MULTI_YEAR}")
+    assert ministry == _uri("org", fx.KOUSEIROUDOU_BANGOU)
+    assert str(ministry_name) == "厚生労働省"
+    assert issuing_organ == URIRef(abolished_organ_uri(fx.OLD_KOUSEISHO_NAME)), issuing_organ
+    assert str(issuing_organ_name) == fx.OLD_KOUSEISHO_NAME
+    assert successor == _uri("org", fx.KOUSEIROUDOU_BANGOU)
+    assert str(successor_name) == "厚生労働省"
 
 
 # =============================================================================

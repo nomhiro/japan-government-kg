@@ -297,7 +297,28 @@ def build_budget_result() -> rs.BuildResult:
             promulgation_date=OLD_KOUSEISHO_PROMULGATION_DATE,
             repeal_status="None",
             revisions=[],
-        )
+        ),
+        # C-3(2026-08-26レビュー指摘1実演): CQ5のOPTIONAL(issuingOrgan→
+        # succeededBy)自身のクエリテキストに、正のコントロールを持たせるため。
+        # OLD_KOUSEISHO_LAW_ID(上記)はjurisdiction未解決のまま(CQ5/CQ9の
+        # 既存の正のコントロールを保つ。モジュールdocstring参照)なので、
+        # このOPTIONALは常に不発火のまま——「発火しないこと」しか検査できず、
+        # OPTIONAL内部の述語名(succeededBy等)の誤字はどのテストも検出できない
+        # (弱いアサートが事実上恒真になる、というC-3裁定4と同型の欠陥)。
+        # PROJECT_MULTI_YEARにSUCCESSION_DEMO_LAW_IDを引用させ、CQ5のOPTIONAL
+        # が実際に発火してissuingOrgan/successorを束縛することの正のコントロール
+        # に使う(下記rows参照)
+        SUCCESSION_DEMO_LAW_ID: LawRecord(
+            law_id=SUCCESSION_DEMO_LAW_ID,
+            law_num=SUCCESSION_DEMO_LAW_NUM,
+            law_num_type="MinisterialOrdinance",
+            law_type="MinisterialOrdinance",
+            law_title="架空の題名(CQ11: 廃止機関への解決の正のコントロール)",
+            abbrev=[],
+            promulgation_date=OLD_KOUSEISHO_PROMULGATION_DATE,
+            repeal_status="None",
+            revisions=[],
+        ),
     }
 
     rows = [
@@ -337,14 +358,20 @@ def build_budget_result() -> rs.BuildResult:
         ),
         # PROJECT_MULTI_YEAR: WOLFSTYLEへの2件目の支出(別事業・別年度)。
         # CQ3「年度別に並べられるか」の正のコントロール(2行以上で初めて
-        # 並べる意味が出る)
+        # 並べる意味が出る)。
+        # C-3: SUCCESSION_DEMO_LAW_IDを根拠法令として引用させる(上記
+        # laws_by_idのコメント参照。CQ5のOPTIONAL自身の正のコントロール)。
+        # CQ2(budgetAmount集計)・CQ3(年度別支出)・CQ6(支出先の解決状況)の
+        # いずれもbasisLawを見ないため、この追加による副作用は無い
         rs.RsRow(
             project_id=PROJECT_MULTI_YEAR,
             fiscal_year="2024",
             project_name="(架空)医療従事者確保対策事業",
             ministry_name="厚生労働省",
             budget_amount=50_000_000,
-            basis_law_citations=(),
+            basis_law_citations=(
+                rs.BasisLawCitation(law_id=SUCCESSION_DEMO_LAW_ID, law_title=None),
+            ),
             expenditures=(
                 rs.ExpenditureLine(
                     recipient_name=WOLFSTYLE_NAME, recipient_houjin_bangou=WOLFSTYLE_BANGOU,

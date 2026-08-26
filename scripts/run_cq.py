@@ -63,7 +63,7 @@ def main() -> int:
     parser.add_argument("--query-dir", type=Path, default=DEFAULT_QUERY_DIR)
     parser.add_argument(
         "--pattern", default="cq*.rq",
-        help="実行するクエリファイルのglob。既定はPhase 1のCQ10本(cq01〜cq10)",
+        help="実行するクエリファイルのglob。既定はPhase 1のCQ11本(cq01〜cq11。C-3でCQ11を追加)",
     )
     parser.add_argument("--head", type=int, default=20, help="標準出力に出す先頭行数")
     parser.add_argument(
