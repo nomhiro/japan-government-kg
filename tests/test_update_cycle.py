@@ -81,6 +81,7 @@ def _write_fake_manifest(out_dir: Path, release: str, source_date: str | None = 
         tarball=tarball,
         jena_version="6.2.0",
         release=release,
+        created_on="2026-08-01",
         sources={"houjin-bangou": source_date},
         graphs=[],
         tdb2_expanded_bytes=4,

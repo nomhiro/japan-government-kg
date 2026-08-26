@@ -10,6 +10,9 @@ from jgkg import build
 # ことを要求しない)——git_commit/git_dirtyの記録/読込の振る舞いだけを
 # 検証したいテストで使う
 _DUMMY_GIT_COMMIT = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+# team-lead裁定(観察O8が現実になった件): created_onは日付なので、
+# releaseの値(basenameでもよい)と混同しないダミー日付を使う
+_DUMMY_CREATED_ON = "2026-08-01"
 
 
 def test_build_manifest_records_checksum_and_jena_version(tmp_path):
@@ -25,6 +28,7 @@ def test_build_manifest_records_checksum_and_jena_version(tmp_path):
         tarball=tarball,
         jena_version="5.0.0",
         release="2026-08-01",
+        created_on=_DUMMY_CREATED_ON,
         sources={"houjin-bangou": "2026-08-01"},
         graphs=["http://example.test/g"],
         tdb2_expanded_bytes=1234,
@@ -72,6 +76,7 @@ def test_manifest_records_quarantined_sources(tmp_path):
         tarball=tarball,
         jena_version="6.2.0",
         release="2026-08-01",
+        created_on=_DUMMY_CREATED_ON,
         sources={"ministry-codes": "2026-08-22"},
         graphs=[],
         tdb2_expanded_bytes=1,
@@ -93,7 +98,8 @@ def test_build_manifest_rejects_empty_jena_version(tmp_path):
 
     with pytest.raises(ValueError, match="Jena"):
         build.build_manifest(nquads=nq, tarball=tarball, jena_version="",
-                             release="r", sources={}, graphs=[], tdb2_expanded_bytes=1,
+                             release="r", created_on=_DUMMY_CREATED_ON,
+                             sources={}, graphs=[], tdb2_expanded_bytes=1,
                              git_commit=_DUMMY_GIT_COMMIT, git_dirty=False)
 
 
@@ -114,11 +120,13 @@ def test_build_manifest_rejects_non_positive_tdb2_expanded_bytes(tmp_path):
 
     with pytest.raises(ValueError, match="tdb2_expanded_bytes"):
         build.build_manifest(nquads=nq, tarball=tarball, jena_version="5.0.0",
-                             release="r", sources={}, graphs=[], tdb2_expanded_bytes=0,
+                             release="r", created_on=_DUMMY_CREATED_ON,
+                             sources={}, graphs=[], tdb2_expanded_bytes=0,
                              git_commit=_DUMMY_GIT_COMMIT, git_dirty=False)
     with pytest.raises(ValueError, match="tdb2_expanded_bytes"):
         build.build_manifest(nquads=nq, tarball=tarball, jena_version="5.0.0",
-                             release="r", sources={}, graphs=[], tdb2_expanded_bytes=-1,
+                             release="r", created_on=_DUMMY_CREATED_ON,
+                             sources={}, graphs=[], tdb2_expanded_bytes=-1,
                              git_commit=_DUMMY_GIT_COMMIT, git_dirty=False)
 
 
@@ -137,7 +145,8 @@ def test_build_manifest_rejects_empty_git_commit(tmp_path):
 
     with pytest.raises(ValueError, match="git_commit"):
         build.build_manifest(nquads=nq, tarball=tarball, jena_version="5.0.0",
-                             release="r", sources={}, graphs=[], tdb2_expanded_bytes=1,
+                             release="r", created_on=_DUMMY_CREATED_ON,
+                             sources={}, graphs=[], tdb2_expanded_bytes=1,
                              git_commit="", git_dirty=False)
 
 
@@ -153,13 +162,63 @@ def test_build_manifest_records_dirty_flag_both_ways(tmp_path):
     tarball.write_bytes(b"x")
 
     m_clean = build.build_manifest(nquads=nq, tarball=tarball, jena_version="5.0.0",
-                                    release="r", sources={}, graphs=[], tdb2_expanded_bytes=1,
+                                    release="r", created_on=_DUMMY_CREATED_ON,
+                                    sources={}, graphs=[], tdb2_expanded_bytes=1,
                                     git_commit=_DUMMY_GIT_COMMIT, git_dirty=False)
     m_dirty = build.build_manifest(nquads=nq, tarball=tarball, jena_version="5.0.0",
-                                    release="r", sources={}, graphs=[], tdb2_expanded_bytes=1,
+                                    release="r", created_on=_DUMMY_CREATED_ON,
+                                    sources={}, graphs=[], tdb2_expanded_bytes=1,
                                     git_commit=_DUMMY_GIT_COMMIT, git_dirty=True)
     assert m_clean.git_dirty is False
     assert m_dirty.git_dirty is True
+
+
+def test_build_manifest_rejects_a_non_date_created_on(tmp_path):
+    """`created_on`にディレクトリ名(basename)を渡すことを許さない(観察O8)。
+
+    Ruling B31が`release`をbasenameの意味に変えたとき、`created_on`も
+    (`created_on=release`という実装のまま)同じ値を持ってしまっていた。
+    team-leadが公開直前に実際のmanifestで発見: `"created_on":
+    "2026-08-26-license-fix"`——日付の欄に非日付値が入っていた。
+
+    **何があれば落ちるか**: 空文字チェックだけに戻すと落ちる
+    (`"2026-08-26-license-fix"`は空文字ではないので素通りしてしまう)。
+    実際にO8を引き起こした値そのものをここで使う。
+    """
+    nq = tmp_path / "kg.nq"
+    nq.write_text("", encoding="utf-8")
+    tarball = tmp_path / "kg.tar.gz"
+    tarball.write_bytes(b"x")
+
+    with pytest.raises(ValueError, match="created_on"):
+        build.build_manifest(nquads=nq, tarball=tarball, jena_version="5.0.0",
+                             release="2026-08-26-license-fix",
+                             created_on="2026-08-26-license-fix",  # 実際に検出された欠陥の値
+                             sources={}, graphs=[], tdb2_expanded_bytes=1,
+                             git_commit=_DUMMY_GIT_COMMIT, git_dirty=False)
+
+
+def test_build_manifest_records_the_passed_created_on_not_the_release(tmp_path):
+    """`created_on`は`release`から独立した、渡された日付をそのまま記録すること。
+
+    team-lead裁定: 「`release`は同一性(basename)、`created_on`はビルドした
+    日付」——2つの意味が違う欄なので、`release`と異なる値を渡したときに
+    `release`の値へこっそり戻っていないことまで確認する(片方向の確認
+    〔正しい値が入っている〕だけでは「releaseと同じ値になっている」欠陥を
+    見逃すため)。
+    """
+    nq = tmp_path / "kg.nq"
+    nq.write_text("", encoding="utf-8")
+    tarball = tmp_path / "kg.tar.gz"
+    tarball.write_bytes(b"x")
+
+    m = build.build_manifest(nquads=nq, tarball=tarball, jena_version="5.0.0",
+                             release="2026-08-26-manifest-v7-fix",
+                             created_on="2026-08-26",
+                             sources={}, graphs=[], tdb2_expanded_bytes=1,
+                             git_commit=_DUMMY_GIT_COMMIT, git_dirty=False)
+    assert m.created_on == "2026-08-26"
+    assert m.created_on != m.release
 
 
 def test_verify_manifest_detects_corruption(tmp_path):
@@ -169,7 +228,8 @@ def test_verify_manifest_detects_corruption(tmp_path):
     nq.write_text("", encoding="utf-8")
 
     m = build.build_manifest(nquads=nq, tarball=tarball, jena_version="5.0.0",
-                             release="r", sources={}, graphs=[], tdb2_expanded_bytes=1,
+                             release="r", created_on=_DUMMY_CREATED_ON,
+                             sources={}, graphs=[], tdb2_expanded_bytes=1,
                              git_commit=_DUMMY_GIT_COMMIT, git_dirty=False)
     manifest_path = tmp_path / "manifest.json"
     build.write_manifest(m, manifest_path)
@@ -194,7 +254,8 @@ def test_verify_manifest_detects_jena_version_mismatch(tmp_path):
 
     m = build.build_manifest(
         nquads=nq, tarball=tarball, jena_version="6.2.0",
-        release="r", sources={}, graphs=[], tdb2_expanded_bytes=1,
+        release="r", created_on=_DUMMY_CREATED_ON,
+        sources={}, graphs=[], tdb2_expanded_bytes=1,
         git_commit=_DUMMY_GIT_COMMIT, git_dirty=False,
     )
     manifest_path = tmp_path / "manifest.json"
@@ -215,7 +276,8 @@ def test_write_manifest_is_readable_json(tmp_path):
     tarball = tmp_path / "kg.tar.gz"
     tarball.write_bytes(b"x")
     m = build.build_manifest(nquads=nq, tarball=tarball, jena_version="5.0.0",
-                             release="2026-08-01", sources={}, graphs=[], tdb2_expanded_bytes=1,
+                             release="2026-08-01", created_on=_DUMMY_CREATED_ON,
+                             sources={}, graphs=[], tdb2_expanded_bytes=1,
                              git_commit=_DUMMY_GIT_COMMIT, git_dirty=False)
     path = tmp_path / "manifest.json"
     build.write_manifest(m, path)
@@ -245,7 +307,8 @@ def test_triple_count_handles_tricky_literals(tmp_path):
 
     m = build.build_manifest(
         nquads=nq, tarball=tarball, jena_version="5.0.0",
-        release="r", sources={}, graphs=["http://example.test/g"], tdb2_expanded_bytes=1,
+        release="r", created_on=_DUMMY_CREATED_ON,
+        sources={}, graphs=["http://example.test/g"], tdb2_expanded_bytes=1,
         git_commit=_DUMMY_GIT_COMMIT, git_dirty=False,
     )
     assert m.triple_count == 3, "空行とコメント行を除いた3行を数えるべき"
@@ -264,7 +327,11 @@ def test_build_manifest_produces_version_6(tmp_path):
     (欄追加ではないが、既存欄の意味が変わるのも読み手には破壊的変更なので
     同じ「版を上げる」作法に従う)。B-2裁定が`git_commit`/`git_dirty`欄の
     追加で6に上げた(配布物をダウンロードした人がそれを作ったコードの
-    コミットを特定できるようにする)。
+    コミットを特定できるようにする)。**同じ6の範囲内で`created_on`の意味も
+    修正した**(観察O8: B31が`release`と一緒に`created_on`もbasenameの
+    意味にしてしまっていた欠陥。`created_on`は「ビルドした日付」に戻す
+    ——`release`と同じ値になるとは限らない。v6はこの時点でまだ一度も
+    公開・配布していないため、別バージョンに分けず同じ6に含めている)。
     """
     nq = tmp_path / "kg.nq"
     nq.write_text("", encoding="utf-8")
@@ -272,7 +339,8 @@ def test_build_manifest_produces_version_6(tmp_path):
     tarball.write_bytes(b"x")
 
     m = build.build_manifest(nquads=nq, tarball=tarball, jena_version="5.0.0",
-                             release="r", sources={}, graphs=[], tdb2_expanded_bytes=1,
+                             release="r", created_on=_DUMMY_CREATED_ON,
+                             sources={}, graphs=[], tdb2_expanded_bytes=1,
                              git_commit=_DUMMY_GIT_COMMIT, git_dirty=False)
     assert m.manifest_version == 6
 
@@ -304,14 +372,15 @@ def test_read_manifest_treats_a_missing_version_field_as_1(tmp_path):
 
 
 def test_manifest_version_roundtrips_through_write_and_read(tmp_path):
-    """新規 manifest を書いて読み直しても版(6)・git_commit・git_dirtyが保たれること。"""
+    """新規 manifest を書いて読み直しても版(6)・created_on・git_commit・git_dirtyが保たれること。"""
     nq = tmp_path / "kg.nq"
     nq.write_text("", encoding="utf-8")
     tarball = tmp_path / "kg.tar.gz"
     tarball.write_bytes(b"x")
 
     m = build.build_manifest(nquads=nq, tarball=tarball, jena_version="5.0.0",
-                             release="r", sources={}, graphs=[], tdb2_expanded_bytes=1,
+                             release="2026-08-26-some-name", created_on="2026-08-26",
+                             sources={}, graphs=[], tdb2_expanded_bytes=1,
                              git_commit=_DUMMY_GIT_COMMIT, git_dirty=True)
     manifest_path = tmp_path / "manifest.json"
     build.write_manifest(m, manifest_path)
@@ -322,6 +391,8 @@ def test_manifest_version_roundtrips_through_write_and_read(tmp_path):
     assert reloaded.tdb2_expanded_bytes == m.tdb2_expanded_bytes
     assert reloaded.git_commit == _DUMMY_GIT_COMMIT
     assert reloaded.git_dirty is True
+    assert reloaded.created_on == "2026-08-26"
+    assert reloaded.created_on != reloaded.release
 
 
 def test_read_manifest_treats_a_missing_nquads_sha256_as_none(tmp_path):
@@ -433,9 +504,11 @@ def test_build_manifest_nquads_sha256_changes_when_kg_nq_content_changes(tmp_pat
     )
 
     m_a = build.build_manifest(nquads=nq_a, tarball=tarball, jena_version="5.0.0",
-                                release="r", sources={}, graphs=[], tdb2_expanded_bytes=1,
+                                release="r", created_on=_DUMMY_CREATED_ON,
+                                sources={}, graphs=[], tdb2_expanded_bytes=1,
                                 git_commit=_DUMMY_GIT_COMMIT, git_dirty=False)
     m_b = build.build_manifest(nquads=nq_b, tarball=tarball, jena_version="5.0.0",
-                                release="r", sources={}, graphs=[], tdb2_expanded_bytes=1,
+                                release="r", created_on=_DUMMY_CREATED_ON,
+                                sources={}, graphs=[], tdb2_expanded_bytes=1,
                                 git_commit=_DUMMY_GIT_COMMIT, git_dirty=False)
     assert m_a.nquads_sha256 != m_b.nquads_sha256

@@ -15,7 +15,8 @@ from jgkg import build, publish, sources
 
 
 def _make_release_dir(tmp_path, name="2026-08-01", nquads_text=None, sources_map=None, graphs=None,
-                       git_commit="a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2", git_dirty=False):
+                       git_commit="a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2", git_dirty=False,
+                       created_on="2026-08-01"):
     """kg.nq・tdb2.tar.gz・manifest.json を持つ、本物と同じ形の release_dir を作る。
 
     `tests/test_build.py` の既存の作り方(`build.build_manifest`→
@@ -40,6 +41,7 @@ def _make_release_dir(tmp_path, name="2026-08-01", nquads_text=None, sources_map
         tarball=tarball_path,
         jena_version="6.2.0",
         release=name,
+        created_on=created_on,
         sources=sources_map or {"egov-law": "2026-08-01", "houjin-bangou": "2026-08-01"},
         graphs=graphs if graphs is not None else [f"https://jgkg.norr-tech.com/graph/egov-law/{name}"],
         tdb2_expanded_bytes=1234,

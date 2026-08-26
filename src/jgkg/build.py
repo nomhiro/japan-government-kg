@@ -4,6 +4,7 @@
 (設計書§6.3)。content-addressed にして破損を検出し、Jenaバージョンを
 記録して実行側と照合できるようにする。
 """
+import datetime
 import hashlib
 import json
 from pathlib import Path
@@ -21,7 +22,16 @@ MANIFEST_NAME = "manifest.json"
 
 
 class Manifest(BaseModel):
+    # 成果物ディレクトリのbasename(Ruling B31)。同一性の識別子であり、
+    # 日付である必要はない(`2026-08-26-license-fix`のような名前も許される)
     release: str
+    # **ビルドした日付**(観察O8の修正)。Ruling B31が`release`の意味を
+    # 「最新ソース取得日」→「basename」に変えたとき、実装
+    # (`created_on=release`)がこの欄も一緒にbasenameにしてしまっていた
+    # ——2026-08-26、公開直前にteam-leadが実際のmanifestで発見した
+    # (`"created_on": "2026-08-26-license-fix"`という、日付の欄に非日付値
+    # が入った状態)。**`release`と`created_on`は別の意味を持つ欄であり、
+    # 同じ値になるとは限らない。**
     created_on: str
     jena_version: str
     sha256: str
@@ -129,6 +139,7 @@ def build_manifest(
     tarball: Path,
     jena_version: str,
     release: str,
+    created_on: str,
     sources: dict[str, str],
     graphs: list[str],
     tdb2_expanded_bytes: int,
@@ -136,6 +147,20 @@ def build_manifest(
     git_dirty: bool,
     quarantined_sources: list[str] | None = None,
 ) -> Manifest:
+    # 観察O8の修正: `created_on`は日付でなければならない。**空文字チェック
+    # だけでは不十分**——実際に検出された欠陥の値(`"2026-08-26-license-fix"`)
+    # は空文字ではないため、空文字チェックだけでは素通りしてしまう。
+    # `date.fromisoformat`は末尾の余分な文字も拒否する(`"2026-08-26-license-
+    # fix"`は`"2026-08-26"`を含むが、これも例外になる)
+    try:
+        datetime.date.fromisoformat(created_on)
+    except ValueError as exc:
+        raise ValueError(
+            f"created_on が日付(YYYY-MM-DD)ではない: {created_on!r}。"
+            "releaseディレクトリのbasename(識別子)をそのまま渡していないか"
+            "確認する(観察O8: この2つの欄は意味が異なる。releaseは同一性、"
+            "created_onはビルドした日付)"
+        ) from exc
     if not jena_version:
         raise ValueError(
             "Jenaバージョンが空である。TDB2のオンディスク形式はJenaのバージョンに"
@@ -168,7 +193,7 @@ def build_manifest(
         )
     return Manifest(
         release=release,
-        created_on=release,
+        created_on=created_on,
         jena_version=jena_version,
         sha256=file_sha256(tarball),
         byte_size=tarball.stat().st_size,
