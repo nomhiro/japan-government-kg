@@ -11,10 +11,12 @@ from pathlib import Path
 import pytest
 
 from jgkg.transform import ministry_succession as ms
+from jgkg.transform.ministry import load_reference
 from jgkg.transform.old_ministries import load_old_ministries
 
 FIXTURES = Path(__file__).parent / "fixtures"
 REAL_LAW_ID = "412CO0000000315"
+MINISTRY_CODES_CSV = Path("data/reference/ministry-codes.csv")
 
 
 def _load_real_law_full_text() -> dict:
@@ -251,6 +253,68 @@ def test_a_row_matching_two_target_names_is_ambiguous():
 
 
 # =============================================================================
+# 合成木: 新側(new_name)の参照集合への分解(2026-08-26レビュー指摘)
+# =============================================================================
+
+
+def _resolved_ministry(
+    target_name: str, old_name: str, new_name: str, mechanism: str = "exact", row_index: int = 1
+) -> ms.ResolvedMinistry:
+    return ms.ResolvedMinistry(
+        target_name=target_name,
+        row=_row(old_name, new_name, row_index=row_index),
+        mechanism=mechanism,
+    )
+
+
+def test_resolve_successor_names_exact_match():
+    resolved = [_resolved_ministry("大蔵省", "大蔵省", "財務省")]
+    result = ms.resolve_successor_names(resolved, frozenset({"財務省"}))
+    assert result.unresolved == []
+    assert len(result.resolved) == 1
+    assert result.resolved[0].successor_name == "財務省"
+    assert result.resolved[0].successor_mechanism == "exact"
+
+
+def test_resolve_successor_names_suffix_decomposition_using_the_reference_set():
+    """「内閣府金融庁」のように、参照集合の2つの既知名称を区切り文字なしで
+
+    連結した形でしか現れないnew_nameを解決できること(実データで確認した
+    金融再生委員会のパターン。旧側のprefix-decompositionと同じ発想)。
+    """
+    resolved = [_resolved_ministry("金融再生委員会", "総理府金融再生委員会", "内閣府金融庁")]
+    result = ms.resolve_successor_names(resolved, frozenset({"内閣府", "金融庁"}))
+    assert result.unresolved == []
+    assert len(result.resolved) == 1
+    assert result.resolved[0].successor_name == "金融庁"
+    assert result.resolved[0].successor_mechanism == "suffix-decomposition(内閣府)"
+    # 旧側の解決機序も引き継いでいること
+    assert result.resolved[0].old_mechanism == "exact"
+
+
+def test_resolve_successor_names_reports_unresolved_when_nothing_matches():
+    """一致も分解もできないnew_nameは、推測で埋めずunresolvedに積むこと。
+
+    (実データでは17件がここに落ちる想定——防衛庁→2007年防衛省、
+    社会保険庁→2010年廃止等、対応表より後の改革で現存しなくなった名称)
+    """
+    resolved = [_resolved_ministry("労働省", "労働省", "厚生労働省社会保険庁")]
+    result = ms.resolve_successor_names(resolved, frozenset({"厚生労働省"}))
+    assert result.resolved == []
+    assert result.unresolved == [("労働省", "厚生労働省社会保険庁")]
+
+
+def test_resolve_successor_names_ambiguous_decomposition_is_rejected():
+    """複数の分解が成立する場合は自動で選ばないこと(旧側のambiguous
+
+    検査と同じ立場)。
+    """
+    resolved = [_resolved_ministry("大蔵省", "大蔵省", "甲乙丙")]
+    with pytest.raises(ms.AmbiguousSuccessorDecompositionError, match="甲乙丙"):
+        ms.resolve_successor_names(resolved, frozenset({"甲", "乙丙", "甲乙", "丙"}))
+
+
+# =============================================================================
 # 実データ: 412CO0000000315の実応答(R45。無編集)
 # =============================================================================
 
@@ -364,3 +428,94 @@ def test_dropped_row_count_is_reported_when_a_real_row_is_synthetically_emptied(
 
     assert result.dropped_rows == [(5, "old cell empty")]
     assert len(result.rows) == 57
+
+
+# =============================================================================
+# 実データ: 新側(new_name)の参照集合への分解(2026-08-26レビュー指摘)
+# =============================================================================
+
+
+def test_18_successors_all_resolve_against_the_real_ministry_codes_table():
+    """18名称の後継すべてが、`ministry-codes.csv` に実在する名称へ
+
+    分解できること(参照整合性)。旧側の網羅検査と同じ「対象0件でも通る
+    形にしない」原則で、具体的な集合まで検査する。
+    """
+    law_full_text = _load_real_law_full_text()
+    extraction = ms.extract_succession_rows(law_full_text, source_law_id=REAL_LAW_ID)
+    target_names = load_old_ministries()
+    coverage = ms.resolve_old_ministries(extraction.rows, frozenset(target_names))
+    assert len(coverage.resolved) == 18
+
+    reference_names = frozenset(r.name for r in load_reference(MINISTRY_CODES_CSV))
+    result = ms.resolve_successor_names(coverage.resolved, reference_names)
+
+    assert result.unresolved == []
+    assert len(result.resolved) == 18
+    # 参照整合性: 分解後の後継名は必ず参照集合に実在する
+    assert all(r.successor_name in reference_names for r in result.resolved)
+
+    by_target = {r.target_name: r for r in result.resolved}
+    # 18件のうち複合形はこの1件だけ(実データで確認済み)
+    decomposed = {
+        name: r for name, r in by_target.items() if "suffix-decomposition" in r.successor_mechanism
+    }
+    assert decomposed.keys() == {"金融再生委員会"}
+    assert by_target["金融再生委員会"].successor_name == "金融庁"
+    assert by_target["金融再生委員会"].successor_mechanism == "suffix-decomposition(内閣府)"
+    # 残り17件は素の一致(旧側と同じく、決め打ちで一致させていないことの明示)
+    exact = {name: r for name, r in by_target.items() if r.successor_mechanism == "exact"}
+    assert exact.keys() == target_names - {"金融再生委員会"}
+
+
+def test_new_name_forms_across_all_58_rows_split_into_exact_decomposable_and_unmatched():
+    """裁定#43対応(2026-08-26レビュー指摘3): 58データ行のnew_nameは43種類に
+
+    正規化されるが、`ministry-codes.csv`(現行40件)の名称と一致するのは
+    11件(素の名称)+15件(既知名称の連結として分解可能)の26件のみで、
+    残り17件はどの現存組織にも一致しない(表が2000年時点のスナップショット
+    であり、その後さらに別の改革で廃止・独立行政法人化された機関を
+    指しているため)。**この17件を全58行のままKGに符号化すると参照整合性が
+    壊れる**、という設計上の制約(モジュールdocstring参照)を、推測ではなく
+    実データで固定する。
+    """
+    law_full_text = _load_real_law_full_text()
+    extraction = ms.extract_succession_rows(law_full_text, source_law_id=REAL_LAW_ID)
+    reference_names = frozenset(r.name for r in load_reference(MINISTRY_CODES_CSV))
+
+    distinct_new_names = sorted({row.new_name for row in extraction.rows})
+    assert len(distinct_new_names) == 43
+
+    exact, decomposable, unmatched = [], [], []
+    for name in distinct_new_names:
+        outcome = ms._resolve_name_against_reference(name, reference_names)
+        if outcome is None:
+            unmatched.append(name)
+        elif outcome[1] == "exact":
+            exact.append(name)
+        else:
+            decomposable.append(name)
+
+    assert len(exact) == 11
+    assert len(decomposable) == 15
+    # 17件の具体的な名称まで固定する(件数だけの一致は偶然を許すため)。
+    # いずれも2000年の対応表より後に廃止・独立行政法人化された組織を指す
+    assert set(unmatched) == {
+        "内閣府宮内庁",  # 宮内庁はministry-codes.csvに現行の項目として無い
+        "内閣府防衛庁",  # 防衛庁は2007年に防衛省へ(名称自体が変わった)
+        "内閣府防衛庁防衛施設庁",  # 防衛施設庁は2007年の防衛省移行で廃止
+        "厚生労働省社会保険庁",  # 社会保険庁は2010年廃止
+        "国土交通省海難審判庁",  # 海難審判庁は2008年廃止(運輸安全委員会へ)
+        "国土交通省船員労働委員会",  # 船員労働委員会は2008年廃止
+        "文部科学省文化庁日本芸術院",  # 日本芸術院はministry-codes.csvに無い
+        "法務省公安審査委員会",  # 公安審査委員会はministry-codes.csvに無い
+        "環境省公害対策会議",  # 公害対策会議は2001年改革で環境省に吸収
+        "経済産業省中小企業庁",  # 中小企業庁はministry-codes.csvに無い(現存するが未収録)
+        "経済産業省資源エネルギー庁",  # 同上、資源エネルギー庁も未収録
+        "総務省中央選挙管理会",  # 中央選挙管理会はministry-codes.csvに無い
+        "総務省日本学術会議",  # 日本学術会議はministry-codes.csvに無い
+        "総務省郵政事業庁",  # 郵政事業庁は2003年廃止
+        "財務省印刷局",  # 印刷局は2003年独立行政法人化
+        "財務省造幣局",  # 造幣局は2003年独立行政法人化
+        "農林水産省食糧庁",  # 食糧庁は2003年廃止
+    }
