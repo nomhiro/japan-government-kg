@@ -1,14 +1,15 @@
 import datetime
 
 import pytest
-from rdflib import RDF, Dataset, Literal, URIRef
+from rdflib import RDF, XSD, Dataset, Literal, URIRef
 from rdflib.namespace import PROV, SKOS
 
 from jgkg.rdf import emit
 from jgkg.transform.law import JurisdictionResult, LawRecord, Revision, UnresolvedJurisdiction
 from jgkg.transform.ministry import Ministry, UnmatchedMinistry
+from jgkg.transform.ministry_succession import AbolishedMinistryRecord
 from jgkg.transform.organization import Organization
-from jgkg.uris import law_version_uri, unresolved_ministry_uri
+from jgkg.uris import abolished_organ_uri, law_version_uri, org_uri, unresolved_ministry_uri
 
 DAY = datetime.date(2026, 8, 1)
 
@@ -129,6 +130,62 @@ def test_ministry_code_triple_is_omitted_when_absent():
     assert list(ds.objects(s, org["ministryCode"])) == [], (
         "ministry_code=None なのに org:ministryCode トリプルが出力されている"
     )
+
+
+# =============================================================================
+# emit_abolished_ministries(C-3)
+# =============================================================================
+
+FINANCIAL_RECONSTRUCTION_COMMISSION = "金融再生委員会"
+FSA_HOUJIN_BANGOU = "5000012060001"
+
+
+def _abolished_record(name=FINANCIAL_RECONSTRUCTION_COMMISSION, successor_houjin_bangou=None, date="2001-01-06"):
+    return AbolishedMinistryRecord(
+        name=name,
+        successor_houjin_bangou=successor_houjin_bangou or [FSA_HOUJIN_BANGOU],
+        abolition_date=date,
+    )
+
+
+def test_abolished_ministry_has_type_label_and_abolition_date():
+    ds = emit.emit_abolished_ministries([_abolished_record()], "egov-law-data", DAY)
+    org = emit.NS["org"]
+    s = URIRef(abolished_organ_uri(FINANCIAL_RECONSTRUCTION_COMMISSION))
+
+    assert (s, RDF.type, org["AbolishedGovernmentOrgan"]) in ds
+    assert (s, SKOS.prefLabel, Literal(FINANCIAL_RECONSTRUCTION_COMMISSION, lang="ja")) in ds
+    assert (
+        s,
+        org["abolitionDate"],
+        Literal(datetime.date(2001, 1, 6), datatype=XSD.date),
+    ) in ds
+
+
+def test_abolished_ministry_succeeded_by_points_at_the_ministry_uri():
+    ds = emit.emit_abolished_ministries([_abolished_record()], "egov-law-data", DAY)
+    org = emit.NS["org"]
+    s = URIRef(abolished_organ_uri(FINANCIAL_RECONSTRUCTION_COMMISSION))
+
+    assert (s, org["succeededBy"], URIRef(org_uri(FSA_HOUJIN_BANGOU))) in ds
+
+
+def test_abolished_ministry_succeeded_by_is_multivalued_in_synthetic_data():
+    """裁定5: 現データでは18件とも後継が常に1件だけなので、多値の実際の
+
+    行使は合成データでのみ確認できる(意味論としては多値・必須を維持する
+    ——機関レベルでは分割の実例が実在するため。C-2報告参照)。
+    """
+    ds = emit.emit_abolished_ministries(
+        [_abolished_record(successor_houjin_bangou=[FSA_HOUJIN_BANGOU, "6000012070001"])],
+        "egov-law-data",
+        DAY,
+    )
+    org = emit.NS["org"]
+    s = URIRef(abolished_organ_uri(FINANCIAL_RECONSTRUCTION_COMMISSION))
+
+    successors = set(ds.objects(s, org["succeededBy"]))
+    assert successors == {URIRef(org_uri(FSA_HOUJIN_BANGOU)), URIRef(org_uri("6000012070001"))}
 
 
 def test_write_nquads_roundtrips(tmp_path):

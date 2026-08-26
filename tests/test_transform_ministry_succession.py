@@ -519,3 +519,81 @@ def test_new_name_forms_across_all_58_rows_split_into_exact_decomposable_and_unm
         "財務省造幣局",  # 造幣局は2003年独立行政法人化
         "農林水産省食糧庁",  # 食糧庁は2003年廃止
     }
+
+
+# =============================================================================
+# C-3: 廃止日の導出とAbolishedMinistryRecordの組み立て
+# =============================================================================
+
+
+def test_derive_abolition_date_from_the_real_412CO0000000315_revision_info():
+    """412CO0000000315自身の`revision_info.amendment_enforcement_date`から
+
+    廃止日を導出できること(実データ。手書きの定数にしない)。
+    """
+    data = json.loads(
+        (FIXTURES / "egov_law_data_412CO0000000315.json").read_text(encoding="utf-8")
+    )
+    assert ms.derive_abolition_date(data["revision_info"]) == "2001-01-06"
+    # この法令自身の制定時点の版であり、後の別法令による改正ではないことも
+    # 確認する(モジュールdocstring/derive_abolition_dateの docstring 参照)
+    assert data["revision_info"]["amendment_law_id"] is None
+
+
+def test_derive_abolition_date_raises_when_the_field_is_missing():
+    with pytest.raises(ms.MissingAmendmentEnforcementDateError):
+        ms.derive_abolition_date({"amendment_law_id": None})
+
+
+def test_build_abolished_ministries_from_the_real_18_names():
+    """18名称すべてが`AbolishedMinistryRecord`に組み立てられること。
+
+    後継名→houjin_bangouの対応は`ministry.build()`が別途担う既に検査済みの
+    処理なので、ここでは名前だけを鍵にした合成の対応表を渡す(R45: 実際に
+    検査しているのはresolve_successor_namesの実データ出力の組み立てであり、
+    houjin_bangouの値そのものではない)。
+    """
+    law_full_text = _load_real_law_full_text()
+    data = json.loads(
+        (FIXTURES / "egov_law_data_412CO0000000315.json").read_text(encoding="utf-8")
+    )
+    extraction = ms.extract_succession_rows(law_full_text, source_law_id=REAL_LAW_ID)
+    target_names = load_old_ministries()
+    coverage = ms.resolve_old_ministries(extraction.rows, frozenset(target_names))
+    reference_names = frozenset(r.name for r in load_reference(MINISTRY_CODES_CSV))
+    successors = ms.resolve_successor_names(coverage.resolved, reference_names)
+    abolition_date = ms.derive_abolition_date(data["revision_info"])
+
+    distinct_successor_names = {r.successor_name for r in successors.resolved}
+    houjin_bangou_by_name = {
+        name: f"{i + 1:013d}" for i, name in enumerate(sorted(distinct_successor_names))
+    }
+
+    records = ms.build_abolished_ministries(successors, houjin_bangou_by_name, abolition_date)
+
+    assert len(records) == 18
+    assert {r.name for r in records} == target_names
+    assert all(r.abolition_date == "2001-01-06" for r in records)
+    assert all(len(r.successor_houjin_bangou) == 1 for r in records)  # 裁定5: 現データは1件のみ
+    kinyu = next(r for r in records if r.name == "金融再生委員会")
+    assert kinyu.successor_houjin_bangou == [houjin_bangou_by_name["金融庁"]]
+
+
+def test_build_abolished_ministries_reports_missing_successor_by_name_not_silently():
+    """壊し確認: 後継名がhoujin_bangouの対応表に無ければ、黙って対象外にせず
+
+    名指しで落とすこと。
+    """
+    resolved = [
+        ms.ResolvedSuccessor(
+            target_name="大蔵省",
+            row=_row("大蔵省", "財務省"),
+            old_mechanism="exact",
+            successor_name="財務省",
+            successor_mechanism="exact",
+        )
+    ]
+    successors = ms.SuccessorResolutionResult(resolved=resolved, unresolved=[])
+
+    with pytest.raises(ms.MissingSuccessorMinistryError, match="財務省"):
+        ms.build_abolished_ministries(successors, {}, "2001-01-06")
