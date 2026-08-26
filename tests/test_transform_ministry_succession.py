@@ -469,7 +469,7 @@ def test_18_successors_all_resolve_against_the_real_ministry_codes_table():
 
 
 def test_new_name_forms_across_all_58_rows_split_into_exact_decomposable_and_unmatched():
-    """裁定#43対応(2026-08-26レビュー指摘3): 58データ行のnew_nameは43種類に
+    """team-leadの2026-08-26レビュー指摘3への対応: 58データ行のnew_nameは43種類に
 
     正規化されるが、`ministry-codes.csv`(現行40件)の名称と一致するのは
     11件(素の名称)+15件(既知名称の連結として分解可能)の26件のみで、
