@@ -334,12 +334,19 @@ def _gh_auth_status() -> subprocess.CompletedProcess:
 
 
 def _gh_release_create(
-    release: str, notes_path: Path, assets: list[Path]
+    release: str, notes_path: Path, assets: list[Path], target_commit: str
 ) -> subprocess.CompletedProcess:
+    # 気になる点6(B-1報告)の手当て(team-lead裁定): `--target`を指定しないと、
+    # タグは公開時点のリモートデフォルトブランチHEADを指すだけになる
+    # ——後からタグが動かされたりリリース自体が消されたりすると、タグと
+    # コード状態を結ぶ手がかりを失う。manifestのgit_commitをそのまま
+    # `--target`に渡すことで、タグが「それを作ったまさにそのコミット」
+    # を指すようにする(manifestとタグを一致させる)
     cmd = [
         "gh", "release", "create", release,
         "--title", f"JGKG {release}",
         "--notes-file", str(notes_path),
+        "--target", target_commit,
         *(str(a) for a in assets),
     ]
     return subprocess.run(cmd, capture_output=True, text=True, check=False)
@@ -429,7 +436,10 @@ def main(argv: list[str] | None = None) -> int:
     print(auth.stdout or auth.stderr)
 
     print("== gh release create を実行 ==")
-    result = _gh_release_create(manifest.release, notes_path, assets)
+    # verify_release_assets()がgit_commitの非空を既に保証している
+    # (このtarget_commitがNoneや空文字のままここへ来ることはない)
+    assert manifest.git_commit
+    result = _gh_release_create(manifest.release, notes_path, assets, manifest.git_commit)
     print(result.stdout)
     if result.returncode != 0:
         raise RuntimeError(f"`gh release create` が失敗した:\n{result.stderr}")

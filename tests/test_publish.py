@@ -565,8 +565,8 @@ def test_cli_publish_flag_does_call_gh(tmp_path, monkeypatch):
     def _fake_auth_status():
         return subprocess.CompletedProcess(args=["gh", "auth", "status"], returncode=0, stdout="Logged in", stderr="")
 
-    def _fake_release_create(release, notes_path, assets):
-        calls.append((release, notes_path, tuple(assets)))
+    def _fake_release_create(release, notes_path, assets, target_commit):
+        calls.append((release, notes_path, tuple(assets), target_commit))
         return subprocess.CompletedProcess(args=["gh", "release", "create"], returncode=0, stdout="https://github.com/x/y/releases/tag/z", stderr="")
 
     monkeypatch.setattr(publish, "_gh_auth_status", _fake_auth_status)
@@ -574,13 +574,19 @@ def test_cli_publish_flag_does_call_gh(tmp_path, monkeypatch):
 
     assert publish.main([str(release_dir), "--publish"]) == 0
     assert len(calls) == 1, "gh release create相当の関数がちょうど1回呼ばれるべき"
-    called_release, called_notes_path, called_assets = calls[0]
+    called_release, called_notes_path, called_assets, called_target = calls[0]
     assert called_release == m.release
     assert called_notes_path.exists()
     called_names = {p.name for p in called_assets}
     assert called_names == {publish.KG_NQ_GZ_NAME, publish.TARBALL_NAME, build.MANIFEST_NAME}, (
         "公開する資産は3つ(kg.nq.gz / tdb2.tar.gz / manifest.json)であるべき"
         "(リリースノート自体は本文であって資産ではない)"
+    )
+    assert called_target == m.git_commit, (
+        "気になる点6(B-1報告)の手当て: --targetにmanifestのgit_commitを"
+        "渡すことで、タグが「それを作ったまさにそのコミット」を指すように"
+        "する(--target未指定だと公開時点のリモートデフォルトブランチHEAD"
+        "を指すだけで、後から動かされると手がかりを失う)"
     )
 
 
@@ -599,8 +605,8 @@ def test_cli_publish_is_rejected_without_gh_authentication(tmp_path, monkeypatch
             stderr="You are not logged into any GitHub hosts. Run gh auth login to authenticate.",
         )
 
-    def _fake_release_create(release, notes_path, assets):
-        create_calls.append((release, notes_path, assets))
+    def _fake_release_create(release, notes_path, assets, target_commit):
+        create_calls.append((release, notes_path, assets, target_commit))
         raise AssertionError("認証未了なのに gh release create が呼ばれた")
 
     monkeypatch.setattr(publish, "_gh_auth_status", _fake_auth_status_unauthenticated)
