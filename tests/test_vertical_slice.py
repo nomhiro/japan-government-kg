@@ -32,6 +32,7 @@ from zenken_rows import zenken_row, zipped
 from jgkg import lake, pipeline, uris
 from jgkg.connectors import egov_law, houjin_bangou, rs_system
 from jgkg.transform import rs_columns
+from jgkg.transform.ministry_succession import SUCCESSION_LAW_ID
 
 BASE = "https://jgkg.norr-tech.com"
 DAY = datetime.date(2026, 8, 1)
@@ -130,6 +131,31 @@ def _seed_lake() -> None:
         (json.dumps(law, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8"),
     )
 
+    # C-3: egov-lawを含むリリースはegov-law-dataも必須(pipeline.pyのガード)。
+    # この縦スライス試験は結線そのもの(3ソースが跨って繋がるか)を見るのが
+    # 目的で、府省令は既に現行の「厚生労働省」名を使っているため
+    # (旧省庁名の解決を経由しない)、対応表は空(0データ行)で足りる
+    law_data = {
+        "law_info": {"law_id": SUCCESSION_LAW_ID},
+        "revision_info": {"amendment_enforcement_date": "2001-01-06", "amendment_law_id": None},
+        "law_full_text": {"tag": "Law", "attr": {}, "children": [
+            {"tag": "LawBody", "attr": {}, "children": [
+                {"tag": "TableStruct", "attr": {}, "children": [
+                    {"tag": "Table", "attr": {}, "children": [
+                        {"tag": "TableRow", "attr": {}, "children": [
+                            {"tag": "TableColumn", "attr": {}, "children": ["従前の府省"]},
+                            {"tag": "TableColumn", "attr": {}, "children": ["新府省"]},
+                        ]},
+                    ]},
+                ]},
+            ]},
+        ]},
+    }
+    lake.save(
+        egov_law.LAW_DATA_SOURCE_ID, DAY, egov_law.law_data_filename(SUCCESSION_LAW_ID),
+        json.dumps(law_data, ensure_ascii=False).encode("utf-8"),
+    )
+
     # rs-system: 1事業(所管=厚生労働省・根拠法令=同じ府省令)+ 1支出
     # (支出先=法人番号直結)。**必須4グループ**(`rs.REQUIRED_GROUPS`)を揃える
     groups = {
@@ -189,7 +215,7 @@ def phase1_kg(tmp_path) -> Dataset:
     _seed_lake()
     out = tmp_path / "out"
     report = pipeline.run(
-        {"houjin-bangou": DAY, "egov-law": DAY, "rs-system": DAY},
+        {"houjin-bangou": DAY, "egov-law": DAY, "egov-law-data": DAY, "rs-system": DAY},
         out,
         include_all_corporations=True,
     )

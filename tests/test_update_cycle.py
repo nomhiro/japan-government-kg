@@ -669,8 +669,12 @@ def test_carry_over_declines_for_egov_law_when_houjin_bangou_changed():
     law_bytes = _egov_laws_jsonl()
     lake.save("houjin-bangou", DAY1, houjin_bangou.FILENAME, UNCHANGED_HOUJIN_BANGOU_BYTES)
     lake.save("egov-law", DAY1, egov_law.FILENAME, law_bytes)
+    # C-3: egov-lawを含むリリースはegov-law-dataも必須(pipeline.pyのガード)。
+    # このテストの主眼は依存判定(houjin-bangouの変化)であり、対応表の
+    # 内容自体は問わないので空(0データ行)で足りる
+    _save_minimal_egov_law_data_snapshot(DAY1)
     out1 = _artifact_dir(DAY1)
-    pipeline.run({"houjin-bangou": DAY1, "egov-law": DAY1}, out1)
+    pipeline.run({"houjin-bangou": DAY1, "egov-law": DAY1, "egov-law-data": DAY1}, out1)
     _write_fake_manifest(out1, DAY1.isoformat())
 
     # houjin-bangouは変化させる。egov-lawは同一バイト列のまま
@@ -679,8 +683,9 @@ def test_carry_over_declines_for_egov_law_when_houjin_bangou_changed():
         zipped(zenken_row(houjin_bangou=NUM_A, name="変更後の名称")),
     )
     lake.save("egov-law", DAY2, egov_law.FILENAME, law_bytes)
+    _save_minimal_egov_law_data_snapshot(DAY2)
     r2 = pipeline.run(
-        {"houjin-bangou": DAY2, "egov-law": DAY2},
+        {"houjin-bangou": DAY2, "egov-law": DAY2, "egov-law-data": DAY2},
         _artifact_dir(DAY2),
         previous_release=DAY1.isoformat(),
     )
@@ -708,6 +713,42 @@ def _egov_laws_jsonl() -> bytes:
         },
     }
     return (json.dumps(law, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+
+
+def _save_minimal_egov_law_data_snapshot(date: datetime.date) -> None:
+    """C-3: 空の対応表(0データ行)のegov-law-dataスナップショット。
+
+    このファイルのテストはcarry-over/依存判定そのものを見ており、
+    AbolishedGovernmentOrganの解決内容は問わない(このテストの法令
+    「昭和二十三年厚生省令第十号」は旧省庁名を使っているが、対応表が
+    空なので従来通りOLD_MINISTRYのまま——resolved_abolishedへの分類は
+    test_transform_law.py/test_pipeline.pyの専用テストが検査する)。
+    """
+    import json
+
+    from jgkg.connectors import egov_law
+    from jgkg.transform.ministry_succession import SUCCESSION_LAW_ID
+
+    law_data = {
+        "law_info": {"law_id": SUCCESSION_LAW_ID},
+        "revision_info": {"amendment_enforcement_date": "2001-01-06", "amendment_law_id": None},
+        "law_full_text": {"tag": "Law", "attr": {}, "children": [
+            {"tag": "LawBody", "attr": {}, "children": [
+                {"tag": "TableStruct", "attr": {}, "children": [
+                    {"tag": "Table", "attr": {}, "children": [
+                        {"tag": "TableRow", "attr": {}, "children": [
+                            {"tag": "TableColumn", "attr": {}, "children": ["従前の府省"]},
+                            {"tag": "TableColumn", "attr": {}, "children": ["新府省"]},
+                        ]},
+                    ]},
+                ]},
+            ]},
+        ]},
+    }
+    lake.save(
+        egov_law.LAW_DATA_SOURCE_ID, date, egov_law.law_data_filename(SUCCESSION_LAW_ID),
+        json.dumps(law_data, ensure_ascii=False).encode("utf-8"),
+    )
 
 
 # =============================================================================

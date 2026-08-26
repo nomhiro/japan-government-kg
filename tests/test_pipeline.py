@@ -2,10 +2,12 @@ import datetime
 from pathlib import Path
 
 import pytest
+from rdflib import Dataset, URIRef
 from zenken_rows import zenken_row, zipped
 
 from jgkg import lake, pipeline
 from jgkg.connectors import egov_law, houjin_bangou
+from jgkg.transform.ministry_succession import SUCCESSION_LAW_ID
 
 DAY = datetime.date(2026, 8, 1)
 # 取得して来るソースの日付だけを渡す。参照表(ministry-codes)の日付は
@@ -594,6 +596,52 @@ def _minimal_law_record(law_id: str, law_num: str, law_title: str = "テスト�
     }
 
 
+def _egov_law_data_json(rows: list[tuple[str, str]] = ()) -> bytes:
+    """C-3: 最小限のlaw_data応答。対応表のヘッダのみ(rows省略時は0データ行、
+
+    つまり18名称が全てunresolvedになる=abolished_ministry_namesが空集合)か、
+    指定した(old_text, new_text)の行を持つTableを`law_full_text`に埋め込む。
+    `revision_info.amendment_enforcement_date`も必須(derive_abolition_date
+    が読む)。egov-lawの配線テスト群がAbolishedGovernmentOrganの内容自体を
+    検査したいわけではないので、既存の資産(houjin_with_a_company等)の
+    アサーションを変えない最小の構成にする。
+    """
+    header = {"tag": "TableRow", "attr": {}, "children": [
+        {"tag": "TableColumn", "attr": {}, "children": ["従前の府省"]},
+        {"tag": "TableColumn", "attr": {}, "children": ["新府省"]},
+    ]}
+    data_rows = [
+        {"tag": "TableRow", "attr": {}, "children": [
+            {"tag": "TableColumn", "attr": {}, "children": [old_text]},
+            {"tag": "TableColumn", "attr": {}, "children": [new_text]},
+        ]}
+        for old_text, new_text in rows
+    ]
+    payload = {
+        "law_info": {"law_id": SUCCESSION_LAW_ID},
+        "revision_info": {"amendment_enforcement_date": "2001-01-06", "amendment_law_id": None},
+        "law_full_text": {"tag": "Law", "attr": {}, "children": [
+            {"tag": "LawBody", "attr": {}, "children": [
+                {"tag": "TableStruct", "attr": {}, "children": [
+                    {"tag": "Table", "attr": {}, "children": [header, *data_rows]},
+                ]},
+            ]},
+        ]},
+    }
+    import json
+
+    return json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+
+def _save_minimal_egov_law_data_snapshot(date: datetime.date, rows: list[tuple[str, str]] = ()) -> None:
+    lake.save(
+        egov_law.LAW_DATA_SOURCE_ID,
+        date,
+        egov_law.law_data_filename(SUCCESSION_LAW_ID),
+        _egov_law_data_json(rows),
+    )
+
+
 @pytest.fixture
 def houjin_with_a_company():
     """厚生労働省(政府機関)と株式会社ウルフスタイル(民間)の2行だけの小さいスナップショット。
@@ -629,7 +677,10 @@ def test_run_wires_egov_law_into_a_named_graph_with_resolved_jurisdiction(
         "egov-law", DAY, egov_law.FILENAME,
         _egov_law_jsonl([_minimal_law_record("323M60000100010", "令和三年厚生労働省令第一号")]),
     )
-    report = pipeline.run({"houjin-bangou": DAY, "egov-law": DAY}, tmp_path / "out")
+    _save_minimal_egov_law_data_snapshot(DAY)
+    report = pipeline.run(
+        {"houjin-bangou": DAY, "egov-law": DAY, "egov-law-data": DAY}, tmp_path / "out"
+    )
 
     assert uris.graph_uri("egov-law", DAY) in report.graphs
     assert report.law_records == 1
@@ -641,6 +692,48 @@ def test_run_wires_egov_law_into_a_named_graph_with_resolved_jurisdiction(
         "OLD_MINISTRY": 0, "OBSOLETE_ORGANIZATION": 0, "NO_CANDIDATE": 0, "AMBIGUOUS": 0,
     }
     assert report.sources["egov-law"] == DAY.isoformat()
+
+
+def test_run_wires_egov_law_data_and_resolves_a_law_to_the_abolished_organ(
+    houjin_with_a_company, tmp_path
+):
+    """C-3: egov-law-dataが実際に18名称の一部を解決し、jurisdictionが
+
+    現存府省(厚生労働省)への読み替えではなくAbolishedGovernmentOrgan
+    (厚生省)自身を指すこと(裁定2の「発令した当時の組織」)。
+
+    `houjin_with_a_company`にはミニストリーが厚生労働省1件しか無いため、
+    対応表の行は「厚生省→厚生労働省」(実データの412CO0000000315にも実在
+    する行)を使う——素の一致(exactの)、外局の分解を要しない最小構成。
+    """
+    from jgkg import uris
+
+    lake.save(
+        "egov-law", DAY, egov_law.FILENAME,
+        _egov_law_jsonl([_minimal_law_record("323M60000100010", "昭和三十五年厚生省令第一号")]),
+    )
+    _save_minimal_egov_law_data_snapshot(DAY, rows=[("厚生省", "厚生労働省")])
+
+    report = pipeline.run(
+        {"houjin-bangou": DAY, "egov-law": DAY, "egov-law-data": DAY}, tmp_path / "out"
+    )
+
+    assert uris.graph_uri("egov-law-data", DAY) in report.graphs
+    assert report.sources["egov-law-data"] == DAY.isoformat()
+    assert report.law_jurisdiction_resolved == 0
+    assert report.law_jurisdiction_resolved_abolished == 1
+    assert report.law_jurisdiction_unresolved == 0
+
+    kg = Dataset(default_union=True)
+    kg.parse(tmp_path / "out" / "kg.nq", format="nquads")
+    law_subject = URIRef(uris.law_uri("323M60000100010"))
+    jurisdiction_pred = URIRef("https://jgkg.norr-tech.com/def/law#jurisdiction")
+    jurisdiction_values = {str(o) for o in kg.objects(law_subject, jurisdiction_pred)}
+
+    # jurisdictionは当時の組織(厚生省)を指し、現存の後継(厚生労働省)への
+    # 読み替えではないこと(裁定2)
+    assert jurisdiction_values == {uris.abolished_organ_uri("厚生省")}
+    assert uris.org_uri(KOUSEIROUDOU_BANGOU) not in jurisdiction_values
 
 
 def test_run_wires_egov_law_counts_unresolved_and_extraction_failed(
@@ -660,7 +753,10 @@ def test_run_wires_egov_law_counts_unresolved_and_extraction_failed(
             _minimal_law_record("999RS0000000098", "令和三年政令第一号"),
         ]),
     )
-    report = pipeline.run({"houjin-bangou": DAY, "egov-law": DAY}, tmp_path / "out")
+    _save_minimal_egov_law_data_snapshot(DAY)
+    report = pipeline.run(
+        {"houjin-bangou": DAY, "egov-law": DAY, "egov-law-data": DAY}, tmp_path / "out"
+    )
 
     assert report.law_records == 2
     assert report.law_jurisdiction_resolved == 0
@@ -696,9 +792,17 @@ def test_run_wires_egov_law_tallies_unresolved_by_reason_separately(
             _minimal_law_record("999RS0000000099", "ダミー機関規則第一号"),
         ]),
     )
-    report = pipeline.run({"houjin-bangou": DAY, "egov-law": DAY}, tmp_path / "out")
+    # 空の対応表(0データ行)を渡す——このテストはreason別の内訳の分岐
+    # そのものを検査対象にしており、大蔵省がOLD_MINISTRYのままであることが
+    # 前提(resolved_abolishedへの分類はtest_transform_law.py/C-3の別テストが
+    # 検査する)
+    _save_minimal_egov_law_data_snapshot(DAY)
+    report = pipeline.run(
+        {"houjin-bangou": DAY, "egov-law": DAY, "egov-law-data": DAY}, tmp_path / "out"
+    )
 
     assert report.law_jurisdiction_resolved == 0
+    assert report.law_jurisdiction_resolved_abolished == 0
     assert report.law_jurisdiction_unresolved == 2
     assert report.law_jurisdiction_unresolved_by_reason == {
         "OLD_MINISTRY": 1, "OBSOLETE_ORGANIZATION": 0, "NO_CANDIDATE": 1, "AMBIGUOUS": 0,
@@ -1136,7 +1240,8 @@ def test_run_payees_scope_carry_over_regenerates_the_payees_graph_but_carries_th
         "egov-law", DAY, egov_law.FILENAME,
         _egov_law_jsonl([_minimal_law_record("323M60000100010", "令和三年厚生労働省令第一号")]),
     )
-    fetched = {"houjin-bangou": DAY, "egov-law": DAY, "rs-system": DAY}
+    _save_minimal_egov_law_data_snapshot(DAY)
+    fetched = {"houjin-bangou": DAY, "egov-law": DAY, "egov-law-data": DAY, "rs-system": DAY}
     out1 = Path(get_settings().artifact_dir) / DAY.isoformat()
     r1 = pipeline.run(
         fetched, out1,
@@ -1221,16 +1326,22 @@ def test_cli_accepts_multiple_sources_and_writes_report(seeded_lake, tmp_path):
         "egov-law", DAY, egov_law.FILENAME,
         ("\n".join(lines) + "\n").encode("utf-8"),
     )
+    _save_minimal_egov_law_data_snapshot(DAY)
 
     assert pipeline.main([
         "--source", f"houjin-bangou={DAY.isoformat()}",
         "--source", f"egov-law={DAY.isoformat()}",
+        "--source", f"egov-law-data={DAY.isoformat()}",
         "--out-dir", str(out),
     ]) == 0
 
     report = _json.loads((out / pipeline.REPORT_NAME).read_text(encoding="utf-8"))
     # リリース名はout_dirのbasename(Ruling B31。取得日から決まらない)
     assert report["release"] == "out"
+    # egov-law-dataは合成の対応表(0データ行)なので0件のAbolishedGovernmentOrgan
+    # =空グラフになり、「成果物に残ったソースだけをsourcesに載せる」既存の
+    # 規約(上のsurviving_sourcesのコメント参照)により sources には現れない
+    # (egov-lawのグラフ自体は法令1件を含むので現れる、という対比)
     assert set(report["sources"]) == {"houjin-bangou", "ministry-codes", "egov-law"}
     assert report["law_records"] == 3, "egov-lawが実際に結線されている"
     assert (out / "kg.nq").exists()
