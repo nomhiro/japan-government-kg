@@ -347,12 +347,13 @@ def test_fixture_has_a_known_number_of_percent_encoded_entities(kg):
 def test_entity_detail_resolves_directly_for_a_percent_encoded_law_revision(app_and_spy, kg):
     """裁定B69の直接アドレス経路のテスト(team-lead依頼(1))。
 
-    実KGでは、`%`を含むIRIの大半(controllerの数字なので転記しないが、
-    「大半」という比率だけ引用する——裁定B69タスクレビュー追記(3))が
-    `LawRevision`であり、しかも関係の辺を1本も持たない(実KGの観察O10と
-    同じ形)。fixtureでも同じ形が再現する——検索(`_SEARCHABLE_TYPES`に
-    `law:LawRevision`は入っていない)・関係経由の合成テストのどちらからも
-    到達できず、**`/entity/{id}`を直接叩く経路でのみ**検査できる。
+    実KGでは、`%`を含むIRIのうち`LawRevision`が占める分が大きく
+    (具体的な比率は裁定B69タスクレビュー追記(3)参照——controllerが実測した
+    数字であり、ここには転記しない)、しかも関係の辺を1本も持たない
+    (実KGの観察O10と同じ形)。fixtureでも同じ形が再現する——検索
+    (`_SEARCHABLE_TYPES`に`law:LawRevision`は入っていない)・関係経由の
+    合成テストのどちらからも到達できず、**`/entity/{id}`を直接叩く経路
+    でのみ**検査できる。
     `/entity/{id:path}`は公開ルートである以上、この経路も検査対象にする
     (「通常は踏まない」は「直さなくてよい」を意味しない)。
 
