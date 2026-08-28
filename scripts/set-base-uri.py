@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """ベースURIの一括差し替え / 整合検査のCLI。実体は jgkg.base_uri にある。
 
     uv run python scripts/set-base-uri.py --check
