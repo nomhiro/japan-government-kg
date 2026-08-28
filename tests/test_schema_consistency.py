@@ -543,6 +543,15 @@ def test_ministry_definition_is_bounded_to_currently_existing_organs():
     )
 
 
+# 裁定B66: 列挙型の許容値のURIは `{enum_uri}{ENUM_IRI_SEPARATOR}{値}` で作られる。
+# 既定は"#"だが、`enum_uri`自体が既にハッシュURI(`.../core#UnresolvedReasonEnum`)
+# なので既定のままだと2つ目の"#"が生まれRFC 3986に非適合になる。
+# `scripts/generate-schema.sh` の `gen-owl --enum-iri-separator /` と値を揃えてある
+# ——ここを直し忘れて片方だけ変えると、このテストが対象を見失って
+# `skos:definition が無い` で落ちる(空虚な合格にはならない)。
+ENUM_IRI_SEPARATOR = "/"
+
+
 @pytest.mark.parametrize("value", ["NO_CANDIDATE", "OBSOLETE_ORGANIZATION"])
 def test_government_organ_shape_wording_names_every_literal_segment_the_code_accepts(value):
     """NO_CANDIDATE/OBSOLETE_ORGANIZATIONの説明文が、実装の
@@ -566,7 +575,7 @@ def test_government_organ_shape_wording_names_every_literal_segment_the_code_acc
 
     g = _load(GENERATED / "core.owl.ttl")
     subject = URIRef(
-        f"https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#{value}"
+        f"https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum{ENUM_IRI_SEPARATOR}{value}"
     )
     definition = g.value(subject, SKOS.definition)
     assert definition is not None, f"core:UnresolvedReasonEnum#{value}のskos:definitionが無い"
