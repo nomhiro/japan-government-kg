@@ -9,11 +9,23 @@ name: Site check (production)
 # 返し続けた)。このワークフローがあれば翌日に検出できていた。
 #
 # **役割の変化(CD導入後)**: ci.yml の deploy ジョブが main への push で自動配信し、
-# その直後に verify-site.py を回すようになった。だから「自分たちの配信が漏れた」は
-# もうここまで来ない。**ここが今捕まえるのは自分たち以外を原因とするずれ**である
-# —— 手作業のデプロイ、Cloudflare側のロールバック、ドメイン設定の変更、そして
-# **deployジョブがsecret未設定で飛ばされている状態**。
-# 一次検出器から後追いの網に役割が変わった。
+# その直後に verify-site.py を回すようになった。
+#
+# **訂正(裁定B63)。この節は以前「ここが今捕まえるのは自分たち以外を原因とする
+# ずれである」と書いていたが、これは誤りだった。** 当時のverify-site.pyは
+# sha256比較を1箇所も持たず「何かが載っていること」しか見ていなかったため、
+# 配信が黙って失敗し古い内容が有効なTurtleのまま残っても、deployジョブ自身の
+# 検証すら気づけなかった——**自分たちを原因とするずれも、当時からここまで
+# 来ていた。** verify-site.py にsha256比較とHTMLの構造検査を追加した今は、
+# deployジョブの検証が配信直後にほとんどの自分たち原因のずれを捕まえる。
+# **このワークフローの価値は「原因が自分たちか否か」では切り分けられない
+# ——デプロイ成功の検証が終わった*あとに*起きるずれ**(Cloudflare側の
+# ロールバック、手作業の再デプロイ、ドメイン設定の変更、そして
+# **deployジョブがsecret未設定で飛ばされている状態**)である。
+# 一次検出器と後追いの網、両方を持つことに価値がある。
+#
+# 直前のpushの配信がまだ伝播中の状態を偽陽性として拾わないよう、
+# `verify-site.py`自体に数回のリトライを持たせている(下記`--attempts`)。
 
 on:
   schedule:
@@ -36,5 +48,13 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
+      - name: Build the static site (comparison baseline for sha256 checks)
+        # verify-site.py はビルド成果物(site/)と配信済みの内容をsha256で
+        # 比較する(裁定B63)。ここでmainの現在のコミットから同じビルドを
+        # 再現することで、ci.ymlのdeployジョブと同じ基準で比較できる。
+        run: bash scripts/build-site.sh
+
       - name: Verify the production site (read-only)
-        run: uv run python scripts/verify-site.py https://jgkg.norr-tech.com
+        run: |
+          uv run python scripts/verify-site.py https://jgkg.norr-tech.com \
+            --attempts 6 --delay-seconds 10
