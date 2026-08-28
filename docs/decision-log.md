@@ -3545,3 +3545,30 @@ D-4のブリーフに追記する。
 **(3) 記録する**: `docs/measurements-phase1.md` に
 「`LawRevision` は辺を持たず、`lawId` リテラルでのみ法令に結びつく」を書く。
 **次に「なぜアプリに改正が出ないのか」を調べる人が、同じ調査を繰り返さないため。**
+
+### 裁定B68の主張を実測で確認した(推論を公開文書に書いたため)
+
+**controllerはmanifestのクアッド数(810,133 vs 884,052)からの推論で
+「cq06は0件になる」と書き、`docs/status.md`(公開文書)にも載せた。**
+**推論を公開文書に書いたので、確かめた。**
+
+公開リリース `2026-08-27-c3-succession-v3` の `kg.nq.gz`(14,793,375バイト)を
+取得し、展開せずストリームで数えた:
+
+```
+行数(N-Quads)                810,134   (= 810,133クアッド + 末尾の空行)
+recipientMatchCategory             0 行   ← cq06 が必須にしている述語
+budget#Expenditure            73,919 行
+budget#project                85,507 行
+law#LawRevision                9,550 行
+core#UnresolvedReference         771 行
+```
+
+**`recipientMatchCategory` は 0 行。裁定B68の主張は正しい。**
+cq06 は `GROUP BY ?project ?category` でこの述語を必須にしているため、
+**公開リリースに対して流すと0件を返す。**
+
+**副産物: 件数がFusekiの実測と完全一致している**(支出73,919 /
+LawRevision 9,550 / UnresolvedReference 771)——
+**配布物とFusekiが同じ内容であることの独立した確認**になった
+(D-2で追加された73,919行を除けば、両者は一致するはずで、実際に一致した)。
