@@ -39,6 +39,7 @@ from rdflib import Dataset
 from jgkg.api.app import create_app
 from jgkg.api.kgclient import RdflibKGClient
 from jgkg.api.queries import ENTITY_RELATIONSHIPS_MAX_LIMIT, SEARCH_MAX_LIMIT
+from jgkg.api.warmup import warm_up
 
 BASE = "https://jgkg.norr-tech.com"
 
@@ -130,8 +131,12 @@ def test_startup_runs_warmup_against_the_bound_client_without_hitting_network(ap
     **裁定B60**: 温めが実際に`search_entities`(`skos:prefLabel`を全型横断で
     読むラベル領域。`ORDER BY`はLIMIT前の全件評価を強制する)を経由することを
     確認する——旧版が検査していた`budget:Expenditure`はどのエンドポイントも
-    読まない領域だった(このassertは実際のrdflib fixtureに対して
-    `CONTAINS(x, "")`が空文字列で正しく振る舞うことも合わせて検査する)。
+    読まない領域だった。**このassertはクエリが投げられたことしか見ない**
+    (`_RecordingClient`は`inner.query()`を呼ぶ**前**に記録するため、
+    `CONTAINS(x, "")`が実際に例外なく成功したかどうかまでは検査しない
+    ——`warm_up`は例外を握りつぶすため空文字列検索が失敗しても本テストは
+    緑のままになりうる)。その成功自体は
+    `test_warm_up_end_to_end_against_the_rdflib_fixture_succeeds`が別に見る。
     """
     app, spy = app_and_spy
     assert spy.queries == [], "with句に入る前から温め処理が走っている(前提が崩れている)"
@@ -141,6 +146,21 @@ def test_startup_runs_warmup_against_the_bound_client_without_hitting_network(ap
         f"起動時にsearch_entitiesが実際に読むラベル領域へ触れる温めクエリが実行されていない: "
         f"{spy.queries}"
     )
+
+
+def test_warm_up_end_to_end_against_the_rdflib_fixture_succeeds(kg):
+    """空虚なテストにしない: 上のテストと`tests/test_api_warmup.py`は
+    クエリ文字列の形(`skos:prefLabel`・`ORDER BY`)しか見ておらず、
+    `warm_up`が使う空文字列検索語(`FILTER(CONTAINS(x, ""))`)が実際の
+    SPARQLエンジン(rdflib。将来ARQでも)で例外にならず最後まで成功する
+    ことは別に検査する必要がある——`warm_up`は例外を握りつぶすため、
+    ここが壊れても他のテストは緑のままになりうる。
+
+    本物のfixtureデータ(`RdflibKGClient(kg)`)に対して`warm_up`を実行し、
+    `None`(失敗)ではないことを直接確認する。
+    """
+    elapsed = warm_up(RdflibKGClient(kg), BASE)
+    assert elapsed is not None, "空文字列検索がRdflibKGClient経由で最後まで成功していない"
 
 
 # =============================================================================
