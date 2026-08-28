@@ -60,11 +60,15 @@ def test_search_returns_mixed_types_for_a_shared_substring(client):
     )
     assert ministry_hits[0].type == "Ministry", "最も具体的な型(Ministry)が選ばれていない"
     assert ministry_hits[0].label == "厚生労働省"
+    assert ministry_hits[0].id_path == f"org/{fx.KOUSEIROUDOU_BANGOU}", (
+        "id_pathがget_entity_detailの期待する経路形と一致しない(裁定B59)"
+    )
 
     law_hits = [h for h in resp.results if h.id == f"{BASE}/id/law/{fx.KOUSEIROUDOU_LAW_ID}"]
     assert len(law_hits) == 1, law_hits
     assert law_hits[0].type == "Law"
     assert law_hits[0].summary == fx.KOUSEIROUDOU_LAW_NUM, "Lawの要約は法令番号のはず"
+    assert law_hits[0].id_path == f"law/{fx.KOUSEIROUDOU_LAW_ID}"
 
 
 def test_search_single_type_result_when_substring_is_unique(client):

@@ -172,6 +172,34 @@ def test_get_entity_detail_404_for_unknown_id(app_and_spy):
 
 
 # =============================================================================
+# 検索とエンティティ詳細の合成(裁定B59-(5))
+# =============================================================================
+
+
+def test_search_hit_id_path_composes_with_entity_detail(app_and_spy):
+    """アプリレベルの合成テスト。`/entity/{id:path}`ルートコンバータ自身を
+    検証対象に含めるため、関数呼び出し(search_entities/get_entity_detail)
+    ではなくHTTP経由で検証する(裁定B59: 単体では真、合成では偽になった
+    欠陥は単体テストでは検出できない)。
+
+    ヒットは既知のid(厚生労働省)で選ぶ——`results[0]`のような順序依存は
+    型混在のクエリでは何が先に来るか自明ではないため避ける。
+    """
+    app, _ = app_and_spy
+    with TestClient(app) as tc:
+        search_resp = tc.get("/search", params={"q": "厚生労働省"})
+        assert search_resp.status_code == 200, search_resp.text
+        hits = search_resp.json()["results"]
+        ministry_hits = [h for h in hits if h["id"] == f"{BASE}/id/org/{fx.KOUSEIROUDOU_BANGOU}"]
+        assert len(ministry_hits) == 1, f"前提(厚生労働省が1件ヒットする)が崩れている: {hits}"
+        hit = ministry_hits[0]
+
+        detail_resp = tc.get(f"/entity/{hit['id_path']}")
+    assert detail_resp.status_code == 200, detail_resp.text
+    assert detail_resp.json()["id"] == hit["id"], "検索ヒットとエンティティ詳細のidが一致しない"
+
+
+# =============================================================================
 # 上限を超えるlimitは黙って丸めず拒否する(422)
 # =============================================================================
 

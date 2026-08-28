@@ -53,6 +53,33 @@ class EntityRef(_Envelope):
     """一覧・関係に出す最小限のエンティティ参照。"""
 
     id: str
+    #: `id`(完全IRI)から導出した経路形。`GET /entity/{id_path}`にそのまま
+    #: 渡せる(裁定B59)。
+    #:
+    #: **背景**: `search_entities`は`id`に完全IRIを束縛する(`queries.py`の
+    #: `SearchHit(id=entity, ...)`)一方、`get_entity_detail`は
+    #: `entity_uri = f"{base_uri}/id/{id_path}"`を組み立てるため**パス形**を
+    #: 期待する——`id`をそのまま`/entity/{id}`に渡すと必ず0件になり、
+    #: 検索結果からエンティティ詳細へ遷移できない(実データで発見。単体テストは
+    #: 両エンドポイントを別々にしか検証しておらず検出できなかった)。
+    #:
+    #: **`id`自体は完全IRIのまま変えない**(このプロジェクトの成果物はKGで
+    #: あってアプリではない。IRIはLODの同一性そのもの)。代わりに、遷移用の
+    #: 経路形をこの派生フィールドとして別に持つ。
+    #:
+    #: **`EntityRef`に足す(`SearchHit`だけに足さない)理由**: `queries.py`は
+    #: 関係の相手側も`EntityRef(id=other, ...)`で組み立てる——検索ヒットだけ
+    #: 直すと、詳細ページの「関係の相手をクリックして次の詳細へ」という
+    #: 1ホップ先の遷移に同じ欠陥を残してしまう。
+    #:
+    #: **名前を`id_path`にした理由**(`href`ではなく): `get_entity_detail`
+    #: 自身のパラメータ名`id_path`と揃える。`href`(`/entity/`込みの完全な
+    #: クリック可能パス)にしなかったのは、`queries.py`のモジュールdocstring
+    #: が「ルート(app.py)はsearch_entities()/get_entity_detail()しか呼ばない
+    #: ——HTTP層とSPARQL/ドメインロジックを分けるため」と定めており、
+    #: ここでAPIのルートパス自体(`/entity/`という文字列)を知る必要が
+    #: 出るとその境界を越えてしまうため。
+    id_path: str
     type: str
     label: str | None
 
@@ -98,6 +125,12 @@ class Relationship(_Envelope):
 
 class EntityDetailResponse(_Envelope):
     id: str
+    #: `EntityRef.id_path`と同じ導出規則・同じ理由(裁定B59)。
+    #: `EntityDetailResponse`は`EntityRef`のサブクラスではないため
+    #: (関係一覧・属性という別の形を持つ)、フィールドを個別に持つ——
+    #: ただし導出自体は`queries.py`の`_id_path`ヘルパー1本を3箇所
+    #: (`SearchHit`・`EntityRef`・ここ)全てから呼ぶことで揃える。
+    id_path: str
     type: str
     label: str | None
     #: 述語(ローカル名)→値のリスト。1述語が複数値を持つことがあるため

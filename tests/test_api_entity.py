@@ -56,6 +56,10 @@ def test_entity_detail_attributes_exclude_type_and_label(client):
     assert detail is not None
     assert detail.type == "BudgetProject"
     assert detail.label == "(架空)地域医療体制強化推進事業"
+    assert detail.id_path == PROJECT_CORE_ID, (
+        "id_pathは呼び出しに渡したid_pathと一致するはず(裁定B59: "
+        "_id_pathがentity_uriから再導出しても値は変わらない)"
+    )
     assert detail.attributes["projectId"] == [fx.PROJECT_CORE]
     assert detail.attributes["fiscalYear"] == ["2025"]
     assert detail.attributes["budgetAmount"] == ["100000000"]
@@ -80,12 +84,19 @@ def test_entity_detail_includes_both_outgoing_and_incoming_relationships(client)
     assert "Ministry" in detail.relationships, detail.relationships
     assert len(detail.relationships["Ministry"]) == 1
     assert detail.relationships["Ministry"][0].direction == "outgoing"
-    assert detail.relationships["Ministry"][0].related.id == f"{BASE}/id/org/{fx.KOUSEIROUDOU_BANGOU}"
+    ministry_ref = detail.relationships["Ministry"][0].related
+    assert ministry_ref.id == f"{BASE}/id/org/{fx.KOUSEIROUDOU_BANGOU}"
+    assert ministry_ref.id_path == f"org/{fx.KOUSEIROUDOU_BANGOU}", (
+        "関係の相手側(queries.py:383)のEntityRefにもid_pathが要る(裁定B59-(2))。"
+        "SearchHitだけ直すと詳細→関係の相手→詳細の遷移に同じ欠陥が残る"
+    )
 
     assert "Law" in detail.relationships, detail.relationships
     assert len(detail.relationships["Law"]) == 1
     assert detail.relationships["Law"][0].direction == "outgoing"
-    assert detail.relationships["Law"][0].related.id == f"{BASE}/id/law/{fx.OLD_KOUSEISHO_LAW_ID}"
+    law_ref = detail.relationships["Law"][0].related
+    assert law_ref.id == f"{BASE}/id/law/{fx.OLD_KOUSEISHO_LAW_ID}"
+    assert law_ref.id_path == f"law/{fx.OLD_KOUSEISHO_LAW_ID}"
 
     assert "Expenditure" in detail.relationships, detail.relationships
     assert len(detail.relationships["Expenditure"]) == 4, detail.relationships["Expenditure"]

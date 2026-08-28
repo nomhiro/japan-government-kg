@@ -136,6 +136,33 @@ def _value(row: Row, key: str) -> str | None:
     return term.value if term is not None else None
 
 
+def _id_path(base_uri: str, iri: str) -> str:
+    """完全IRIから`id_path`(`/entity/{id_path}`が受け取る経路形)を導出する。
+
+    `get_entity_detail`が組み立てる`entity_uri = f"{base_uri}/id/{id_path}"`
+    の逆演算。**この関数1本だけを、`id`を組み立てる3つの構築箇所
+    (`SearchHit`・関係の相手側の`EntityRef`・`EntityDetailResponse`)全てから
+    呼ぶ**(裁定B59)。箇所ごとに剥がし処理を手書きすると、このプロジェクトの
+    再発欠陥1(導出すべき値を手書きしている)そのものになる——`id`と
+    `id_path`が食い違う経路を構造的に塞ぐには、`id_path`を常に「その`id`に
+    この関数を通した値」として定義し、既に分かっている値の再利用(例:
+    `get_entity_detail`が自分で組み立てた`id_path`引数をそのまま使う)を
+    どの箇所でもしない——そうすることで、将来`entity_uri`の組み立て方が
+    変わってもこの関数を通した値は追随し、ズレが再発しない。
+
+    このKGの全エンティティは`uris.py`(`org_uri`・`law_uri`・`budget_uri`等)が
+    `{base_uri}/id/...`の形でしか生成しない。この前提が崩れるIRI(ベースURI
+    配下の`/id/`を持たない)が来るのはデータ不整合であり、黙って見かけの値
+    (例: フルIRIそのもの)を返すよりも、ここで例外にして大きく失敗させる方が
+    安全側の選択である(このプロジェクトが繰り返し扱う「報告が嘘をつく」
+    欠陥型の入力側の鏡像——上の上限コメント参照)。
+    """
+    prefix = f"{base_uri}/id/"
+    if not iri.startswith(prefix):
+        raise ValueError(f"ベースURI配下の/id/を持たないIRIからid_pathを導出できない: {iri!r}")
+    return iri[len(prefix) :]
+
+
 # =============================================================================
 # 検索
 # =============================================================================
@@ -241,7 +268,15 @@ def search_entities(client: KGClient, base_uri: str, q: str, limit: int) -> Sear
         summary = _derive_summary(
             type_local, a.law_num, a.prefecture_name, a.city_name, a.fiscal_year, a.ministry_name
         )
-        hits.append(SearchHit(id=entity, type=type_local, label=a.label, summary=summary))
+        hits.append(
+            SearchHit(
+                id=entity,
+                id_path=_id_path(base_uri, entity),
+                type=type_local,
+                label=a.label,
+                summary=summary,
+            )
+        )
 
     return SearchResponse(query=q, results=hits, limit=limit, truncated=truncated)
 
@@ -380,7 +415,12 @@ def get_entity_detail(
         rel = Relationship(
             predicate=_local_name(_value(row, "p")),
             direction=_value(row, "direction") or "outgoing",
-            related=EntityRef(id=other, type=related_type, label=related_label),
+            related=EntityRef(
+                id=other,
+                id_path=_id_path(base_uri, other),
+                type=related_type,
+                label=related_label,
+            ),
             provenance=Provenance(
                 graph=_value(row, "g") or "",
                 source=_value(row, "source") or "",
@@ -396,6 +436,11 @@ def get_entity_detail(
 
     return EntityDetailResponse(
         id=entity_uri,
+        # `id_path`引数をそのまま使わず、`_id_path`で`entity_uri`から再導出する
+        # (裁定B59: 3構築箇所全てが同じ1本のヘルパーを通ることで、`id`と
+        # `id_path`が食い違う経路を構造的に塞ぐ。queries.pyの`_id_path`
+        # docstring参照)
+        id_path=_id_path(base_uri, entity_uri),
         type=type_local,
         label=own_label,
         attributes=attributes,
