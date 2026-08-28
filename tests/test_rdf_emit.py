@@ -1,12 +1,15 @@
 import datetime
 import json
+from pathlib import Path
 
 import pytest
 from rdflib import RDF, XSD, Dataset, Literal, URIRef
 from rdflib.namespace import PROV, SKOS
 
+from jgkg import uris
 from jgkg.rdf import emit
 from jgkg.transform import ministry_succession as ms
+from jgkg.transform import rs
 from jgkg.transform.law import JurisdictionResult, LawRecord, Revision, UnresolvedJurisdiction
 from jgkg.transform.ministry import Ministry, UnmatchedMinistry, load_reference
 from jgkg.transform.ministry_succession import AbolishedMinistryRecord
@@ -548,11 +551,6 @@ def test_emit_laws_out_of_scope_law_has_no_jurisdiction_edge_or_unresolved_node(
 # =============================================================================
 # emit_budget(Task 7 brief Step 5)
 # =============================================================================
-
-from pathlib import Path
-
-from jgkg import uris
-from jgkg.transform import rs
 
 # 実在のRS project_id/法令ID/法人番号(R45)。project_id=1(内閣人事局経費・
 # 内閣官房)/828(消防庁・総務省)。デジタル庁設置法=503AC0000000036、
