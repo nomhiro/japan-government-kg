@@ -1,0 +1,66 @@
+# legacy-cq06-optional-inference: CQ6の旧クエリ(D-2で置き換え済み)。
+#
+# **このファイルの唯一の消費者は `jgkg.pipeline` のビルド時整合検査である。**
+# 「使われていないから消す」と判断しないこと——`cq06-unresolved-recipients-
+# per-project.rq`(budget:recipientMatchCategoryを直接読む単一結合)が新側、
+# このファイルが旧側で、両者が同じ結果を返すことをビルド時に突き合わせる
+# (裁定B54と同型。新側の値がドリフトしていないことを、独立した推論経路で
+# 検査する——新側同士を比較すると循環検証になるため、この旧クエリが
+# 必要不可欠な独立オラクルになる)。ファイル名が`cq*.rq`にマッチしないのは
+# 意図的("p0-*.rq"と同じ、`scripts/run_cq.py`の既定globから外れる命名の前例)
+# ——公開する11本のCQには数えない。
+#
+# 以下、置き換え前のcq06.rq本体に書かれていた分類の経緯そのもの:
+#
+# 設計時点の骨子(`?e budget:recipient ?r . ?r a core:UnresolvedReference`)
+# は実装(jgkg.rdf.emit.emit_budget)と一致しない(schema/competency-questions.md
+# ・task-9-report.mdに乖離として明記): 未解決の支出はbudget:recipientそのものを
+# 張らない。別ノードが core:unresolvedFor でその支出を逆参照する(Task 4のB8。
+# core:UnresolvedReferenceはドメイン固有プロパティを宣言せず、値の側に置くと
+# 閉じたシェイプに違反するため)。
+#
+# さらに「未解決」だけでは不十分(B20別項の裁定)。recipientが無い支出には
+# 3種類ある: 未解決(照合を試みて失敗。core:UnresolvedReferenceを持つ)・
+# 束ね(「その他」等への意図的な集約。そもそも1法人に帰属しない)・
+# センチネルまたは実在しない法人番号(下記参照)。後の2つを「未解決」に
+# 数えると、実際には照合の失敗ではないものを失敗として過大に報告してしまう。
+#
+# 最終レビュー要修正4(裁定B42)。`sentinel`という名前は嘘だった:
+# `budget:payeeLabel`はセンチネル行(B18。RSが個人・職員等に使う13桁の
+# ダミー法人番号9999999999999)と実在しない法人番号の行(Ruling B27。形式は
+# 法人番号だが法人番号公表サイトの全件データに存在しない)の両方に付く
+# (`emit.py`)。グラフにはこの2つを区別するトリプルが1つも無いため
+# (どちらも`budget:recipient`もUnresolvedReferenceも作らない)、クエリ側だけで
+# この2つを分けることはできない——分けるにはemit側に理由トリプルを足す必要が
+# あり、それはPhase 2に送った(裁定B42)。修正前は分けられないこの合算を
+# "sentinel"と呼んでいたため、Ruling B27で「疑うべき照合漏れ」として区別する
+# 意図で作られた60件(2026-08-25実データ)が「そもそも法人でない」に紛れ込み、
+# 照合の失敗を照合すべき対象が無いこととして報告していた。ここではその合算
+# であることが名前から分かる`sentinel_or_nonexistent_houjin_bangou`にする
+# (pipeline-report.jsonの`budget_recipients_sentinel`+
+# `budget_recipients_nonexistent_houjin_bangou`の合計と一致するはず)。
+# `9999999999999`はRS自身が公表している番兵値でありfixture由来の架空値では
+# ない(R45に抵触しない)。
+#
+# D-2: この推論が遅い理由(149.875秒、他のCQは最大8.75秒)は、73,919件の
+# 支出に対する3重の左結合と、`?u core:unresolvedFor ?e`の主語側未束縛
+# (索引が効きにくい)。かつ「不在から推論する」という構造そのものが、
+# 上記のB42の欠陥(sentinelが2種類の合算であることを見分けられなかった)の
+# 原因でもあった。emit時に分類を明示する側(cq06.rq)に置き換えた。
+PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
+PREFIX core:   <https://jgkg.norr-tech.com/def/core#>
+
+SELECT ?project ?category (COUNT(?e) AS ?count) WHERE {
+  ?e a budget:Expenditure ;
+     budget:project ?project .
+  OPTIONAL { ?e budget:recipient ?recipient }
+  OPTIONAL { ?e budget:payeeLabel ?payeeLabel }
+  OPTIONAL { ?u core:unresolvedFor ?e }
+  BIND(
+    IF(BOUND(?recipient), "resolved",
+      IF(BOUND(?u), "unresolved",
+        IF(BOUND(?payeeLabel), "sentinel_or_nonexistent_houjin_bangou", "bundled")))
+    AS ?category)
+}
+GROUP BY ?project ?category
+ORDER BY ?project ?category

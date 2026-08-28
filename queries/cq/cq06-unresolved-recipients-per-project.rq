@@ -1,53 +1,29 @@
 # CQ6: ある事業の支出先のうち、法人番号が解決できていないものはどれだけあるか
 #
-# **設計時点の骨子(`?e budget:recipient ?r . ?r a core:UnresolvedReference`)
-# は実装(jgkg.rdf.emit.emit_budget)と一致しない**(schema/competency-questions.md
-# ・task-9-report.mdに乖離として明記): 未解決の支出はbudget:recipientそのものを
-# 張らない。別ノードが core:unresolvedFor でその支出を逆参照する(Task 4のB8。
-# core:UnresolvedReferenceはドメイン固有プロパティを宣言せず、値の側に置くと
-# 閉じたシェイプに違反するため)。
+# D-2裁定: 以前はrecipient/payeeLabel/core:UnresolvedReferenceの有無から
+# 3重のOPTIONALで分類を**推論していた**(73,919件に対して149.875秒。
+# `?u core:unresolvedFor ?e`が主語側未束縛で索引が効きにくいことが主因)。
+# **この「不在からの推論」という構造自体が裁定B42の欠陥の原因でもあった**
+# (sentinelという名前が実は2種類の合算だったことを、推論だけでは
+# 見分けられなかった)。
 #
-# さらに「未解決」だけでは不十分(B20別項の裁定)。recipientが無い支出には
-# 3種類ある: **未解決**(照合を試みて失敗。core:UnresolvedReferenceを持つ)・
-# **束ね**(「その他」等への意図的な集約。そもそも1法人に帰属しない)・
-# **センチネルまたは実在しない法人番号**(下記参照)。後の2つを「未解決」に
-# 数えると、実際には照合の失敗ではないものを失敗として過大に報告してしまう。
+# 今はbudget:recipientMatchCategory(パイプライン自身の判定をemit時にそのまま
+# 書いたもの。schema/budget.yaml RecipientMatchCategoryEnum参照)を直接読む
+# だけの単一結合になった。**推論のロジックは削除していない**——
+# `queries/cq/legacy-cq06-optional-inference.rq`に残し、
+# `jgkg.pipeline`がビルド時に新旧の結果が一致することを突き合わせる
+# (旧クエリという独立した経路と照合することで循環検証を避ける。裁定B54と同型)。
 #
-# **最終レビュー要修正4(裁定B42)。`sentinel`という名前は嘘だった:**
-# `budget:payeeLabel`は**センチネル行(B18。RSが個人・職員等に使う13桁の
-# ダミー法人番号9999999999999)と実在しない法人番号の行(Ruling B27。形式は
-# 法人番号だが法人番号公表サイトの全件データに存在しない)の両方に付く**
-# (`emit.py:310-311`)。グラフにはこの2つを区別するトリプルが1つも無いため
-# (`rs.py:891-898`。どちらも`budget:recipient`もUnresolvedReferenceも
-# 作らない)、**クエリ側だけでこの2つを分けることはできない**——分けるには
-# emit側に理由トリプルを足す必要があり、それはPhase 2に送った(裁定B42)。
-# 修正前は分けられないこの合算を"sentinel"と呼んでいたため、Ruling B27で
-# 「疑うべき照合漏れ」として区別する意図で作られた60件(2026-08-25実データ)
-# が「そもそも法人でない」に紛れ込み、**照合の失敗を照合すべき対象が無い
-# こととして報告していた**。ここではその合算であることが名前から分かる
-# `sentinel_or_nonexistent_houjin_bangou`にする(pipeline-report.jsonの
-# `budget_recipients_sentinel`+`budget_recipients_nonexistent_houjin_bangou`
-# の合計と一致するはず——テスト`test_cq6_totals_match_task7_build_stats`
-# がこれを固定する)。`9999999999999`はRS自身が公表している番兵値であり
-# fixture由来の架空値ではない(R45に抵触しない)。
-#
-# 事業単位(GROUP BY ?project)で4分類のCOUNTを返す(内訳の粒度は上記の
-# 理由で3分類が限界だが、カテゴリ自体はresolved/unresolved/bundled/
-# sentinel_or_nonexistent_houjin_bangouの4つを返す)。
+# 4分類: resolved/unresolved/bundled/sentinel_or_nonexistent_houjin_bangou。
+# sentinel_or_nonexistent_houjin_bangouは元々別々の2つの欠損理由
+# (センチネル法人番号・実在しない法人番号)の合算であることが名前から分かる
+# (裁定B42)。
 PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
-PREFIX core:   <https://jgkg.norr-tech.com/def/core#>
 
 SELECT ?project ?category (COUNT(?e) AS ?count) WHERE {
   ?e a budget:Expenditure ;
-     budget:project ?project .
-  OPTIONAL { ?e budget:recipient ?recipient }
-  OPTIONAL { ?e budget:payeeLabel ?payeeLabel }
-  OPTIONAL { ?u core:unresolvedFor ?e }
-  BIND(
-    IF(BOUND(?recipient), "resolved",
-      IF(BOUND(?u), "unresolved",
-        IF(BOUND(?payeeLabel), "sentinel_or_nonexistent_houjin_bangou", "bundled")))
-    AS ?category)
+     budget:project ?project ;
+     budget:recipientMatchCategory ?category .
 }
 GROUP BY ?project ?category
 ORDER BY ?project ?category

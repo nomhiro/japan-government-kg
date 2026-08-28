@@ -205,6 +205,52 @@ def test_enforce_release_gate_stops_on_report_graph_mismatches():
     pipeline.enforce_release_gate(report, allow_partial=True)
 
 
+def test_expenditure_category_mismatches_is_empty_for_consistent_data(tmp_path):
+    """D-2裁定: budget:recipientMatchCategory(新)とcq06旧クエリ(推論)が
+
+    普段は食い違わないこと。`tests/phase1_fixture.build_dataset`は
+    resolved/unresolved/bundled/sentinel_or_nonexistent_houjin_bangouの
+    4分類すべてを本番コードパス(rs.build_projects)経由で実際に持つ
+    (PROJECT_COREの4支出。phase1_fixture.py参照)ので、4分類のうち一部だけ
+    しか検査していない、という部分適用にはならない。
+    """
+    import phase1_fixture as fx
+
+    kg = fx.build_dataset(tmp_path / "out")
+    assert pipeline._expenditure_category_mismatches(kg) == []
+
+
+def test_expenditure_category_mismatches_detects_a_tampered_value(tmp_path):
+    """壊し確認: 明示した分類を1件だけ書き換えると、旧クエリとの照合が
+
+    食い違いを検出すること。**SHACLでは捕まえられない改変にする**——
+    有効な列挙値("bundled")に差し替えるだけなので、sh:in違反は起きない
+    (SHACLの担当と、この整合検査の担当を分けて示す)。
+    """
+    import phase1_fixture as fx
+    from rdflib import Literal, URIRef
+
+    from jgkg import uris
+
+    kg = fx.build_dataset(tmp_path / "out")
+    assert pipeline._expenditure_category_mismatches(kg) == [], "改変前から食い違っている"
+
+    # PROJECT_COREのseq=0(WOLFSTYLE。本来はresolved)を、有効だが実態と
+    # 食い違う値"bundled"に差し替える。recipientエッジ自体はそのまま残るため、
+    # 旧クエリ(recipientの有無で判定)は変わらず"resolved"と答える
+    graph_uri = URIRef(f"https://jgkg.norr-tech.com/graph/rs-system/{fx.DAY.isoformat()}")
+    graph = kg.graph(graph_uri)
+    s = URIRef(uris.expenditure_uri("2025", fx.PROJECT_CORE, 0))
+    pred = URIRef("https://jgkg.norr-tech.com/def/budget#recipientMatchCategory")
+    assert (s, pred, Literal("resolved")) in graph, "改変対象のトリプルが想定と違う"
+    graph.remove((s, pred, None))
+    graph.add((s, pred, Literal("bundled")))
+
+    mismatches = pipeline._expenditure_category_mismatches(kg)
+    assert mismatches, "改変した分類を検出できなかった"
+    assert any("resolved" in m or "bundled" in m for m in mismatches), mismatches
+
+
 def test_run_reports_rejected_rows(tmp_path):
     """取り込まなかった行数がレポートに出ること。
 

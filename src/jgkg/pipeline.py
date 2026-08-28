@@ -64,6 +64,14 @@ PAYEE_CORPORATIONS_GRAPH_ID = "houjin-bangou-payees"
 MINISTRY_REFERENCE = Path("data/reference/ministry-codes.csv")
 SHAPES_DIR = Path("schema/generated")
 
+# D-2裁定: cq06の新クエリ(budget:recipientMatchCategoryを直接読む)と
+# 旧クエリ(recipient/payeeLabel/UnresolvedReferenceの有無から推論する。
+# クエリ本体はもう使わないが、独立オラクルとしてこのファイルに残す —
+# queries/cq/legacy-cq06-optional-inference.rqのヘッダコメント参照)が
+# 同じ結果を返すことをビルド時に突き合わせるための2ファイル
+_CQ06_NEW_QUERY_PATH = Path("queries/cq/cq06-unresolved-recipients-per-project.rq")
+_CQ06_LEGACY_QUERY_PATH = Path("queries/cq/legacy-cq06-optional-inference.rq")
+
 # =============================================================================
 # Task 10: 更新の一巡(差分検出・carry-over)
 #
@@ -180,6 +188,14 @@ class PipelineReport(BaseModel):
     # docs/measurements-phase1.md参照)。参照整合ゲート(型は合っている)
     # では検出できない(数が食い違うだけ)ため別枠にする。空でなければ
     # enforce_release_gate が reference_violations と同じ扱いで止める
+    #
+    # D-2裁定(2026-08-28): 2つ目の不変条件をここに合流させた(新しい欄は
+    # 増やさない——ゲートの配線・constructorの引き渡しを二重化しても
+    # 止める力は増えない)。`budget:recipientMatchCategory`(emit時に明示した
+    # 4分類)と、cq06の旧クエリ(recipient/payeeLabel/UnresolvedReferenceの
+    # 有無から推論する。`queries/cq/legacy-cq06-optional-inference.rq`)を
+    # 同じ`clean`に対して突き合わせ、(project, category)ごとの件数が
+    # 食い違えばここに追加される(`_expenditure_category_mismatches`)
     report_graph_mismatches: list[str]
     # Task 8: `--include-all-corporations`(相当のフラグ)が指定されたときだけ
     # 意味を持つ。フラグ未指定なら3つとも既定値0のまま(全法人ストリームに
@@ -879,6 +895,53 @@ def _houjin_bangou_exists_test(houjin_bangou_set: set[int]) -> Callable[[str], b
         return value.isdigit() and int(value) in houjin_bangou_set
 
     return _test
+
+
+def _expenditure_category_mismatches(clean: Dataset) -> list[str]:
+    """D-2裁定: `budget:recipientMatchCategory`(新。emit時にパイプライン自身の
+
+    判定をそのまま書いたもの)と、旧クエリ(recipient/payeeLabel/
+    UnresolvedReferenceの有無からOPTIONALで推論する。
+    `legacy-cq06-optional-inference.rq`)が、同じ`clean`(=kg.nq)に対して
+    同じ(project, category)ごとの件数を返すことを突き合わせる。
+
+    **裁定B54(report_graph_mismatches)と同じ思想。** 明示した値を明示した値
+    自身で検査すると循環検証になるため、独立した推論経路(旧クエリ)を
+    オラクルにする。旧クエリは73,919件相当の入力では149.875秒かかったが、
+    ビルド時の検査としては許容される(実行時のcq06はもう新クエリしか使わない)。
+
+    返り値が空でなければ`report_graph_mismatches`に合流させ、
+    `enforce_release_gate`が同じゲートで止める。
+    """
+    new_query = _CQ06_NEW_QUERY_PATH.read_text(encoding="utf-8")
+    legacy_query = _CQ06_LEGACY_QUERY_PATH.read_text(encoding="utf-8")
+
+    def _counts(query: str) -> dict[tuple[str, str], int]:
+        # **`row.count`ではなくタプル分解で読む。** SELECTの変数名`count`は
+        # rdflibのResultRow(tupleのサブクラス)が既に持つメソッド名
+        # `count()`と衝突し、`row.count`は変数の値ではなく組み込みメソッドを
+        # 返してしまう(実測)。SELECT句の並び順(?project ?category ?count)
+        # に依存するタプル分解にすれば衝突しない
+        return {
+            (str(project), str(category)): int(count)
+            for project, category, count in clean.query(query)
+        }
+
+    new_counts = _counts(new_query)
+    legacy_counts = _counts(legacy_query)
+
+    mismatches: list[str] = []
+    for key in sorted(set(new_counts) | set(legacy_counts)):
+        new_count = new_counts.get(key, 0)
+        legacy_count = legacy_counts.get(key, 0)
+        if new_count != legacy_count:
+            project, category = key
+            mismatches.append(
+                f"budget:recipientMatchCategoryが{project}の{category}を"
+                f"{new_count}件と報告しているが、旧クエリ(OPTIONAL推論)では"
+                f"{legacy_count}件(cq06の新旧クエリが食い違っている)"
+            )
+    return mismatches
 
 
 def run(
@@ -1763,6 +1826,14 @@ def run(
                 f"jurisdictionトリプルは{actual_resolved_abolished}件"
                 "(carry-overでegov-lawが意図せず据え置かれた疑いがある)"
             )
+
+    # D-2裁定: budget:recipientMatchCategory(新)とcq06旧クエリ(推論)の
+    # 突き合わせ。carry-over時も検査する(carried_overしたrs-systemグラフの
+    # 内容そのものを検査するので、egov_law_ranと同じ理由で"rs-system" in
+    # fetched_onで判定する——rs_resolution_ranではない。B54が「carry-overで
+    # 意図せず据え置かれる」ケースを狙って"in fetched_on"にしたのと同じ理由)
+    if "rs-system" in fetched_on:
+        report_graph_mismatches.extend(_expenditure_category_mismatches(clean))
 
     return PipelineReport(
         # リリース名は**成果物ディレクトリのbasename**(Ruling B31)。
