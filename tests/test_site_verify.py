@@ -1,0 +1,455 @@
+"""`jgkg.site_verify`(裁定B63/B64/B65/B66の検査本体)のテスト。
+
+**実ネットワークは使わない**(`tests/conftest.py`が遮断する)。`httpx.MockTransport`で
+「配信済みのサイト」を模擬し、ローカルの`site.build()`出力(`out_dir`)と比較する。
+"""
+import shutil
+from pathlib import Path
+
+import httpx
+import pytest
+
+from jgkg import site, site_verify
+from jgkg.config import get_settings
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+GENERATED = REPO_ROOT / "schema" / "generated"
+REAL_SITE = REPO_ROOT / "site"
+MODULES = sorted(site.module_names(GENERATED))
+
+
+@pytest.fixture(autouse=True)
+def _fixed_base(monkeypatch):
+    monkeypatch.setenv("JGKG_BASE_URI", "https://jgkg.norr-tech.com")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+def _full_build(out_dir: Path) -> None:
+    """`site.build()`(生成物)に、git管理下の静的ファイルを足して本物の`site/`を再現する。
+
+    `site.build()`自体は`index.html`/`robots.txt`を作らない(それらは手書きの
+    静的ファイルで、`build-site.sh`はビルド先に生成物だけを追加する構成)。
+    """
+    site.build(GENERATED, out_dir)
+    shutil.copy2(REAL_SITE / "index.html", out_dir / "index.html")
+    shutil.copy2(REAL_SITE / "robots.txt", out_dir / "robots.txt")
+
+
+def _local_path_for(live_dir: Path, url_path: str) -> Path:
+    """テスト用の擬似配信サーバが、`url_path`に対して返すべき実ファイルを解決する。
+
+    `site_verify.served_files`と同じ規則(ルート"/"は"index.html")をここでも
+    適用する——適用しないと`live_dir / "".lstrip("/")`が`live_dir`自身
+    (ディレクトリ)になり、"/"へのGETが常に404になる。
+    """
+    if url_path == "/":
+        return live_dir / "index.html"
+    return live_dir / url_path.lstrip("/")
+
+
+def _content_type_for(url_path: str) -> str:
+    if url_path == "/":
+        return "text/html; charset=utf-8"
+    if url_path.endswith(".ttl") or (url_path.startswith("/def/") and "." not in url_path.rsplit("/", 1)[-1]):
+        return "text/turtle; charset=utf-8"
+    return "text/plain; charset=utf-8"
+
+
+def _handler_mirroring(
+    live_dir: Path, *, overrides: dict[str, bytes] | None = None
+) -> "httpx.MockTransport":
+    """`live_dir`を配信元として振る舞う`MockTransport`を作る(裁定B65のCORS/Content-Typeも模擬する)。
+
+    `overrides`に指定したパスは、`live_dir`の実ファイルではなくこの値を返す
+    (「配信済みの内容がビルド成果物と食い違っている」状態を作るため)。
+    """
+    overrides = overrides or {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path in overrides:
+            body = overrides[path]
+        else:
+            local = _local_path_for(live_dir, path)
+            if not local.is_file():
+                return httpx.Response(404, content=b"not found")
+            body = local.read_bytes()
+        headers = {"content-type": _content_type_for(path)}
+        if path.startswith("/def/"):
+            headers["access-control-allow-origin"] = "*"
+        return httpx.Response(200, content=body, headers=headers)
+
+    return httpx.MockTransport(handler)
+
+
+def _client(live_dir: Path, *, overrides: dict[str, bytes] | None = None) -> httpx.Client:
+    return httpx.Client(transport=_handler_mirroring(live_dir, overrides=overrides))
+
+
+# =============================================================================
+# served_files: URL↔ファイルの導出(比較対象を手書きにしない)
+# =============================================================================
+
+
+def test_served_files_maps_index_html_to_the_root_path(tmp_path):
+    _full_build(tmp_path)
+    served = site_verify.served_files(tmp_path)
+    assert served["/"] == tmp_path / "index.html"
+    assert "/index.html" not in served
+
+
+def test_served_files_excludes_the_cloudflare_headers_file(tmp_path):
+    """`_headers`はCloudflare Pagesが配信時の設定として消費するだけで、
+
+    そのパス自体はコンテンツとして配信されない。含めると存在しないURLを
+    比較対象にしてしまう。
+    """
+    site.build(GENERATED, tmp_path)
+    site.write_headers(site.build(GENERATED, tmp_path), tmp_path)
+    served = site_verify.served_files(tmp_path)
+    assert "/_headers" not in served
+    assert (tmp_path / "_headers").is_file(), "前提: _headersファイル自体は実在する"
+
+
+def test_served_files_covers_every_module_alias_and_canonical_file(tmp_path):
+    _full_build(tmp_path)
+    served = site_verify.served_files(tmp_path)
+    for module in MODULES:
+        assert f"/def/{module}" in served
+        assert f"/def/{module}.owl.ttl" in served
+        assert f"/def/{module}.shacl.ttl" in served
+
+
+def test_served_files_grows_when_a_file_is_added_to_the_build(tmp_path):
+    """**この検査が導出を強制する核心。** `MODULES`のような手書きの一覧なら
+
+    ファイルを1本足しても比較対象は増えない。`served_files`は`out_dir`を
+    再帰的に見るので、足した分だけ自動的に増える。
+    """
+    _full_build(tmp_path)
+    before = site_verify.served_files(tmp_path)
+
+    (tmp_path / "def" / "extra-module.owl.ttl").write_bytes(b"# dummy\n")
+
+    after = site_verify.served_files(tmp_path)
+    assert len(after) == len(before) + 1
+    assert "/def/extra-module.owl.ttl" in after
+
+
+def test_is_html_path():
+    assert site_verify.is_html_path("/")
+    assert site_verify.is_html_path("/about.html")
+    assert not site_verify.is_html_path("/def/core.owl.ttl")
+    assert not site_verify.is_html_path("/robots.txt")
+
+
+# =============================================================================
+# 裁定B66: RFC 3986のフラグメント適合検査
+# =============================================================================
+
+
+def test_fragment_conformance_violation_flags_a_second_hash():
+    """実際の欠陥(2つ目の"#")を検出する。"""
+    iri = "https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum#AMBIGUOUS"
+    violation = site_verify.fragment_conformance_violation(iri)
+    assert violation is not None
+    assert "#" in violation or "適合しない" in violation
+
+
+def test_fragment_conformance_violation_accepts_the_fixed_form():
+    """修正後の形("/"区切り)は適合する。"""
+    iri = "https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum/AMBIGUOUS"
+    assert site_verify.fragment_conformance_violation(iri) is None
+
+
+def test_fragment_conformance_violation_accepts_ordinary_hash_uris_and_percent_encoding():
+    """実際に配信されている、問題の無いIRIで偽陽性を出さない(空虚な検査にしない)。"""
+    assert site_verify.fragment_conformance_violation("https://jgkg.norr-tech.com/def/core#Agent") is None
+    assert site_verify.fragment_conformance_violation("https://jgkg.norr-tech.com/def/law#lawId") is None
+    # フラグメントに"/"を含むのはRFC 3986上合法(fragment = *( pchar / "/" / "?" ))
+    assert site_verify.fragment_conformance_violation("https://example.test/x#a/b") is None
+    # パーセントエンコードも合法
+    assert site_verify.fragment_conformance_violation("https://example.test/x#a%20b") is None
+    assert site_verify.fragment_conformance_violation("https://jgkg.norr-tech.com/def/core") is None
+
+
+def test_iri_violations_scans_subjects_predicates_and_objects_and_deduplicates():
+    from rdflib import RDF, Graph, Literal, URIRef
+
+    bad = URIRef("https://jgkg.norr-tech.com/def/core#Enum#Value")
+    ok = URIRef("https://jgkg.norr-tech.com/def/core#Agent")
+    g = Graph()
+    g.add((ok, RDF.type, bad))  # 目的語としても現れる
+    g.add((bad, RDF.type, bad))  # 主語としても現れる(重複を1件にまとめられるか)
+
+    violations = site_verify.iri_violations(g)
+    assert [iri for iri, _ in violations] == [str(bad)]
+    # Literalは対象外(そもそもIRIではない)
+    g.add((ok, RDF.value, Literal("plain text")))
+    assert len(site_verify.iri_violations(g)) == 1
+
+
+def test_run_all_checks_flags_a_real_rfc3986_violation_in_the_live_owl(tmp_path):
+    """`run_all_checks`が実際に配信されたTurtle本文からIRI違反を見つけること。
+
+    (壊し確認: 手元のビルドは修正済みなので、ライブ側だけ旧・二重#の形に
+    差し替えて壊す)。
+    """
+    _full_build(tmp_path)
+    corrupted = (
+        (tmp_path / "def" / "core.owl.ttl")
+        .read_bytes()
+        .replace(b"core#UnresolvedReasonEnum/AMBIGUOUS", b"core#UnresolvedReasonEnum#AMBIGUOUS")
+    )
+    assert corrupted != (tmp_path / "def" / "core.owl.ttl").read_bytes(), "前提: 実際に置換できている"
+
+    client = _client(tmp_path, overrides={"/def/core.owl.ttl": corrupted, "/def/core": corrupted})
+    report = site_verify.run_all_checks(
+        "https://jgkg.norr-tech.com", tmp_path, GENERATED, client
+    )
+    iri_failures = [r for r in report.failures if "RFC 3986" in r.label and "/def/core.owl.ttl" in r.label]
+    assert iri_failures, [r.label for r in report.failures]
+    assert "UnresolvedReasonEnum#AMBIGUOUS" in iri_failures[0].detail
+
+
+# =============================================================================
+# 裁定B64/B65: HTMLの構造検査(モジュール表)
+# =============================================================================
+
+_PRE_B64_FIX_TABLE_HTML = """
+<html><body>
+  <table>
+    <thead><tr><th>モジュール</th><th>URI</th><th>内容</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>core</td>
+        <td class="mono"><a href="/def/core">/def/core</a></td>
+        <td>6軸の基底クラスと、出典を表す用語</td>
+      </tr>
+      <tr>
+        <td>org</td>
+        <td class="mono"><a href="/def/org">/def/org</a></td>
+        <td>組織・府省。法人番号を正準IDに使う</td>
+      </tr>
+      <tr>
+        <td>all</td>
+        <td class="mono"><a href="/def/all">/def/all</a></td>
+        <td>全モジュールの統合(SHACL検証用)</td>
+      </tr>
+    </tbody>
+  </table>
+</body></html>
+"""
+
+
+def test_module_table_rows_ignores_the_header_row_and_reads_nested_tags():
+    rows = site_verify.module_table_rows(_PRE_B64_FIX_TABLE_HTML)
+    assert rows == [
+        ["core", "/def/core", "6軸の基底クラスと、出典を表す用語"],
+        ["org", "/def/org", "組織・府省。法人番号を正準IDに使う"],
+        ["all", "/def/all", "全モジュールの統合(SHACL検証用)"],
+    ]
+
+
+def test_module_table_rows_raises_when_the_page_has_no_table():
+    with pytest.raises(ValueError):
+        site_verify.module_table_rows("<html><body>no table here</body></html>")
+
+
+def test_module_table_rows_raises_when_the_page_has_two_tables():
+    with pytest.raises(ValueError):
+        site_verify.module_table_rows(_PRE_B64_FIX_TABLE_HTML + "<table><tr><td>x</td></tr></table>")
+
+
+def test_module_table_problems_is_empty_for_the_current_index_html():
+    """**空虚な検査にしない土台。** 修正済みの本物の`index.html`に対しては合格すること。"""
+    html = (REAL_SITE / "index.html").read_text(encoding="utf-8")
+    assert site_verify.module_table_problems(html, MODULES) == []
+
+
+def test_module_table_problems_detects_the_actual_b64_defect_on_the_pre_fix_page():
+    """**これが今回の欠陥そのもの。** 修正前のindex.html(law/budget無し)に対して、
+
+    実際に配信されている5モジュールを期待値として渡すと落ちること。
+    """
+    problems = site_verify.module_table_problems(_PRE_B64_FIX_TABLE_HTML, MODULES)
+    assert problems, "修正前のページに対して合格してしまっている(検査が空虚)"
+    assert any("law" in p and "budget" in p for p in problems), problems
+
+
+def test_module_table_problems_flags_a_stale_row_for_an_undeployed_module():
+    html = _PRE_B64_FIX_TABLE_HTML  # "all" 行を含むが、期待値には"all"を入れない
+    problems = site_verify.module_table_problems(html, {"core", "org"})
+    assert any("all" in p for p in problems), problems
+
+
+def test_module_table_problems_rejects_an_empty_description():
+    html = """
+    <table>
+      <tr><th>モジュール</th><th>URI</th><th>内容</th></tr>
+      <tr><td>core</td><td>/def/core</td><td>   </td></tr>
+    </table>
+    """
+    problems = site_verify.module_table_problems(html, {"core"})
+    assert any("core" in p and "説明文" in p for p in problems), problems
+
+
+# =============================================================================
+# 裁定B63/B65: run_all_checks(実際にhttpxで取得し、site/と比較する)
+# =============================================================================
+
+
+def test_run_all_checks_passes_when_live_exactly_mirrors_the_build(tmp_path):
+    """**空虚な検査にしない土台。** 配信物がビルド成果物と完全に一致していれば全項目合格する。"""
+    _full_build(tmp_path)
+    live = tmp_path.parent / (tmp_path.name + "-live")
+    shutil.copytree(tmp_path, live)
+
+    client = _client(live)
+    report = site_verify.run_all_checks("https://jgkg.norr-tech.com", tmp_path, GENERATED, client)
+    assert report.ok, [f"{r.label}: {r.detail}" for r in report.failures]
+    assert len(report.results) > 20, "検査項目が少なすぎる(空虚な合格の疑い)"
+
+
+def test_run_all_checks_fails_when_a_single_byte_of_a_def_file_differs(tmp_path):
+    """**配信内容が1バイト違うだけで落ちること。**
+
+    末尾に改行を1つ追加するだけにする(構文は壊さない)——欠陥のあるバイトが
+    Turtleの構文も一緒に壊すと、パース失敗やIRI適合検査など**他の検査が
+    偶然検出してしまい**、sha256比較そのものが効いているのかが確認できない
+    (実際にbyte[0]を反転させて試したところ、`@prefix`の先頭バイトが壊れて
+    パース失敗経由で検出され、この検査の意図が確認できなかった)。
+    """
+    _full_build(tmp_path)
+    live = tmp_path.parent / (tmp_path.name + "-live")
+    shutil.copytree(tmp_path, live)
+
+    target = live / "def" / "core.owl.ttl"
+    corrupted = target.read_bytes() + b"\n"
+    target.write_bytes(corrupted)
+    (live / "def" / "core").write_bytes(corrupted)  # エイリアスも同じ内容にする(拡張子無し版)
+
+    client = _client(live)
+    report = site_verify.run_all_checks("https://jgkg.norr-tech.com", tmp_path, GENERATED, client)
+    assert not report.ok
+    byte_compare_failures = [r for r in report.failures if "同一バイト列" in r.label]
+    assert any("/def/core.owl.ttl" in r.label for r in byte_compare_failures), [r.label for r in report.failures]
+    # 末尾に改行を足しただけなので、構文は壊れていない——他の検査(パース可否・
+    # IRI適合等)まで巻き込んで落ちていないことも確認する(この検査が
+    # 単独で効いていることの証明)
+    assert len(report.failures) == len(byte_compare_failures), [r.label for r in report.failures]
+
+
+def test_run_all_checks_does_not_hash_compare_html_even_when_cloudflare_injects_a_script(tmp_path):
+    """**裁定B65の核心。** HTMLにCloudflareのボット検出スクリプトが挿入されて
+
+    ディスクの内容とバイト単位で食い違っていても、モジュール表の構造が
+    正しければ合格すること(=HTMLはハッシュ比較の対象になっていない)。
+    ハッシュ比較する実装に戻すと、この挿入で必ず落ちる。
+    """
+    _full_build(tmp_path)
+    live = tmp_path.parent / (tmp_path.name + "-live")
+    shutil.copytree(tmp_path, live)
+
+    original = (live / "index.html").read_text(encoding="utf-8")
+    injected = original.replace(
+        "</body>",
+        '<script src="/cdn-cgi/challenge-platform/scripts/jsd/main.js"></script></body>',
+    )
+    assert injected != original
+    (live / "index.html").write_text(injected, encoding="utf-8")
+
+    client = _client(live)
+    report = site_verify.run_all_checks("https://jgkg.norr-tech.com", tmp_path, GENERATED, client)
+    assert report.ok, [f"{r.label}: {r.detail}" for r in report.failures]
+
+
+def test_run_all_checks_detects_a_module_missing_from_the_live_index_html(tmp_path):
+    """裁定B64の再発防止を`run_all_checks`レベルでも確認する。"""
+    _full_build(tmp_path)
+    live = tmp_path.parent / (tmp_path.name + "-live")
+    shutil.copytree(tmp_path, live)
+    (live / "index.html").write_text(_PRE_B64_FIX_TABLE_HTML, encoding="utf-8")
+
+    client = _client(live)
+    report = site_verify.run_all_checks("https://jgkg.norr-tech.com", tmp_path, GENERATED, client)
+    assert not report.ok
+    assert any("モジュール表" in r.label for r in report.failures), [r.label for r in report.failures]
+
+
+# =============================================================================
+# リトライ(裁定B63: 配信伝播待ちの偽陽性を吸収するが、最終的には落ちる)
+# =============================================================================
+
+
+def test_run_all_checks_with_retries_absorbs_a_transient_mismatch(tmp_path):
+    """1回目は不一致でも、2回目までに直っていれば合格し、実際にsleepが呼ばれたこと。"""
+    _full_build(tmp_path)
+    live = tmp_path.parent / (tmp_path.name + "-live")
+    shutil.copytree(tmp_path, live)
+
+    target = live / "def" / "core.owl.ttl"
+    good = target.read_bytes()
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/def/core.owl.ttl":
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return httpx.Response(200, content=b"stale", headers={"content-type": "text/turtle"})
+        local = _local_path_for(live, path)
+        if not local.is_file():
+            return httpx.Response(404, content=b"not found")
+        headers = {"content-type": _content_type_for(path)}
+        if path.startswith("/def/"):
+            headers["access-control-allow-origin"] = "*"
+        return httpx.Response(200, content=local.read_bytes(), headers=headers)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    sleeps: list[float] = []
+    report = site_verify.run_all_checks_with_retries(
+        "https://jgkg.norr-tech.com", tmp_path, GENERATED, client,
+        attempts=3, delay_seconds=10.0, sleep=sleeps.append,
+    )
+    assert report.ok, [f"{r.label}: {r.detail}" for r in report.failures]
+    assert sleeps, "リトライが実際に発生していない(初回で偶然合格した可能性)"
+    assert good == target.read_bytes(), "前提: ローカル側は変更していない"
+
+
+def test_run_all_checks_with_retries_gives_up_after_the_last_attempt(tmp_path):
+    """常に不一致を返すスタブに対しては、指定回数リトライした上で最終的に落ちること。"""
+    _full_build(tmp_path)
+    live = tmp_path.parent / (tmp_path.name + "-live")
+    shutil.copytree(tmp_path, live)
+    (live / "def" / "core.owl.ttl").write_bytes(b"permanently wrong")
+    (live / "def" / "core").write_bytes(b"permanently wrong")
+
+    client = _client(live)
+    sleeps: list[float] = []
+    report = site_verify.run_all_checks_with_retries(
+        "https://jgkg.norr-tech.com", tmp_path, GENERATED, client,
+        attempts=3, delay_seconds=10.0, sleep=sleeps.append,
+    )
+    assert not report.ok
+    assert sleeps == [10.0, 10.0], f"attempts=3なら2回リトライするはず: {sleeps}"
+    assert any("/def/core.owl.ttl" in r.label for r in report.failures), [r.label for r in report.failures]
+
+
+def test_run_all_checks_with_retries_defaults_to_a_single_attempt(tmp_path):
+    """既定(`attempts`省略)ではリトライしないこと(ローカル実行を遅くしないため)。"""
+    _full_build(tmp_path)
+    live = tmp_path.parent / (tmp_path.name + "-live")
+    shutil.copytree(tmp_path, live)
+    (live / "def" / "core.owl.ttl").write_bytes(b"wrong")
+    (live / "def" / "core").write_bytes(b"wrong")
+
+    client = _client(live)
+    calls: list[float] = []
+    report = site_verify.run_all_checks_with_retries(
+        "https://jgkg.norr-tech.com", tmp_path, GENERATED, client, sleep=calls.append
+    )
+    assert not report.ok
+    assert calls == [], "既定でリトライしてしまっている"
