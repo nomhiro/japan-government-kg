@@ -97,6 +97,29 @@ def kg(tmp_path) -> Dataset:
     return fx.build_dataset(tmp_path / "out")
 
 
+def _percent_encoded_entity_iris(kg: Dataset) -> set[str]:
+    """fixtureの実行時グラフにある、`%`を含む`{BASE}/id/`配下のIRIを全て集める。
+
+    **裁定B69: 「対象0件で通る空虚なテスト」を避けるための固定点。**
+    `%`含みのB69系テストが実際に何を検査対象にしているかを、fixture全体の
+    件数と対比して報告できるようにする(team-lead依頼(1))。主語・目的語
+    どちらの位置に現れても対象にする(`UnresolvedReference`は関係の
+    目的語側に現れる。`URIRef`のみを見る——リテラル値が偶然`%`を含んでも
+    誤検出しない)。
+    """
+    from rdflib import URIRef
+
+    prefix = f"{BASE}/id/"
+    found: set[str] = set()
+    for s, _p, o, _g in kg.quads((None, None, None, None)):
+        for term in (s, o):
+            if isinstance(term, URIRef):
+                text = str(term)
+                if "%" in text and text.startswith(prefix):
+                    found.add(text)
+    return found
+
+
 class _RecordingClient:
     """`warm_up`が実際に束縛済みclientへ問い合わせることを確認するための薄いスパイ。"""
 
@@ -299,6 +322,68 @@ def test_relationship_related_id_path_composes_with_entity_detail_for_a_percent_
     assert hop_resp.json()["id"] == related["id"], (
         "関係の相手側から1ホップしたエンティティ詳細のidが、relatedのidと一致しない"
         "(裁定B69)"
+    )
+
+
+def test_fixture_has_a_known_number_of_percent_encoded_entities(kg):
+    """裁定B69: fixtureが持つ`%`含みIRIの総数を固定する(team-lead依頼(1))。
+
+    この数(6件)は、B69系テストが実際に何件を検査対象にしているかを
+    報告できるようにするための固定点である——`org/abolished/...`
+    (`AbolishedGovernmentOrgan`)・`unresolved/jurisdiction/999RS.../...`
+    (`UnresolvedReference`。NO_CANDIDATE)・`law/417M60000100021/...`×2
+    (`LawRevision`)・`unresolved/jurisdiction/327M50000100010/...`
+    (`UnresolvedReference`。OLD_MINISTRY)・`budget/.../unresolved/...`
+    (未解決の支出受取先)。**この6件のうち3件を、このファイルのB69系
+    テスト3本がそれぞれ1件ずつ実際に検査対象にする**(検索→詳細/詳細→
+    関係の相手→詳細/直接アドレス)。fixtureが変わって件数がずれたら、
+    このテスト自身がそれを知らせる(意図的な固定であり、放置してよい
+    失敗ではない)。
+    """
+    iris = _percent_encoded_entity_iris(kg)
+    assert len(iris) == 6, f"fixtureの%含みIRIの件数が想定と異なる: {sorted(iris)}"
+
+
+def test_entity_detail_resolves_directly_for_a_percent_encoded_law_revision(app_and_spy, kg):
+    """裁定B69の直接アドレス経路のテスト(team-lead依頼(1))。
+
+    実KGでは、`%`を含むIRIの大半(controllerの数字なので転記しないが、
+    「大半」という比率だけ引用する——裁定B69タスクレビュー追記(3))が
+    `LawRevision`であり、しかも関係の辺を1本も持たない(実KGの観察O10と
+    同じ形)。fixtureでも同じ形が再現する——検索(`_SEARCHABLE_TYPES`に
+    `law:LawRevision`は入っていない)・関係経由の合成テストのどちらからも
+    到達できず、**`/entity/{id}`を直接叩く経路でのみ**検査できる。
+    `/entity/{id:path}`は公開ルートである以上、この経路も検査対象にする
+    (「通常は踏まない」は「直さなくてよい」を意味しない)。
+
+    id_pathは手書きしない(日本語のamendment_law_numを直接埋め込むと
+    transcriptionミスの危険がある)——fixtureの実行時グラフから、この
+    エンティティの真のIRIをそのまま取って使う。
+    """
+    percent_iris = _percent_encoded_entity_iris(kg)
+    law_revision_prefix = f"{BASE}/id/law/{fx.KOUSEIROUDOU_LAW_ID}/"
+    law_revisions = sorted(iri for iri in percent_iris if iri.startswith(law_revision_prefix))
+    assert law_revisions, (
+        f"前提(KOUSEIROUDOU_LAW_IDのLawRevisionが%含みIRIとして存在する)が"
+        f"崩れている: {sorted(percent_iris)}"
+    )
+    true_iri = law_revisions[0]
+    id_path = true_iri[len(f"{BASE}/id/") :]
+    assert "%" in id_path  # 対象件数をアサートする(空虚なテストにしない)
+
+    app, _ = app_and_spy
+    with TestClient(app) as tc:
+        resp = tc.get(f"/entity/{id_path}")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["id"] == true_iri, (
+        "直接アドレスしたエンティティ詳細のidが、fixtureの真のIRIと一致しない"
+        "(裁定B69)"
+    )
+    assert body["type"] == "LawRevision"
+    assert body["relationships"] == {}, (
+        "前提(LawRevisionは関係の辺を1本も持たない。実KGの観察O10と同じ形)が"
+        f"崩れている: {body['relationships']}"
     )
 
 

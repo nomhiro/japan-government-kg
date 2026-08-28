@@ -96,10 +96,49 @@ def test_sparql_iri_is_canonical_iri_wrapped_in_brackets():
     safe="")`)を独自に再実装しても、出力が偶然一致する限りこのテストは
     検出できない。検出できるのは、2つの実装が実際に**分岐した**場合
     (異なる`safe=`集合を使う等)だけである——「1本の関数を両方が通る」
-    という構造そのものはコードレビューで守る必要がある。
+    という構造そのものを縛るテストは、下の
+    `test_sparql_iri_actually_calls_canonical_iri`が別に持つ。
     """
     for id_path in ("org/1234567890123", "unresolved/jurisdiction/999RS0000000099/ダミー機関"):
         assert sparql_iri(BASE, id_path) == f"<{canonical_iri(BASE, id_path)}>"
+
+
+def test_sparql_iri_actually_calls_canonical_iri(monkeypatch):
+    """「導出は1本」という不変条件を、出力比較ではなく呼び出しそのもので縛る
+    (team-lead依頼(2))。
+
+    **なぜ必要か**: 上のテストは出力の一致しか見ないため、`sparql_iri`が
+    `canonical_iri`を呼ばずに同じロジックを再実装しても検出できない
+    (このプロジェクトで「導出は1本」という同じ不変条件が、裁定B59→B69で
+    1フィールド隣で2回破れた実績がある——コードレビューだけに頼らず、
+    構造そのものをテストで固定する)。
+
+    `jgkg.api.kgclient`モジュールの`canonical_iri`をspyに差し替え、
+    `sparql_iri`の呼び出しがそのspyを実際に経由すること・戻り値が
+    そのspyの戻り値に依存していることを検査する。**壊し確認**:
+    `sparql_iri`を独自に`quote`し直す実装(`canonical_iri`を呼ばない)に
+    戻すと、spyが一度も呼ばれず・戻り値もsentinelを含まないため、この
+    テストは確実に落ちる(検証済み。task-B69-report.md参照)。
+    """
+    import jgkg.api.kgclient as kgclient_module
+
+    calls: list[tuple[str, str]] = []
+
+    def _spy_canonical_iri(base_uri: str, id_path: str) -> str:
+        calls.append((base_uri, id_path))
+        return "SENTINEL-CANONICAL-IRI"
+
+    monkeypatch.setattr(kgclient_module, "canonical_iri", _spy_canonical_iri)
+
+    result = sparql_iri(BASE, "org/1234567890123")
+
+    assert calls == [(BASE, "org/1234567890123")], (
+        "sparql_iriがcanonical_iriを実際に呼んでいない"
+    )
+    assert result == "<SENTINEL-CANONICAL-IRI>", (
+        "sparql_iriの結果がcanonical_iriの戻り値に依存していない——"
+        "独自にquoteをやり直す実装に戻っている疑いがある"
+    )
 
 
 def test_canonical_iri_recovers_the_true_iri_after_one_starlette_style_decode():
