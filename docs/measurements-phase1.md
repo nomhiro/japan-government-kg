@@ -2019,3 +2019,172 @@ cq11-succession-of-abolished-ministry.rq: 1,995行
 名前で発令された省令自体が実データに少ない(または存在しない)。これは
 「継承マッピングの欠陥」ではなく**歴史的な発令実務の反映(データの事実)**
 であり、18機関すべてが対応表上は解決可能であることと矛盾しない。
+
+## 18. D-1: 公開リリースからの起動経路の実測(2026-08-28)
+
+決定#42(サーバーレスコンテナ+起動時ダウンロード)の実行時経路そのものを、
+**「外部の利用者としてふるまう」ことで実証した**。`data/artifact/`・`data/lake/`
+は一切参照していない——取得は`scripts/run-from-release.sh`が公開リリースの
+GitHub ReleasesのURLからのみ行い、展開先もダウンロード先も
+job-tmpの作業ディレクトリ(`$WORKDIR`)に隔離した。
+
+対象リリース: `2026-08-27-c3-succession-v3`
+(https://github.com/nomhiro/japan-government-kg/releases/tag/2026-08-27-c3-succession-v3)。
+
+### 18.1 取得したURLと実sha256(manifestの記録との一致)
+
+```
+https://github.com/nomhiro/japan-government-kg/releases/download/2026-08-27-c3-succession-v3/manifest.json
+https://github.com/nomhiro/japan-government-kg/releases/download/2026-08-27-c3-succession-v3/tdb2.tar.gz
+https://github.com/nomhiro/japan-government-kg/releases/download/2026-08-27-c3-succession-v3/kg.nq.gz
+```
+
+| 検査対象 | manifestの記録 | 取得物の実測 | 一致 |
+|---|---|---|---|
+| tdb2.tar.gz の sha256 | `8e9a053746e9d2bd85d44cc4ae0ede101be8d9794d6abf10cecf8ad4534ed616` | 同一 | ○ |
+| kg.nq(展開後)の sha256(nquads_sha256) | `a86be52614ecf25678d0889e4d083aae0926b004fc9c585473fa9a38c7a71186` | 同一 | ○ |
+| tdb2展開後の実サイズ | 449,227,816 バイト | 449,227,816 バイト | ○(バイト単位で一致) |
+
+manifestの`git_commit`(`f1de9184200039d3f46b24f2ef042214afa370a2`)は、この検証を
+実行したworktreeの`git rev-parse HEAD`と一致する——**成果物を検証するツール自体が、
+その成果物を作ったコードそのもの**であることを確認済み(循環検証にならないよう、
+検証はここまでローカルの`data/artifact/`を一度も経由していない)。
+
+### 18.2 CQ1〜11の実行結果(件数)
+
+新規に起動したFuseki(検証専用コンテナ、既存の`requirements-draft-fuseki-1`とは
+別ポート・別コンテナ)に対して`scripts/run_cq.py`を実行:
+
+| CQ | 行数 | 備考 |
+|---|---:|---|
+| cq01-jurisdiction-of-ordinance | 1 | successor/successorNameは未束縛(現存府省が発令機関) |
+| cq02-ministry-budget-by-year | 1 | |
+| cq03-recipient-expenditures-by-year | 13 | |
+| cq04-money-trace-to-ministry-and-law | 2,033 | |
+| cq05-ministry-of-basis-law | 5,680 | issuingOrgan/successor列も一部の行で束縛済み(例: 外務省) |
+| cq06-unresolved-recipients-per-project | 8,151 | |
+| cq07-provenance-of-edge | 1 | |
+| cq08-law-revision-as-of-date | 1 | |
+| cq09-jurisdiction-resolution-status | 6,541 | |
+| cq10-release-freshness | 6 | 5ソース分の行 |
+| cq11-succession-of-abolished-ministry | 1,995 | |
+
+`全 11 本のCQが非0の答えを返した(完了条件A)`。**cq09=6,541・cq11=1,995は、
+C-3実測(§17.1の`law_jurisdiction_resolved_abolished`)・C-4のローカルビルド実測と
+完全に一致する**——ローカルでビルドしたものだけでなく、**公開リリースから
+ダウンロードして展開しただけのFusekiが、同じ答えを返す**ことをこれで確認した。
+
+### 18.3 測定した4つの時間とメモリ
+
+| 項目 | 実測値 |
+|---|---|
+| ダウンロード時間 | 4秒(tdb2.tar.gz 44,088,732バイト≈42.1MiB。kg.nq.gz 14,793,375バイトを含む) |
+| 展開時間 | 4秒(`jgkg.serve`のsha256・Jenaバージョン照合を含む) |
+| Fuseki起動〜最初のクエリ応答 | 6秒 |
+| 合計コールドスタート(ダウンロード+展開+起動) | 14秒 |
+| メモリ(`docker stats`、cgroup) | 539.4 MiB |
+| メモリ(`/proc/1/status` VmRSS/VmHWM、プロセス常駐) | 641,668 KB(≈626.6 MiB) |
+| 参考: 展開後のTDB2実サイズ(manifest記録) | 449,227,816バイト(≈428.5 MiB) |
+
+**常駐とページキャッシュの区別について**: cgroupのメモリ使用量(539.4 MiB)と
+プロセスのVmRSS(626.6 MiB)の差、およびいずれもTDB2展開後の実サイズ
+(428.5 MiB)を上回っている分は、JVMのヒープ/メタスペースの基礎消費と、
+CQ1〜11実行でmmap経由で実際にページインされたTDB2ファイル領域が
+プロセス常駐に含まれるため(起動直後だけを計測すればこれより小さいはずだが、
+「11本のCQに答えられる状態でどれだけ使うか」の方が容量計画には実用的な
+数値と判断し、CQ実行後の値を報告する)。
+
+**Cloud Runのtmpfs落とし穴(実測できない部分の扱い)**: このマシンでの展開先は
+実ディスク(Docker DesktopのWSL2バッキングディスク)であり、Cloud Runの既定の
+一時ディスク(tmpfs)を直接観測することはできない。**プラットフォームが
+tmpfsを使う場合、展開後サイズ(428.5 MiB)がそのままメモリ使用量に加算される
+と考えるべき**(tmpfsのページはメモリそのものだから)。実ディスク上の
+一時領域を使えるプラットフォームなら、上記の実測値(539.4〜626.6 MiB)が
+そのまま上限に近い。**この差(428.5 MiBの有無)がプラットフォーム選定で
+必要メモリの見積りを変える**、という数値的な根拠がこれで揃った。
+
+### 18.4 わざと壊して落ちることを見せる(3件)
+
+**(1) sha256が合わないtarballを渡すと起動を拒否する。** 取得済みの正常な
+tarballを1バイトだけ改変したコピーを作り、同じ経路に通した:
+
+```
+manifestの記録: 8e9a053746e9d2bd85d44cc4ae0ede101be8d9794d6abf10cecf8ad4534ed616
+改ざん後の実物 : 512ad108acc1ffbad453369f15e72879ddbd97bbea62f5cb2056077ddad4a171
+```
+
+素朴な比較(スクリプト第1段)がまず不一致を検出する。**さらに独立な第2段**
+(`jgkg.serve`経由の`build.verify_manifest`。実際に`scripts/run-from-release.sh`が
+呼ぶ本物のコード)も同じ入力に対して:
+
+```
+ValueError: 成果物のsha256が一致しない。
+  manifest=8e9a053746e9d2bd85d44cc4ae0ede101be8d9794d6abf10cecf8ad4534ed616
+  actual=512ad108acc1ffbad453369f15e72879ddbd97bbea62f5cb2056077ddad4a171
+```
+
+を投げて`exit 1`、配置先ディレクトリは作られない(`ls`で未存在を確認済み)。
+この経路自体は`tests/test_serve.py::test_stage_release_refuses_a_corrupted_artifact`が
+すでに(`tmp_path`配下の任意の`current/tdb2`という、data/artifact/以外の場所で)
+固定しているため、D-1では新規のpytestは追加していない。
+
+**(2) CQが0件を返したら失敗として扱われる。** 空の(0トリプルの)TDB2ストアに
+対して同じFuseki設定で別コンテナを起動し、`scripts/run_cq.py`を実行:
+
+```
+### cq01-jurisdiction-of-ordinance.rq
+形式: SELECT / 変数: ['ministry', 'ministryName', 'successor', 'successorName']
+行数: 0 / 0.047 秒
+**0件**
+答えが返らなかったCQ: 1 本 -> ['cq01-jurisdiction-of-ordinance.rq']
+完了条件A(CQに答えられること)を満たしていない
+exit=1
+```
+
+**(3) TDB2は読み取り専用FSを開けない(既知の落とし穴の再確認)。** 展開済みの
+TDB2ディレクトリのコピーを`:ro`で別コンテナにマウントすると、
+`docker-compose.yml`のコメントが記録していたのと同じ例外を実際に再現した:
+
+```
+Caused by: java.nio.file.FileSystemException:
+  /fuseki/databases/kg/tdb.lock: Read-only file system
+```
+
+一時ディスクが書き込み可能でありさえすれば問題にならないことを確認済み
+(`scripts/run-from-release.sh`は`:ro`を付けていない)。
+
+### 18.5 踏んだ落とし穴
+
+**Windows Git Bashでの`MSYS_NO_PATHCONV`が2方向で矛盾する。** `docker run -v`は
+コンテナ側パス(`/fuseki/config`)までホスト側絶対パスと誤認して変換してしまう
+(`MSYS_NO_PATHCONV=1`が必要)。**しかし同じ変数をスクリプト全体にexportすると、
+今度はcurlのホスト側絶対パス出力(`-o /c/Users/...`)の変換が止まり、
+`curl: (23) client returned ERROR on write`で失敗する**(相対パスや
+変数未設定なら同じ絶対パスで成功することを確認して原因を切り分けた)。
+**解決: exportせず、`docker run`の行にだけインライン変数として渡す**
+(`scripts/run-from-release.sh`に理由をコメントで明記)。この落とし穴は
+Windows Git Bash特有で、実際のコンテナ内(Linux)では発生しない。
+
+**新規に見つけた既存の欠陥(D-1と無関係)**: `tests/test_rdf_emit.py`に
+2026-08-23由来の`ruff E402`(ファイル中盤の`# emit_budget`区切り直後に
+`from pathlib import Path` / `from jgkg import uris` / `from jgkg.transform import rs`
+がモジュール先頭以外に置かれていた)があり、D-1の`ruff check src tests scripts`
+実行で初めて検出された。D-1のスコープ外の技術的負債だが、ゲートを満たすため
+先頭のimport群へ統合した(別コミット)。
+
+### 18.6 気になる点
+
+- ダウンロード・展開・起動の3段はいずれも数秒(合計14秒)で、決定#42の
+  「起動時ダウンロード」方式のコールドスタートは実用上問題ない範囲に見える。
+  ただし本番相当のネットワーク帯域・実プラットフォームのディスク特性
+  (Cloud Runのtmpfs等)ではこの数字は変わりうる
+- メモリは「CQを11本実行した後」の値。起動直後だけの値はこれより小さいはずだが、
+  「実際に使われている状態でどれだけ使うか」の方をプラットフォーム選定の
+  材料として優先した
+- kg.nq.gzの取得・展開・sha256照合は行ったが、展開した`kg.nq`(175MB相当)自体は
+  照合後に削除している(`scripts/run-from-release.sh`の既定動作)。ディスクに
+  余裕があるため今回は行ったが、次回以降ディスクが厳しければ`FETCH_NQUADS=0`で
+  tarball側の照合だけに絞れる
+- この検証用コンテナ・作業ディレクトリは本報告のあと後片付けする
+  (既存の`requirements-draft-fuseki-1`・`data/artifact/`・`data/lake/`には
+  最初から最後まで触れていない)
