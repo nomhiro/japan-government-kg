@@ -34,6 +34,7 @@ URLを導出する(`served_files`)。拡張子なしのモジュールエイリ�
 「どのファイルがどのモジュールのエイリアスか」という規則をこちら側で
 再実装する必要が無い——walkするだけで自動的に含まれる。
 """
+import hashlib
 import re
 import time
 from collections.abc import Callable, Iterable
@@ -44,7 +45,7 @@ from pathlib import Path
 import httpx
 from rdflib import Graph, URIRef
 
-from jgkg import site
+from jgkg import build, site
 
 # 配信物が名乗る名前空間。Content-Type や CORS と違い、これは**中身**の検査である。
 # `scripts/*.py`は`jgkg.base_uri`のSOURCE_GLOBSに含まれるため、この文字列が
@@ -363,17 +364,21 @@ def run_all_checks(
     check("配信物(site/)に検査対象のファイルがある", bool(served), f"{len(served)} 件")
 
     # --- 裁定B63: 非HTMLは配信物とビルド成果物のsha256が完全一致すること ------
+    # `jgkg.build.file_sha256`(tarball/kg.nqの照合で既に使っている公開API。
+    # 裁定B26)と同じ手段で比較する——「sha256比較」という同じ概念を
+    # このプロジェクトの中で2つの実装に分けない。
     for url_path, local_path in sorted(served.items()):
         if is_html_path(url_path):
             continue
         fr = cache.get(url_path)
-        expected = local_path.read_bytes()
+        expected_sha256 = build.file_sha256(local_path)
+        actual_sha256 = hashlib.sha256(fr.body).hexdigest()
         check(
-            f"{url_path} が配信物(site/)と同一バイト列",
-            fr.status == 200 and fr.body == expected,
-            f"status={fr.status} live={len(fr.body)}B local={len(expected)}B"
-            if fr.body != expected or fr.status != 200
-            else f"{len(expected)}B",
+            f"{url_path} が配信物(site/)と同一バイト列(sha256一致)",
+            fr.status == 200 and actual_sha256 == expected_sha256,
+            f"status={fr.status} live_sha256={actual_sha256} local_sha256={expected_sha256}"
+            if actual_sha256 != expected_sha256 or fr.status != 200
+            else f"sha256={expected_sha256}",
         )
 
     # --- 裁定B66: 配信された.ttl全件のIRIがRFC 3986に適合していること --------
