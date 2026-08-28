@@ -531,6 +531,7 @@ def _expenditure_record(**overrides):
     defaults = {
         "project_id": "1", "fiscal_year": "2025", "seq": 0, "recipient_houjin_bangou": "3010001137944",
         "amount": 3025000, "label": "株式会社ウルフスタイル", "is_bundled": False,
+        "recipient_match_category": "resolved",
     }
     defaults.update(overrides)
     return ExpenditureRecord(**defaults)

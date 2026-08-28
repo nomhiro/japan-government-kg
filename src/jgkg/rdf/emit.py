@@ -336,6 +336,13 @@ def emit_budget(
         data.add((s, ns["budget"]["fiscalYear"], Literal(int(exp.fiscal_year))))
         if exp.recipient_houjin_bangou is not None:
             data.add((s, ns["budget"]["recipient"], URIRef(org_uri(exp.recipient_houjin_bangou))))
+        # D-2裁定: build_projects自身の判定(resolve_recipient)をそのまま書く。
+        # 4分類のいずれか1つを必ず持つ(ExpenditureRecord.recipient_match_category
+        # に既定値が無いのと同じ理由でここも無条件に書く。SHACL側もrequiredで
+        # 固定している — schema/budget.yaml参照)
+        data.add(
+            (s, ns["budget"]["recipientMatchCategory"], Literal(exp.recipient_match_category))
+        )
         # センチネル法人番号の行(B18)・実在しない法人番号の行(Ruling B27)
         # だけがpayeeLabelを持つ。recipientが無い他の行(束ね・未解決)と
         # 区別するため`is not None`で判定する(空文字を欠損と混同しないと

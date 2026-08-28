@@ -575,6 +575,11 @@ def _expenditure(**overrides) -> rs.ExpenditureRecord:
         "project_id": "1", "fiscal_year": "2025", "seq": 0,
         "recipient_houjin_bangou": WOLFSTYLE_BANGOU, "amount": 3025000,
         "label": "株式会社ウルフスタイル", "is_bundled": False,
+        # 既定は「解決済み」(recipient_houjin_bangouが実在するWOLFSTYLE_BANGOU)。
+        # bundled/sentinel等の呼び出し側はrecipient_match_categoryも
+        # 併せて上書きする(D-2裁定。既定値を持たせないrs.ExpenditureRecord
+        # と同じ理由で、ここでも「呼び出し側が明示する」形を保つ)
+        "recipient_match_category": "resolved",
     }
     defaults.update(overrides)
     return rs.ExpenditureRecord(**defaults)
@@ -708,7 +713,8 @@ def test_emit_budget_bundled_expenditure_has_no_recipient_edge_and_no_unresolved
     (解決を試みていないので「未解決」ではない。§8.2の意図的な非対象)。
     """
     exp = _expenditure(project_id="11", seq=0, recipient_houjin_bangou=None,
-                        amount=1379101, label="その他", is_bundled=True)
+                        amount=1379101, label="その他", is_bundled=True,
+                        recipient_match_category="bundled")
     ds = emit.emit_budget([], [exp], [], "rs-system", DAY)
 
     s = URIRef(uris.expenditure_uri("2025", "11", 0))
@@ -726,7 +732,8 @@ def test_emit_budget_sentinel_recipient_has_payee_label_and_no_recipient_edge():
 
     `UnresolvedReference`も持たず、`payeeLabel`に表示名だけを残す。
     """
-    exp = _expenditure(recipient_houjin_bangou=None, payee_label="個人Ａ", label="個人Ａ")
+    exp = _expenditure(recipient_houjin_bangou=None, payee_label="個人Ａ", label="個人Ａ",
+                        recipient_match_category="sentinel_or_nonexistent_houjin_bangou")
     ds = emit.emit_budget([], [exp], [], "rs-system", DAY)
 
     s = URIRef(uris.expenditure_uri("2025", "1", 0))
@@ -769,7 +776,8 @@ def test_emit_budget_omits_role_when_empty():
 
 
 def test_emit_budget_unresolved_recipient_is_not_dropped():
-    exp = _expenditure(recipient_houjin_bangou=None, is_bundled=False, label="実在しない架空商事株式会社")
+    exp = _expenditure(recipient_houjin_bangou=None, is_bundled=False, label="実在しない架空商事株式会社",
+                        recipient_match_category="unresolved")
     unresolved = [
         rs.UnresolvedBudgetReference(
             kind="recipient", fiscal_year="2025", project_id="1", seq=0,
@@ -828,10 +836,18 @@ def test_emit_budget_conforms_to_shacl():
         _expenditure(role="間接補助事業者"),
         _expenditure(
             project_id="11", seq=0, recipient_houjin_bangou=None, label="その他", is_bundled=True,
+            recipient_match_category="bundled",
         ),
         _expenditure(
             project_id="284", seq=0, recipient_houjin_bangou=None,
             label="個人Ａ", payee_label="個人Ａ",
+            recipient_match_category="sentinel_or_nonexistent_houjin_bangou",
+        ),
+        # 4分類のうち残る「unresolved」もここで一緒にSHACLを通す
+        # (部分適用——4分類のうち一部だけをこのテストが確かめる状態を避ける)
+        _expenditure(
+            project_id="17", seq=0, recipient_houjin_bangou=None,
+            label="実在しない架空商事株式会社", recipient_match_category="unresolved",
         ),
     ]
     ds = emit.emit_budget(projects, expenditures, unresolved, "rs-system", DAY, sha256="deadbeef")
@@ -840,3 +856,52 @@ def test_emit_budget_conforms_to_shacl():
     results = validate.validate_dataset(ds, shapes_dir)
     failing = [r for r in results if not r.conforms]
     assert not failing, f"SHACL違反: {[r.report_text for r in failing]}"
+
+
+def test_emit_budget_writes_the_recipient_match_category_for_all_four_values():
+    """D-2裁定: `recipientMatchCategory`が4分類それぞれで正しい値を持つこと。
+
+    何があれば落ちるか: emit_budgetがexp.recipient_match_categoryを無視して
+    別の値(例: 常に"resolved")を書いたら、resolved以外の3件がここで落ちる。
+    """
+    budget = emit.NS["budget"]
+    expenditures = [
+        _expenditure(seq=0, recipient_match_category="resolved"),
+        _expenditure(seq=1, recipient_houjin_bangou=None, is_bundled=True,
+                      label="その他", recipient_match_category="bundled"),
+        _expenditure(seq=2, recipient_houjin_bangou=None, payee_label="個人Ａ",
+                      label="個人Ａ", recipient_match_category="sentinel_or_nonexistent_houjin_bangou"),
+        _expenditure(seq=3, recipient_houjin_bangou=None, label="実在しない架空商事株式会社",
+                      recipient_match_category="unresolved"),
+    ]
+    ds = emit.emit_budget([], expenditures, [], "rs-system", DAY)
+
+    for seq, expected in enumerate(
+        ["resolved", "bundled", "sentinel_or_nonexistent_houjin_bangou", "unresolved"]
+    ):
+        s = URIRef(uris.expenditure_uri("2025", "1", seq))
+        values = list(ds.objects(s, budget["recipientMatchCategory"]))
+        assert values == [Literal(expected)], (seq, expected, values)
+
+
+def test_emit_budget_missing_recipient_match_category_fails_shacl():
+    """壊し確認: `recipientMatchCategory`が必須(minCount 1)であることが
+
+    実際にpyshaclで効くこと。emit_budget自身は無条件に書くので、パイプラインが
+    この判定を忘れた場合を再現するため、emit後に該当トリプルを1本だけ手で除く。
+    """
+    from jgkg import validate
+
+    exp = _expenditure()
+    ds = emit.emit_budget([], [exp], [], "rs-system", DAY)
+    s = URIRef(uris.expenditure_uri("2025", "1", 0))
+    ds.remove((s, emit.NS["budget"]["recipientMatchCategory"], None))
+
+    results = validate.validate_dataset(ds, Path("schema/generated"))
+    assert results, "検証対象のグラフが無い"
+    # emit_budgetはrs-systemグラフとprovenanceグラフの2本を作るため、
+    # 全結果ではなく「1本以上が不合格」を見る(_abolished_organ_dataset系の
+    # 単一グラフのテストと違い、`not any(conforms)`は無関係な
+    # provenanceグラフの合格1件で常にFalseになってしまう)
+    failing = [r for r in results if not r.conforms]
+    assert failing, "recipientMatchCategoryを除いたのにSHACLが検出しなかった"

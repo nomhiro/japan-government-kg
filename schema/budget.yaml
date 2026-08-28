@@ -113,6 +113,56 @@ slots:
       すると通過金を二重に数える(task-7-review.md指摘8)。この段を集計から
       どう扱うか(モデル化するか、一次支出先のみを対象にするか)はTask 9の
       裁定事項であり、Task 7はデータを保存するだけにとどめる
+  recipientMatchCategory:
+    required: true
+    range: RecipientMatchCategoryEnum
+    description: >-
+      支払先の照合がどう分類されたかを、パイプライン自身の判定
+      (`rs.resolve_recipient`/`rs.build_projects`が既に下した決定)から
+      そのまま書く。**すべてのExpenditureが必ず1つを持つ**(推論し直さない
+      — D-2裁定)。CQ6(cq06-unresolved-recipients-per-project.rq)は以前、
+      `recipient`/`payeeLabel`/core:UnresolvedReferenceの有無から3重の
+      OPTIONALで**この分類を推論していた**。73,919件に対して149.875秒
+      かかり(主語側が未束縛の`?u core:unresolvedFor ?e`逆引きが主因で
+      索引が効きにくい)、**かつ「不在から推論する」構造そのものがB42の
+      欠陥の原因だった**(sentinelという名前がグラフ上区別できない2種類
+      〔センチネル法人番号・実在しない法人番号〕の合算であることを、
+      推論だけでは見分けられなかった)。このスロットを明示することで、
+      cq06は単一の結合になり、読み手も「何が無いか」から推論せずに済む。
+      旧クエリ(OPTIONAL推論)と新クエリ(このスロットを直接読む)が同じ
+      結果を返すことは、ビルド時に`jgkg.pipeline`が突き合わせる
+      (`queries/cq/legacy-cq06-optional-inference.rq`参照)
+
+enums:
+  RecipientMatchCategoryEnum:
+    description: >-
+      Expenditureの支払先(recipient)の照合が、どの決定分岐を通ったかの分類
+      (D-2裁定)。パイプライン自身の分岐から書くので、値の一覧はrs.pyの
+      `resolve_recipient`/`build_projects`が実際に区別する4分類そのもの
+    enum_uri: jgkgbudget:RecipientMatchCategoryEnum
+    permissible_values:
+      resolved:
+        description: >-
+          法人番号の直結、または名称正規化の一意一致で支払先(Agent)へ
+          解決できた(`recipient`スロットを持つ)
+      unresolved:
+        description: >-
+          束ね行でもセンチネル・実在しない法人番号でもないが、解決を試みて
+          一致しなかった(NO_CANDIDATE/AMBIGUOUS。core:UnresolvedReferenceが
+          別に立つ)
+      bundled:
+        description: >-
+          「その他」等への意図的な集約行。そもそも1法人に帰属しないため
+          解決を試みない(RSのその他支出先フラグ・その他支出先名)
+      sentinel_or_nonexistent_houjin_bangou:
+        description: >-
+          RSが法人番号を持たない支払先(個人・職員等)に使うセンチネル
+          法人番号(`9999999999999`。B18裁定)の行と、法人番号の形はして
+          いるが法人番号公表サイトの全件データに存在しない行
+          (Ruling B27)の**合算**。グラフ上この2つを区別する情報は無い
+          — 区別するにはemit側に理由トリプルを追加する必要があり、
+          Phase 2に送った(裁定B42。この値の名前自体が「合算である」ことを
+          示す)
 
 classes:
   BudgetProject:
@@ -132,7 +182,7 @@ classes:
       core:label(skos:prefLabel)に持たせる(recipientLabel等の専用スロットは
       追加しない。理由は同上)。センチネル法人番号の行の表示名は`payeeLabel`
       が別に持つ(上記recipientのdocstring・B18参照)
-    slots: [project, recipient, fiscalYear, payeeLabel, role]
+    slots: [project, recipient, fiscalYear, payeeLabel, role, recipientMatchCategory]
     slot_usage:
       project: { required: true }
       fiscalYear:

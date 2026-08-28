@@ -724,6 +724,14 @@ class BudgetProjectRecord:
     prior_year_executed_amount: int | None = None
 
 
+#: `resolve_recipient`/`build_projects`が下す決定と1対1に対応する4分類
+#: (budget.yaml RecipientMatchCategoryEnumの語彙そのもの。D-2裁定:
+#: emit側はこの値を書くだけで、推論し直さない)
+RecipientMatchCategory = Literal[
+    "resolved", "unresolved", "bundled", "sentinel_or_nonexistent_houjin_bangou"
+]
+
+
 @dataclass(frozen=True)
 class ExpenditureRecord:
     project_id: str
@@ -733,6 +741,13 @@ class ExpenditureRecord:
     amount: int
     label: str
     is_bundled: bool
+    # D-2裁定: build_projectsが`resolve_recipient`の結果から既に下した分類を
+    # そのまま持たせる(既定値を持たせない——支出は必ずいずれか1つに分類
+    # されるため、「決定を忘れた」場合に黙って埋めず呼び出し元を落とす。
+    # 既定は止まる側)。cq06(旧: recipient/payeeLabel/UnresolvedReferenceの
+    # 有無からOPTIONALで推論)が読み替える先はこのフィールドがemitした
+    # budget:recipientMatchCategoryそのもの
+    recipient_match_category: RecipientMatchCategory
     # センチネル行(B18)・実在しない法人番号の行(Ruling B27)の表示名。
     # `recipient_houjin_bangou`がNoneでも「未解決」ではない行だけがこれを持つ
     # (束ね行はlabelで足りるので持たない — budget.yaml Expenditureの
@@ -868,6 +883,19 @@ def build_projects(
             if line.is_bundled:
                 stats.expenditures_bundled += 1
             recipient = resolve_recipient(line, name_index, houjin_bangou_exists)
+            # D-2裁定: cq06が3重のOPTIONALで推論していた4分類を、その推論の
+            # 元になっているこの分岐自身から直接書く(推論し直さない)。
+            # 各分岐は上のresolve_recipientが返す状態と1対1(相互排他)なので
+            # 判定順はどれからでも成立するが、既存のstats集計(下記)と同じ
+            # 優先順(束ね→センチネル/実在しない法人番号→解決→未解決)に揃える
+            if line.is_bundled:
+                recipient_match_category: RecipientMatchCategory = "bundled"
+            elif recipient.is_sentinel or recipient.is_nonexistent:
+                recipient_match_category = "sentinel_or_nonexistent_houjin_bangou"
+            elif recipient.method is not None:
+                recipient_match_category = "resolved"
+            else:
+                recipient_match_category = "unresolved"
             expenditures.append(
                 ExpenditureRecord(
                     project_id=row.project_id,
@@ -877,6 +905,7 @@ def build_projects(
                     amount=line.amount,
                     label=line.recipient_name,
                     is_bundled=line.is_bundled,
+                    recipient_match_category=recipient_match_category,
                     # センチネル行(B18)・実在しない法人番号の行(Ruling B27)
                     # だけがpayeeLabelを持つ。束ね行はlabelで表示名を既に
                     # 持つため、ここでは重複させない

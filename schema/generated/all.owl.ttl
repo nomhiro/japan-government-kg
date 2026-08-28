@@ -28,17 +28,26 @@
             owl:minCardinality 0 ;
             owl:onProperty <https://jgkg.norr-tech.com/def/budget#payeeLabel> ],
         [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#recipientMatchCategory> ],
+        [ a owl:Restriction ;
             owl:allValuesFrom rdf:langString ;
             owl:onProperty <https://jgkg.norr-tech.com/def/budget#payeeLabel> ],
         [ a owl:Restriction ;
             owl:maxCardinality 1 ;
             owl:onProperty <https://jgkg.norr-tech.com/def/budget#payeeLabel> ],
         [ a owl:Restriction ;
+            owl:minCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#recipientMatchCategory> ],
+        [ a owl:Restriction ;
             owl:maxCardinality 1 ;
             owl:onProperty <https://jgkg.norr-tech.com/def/budget#project> ],
         [ a owl:Restriction ;
             owl:minCardinality 0 ;
             owl:onProperty <https://jgkg.norr-tech.com/def/budget#recipient> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom <https://jgkg.norr-tech.com/def/budget#RecipientMatchCategoryEnum> ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#recipientMatchCategory> ],
         [ a owl:Restriction ;
             owl:maxCardinality 1 ;
             owl:onProperty <https://jgkg.norr-tech.com/def/budget#fiscalYear> ],
@@ -221,6 +230,26 @@
         <https://jgkg.norr-tech.com/def/core#Work> ;
     skos:definition "行政事業レビュー(RS)の予算事業。projectIdとfiscalYearの組で同一性を持つ (URIも両方を材料にする。上記projectIdのdocstring参照)"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
+
+<https://jgkg.norr-tech.com/def/budget#RecipientMatchCategoryEnum#bundled> a owl:Class ;
+    rdfs:label "bundled" ;
+    rdfs:subClassOf <https://jgkg.norr-tech.com/def/budget#RecipientMatchCategoryEnum> ;
+    skos:definition "「その他」等への意図的な集約行。そもそも1法人に帰属しないため 解決を試みない(RSのその他支出先フラグ・その他支出先名)"@ja .
+
+<https://jgkg.norr-tech.com/def/budget#RecipientMatchCategoryEnum#resolved> a owl:Class ;
+    rdfs:label "resolved" ;
+    rdfs:subClassOf <https://jgkg.norr-tech.com/def/budget#RecipientMatchCategoryEnum> ;
+    skos:definition "法人番号の直結、または名称正規化の一意一致で支払先(Agent)へ 解決できた(`recipient`スロットを持つ)"@ja .
+
+<https://jgkg.norr-tech.com/def/budget#RecipientMatchCategoryEnum#sentinel_or_nonexistent_houjin_bangou> a owl:Class ;
+    rdfs:label "sentinel_or_nonexistent_houjin_bangou" ;
+    rdfs:subClassOf <https://jgkg.norr-tech.com/def/budget#RecipientMatchCategoryEnum> ;
+    skos:definition "RSが法人番号を持たない支払先(個人・職員等)に使うセンチネル 法人番号(`9999999999999`。B18裁定)の行と、法人番号の形はして いるが法人番号公表サイトの全件データに存在しない行 (Ruling B27)の**合算**。グラフ上この2つを区別する情報は無い — 区別するにはemit側に理由トリプルを追加する必要があり、 Phase 2に送った(裁定B42。この値の名前自体が「合算である」ことを 示す)"@ja .
+
+<https://jgkg.norr-tech.com/def/budget#RecipientMatchCategoryEnum#unresolved> a owl:Class ;
+    rdfs:label "unresolved" ;
+    rdfs:subClassOf <https://jgkg.norr-tech.com/def/budget#RecipientMatchCategoryEnum> ;
+    skos:definition "束ね行でもセンチネル・実在しない法人番号でもないが、解決を試みて 一致しなかった(NO_CANDIDATE/AMBIGUOUS。core:UnresolvedReferenceが 別に立つ)"@ja .
 
 <https://jgkg.norr-tech.com/def/budget#basisLaw> a owl:ObjectProperty ;
     rdfs:label "basisLaw" ;
@@ -439,6 +468,12 @@ skos:prefLabel a owl:DatatypeProperty ;
     rdfs:label "recipient" ;
     rdfs:range <https://jgkg.norr-tech.com/def/core#Agent> ;
     skos:definition "この支出の支払先。法人番号による直結を主とし、無い場合は名称正規化の 一意一致でフォールバックする。このスロットを設定しない場合が3つある: (1)「その他」等への束ね行(RSのその他支出先フラグ、またはその他支出先名。 rs_columns.py照合記録「検証7」参照) — 黙って支出自体を落とすわけではなく core:label に表示名を残す。(2) RSが「法人番号を持たない支払先」(個人・ 職員等)に使うセンチネル法人番号(`9999999999999`。法人番号の検査数字は 満たすが実在しない。task-7-review.md指摘1・B18裁定)— この場合も core:UnresolvedReferenceは立てない(照合すべき実体がそもそも存在しない ので「未解決」と呼ぶと嘘になる)代わりに`payeeLabel`に表示名を残す。 (3) 解決を試みて失敗した場合(束ね行・センチネルのいずれでもないのに 一致しない)は core:UnresolvedReference を別に立てる"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
+
+<https://jgkg.norr-tech.com/def/budget#recipientMatchCategory> a owl:ObjectProperty ;
+    rdfs:label "recipientMatchCategory" ;
+    rdfs:range <https://jgkg.norr-tech.com/def/budget#RecipientMatchCategoryEnum> ;
+    skos:definition "支払先の照合がどう分類されたかを、パイプライン自身の判定 (`rs.resolve_recipient`/`rs.build_projects`が既に下した決定)から そのまま書く。**すべてのExpenditureが必ず1つを持つ**(推論し直さない — D-2裁定)。CQ6(cq06-unresolved-recipients-per-project.rq)は以前、 `recipient`/`payeeLabel`/core:UnresolvedReferenceの有無から3重の OPTIONALで**この分類を推論していた**。73,919件に対して149.875秒 かかり(主語側が未束縛の`?u core:unresolvedFor ?e`逆引きが主因で 索引が効きにくい)、**かつ「不在から推論する」構造そのものがB42の 欠陥の原因だった**(sentinelという名前がグラフ上区別できない2種類 〔センチネル法人番号・実在しない法人番号〕の合算であることを、 推論だけでは見分けられなかった)。このスロットを明示することで、 cq06は単一の結合になり、読み手も「何が無いか」から推論せずに済む。 旧クエリ(OPTIONAL推論)と新クエリ(このスロットを直接読む)が同じ 結果を返すことは、ビルド時に`jgkg.pipeline`が突き合わせる (`queries/cq/legacy-cq06-optional-inference.rq`参照)"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
 
 <https://jgkg.norr-tech.com/def/budget#role> a owl:DatatypeProperty ;
@@ -670,6 +705,16 @@ skos:prefLabel a owl:DatatypeProperty ;
     skos:closeMatch <http://schema.org/Organization> ;
     skos:definition "法人番号を持つ組織"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
+
+<https://jgkg.norr-tech.com/def/budget#RecipientMatchCategoryEnum> a owl:Class ;
+    rdfs:label "RecipientMatchCategoryEnum" ;
+    owl:unionOf ( <https://jgkg.norr-tech.com/def/budget#RecipientMatchCategoryEnum#bundled> <https://jgkg.norr-tech.com/def/budget#RecipientMatchCategoryEnum#resolved> <https://jgkg.norr-tech.com/def/budget#RecipientMatchCategoryEnum#sentinel_or_nonexistent_houjin_bangou> <https://jgkg.norr-tech.com/def/budget#RecipientMatchCategoryEnum#unresolved> ) ;
+    skos:definition "Expenditureの支払先(recipient)の照合が、どの決定分岐を通ったかの分類 (D-2裁定)。パイプライン自身の分岐から書くので、値の一覧はrs.pyの `resolve_recipient`/`build_projects`が実際に区別する4分類そのもの"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/budget> ;
+    ns1:permissible_values <https://jgkg.norr-tech.com/def/budget#RecipientMatchCategoryEnum#bundled>,
+        <https://jgkg.norr-tech.com/def/budget#RecipientMatchCategoryEnum#resolved>,
+        <https://jgkg.norr-tech.com/def/budget#RecipientMatchCategoryEnum#sentinel_or_nonexistent_houjin_bangou>,
+        <https://jgkg.norr-tech.com/def/budget#RecipientMatchCategoryEnum#unresolved> .
 
 <https://jgkg.norr-tech.com/def/budget#fiscalYear> a owl:DatatypeProperty ;
     rdfs:label "fiscalYear" ;

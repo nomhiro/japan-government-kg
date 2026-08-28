@@ -106,6 +106,28 @@ class UnresolvedReasonEnum(str, Enum):
     """
 
 
+class RecipientMatchCategoryEnum(str, Enum):
+    """
+    Expenditureの支払先(recipient)の照合が、どの決定分岐を通ったかの分類 (D-2裁定)。パイプライン自身の分岐から書くので、値の一覧はrs.pyの `resolve_recipient`/`build_projects`が実際に区別する4分類そのもの
+    """
+    resolved = "resolved"
+    """
+    法人番号の直結、または名称正規化の一意一致で支払先(Agent)へ 解決できた(`recipient`スロットを持つ)
+    """
+    unresolved = "unresolved"
+    """
+    束ね行でもセンチネル・実在しない法人番号でもないが、解決を試みて 一致しなかった(NO_CANDIDATE/AMBIGUOUS。core:UnresolvedReferenceが 別に立つ)
+    """
+    bundled = "bundled"
+    """
+    「その他」等への意図的な集約行。そもそも1法人に帰属しないため 解決を試みない(RSのその他支出先フラグ・その他支出先名)
+    """
+    sentinel_or_nonexistent_houjin_bangou = "sentinel_or_nonexistent_houjin_bangou"
+    """
+    RSが法人番号を持たない支払先(個人・職員等)に使うセンチネル 法人番号(`9999999999999`。B18裁定)の行と、法人番号の形はして いるが法人番号公表サイトの全件データに存在しない行 (Ruling B27)の**合算**。グラフ上この2つを区別する情報は無い — 区別するにはemit側に理由トリプルを追加する必要があり、 Phase 2に送った(裁定B42。この値の名前自体が「合算である」ことを 示す)
+    """
+
+
 
 class Entity(ConfiguredBaseModel):
     """
@@ -392,6 +414,7 @@ class Expenditure(MonetaryItem):
     fiscalYear: int = Field(default=..., description="""このExpenditureが属するBudgetProjectと同じRSレビューシートの年度 (URIの構成要素でもある。`uris.expenditure_uri`)。**支出の実際の 支払年度ではない** — task-7-review.md指摘7の実測: RS 2025シートの 支出先ファイルは実はFY2024の執行実績であり(事業ごとのΣ[23]と budget_summaryのFY2024執行額[19]の比較で、中央比1.0000・完全一致 32.3%を確認)、支出先ファイル自身の事業年度列は193,912行すべて '2025'固定でFY2024/2025を区別する列を持たない。したがって `budgetAmount`(FY2025当初予算)と`Σ amount_jpy`(FY2024執行)を 同じBudgetProjectの下で単純に比較すると、年度の異なる2つの値を 比べることになる(URIのキーとリテラルの意味を分けるモデル変更は Task 7の範囲外。controllerの裁定を仰いだ懸念として報告書に記載)""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject', 'Expenditure']} })
     payeeLabel: Optional[str] = Field(default=None, description="""支払先の表示名(RS上の名称。「個人Ａ」等)。`recipient`がセンチネル 法人番号(B18)により未設定になったExpenditureだけが持つ — 束ね行は core:label(skos:prefLabel)で表示名を既に持つため重複させず、 解決に失敗した行(NO_CANDIDATE/AMBIGUOUS)はcore:unresolved_textが 同じ役割を果たすため、このスロットは「照合対象ではないと分かっている」 行専用にする(task-7-review.md指摘1)""", json_schema_extra = { "linkml_meta": {'domain_of': ['Expenditure']} })
     role: Optional[str] = Field(default=None, description="""RSの[16]事業を行う上での役割の文言をそのまま保存する(verbatim。 解釈しない — LangStringではなく識別子的なコード値に近い扱いとして plainなstringにする。B20裁定)。「一次支出先」「間接補助事業者」 「再委託」等の値が実データに現れ、事業内の支出額を段を区別せず単純合計 すると通過金を二重に数える(task-7-review.md指摘8)。この段を集計から どう扱うか(モデル化するか、一次支出先のみを対象にするか)はTask 9の 裁定事項であり、Task 7はデータを保存するだけにとどめる""", json_schema_extra = { "linkml_meta": {'domain_of': ['Expenditure']} })
+    recipientMatchCategory: RecipientMatchCategoryEnum = Field(default=..., description="""支払先の照合がどう分類されたかを、パイプライン自身の判定 (`rs.resolve_recipient`/`rs.build_projects`が既に下した決定)から そのまま書く。**すべてのExpenditureが必ず1つを持つ**(推論し直さない — D-2裁定)。CQ6(cq06-unresolved-recipients-per-project.rq)は以前、 `recipient`/`payeeLabel`/core:UnresolvedReferenceの有無から3重の OPTIONALで**この分類を推論していた**。73,919件に対して149.875秒 かかり(主語側が未束縛の`?u core:unresolvedFor ?e`逆引きが主因で 索引が効きにくい)、**かつ「不在から推論する」構造そのものがB42の 欠陥の原因だった**(sentinelという名前がグラフ上区別できない2種類 〔センチネル法人番号・実在しない法人番号〕の合算であることを、 推論だけでは見分けられなかった)。このスロットを明示することで、 cq06は単一の結合になり、読み手も「何が無いか」から推論せずに済む。 旧クエリ(OPTIONAL推論)と新クエリ(このスロットを直接読む)が同じ 結果を返すことは、ビルド時に`jgkg.pipeline`が突き合わせる (`queries/cq/legacy-cq06-optional-inference.rq`参照)""", json_schema_extra = { "linkml_meta": {'domain_of': ['Expenditure']} })
     amount_jpy: Optional[int] = Field(default=None, description="""金額(円)""", json_schema_extra = { "linkml_meta": {'domain_of': ['MonetaryItem']} })
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
