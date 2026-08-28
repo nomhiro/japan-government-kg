@@ -66,12 +66,20 @@ BASE_URL="https://github.com/${RELEASE_REPO}/releases/download/${RELEASE_TAG}"
 
 echo "== 取得: manifest.json / tdb2.tar.gz =="
 SECONDS=0
-# --retry: 大きめのファイルを書き込む直後にディスク書き込みが一時的に失敗することが
-# 実測であった(Windows側の一時的な事情と見られ、再試行すれば通った)。ネットワーク自体の
-# 疎通不良ではないため素朴なリトライで十分
+# --retry: 転送の一時失敗に備える一般的な保険(5xx・タイムアウト等)。
+# **`curl: (23) client returned ERROR on write`はretryの対象外**(ローカルの
+# ディスク書き込み失敗であり、転送そのものの失敗ではないため再試行では治らない)。
+# このエラーの実際の原因は本ファイル冒頭のコメントのとおり
+# `MSYS_NO_PATHCONV`をexportしていたことで、--retryはそれを直していない
+# (exportをやめた時点で解消したことを切り分け済み)
 curl --retry 3 --retry-delay 2 -fsSL -o "${DOWNLOAD_DIR}/manifest.json" "${BASE_URL}/manifest.json"
 curl --retry 3 --retry-delay 2 -fsSL -o "${DOWNLOAD_DIR}/tdb2.tar.gz"   "${BASE_URL}/tdb2.tar.gz"
 DOWNLOAD_SEC=$SECONDS
+# **この時点でのDOWNLOAD_SECはmanifest.json + tdb2.tar.gzのみ。**
+# kg.nq.gzの取得(既定で行う。下記FETCH_NQUADS)はこのあとの別区間で行うため、
+# 合計コールドスタートの計測にもkg.nq.gz分の時間は含まれない
+# (§18.3参照。含めない理由は実行時が実際に必要とするのはtdb2.tar.gzだけで、
+# nquads照合は任意の追加検証だから)
 TARBALL_BYTES=$(wc -c < "${DOWNLOAD_DIR}/tdb2.tar.gz")
 echo "  URL: ${BASE_URL}/manifest.json"
 echo "  URL: ${BASE_URL}/tdb2.tar.gz"
@@ -129,9 +137,23 @@ MSYS_NO_PATHCONV=1 docker run -d --name "${CONTAINER_NAME}" \
 
 ENDPOINT="http://localhost:${PORT}/kg/sparql"
 echo "  起動待ち... (${ENDPOINT})"
-until curl -s -o /dev/null -w '%{http_code}' --data-urlencode 'query=ASK { ?s ?p ?o }' "${ENDPOINT}" 2>/dev/null | grep -q 200; do
+# **既定は止まる側。** `docker run -d`はFuseki自体が起動直後に落ちても成功で返る
+# (実際、tdb.lockが取れずに落ちる壊し確認〔§18.4(3)〕がまさにこの形)。
+# 無期限に`until`で待ち続けると、起動失敗が「無応答のまま止まったように見える」
+# だけになってしまうため、待機回数に上限を設けてログを出してから明示的に失敗させる
+READY=0
+for _ in $(seq 1 120); do
+  if curl -s -o /dev/null -w '%{http_code}' --data-urlencode 'query=ASK { ?s ?p ?o }' "${ENDPOINT}" 2>/dev/null | grep -q 200; then
+    READY=1
+    break
+  fi
   sleep 1
 done
+if [ "${READY}" != "1" ]; then
+  echo "!! 120秒待ったがFusekiが応答しない。直近のログ:" >&2
+  docker logs --tail 30 "${CONTAINER_NAME}" >&2 || true
+  exit 1
+fi
 STARTUP_SEC=$SECONDS
 TOTAL_SEC=$((DOWNLOAD_SEC + EXTRACT_SEC + STARTUP_SEC))
 echo "  Fuseki起動〜最初のクエリ応答: ${STARTUP_SEC} 秒"

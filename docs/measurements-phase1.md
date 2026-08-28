@@ -2055,19 +2055,22 @@ manifestの`git_commit`(`f1de9184200039d3f46b24f2ef042214afa370a2`)は、この�
 新規に起動したFuseki(検証専用コンテナ、既存の`requirements-draft-fuseki-1`とは
 別ポート・別コンテナ)に対して`scripts/run_cq.py`を実行:
 
-| CQ | 行数 | 備考 |
-|---|---:|---|
-| cq01-jurisdiction-of-ordinance | 1 | successor/successorNameは未束縛(現存府省が発令機関) |
-| cq02-ministry-budget-by-year | 1 | |
-| cq03-recipient-expenditures-by-year | 13 | |
-| cq04-money-trace-to-ministry-and-law | 2,033 | |
-| cq05-ministry-of-basis-law | 5,680 | issuingOrgan/successor列も一部の行で束縛済み(例: 外務省) |
-| cq06-unresolved-recipients-per-project | 8,151 | |
-| cq07-provenance-of-edge | 1 | |
-| cq08-law-revision-as-of-date | 1 | |
-| cq09-jurisdiction-resolution-status | 6,541 | |
-| cq10-release-freshness | 6 | 5ソース分の行 |
-| cq11-succession-of-abolished-ministry | 1,995 | |
+| CQ | 行数 | 応答時間 | 備考 |
+|---|---:|---:|---|
+| cq01-jurisdiction-of-ordinance | 1 | 0.078秒 | successor/successorNameは未束縛(現存府省が発令機関) |
+| cq02-ministry-budget-by-year | 1 | 3.047秒 | |
+| cq03-recipient-expenditures-by-year | 13 | 0.094秒 | |
+| cq04-money-trace-to-ministry-and-law | 2,033 | 8.750秒 | |
+| cq05-ministry-of-basis-law | 5,680 | 8.391秒 | issuingOrgan/successor列も一部の行で束縛済み(例: 外務省) |
+| cq06-unresolved-recipients-per-project | 8,151 | **149.875秒** | 突出して遅い。§18.6参照 |
+| cq07-provenance-of-edge | 1 | 0.062秒 | |
+| cq08-law-revision-as-of-date | 1 | 0.063秒 | |
+| cq09-jurisdiction-resolution-status | 6,541 | 6.328秒 | |
+| cq10-release-freshness | 6 | 0.032秒 | 5ソース分の行 |
+| cq11-succession-of-abolished-ministry | 1,995 | 0.281秒 | |
+
+(応答時間は`scripts/run_cq.py`が計測してstdoutに出したもの。裁定B25の
+「使い捨てにしない」に合わせてここへ転記する。)
 
 `全 11 本のCQが非0の答えを返した(完了条件A)`。**cq09=6,541・cq11=1,995は、
 C-3実測(§17.1の`law_jurisdiction_resolved_abolished`)・C-4のローカルビルド実測と
@@ -2078,10 +2081,21 @@ C-3実測(§17.1の`law_jurisdiction_resolved_abolished`)・C-4のローカル�
 
 | 項目 | 実測値 |
 |---|---|
-| ダウンロード時間 | 4秒(tdb2.tar.gz 44,088,732バイト≈42.1MiB。kg.nq.gz 14,793,375バイトを含む) |
+| ダウンロード時間 | 4秒(manifest.json + tdb2.tar.gz 44,088,732バイト≈42.1MiBのみ。**kg.nq.gzは含まない** — 下記の注参照) |
 | 展開時間 | 4秒(`jgkg.serve`のsha256・Jenaバージョン照合を含む) |
 | Fuseki起動〜最初のクエリ応答 | 6秒 |
 | 合計コールドスタート(ダウンロード+展開+起動) | 14秒 |
+
+**この14秒が測っている区間について、正直な限定**: `scripts/run-from-release.sh`は
+既定(`FETCH_NQUADS=1`)でkg.nq.gzも取得してnquads_sha256を照合するが、
+その区間(取得14,793,375バイト+gunzip+sha256計算)は`DOWNLOAD_SEC`の計測が
+終わった**後**に走るため、上記のどの数字にも入っていない。**実行時
+(コンテナ起動)が本当に必要とするのはtdb2.tar.gzだけ**なので、コンテナの
+起動スクリプトとしての実測はこの14秒で正しいが、**このスクリプトを
+そのまま人間が実行した場合の壁時計時間は、nquads照合を含めるとこれより
+数秒〜十秒程度長くなる**(kg.nq.gz取得+展開+sha256の分。この検証では
+実測を独立の項目として測っていない)。D-4で実際のコンテナに焼き込む際は
+`FETCH_NQUADS=0`(tdb2.tar.gzの照合のみ)が実行時の既定として妥当と考える。
 | メモリ(`docker stats`、cgroup) | 539.4 MiB |
 | メモリ(`/proc/1/status` VmRSS/VmHWM、プロセス常駐) | 641,668 KB(≈626.6 MiB) |
 | 参考: 展開後のTDB2実サイズ(manifest記録) | 449,227,816バイト(≈428.5 MiB) |
@@ -2174,6 +2188,14 @@ Windows Git Bash特有で、実際のコンテナ内(Linux)では発生しない
 
 ### 18.6 気になる点
 
+- **cq06-unresolved-recipients-per-projectが149.875秒かかっている**
+  (他は最大でも8.75秒)。8,151行という行数自体は他のCQと同程度なので、
+  クエリの計算量(集計・分類のしかた)側の問題と見られる。プラットフォーム
+  選定に直結する: 多くのサーバーレスプラットフォームの既定リクエストタイムアウトは
+  30〜60秒程度で、150秒は超えうる。API層(D-2)がこのCQに相当する集計を
+  同期リクエストで返す設計なら、cq06のクエリ自体の見直し(または非同期化)が
+  D-2着手前に必要になる可能性がある——D-1の範囲では計測のみ行い、クエリの
+  最適化はしていない
 - ダウンロード・展開・起動の3段はいずれも数秒(合計14秒)で、決定#42の
   「起動時ダウンロード」方式のコールドスタートは実用上問題ない範囲に見える。
   ただし本番相当のネットワーク帯域・実プラットフォームのディスク特性
