@@ -126,13 +126,20 @@ def test_startup_runs_warmup_against_the_bound_client_without_hitting_network(ap
 
     `TestClient`をコンテキストマネージャとして使う(`with`)と、実際にlifespanの
     startupが走る——単に`create_app()`を呼ぶだけでは走らない。
+
+    **裁定B60**: 温めが実際に`search_entities`(`skos:prefLabel`を全型横断で
+    読むラベル領域。`ORDER BY`はLIMIT前の全件評価を強制する)を経由することを
+    確認する——旧版が検査していた`budget:Expenditure`はどのエンドポイントも
+    読まない領域だった(このassertは実際のrdflib fixtureに対して
+    `CONTAINS(x, "")`が空文字列で正しく振る舞うことも合わせて検査する)。
     """
     app, spy = app_and_spy
     assert spy.queries == [], "with句に入る前から温め処理が走っている(前提が崩れている)"
     with TestClient(app):
         pass
-    assert any("budget:Expenditure" in q for q in spy.queries), (
-        f"起動時に支出の索引へ触れる温めクエリが実行されていない: {spy.queries}"
+    assert any("skos:prefLabel" in q and "ORDER BY" in q for q in spy.queries), (
+        f"起動時にsearch_entitiesが実際に読むラベル領域へ触れる温めクエリが実行されていない: "
+        f"{spy.queries}"
     )
 
 

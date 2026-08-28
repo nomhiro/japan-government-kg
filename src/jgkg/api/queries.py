@@ -239,6 +239,12 @@ def search_entities(client: KGClient, base_uri: str, q: str, limit: int) -> Sear
     (GovernmentOrgan/Ministry)ため2倍を安全域とした。**既知の限界**:
     これを超える重複(1entityが3つ以上の型で重複)が起きた場合、
     truncatedの判定を見誤る可能性がある(気になる点に記載)。
+
+    **規模の限界(記録のみ。直さない——今回の範囲外)**: `_build_search_query`
+    は`ORDER BY ?label ?entity`を持つため、LIMITの前に`_SEARCHABLE_TYPES`
+    全体の`skos:prefLabel`を全走査する(裁定B60。`warmup.py`が温める領域も
+    ここから導出する理由)。全文索引(Jena text/Lucene)を持たない現状の設計
+    では、この1リクエストあたりの走査コストはKGの規模に対して線形に増える。
     """
     fetch_limit = 2 * (limit + 1)
     rows = client.query(_build_search_query(base_uri, q, fetch_limit))
