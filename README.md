@@ -6,12 +6,12 @@
 > **このプロジェクトは日本国政府とは無関係です。** 日本国政府が公開するデータを第三者が構造化したものであり、**政府による公式なデータセットではありません。** 一次データの出典は各名前付きグラフに機械可読な形で保持しています。判断の根拠には必ず一次資料をご確認ください。
 
 > [!NOTE]
-> **現在の状態: Phase 0(完了条件9件)・Phase 1(完了条件3件)をいずれも実データで完了。テスト626件。**
+> **現在の状態: Phase 0(完了条件9件)・Phase 1(完了条件3件)をいずれも実データで完了。テスト632件。**
 > オントロジー(LinkML → OWL/SHACL)、出典付きスナップショット、名前付きグラフでの出力、SHACL検証ゲート、CQ(コンピテンシー質問)テストとCI、成果物ビルド(`build.sh`)、Fusekiでの提供、そして実データでの更新の一巡(取得 → 差分検出 → グラフ置換 → 検証 → リリース切替。2つ目のリリース作成まで)が、すべて実データで動作確認済みです。
 >
 > **オントロジーの語彙は公開・解決(dereference)できます**: `https://jgkg.norr-tech.com/def/*` で配信中(`scripts/verify-site.py`で全項目合格)。**ただし、個々のデータ(法令・法人などのエンティティ)を問い合わせるライブなSPARQLエンドポイントはありません。** KG本体はビルド済みのリリース資産をダウンロードして、自分の環境で問い合わせる形です(下記「KGをダウンロードして使う」)。
 >
-> 詳細は **[進捗状況](docs/status.md)**(主にPhase 0時点の記述)を参照。
+> 詳細は **[進捗状況](docs/status.md)** を参照(Phase 0・Phase 1 と、その後の配布・自動化まで反映)。
 
 ## なぜ作るのか
 
@@ -56,6 +56,8 @@
 ### 設計書
 - [Phase 0+1 設計書](docs/superpowers/specs/2026-08-22-japan-government-kg-design.md) — 現在の設計。Phase 2以降は対象外
 - [要求詳細化ドラフト](docs/2026-08-22-requirements-draft.md) — 設計に至る要求整理と意思決定の記録
+- [**実装決定記録**](docs/decision-log.md) — 実装中に下した裁定B1〜B54とその理由。実データに当てて初めて分かった落とし穴と、覆した判断も含む(自分の誤りもそのまま残している)
+- [実測記録](docs/measurements-phase1.md) — サイズ・所要時間・解決率・CQの答えの一次記録
 
 ### 調査レポート
 - [政府公開データソースカタログ](docs/research/2026-08-22-government-data-sources.md) — 35エントリ(データソース34件 + 語彙・設計基盤1件)、URL検証済み
@@ -120,7 +122,7 @@ tar xzf tdb2.tar.gz
 
 **Not affiliated with the Government of Japan.** This is a third-party structuring of data published by the Japanese government; it is **not** an official government dataset. Provenance for every source is retained in machine-readable form in named graphs.
 
-**Status: all Phase 0 (9/9) and Phase 1 (3/3) completion criteria met on real data — 626 tests passing.** The ontology (LinkML to OWL/SHACL), provenance-bearing snapshots, named-graph emission, a SHACL validation gate, competency-question tests with CI, artifact builds, Fuseki serving, and a full real-data update cycle (fetch → diff detection → named-graph replacement → validation → release switchover, through a second release) all work. **The ontology vocabulary is published and dereferenceable** at `https://jgkg.norr-tech.com/def/*` (verified passing end to end). **There is no live SPARQL endpoint for querying the data itself** — the KG ships as downloadable release assets instead (see "KGをダウンロードして使う" above, in Japanese). See [docs/status.md](docs/status.md) for further detail (written mostly at the Phase 0 milestone). Design documents and research reports are in Japanese.
+**Status: all Phase 0 (9/9) and Phase 1 (3/3) completion criteria met on real data — 632 tests passing.** The ontology (LinkML to OWL/SHACL), provenance-bearing snapshots, named-graph emission, a SHACL validation gate, competency-question tests with CI, artifact builds, Fuseki serving, and a full real-data update cycle (fetch → diff detection → named-graph replacement → validation → release switchover, through a second release) all work. **The ontology vocabulary is published and dereferenceable** at `https://jgkg.norr-tech.com/def/*` (verified passing end to end). **There is no live SPARQL endpoint for querying the data itself** — the KG ships as downloadable release assets instead (see "KGをダウンロードして使う" above, in Japanese). See [docs/status.md](docs/status.md) for further detail (written mostly at the Phase 0 milestone). Design documents and research reports are in Japanese.
 
 The core premise: the Japanese government publishes authoritative *join keys* (law IDs, corporate numbers, address registry IDs) and many individual APIs, but no cross-source joined graph exists. Questions like "which corporations received expenditures under a given law, from which ministry's budget line" cannot be answered with any combination of existing government offerings.
 
