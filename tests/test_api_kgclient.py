@@ -8,7 +8,13 @@ import httpx
 import pytest
 from rdflib import RDF, BNode, Dataset, Literal, URIRef
 
-from jgkg.api.kgclient import RdflibKGClient, RemoteKGClient, sparql_iri, sparql_string_literal
+from jgkg.api.kgclient import (
+    RdflibKGClient,
+    RemoteKGClient,
+    canonical_iri,
+    sparql_iri,
+    sparql_string_literal,
+)
 
 BASE = "https://jgkg.norr-tech.com"
 
@@ -71,6 +77,59 @@ def test_sparql_iri_percent_encodes_characters_that_would_break_iriref_syntax():
     # 構文エラーにならず、単に0件で返ることを確認する(クラッシュしない)
     rows = client.query(f"SELECT ?p ?o WHERE {{ {iri} ?p ?o }}")
     assert rows == []
+
+
+# =============================================================================
+# canonical_iri: 角括弧なしの真のIRI文字列(裁定B69)
+# =============================================================================
+
+
+def test_canonical_iri_round_trips_a_normal_id():
+    assert canonical_iri(BASE, "org/1234567890123") == f"{BASE}/id/org/1234567890123"
+
+
+def test_sparql_iri_is_canonical_iri_wrapped_in_brackets():
+    """`sparql_iri`の出力が`canonical_iri`を角括弧で包んだ値と常に一致すること。
+
+    **この検査の限界(誇張しない)**: 出力の一致だけを見るため、
+    `sparql_iri`が`canonical_iri`を呼ばずに同じロジック(`quote(...,
+    safe="")`)を独自に再実装しても、出力が偶然一致する限りこのテストは
+    検出できない。検出できるのは、2つの実装が実際に**分岐した**場合
+    (異なる`safe=`集合を使う等)だけである——「1本の関数を両方が通る」
+    という構造そのものはコードレビューで守る必要がある。
+    """
+    for id_path in ("org/1234567890123", "unresolved/jurisdiction/999RS0000000099/ダミー機関"):
+        assert sparql_iri(BASE, id_path) == f"<{canonical_iri(BASE, id_path)}>"
+
+
+def test_canonical_iri_recovers_the_true_iri_after_one_starlette_style_decode():
+    """裁定B69の核心を最小再現する単体テスト。
+
+    FastAPI/Starletteは`/entity/{id:path}`でURLデコードを1回行う——
+    `canonical_iri`はそのデコードされた文字を`quote(..., safe="")`で
+    再エンコードし、元のIRIに戻す(だからこそ、クライアントがid_pathを
+    生のまま・正しくエンコードした形・デコード済みのどれで渡しても収束する)。
+
+    **`get_entity_detail`が応答の`id`を旧版のように素の文字列結合
+    (`f"{base_uri}/id/{id_path}"`)で作ると、この再エンコードを経ないため
+    分岐する**——これが裁定B69そのもの(下の最後のassertで対比する)。
+    """
+    from urllib.parse import quote, unquote
+
+    name = "厚生省"
+    true_iri = f"{BASE}/id/org/abolished/{quote(name, safe='')}"
+    id_path_as_stored = f"org/abolished/{quote(name, safe='')}"
+
+    # Starletteが{id:path}で1回デコードした後に残る、生の(percent-encode
+    # されていない)文字列を模す
+    decoded_id_path = unquote(id_path_as_stored)
+    assert decoded_id_path == "org/abolished/厚生省"
+
+    assert canonical_iri(BASE, decoded_id_path) == true_iri, (
+        "canonical_iriがStarletteのデコードを再エンコードして戻せていない"
+    )
+    # 対比: 素の文字列結合(裁定B69で置き換えた旧実装)は分岐する
+    assert f"{BASE}/id/{decoded_id_path}" != true_iri
 
 
 # =============================================================================

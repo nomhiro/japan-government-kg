@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
-from jgkg.api.kgclient import KGClient, Row, sparql_iri, sparql_string_literal
+from jgkg.api.kgclient import KGClient, Row, canonical_iri, sparql_iri, sparql_string_literal
 from jgkg.api.models import (
     EntityDetailResponse,
     EntityRef,
@@ -139,16 +139,24 @@ def _value(row: Row, key: str) -> str | None:
 def _id_path(base_uri: str, iri: str) -> str:
     """完全IRIから`id_path`(`/entity/{id_path}`が受け取る経路形)を導出する。
 
-    `get_entity_detail`が組み立てる`entity_uri = f"{base_uri}/id/{id_path}"`
-    の逆演算。**この関数1本だけを、`id`を組み立てる3つの構築箇所
+    `get_entity_detail`が組み立てる`entity_uri`(`kgclient.canonical_iri`
+    参照)の逆演算。**この関数1本だけを、`id`を組み立てる3つの構築箇所
     (`SearchHit`・関係の相手側の`EntityRef`・`EntityDetailResponse`)全てから
     呼ぶ**(裁定B59)。箇所ごとに剥がし処理を手書きすると、このプロジェクトの
-    再発欠陥1(導出すべき値を手書きしている)そのものになる——`id`と
-    `id_path`が食い違う経路を構造的に塞ぐには、`id_path`を常に「その`id`に
-    この関数を通した値」として定義し、既に分かっている値の再利用(例:
-    `get_entity_detail`が自分で組み立てた`id_path`引数をそのまま使う)を
-    どの箇所でもしない——そうすることで、将来`entity_uri`の組み立て方が
-    変わってもこの関数を通した値は追随し、ズレが再発しない。
+    再発欠陥1(導出すべき値を手書きしている)そのものになる。
+
+    **この関数が防ぐのは「同じ`id`に対して箇所ごとに違う剥がし処理を書く」
+    ことだけである(訂正。裁定B69)。** 以前のこの節は「id_pathが食い違う
+    経路を構造的に塞ぐ」と書いていたが、これは偽だった——`id`を組み立てる
+    側(`entity_uri`)自体が誤っていれば、この関数はその誤りを検出も訂正も
+    せず、誤った`id`から一貫して誤った`id_path`を導出するだけである。
+    実際に裁定B69では、`get_entity_detail`が応答の`id`を素の文字列結合
+    (`f"{base_uri}/id/{id_path}"`)で組み立てていたため、`%`を含む
+    id_pathでは`id`自体がKGに存在しないIRIになり、この関数はそれをそのまま
+    剥がしていた——`id`が`canonical_iri`(`kgclient.py`)を通って正しく
+    組み立てられるようになった今、この関数は入力される`id`が正しくなった
+    ぶんだけ、自動的に正しい`id_path`を導出する。**この関数自体は
+    裁定B69で何も変えていない**——直したのは`id`を組み立てる側である。
 
     このKGの全エンティティは`uris.py`(`org_uri`・`law_uri`・`budget_uri`等)が
     `{base_uri}/id/...`の形でしか生成しない。この前提が崩れるIRI(ベースURI
@@ -370,7 +378,14 @@ def get_entity_detail(
     client: KGClient, base_uri: str, id_path: str, limit: int
 ) -> EntityDetailResponse | None:
     """エンティティ詳細エンドポイントの本体。存在しなければ`None`(呼び出し側が404にする)。"""
-    entity_uri = f"{base_uri}/id/{id_path}"
+    # **素の文字列結合(f"{base_uri}/id/{id_path}")にしない(裁定B69)。**
+    # id_pathはFastAPI/Starletteが既に1回URLデコードした生文字列であり、
+    # %を含むIDでは素の結合とcanonical_iri(再エンコードする)が分岐する
+    # ——応答のidがKGに存在しないIRIになる欠陥だった。応答のid(entity_uri)
+    # とSPARQLクエリ(entity_iri)の両方をcanonical_iri/sparql_iri(内部で
+    # canonical_iriを呼ぶだけ)という同じ1本の関数経由にすることで、
+    # 二度と分岐しないようにする(kgclient.canonical_iriのdocstring参照)。
+    entity_uri = canonical_iri(base_uri, id_path)
     entity_iri = sparql_iri(base_uri, id_path)
 
     own_rows = client.query(_build_own_type_query(base_uri, entity_iri))
@@ -443,9 +458,11 @@ def get_entity_detail(
     return EntityDetailResponse(
         id=entity_uri,
         # `id_path`引数をそのまま使わず、`_id_path`で`entity_uri`から再導出する
-        # (裁定B59: 3構築箇所全てが同じ1本のヘルパーを通ることで、`id`と
-        # `id_path`が食い違う経路を構造的に塞ぐ。queries.pyの`_id_path`
-        # docstring参照)
+        # (裁定B59)。ただし`_id_path`が防ぐのは箇所ごとの手書きのばらつき
+        # だけで、`entity_uri`自体が誤っていれば`id_path`も一貫して誤ったまま
+        # 導出される(裁定B69の訂正。queries.pyの`_id_path`docstring参照)。
+        # `entity_uri`を`canonical_iri`(kgclient.py)から組み立てることが、
+        # 裁定B69での実際の修正(このEntityDetailResponse呼び出しの直前)。
         id_path=_id_path(base_uri, entity_uri),
         type=type_local,
         label=own_label,

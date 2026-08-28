@@ -227,6 +227,82 @@ def test_search_hit_id_path_composes_with_entity_detail(app_and_spy):
 
 
 # =============================================================================
+# %を含むid_pathでの合成(裁定B69。B59直後に1フィールド隣で見つかった族)
+# =============================================================================
+
+
+def test_search_hit_id_path_composes_with_entity_detail_for_a_percent_encoded_id(app_and_spy):
+    """裁定B69の合成テスト(検索→詳細)。
+
+    上の`test_search_hit_id_path_composes_with_entity_detail`は`厚生労働省`
+    (ASCIIの法人番号)を選んでおり、`_SEARCHABLE_TYPES`に`org:
+    AbolishedGovernmentOrgan`が入っているにもかかわらず、エンコードが
+    必要な`id_path`を一度も通らない——「テストの被覆は、アサーションの
+    強さだけでなく入力に何を選んだかで決まる」(裁定B69)の実例。
+    `OLD_KOUSEISHO_NAME`(`"厚生省"`)を選び、`%`を含む`id_path`を実際に通す
+    (fixtureにデータを足す必要はない——`uris.py`が名称をpercent-encodeする
+    ため、fixtureの実行時グラフは既に`%`を含むIRIを持っている)。
+    """
+    app, _ = app_and_spy
+    with TestClient(app) as tc:
+        search_resp = tc.get("/search", params={"q": fx.OLD_KOUSEISHO_NAME})
+        assert search_resp.status_code == 200, search_resp.text
+        hits = search_resp.json()["results"]
+        abolished_hits = [h for h in hits if h["type"] == "AbolishedGovernmentOrgan"]
+        assert len(abolished_hits) == 1, f"前提(厚生省が1件ヒットする)が崩れている: {hits}"
+        hit = abolished_hits[0]
+        # **対象件数をアサートする(検査対象0件で通る空虚なテストにしない)。**
+        assert "%" in hit["id_path"], (
+            f"前提(id_pathがpercent-encodeを必要とする)が崩れている: {hit}"
+        )
+
+        detail_resp = tc.get(f"/entity/{hit['id_path']}")
+    assert detail_resp.status_code == 200, detail_resp.text
+    assert detail_resp.json()["id"] == hit["id"], (
+        "検索ヒットとエンティティ詳細のidが一致しない(裁定B69: %を含むid_pathで"
+        "entity_uriを素の文字列結合にすると、Starletteのデコードを経て"
+        "KGに存在しないIRIになる)"
+    )
+
+
+def test_relationship_related_id_path_composes_with_entity_detail_for_a_percent_encoded_id(
+    app_and_spy,
+):
+    """裁定B69の合成テスト(詳細→関係の相手→詳細。裁定B59(2)が警告した
+    「1ホップ先」の経路そのもの)。
+
+    `law/{NO_CANDIDATE_LAW_ID}`はjurisdiction未解決(reason=NO_CANDIDATE)の
+    `UnresolvedReference`(`%`を含む`id_path`)への関係を1件持つ。B59修正時は
+    「`related`が`id_path`を持つこと」しか検査しておらず、「それを引いて
+    同じ`id`が返ること」は検査していなかった——ここではHTTP経由で実際に
+    1ホップして確認する(関数呼び出しでは`sparql_iri`が`id_path`
+    (エンコード形)を二重エンコードして0件→404になるため、この欠陥は
+    HTTPルート経由でしか再現しない。裁定B69の検証表参照)。
+    """
+    app, _ = app_and_spy
+    with TestClient(app) as tc:
+        detail_resp = tc.get(f"/entity/law/{fx.NO_CANDIDATE_LAW_ID}")
+        assert detail_resp.status_code == 200, detail_resp.text
+        detail = detail_resp.json()
+        unresolved_rels = detail["relationships"].get("UnresolvedReference", [])
+        assert len(unresolved_rels) == 1, (
+            f"前提(UnresolvedReferenceへの関係が1件)が崩れている: {detail}"
+        )
+        related = unresolved_rels[0]["related"]
+        # **対象件数をアサートする(検査対象0件で通る空虚なテストにしない)。**
+        assert "%" in related["id_path"], (
+            f"前提(related.id_pathがpercent-encodeを必要とする)が崩れている: {related}"
+        )
+
+        hop_resp = tc.get(f"/entity/{related['id_path']}")
+    assert hop_resp.status_code == 200, hop_resp.text
+    assert hop_resp.json()["id"] == related["id"], (
+        "関係の相手側から1ホップしたエンティティ詳細のidが、relatedのidと一致しない"
+        "(裁定B69)"
+    )
+
+
+# =============================================================================
 # 上限を超えるlimitは黙って丸めず拒否する(422)
 # =============================================================================
 

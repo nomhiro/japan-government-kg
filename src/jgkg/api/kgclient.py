@@ -87,21 +87,58 @@ def sparql_string_literal(value: str) -> str:
     return f'"{escaped}"'
 
 
-def sparql_iri(base_uri: str, id_path: str) -> str:
-    r"""`/entity/{id}`のパス片から、SPARQLのIRIREF(`<...>`)として安全なIRI文字列を作る。
+def canonical_iri(base_uri: str, id_path: str) -> str:
+    r"""`/entity/{id}`のパス片から、KG内の真のIRI文字列(角括弧なし)を組み立てる。
 
     **`id_path`は経路(FastAPIの`{id:path}`)由来の生文字列であり、信頼しない。**
     セグメントごとに`quote(..., safe="")`で再エスケープする——これは
-    `src/jgkg/uris.py`がID生成時に使っているのと同じ関数・同じ`safe=""`なので、
-    正規のIDに対しては素通りするだけで実質的に変化しない(往復が壊れない)。
+    `src/jgkg/uris.py`がID生成時に使っているのと同じ関数・同じ`safe=""`である。
+
+    **訂正(裁定B69。この関数=旧`sparql_iri`のdocstringの以前の誤り)**:
+    以前は「正規のIDに対しては素通りするだけで実質的に変化しない(往復が
+    壊れない)」と書いていたが、これは偽だった。**`quote`は素通りしない**
+    ——FastAPI/Starletteは`{id:path}`ルートで`id_path`を渡す前に既に1回
+    URLデコードしているため、ここでの`quote`は**そのデコードされた文字を
+    再エンコードして戻している**のであって、「何もしない」のではない。
+    この再エンコードがあるからこそ、クライアントが`id_path`を生のまま・
+    正しくエンコードした形・デコード済み(日本語等)のどの形で渡しても、
+    ここで同じ正規のIRIに収束する(堅牢さの理由)。
+
+    **だからこそ、この関数を経由しない箇所は分岐する。** `get_entity_detail`
+    (`queries.py`)は以前、応答の`id`を素の文字列結合
+    (`f"{base_uri}/id/{id_path}"`)で組み立てていた——Starletteがデコード
+    した文字がそこでは再エンコードされずそのまま残るため、`%`を含むIRI
+    (`uris.py`の`unresolved_jurisdiction_uri`・`unresolved_ministry_uri`・
+    `abolished_organ_uri`・`law_version_uri`のように名称等を`quote`する
+    URI生成関数が対象——`LawRevision`・`UnresolvedReference`・
+    `AbolishedGovernmentOrgan`に実在する)についてKGに存在しないIRIを
+    応答の`id`として報告する欠陥になった(裁定B69。実データでの規模は
+    `progress.md`参照——自分で確認していない数字なのでここには書かない)。
+    **応答の`id`とSPARQLクエリの両方が
+    この関数1本を通ることで、二度と分岐しないようにする**——`sparql_iri`
+    はこの関数を角括弧で包むだけであり、`get_entity_detail`の`entity_uri`
+    (応答の`id`に使う値)もこの関数を直接呼ぶ。
+
     `safe=""`のあとに残るのは`[A-Za-z0-9._~%-]`のみで、SPARQLのIRIREF文法が
-    禁止する文字(`<> "{}|^\`` と空白・制御文字)は含まれ得ないため、
-    何が渡ってきてもクエリ構文を壊せない(角括弧の外に出られない)。
+    禁止する文字(`<> "{}|^\`` と空白・制御文字)は含まれ得ない。
     """
     from urllib.parse import quote
 
     quoted = "/".join(quote(segment, safe="") for segment in id_path.split("/"))
-    return f"<{base_uri}/id/{quoted}>"
+    return f"{base_uri}/id/{quoted}"
+
+
+def sparql_iri(base_uri: str, id_path: str) -> str:
+    """`canonical_iri`をSPARQLのIRIREF(`<...>`)として使える形にする。
+
+    **角括弧を付けるだけの薄いラッパー(裁定B69)。** SPARQL用の処理を
+    ここへ独自に書くと、応答側(`canonical_iri`を直接呼ぶ側)との分岐が
+    再発しうる——`canonical_iri`という1本を両方が通る、という不変条件を
+    この関数自身が破らないようにする。文字集合・堅牢さの理由は
+    `canonical_iri`のdocstring参照。角括弧の外に出られないため、
+    何が渡ってきてもクエリ構文を壊せない。
+    """
+    return f"<{canonical_iri(base_uri, id_path)}>"
 
 
 class RdflibKGClient:

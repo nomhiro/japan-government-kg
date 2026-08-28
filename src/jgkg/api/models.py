@@ -56,6 +56,23 @@ class EntityRef(_Envelope):
     #: `id`(完全IRI)から導出した経路形。`GET /entity/{id_path}`にそのまま
     #: 渡せる(裁定B59)。
     #:
+    #: **訂正(裁定B69。「そのまま渡せる」だけでは不十分だった)**:
+    #: `%`を含む`id_path`(percent-encode済みのIRIが実データに存在する型:
+    #: `LawRevision`・`UnresolvedReference`・`AbolishedGovernmentOrgan`)では、
+    #: B59の時点で「そのまま渡せる」は**呼び方によって結果が違っていた**
+    #: (裁定B69の検証表)——`GET /entity/{id_path}`(**HTTPルート経由**)は
+    #: Starletteの1回デコード+`sparql_iri`の再エンコードが噛み合って200が
+    #: 返っていたが、`get_entity_detail`を**直接関数呼び出し**すると
+    #: `sparql_iri`が(デコードを経ない`id_path`をさらに)二重エンコードして
+    #: 0件→404になる。**しかもHTTPルート経由の200は偽物だった**:
+    #: `get_entity_detail`が応答の`id`を素の文字列結合で組み立てていたため、
+    #: 200は返るのにKGに存在しないIRIを`id`として報告していた(裁定B69。
+    #: 404より悪い——利用者が偽の同一性を正しい答えだと信じる)。この欠陥は
+    #: `get_entity_detail`側(`kgclient.canonical_iri`)で修正済みであり、
+    #: **現在はHTTPルート経由で`id_path`を渡して得た`EntityDetailResponse.id`
+    #: は、この`EntityRef.id`と完全に一致する**(応答の`id`とSPARQLクエリの
+    #: 両方が同じ1本の関数を通るため)。
+    #:
     #: **背景**: `search_entities`は`id`に完全IRIを束縛する(`queries.py`の
     #: `SearchHit(id=entity, ...)`)一方、`get_entity_detail`は
     #: `entity_uri = f"{base_uri}/id/{id_path}"`を組み立てるため**パス形**を
