@@ -113,9 +113,16 @@ def build(generated_dir: Path, out_dir: Path) -> set[str]:
     # sitemap を作る。**robots.txt がこれを名指ししているので、無いと
     # 「存在しないものへの参照」になる**(このプロジェクトで繰り返した
     # 「消費者のいない記録」の裏返し)。
+    #
+    # **`newline="\n"` を明示する。** 省略すると`write_text`はWindows上で
+    # `\n`を`\r\n`に変換する(既定の`newline=None`の挙動)。CI(Linux)は常にLF
+    # で作るため、Windows上でビルドしたときだけ配信済みの本番(LF)と
+    # バイトが食い違う——`scripts/generate-schema.sh`に`MSYS_NO_PATHCONV=1`を
+    # 足したのと同じ理由(設計書§11.1: どの環境で実行しても同じ生成物になる)。
+    # 実測: Windows上でこの指定無しに作ると、本番と16バイト(改行16本分)食い違った。
     base = _base()
     lines = [f"{base}/"] + [f"{base}{p}" for p in sorted(made)]
-    (out_dir / "sitemap.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (out_dir / "sitemap.txt").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     made.add("/sitemap.txt")
 
     return made
@@ -170,9 +177,13 @@ def build_headers(made: set[str]) -> str:
 
 
 def write_headers(made: set[str], out_dir: Path) -> Path:
-    """`build_headers()`の内容を`out_dir/_headers`に書く。書いたパスを返す。"""
+    """`build_headers()`の内容を`out_dir/_headers`に書く。書いたパスを返す。
+
+    `newline="\\n"`を明示する理由は`build()`の`sitemap.txt`と同じ
+    (Windows上での既定`newline=None`はLFをCRLFに変換する)。
+    """
     path = out_dir / "_headers"
-    path.write_text(build_headers(made), encoding="utf-8")
+    path.write_text(build_headers(made), encoding="utf-8", newline="\n")
     return path
 
 
