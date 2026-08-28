@@ -134,6 +134,21 @@ def test_write_headers_writes_the_file_to_out_dir(tmp_path):
     assert path.read_text(encoding="utf-8") == site.build_headers(made)
 
 
+def test_build_and_write_headers_never_write_crlf(tmp_path):
+    """`sitemap.txt`/`_headers`はどの環境でビルドしても同じバイト列であること。
+
+    **何があれば落ちるか**: `write_text`から`newline="\\n"`を外すと、
+    Windows上ではLFがCRLFに変換される(既定の`newline=None`の挙動)。
+    CI(Linux)は常にLFで作るため、Windows上でビルドしたときだけ配信済みの
+    本番(LF)とバイトが食い違い、`scripts/verify-site.py`のsha256比較
+    (裁定B63)が環境差だけで恒久的に赤くなる(実測で発生を確認した欠陥)。
+    """
+    made = site.build(GENERATED, tmp_path)
+    site.write_headers(made, tmp_path)
+    assert b"\r\n" not in (tmp_path / "sitemap.txt").read_bytes()
+    assert b"\r\n" not in (tmp_path / "_headers").read_bytes()
+
+
 # =============================================================================
 # 最終レビュー⚠️B/⚠️C: verify-site.pyの手書きの乗数(`len(MODULES) * 3`)と
 # build_headers()の手書きの除外リスト(`!= "/sitemap.txt"`)を導出に置き換える
