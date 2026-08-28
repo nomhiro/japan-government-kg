@@ -10,6 +10,10 @@ dependencies = [
     "httpx>=0.28",
     "pydantic>=2.10",
     "pydantic-settings>=2.7",
+    # D-3: API層(仕様§9.1)。LinkMLのような単一ソースではないため範囲指定
+    # (data/artifact/・data/lake/のようなデータに影響しない道具は厳密固定しない)
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
 ]
 
 [project.optional-dependencies]
