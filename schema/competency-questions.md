@@ -365,6 +365,30 @@ sentinel_or_nonexistent_houjin_bangouを「未解決」に混ぜると、実際�
 `budget_recipients_sentinel`/`budget_recipients_nonexistent_houjin_bangou`
 で見える。
 
+### D-2: CQ6を推論から明示に置き換える
+
+**上記の4分類は、以前はrecipient/payeeLabel/core:UnresolvedReferenceの
+有無から3重のOPTIONALで推論していた。** 73,919件の支出に対して
+149.875秒かかり(`?u core:unresolvedFor ?e`が主語側未束縛で索引が
+効きにくいことが主因)、多くのサーバーレスプラットフォームの既定リクエスト
+タイムアウト(30〜60秒)を超えるためAPI層に載せられなかった。
+
+**かつ、この「不在からの推論」という構造自体が上記の裁定B42の欠陥の
+原因でもあった**——sentinelという名前がグラフ上区別できない2種類の
+合算であることを、推論だけでは見分けられなかった。
+
+`budget:recipientMatchCategory`(schema/budget.yaml
+RecipientMatchCategoryEnum。必須・4値のenum)を新設し、
+パイプライン自身の判定(`rs.resolve_recipient`/`rs.build_projects`)を
+emit時にそのまま書くようにした。**推論し直さない**——cq06は
+`budget:recipientMatchCategory`を直接読むだけの単一結合になった。
+
+旧クエリ(推論)は`queries/cq/legacy-cq06-optional-inference.rq`に残し、
+`jgkg.pipeline`がビルド時に新旧の結果を突き合わせる(食い違えば
+`report_graph_mismatches`経由でリリースゲートが止まる。裁定B54と同型 —
+明示した値を明示した値自身で検査すると循環検証になるため、独立した
+推論経路をオラクルにする)。
+
 ### CQ9: 分類の境界
 
 `core:unresolved_reason`が`OLD_MINISTRY`(2001年の中央省庁再編で廃止された
