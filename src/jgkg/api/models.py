@@ -12,15 +12,35 @@
 都合が紛れ込む意味論的な誤りになる。
 
 **したがって**:
-- **エンティティの中身**(属性・型)は`schema/generated/*_models.py`
-  (LinkML生成、`schema/generated/all_models.py`)を単一の真実源として使う
-  ——ここがオントロジーとの契約。このファイルの型はそれを**包む**だけで、
-  中身の構造を独自に再定義しない
 - **封筒**(結果一覧・件数・打ち切りの有無・出典等)はここに手書きのPydanticで置く
+- **エンティティの中身**(属性・関係)は、`EntityDetailResponse.attributes`が
+  示すとおり**汎用の述語→値の辞書**(`dict[str, list[str]]`)として返す
+
+**訂正(このモジュールの以前の版の誤り。advisorレビューで指摘)**: 以前の
+記載は「エンティティの中身は`schema/generated/*_models.py`を単一の真実源
+として使い、この封筒型はそれを包むだけ」と書いていたが、**実装はそうなって
+いない**——`src/jgkg/api/`のどこも`schema/generated/*_models.py`の
+LinkML生成クラス(`Law`・`Organization`・`BudgetProject`等)をimportも
+インスタンス化もしていない(`queries.py`のSPARQL行から直接組み立てている)。
+これは文書が実装と異なる主張をしていた実例そのもの(このプロジェクトが
+繰り返し扱う欠陥型6)であり、ここで訂正する。
+
+**現状の正確な設計**: オントロジーの契約(どの型がどのプロパティを持てるか)
+は**emit時点+SHACL検証ゲートで既に強制済み**(`jgkg.validate`)——KGに
+到達したデータは既にLinkMLの制約を満たしている。API層はそれを**再び型付け
+し直さない**。汎用の辞書にした理由は、Law/Organization/BudgetProject/
+Expenditure/AbolishedGovernmentOrgan等、型ごとに異なるフィールド集合を
+持つ全エンティティを**1つの応答形で**扱えるようにするため
+(型ごとにLinkML生成クラスへ振り分ける判別ロジックを`/entity/{id}`に
+持たせない、というトレードオフ)。**この選択は、仕様§9.1・D-3ブリーフ設計2
+が想定していた形からの、ブリーフが認識していなかった追加の逸脱であり、
+team-leadの裁定を経ていない**(気になる点として報告する)。完全な語彙・
+型の意味論は`/def/`(site.py公開のオントロジー)で常に確認できる。
 
 閉じたモデル(`extra="forbid"`)にするのは、`schema/generated/all_models.py`の
-`ConfiguredBaseModel`と同じ理由(SHACLの閉じたシェイプと同じ規律をAPI応答にも
-揃える)。
+`ConfiguredBaseModel`と同じ理由(SHACLの閉じたシェイプと同じ規律を封筒型にも
+揃える)——ただし対象は封筒(このファイルの型)のみで、エンティティの中身の
+構造そのものではない。
 """
 from pydantic import BaseModel, ConfigDict
 

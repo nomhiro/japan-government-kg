@@ -17,8 +17,18 @@ asyncio配線であり、Linux(CIの実行環境。ubuntu-latest)では
 `tests/conftest.py`のdocstring項4「テスト自身がmonkeypatchで上書きすれば
 迂回できる」という明示的に許容された経路を使い、127.0.0.1以外への接続は
 従来通り遮断したままにする)。
+
+**この迂回自体はteam-leadの裁定を経ていない(要相談)。** A-2の遮断は実際の
+事故(コネクタのスタブ化忘れによる政府サーバへの実アクセス)を受けて作られた
+安全装置であり、1ファイルとはいえその一部を緩めるのはこのテストの著者
+(私)の一存で決めてよい範囲を超えている可能性がある。**`sys.platform`で
+Windows限定にしてあり**、Linux(CIの実行環境)では以下のフィクスチャは
+何もせず、conftest.pyの遮断がそのまま(このファイルを追加する前と
+バイト単位で同じ)効く——実害の範囲をこのローカル開発環境だけに
+限定している。
 """
 import socket as _socket_module
+import sys
 
 import conftest
 import phase1_fixture as fx
@@ -43,7 +53,15 @@ _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 @pytest.fixture(autouse=True)
 def _allow_loopback_for_asgi_testclient(monkeypatch):
-    """127.0.0.1/::1宛だけ本物のconnectを通す。他は従来通り`conftest._blocked`。"""
+    """127.0.0.1/::1宛だけ本物のconnectを通す。他は従来通り`conftest._blocked`。
+
+    **Windows限定。** Linux(`socket.socketpair()`がAF_UNIXで実装されており
+    この摩擦がそもそも起きない)では何もパッチしない——CIの遮断挙動は
+    このファイルが無かった場合と完全に同じ。
+    """
+    if sys.platform != "win32":
+        yield
+        return
 
     def _connect(sock, address, *args, **kwargs):
         host = address[0] if isinstance(address, tuple) else address

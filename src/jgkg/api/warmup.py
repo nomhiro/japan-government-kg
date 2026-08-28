@@ -34,9 +34,18 @@ logger = logging.getLogger(__name__)
 
 
 def _warmup_query(base_uri: str) -> str:
+    # **cq06(新)と同じ3つの述語に触れる。** `?e a budget:Expenditure`だけだと
+    # 型索引の領域しかページインしない——cq06の175.250秒は
+    # `budget:project`・`budget:recipientMatchCategory`の領域も含めて
+    # 初めて発生した(裁定B55)。同じ3述語に触れることで、実際に問題を
+    # 起こした領域を温める(advisorレビュー指摘)
     return f"""
 PREFIX budget: <{base_uri}/def/budget#>
-SELECT (COUNT(*) AS ?c) WHERE {{ ?e a budget:Expenditure }}
+SELECT (COUNT(*) AS ?c) WHERE {{
+  ?e a budget:Expenditure ;
+     budget:project ?p ;
+     budget:recipientMatchCategory ?c2 .
+}}
 """
 
 
