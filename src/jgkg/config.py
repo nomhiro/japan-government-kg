@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     # 両方を弾く必要がある)
     houjin_bangou_url: str = ""
 
+    # D-3: API層(src/jgkg/api/)がクエリを投げるFusekiのSPARQLエンドポイント。
+    # **これは`base_uri`とは違い、本当の「実行時の設定」である**——オントロジーの
+    # 同一性(ベースURI)とは無関係に、デプロイ先ごとに変わってよい値なので
+    # `.env`での上書きが正しい経路(base_uri.pyのSOURCE_GLOBSにも入れない)。
+    # 既定値はscripts/run_cq.pyのDEFAULT_ENDPOINTと同じ
+    # (ローカルのFuseki。base_uri.pyのALLOWED_EXTERNAL_HOSTSが
+    # "localhost:3030"を既に許可済み)
+    sparql_endpoint: str = "http://localhost:3030/kg/sparql"
+
     @field_validator("base_uri")
     @classmethod
     def strip_trailing_slash(cls, v: str) -> str:
