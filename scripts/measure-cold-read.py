@@ -67,17 +67,50 @@ def _wait_until_ready(base_url: str, timeout_s: float) -> float | None:
     return None
 
 
-def _timed(label: str, fn, repeats: int) -> list[tuple[float, str]]:
-    """同じ処理を`repeats`回測る(裁定B55: 1回で結論してはいけない)。"""
+class VacuousMeasurement(RuntimeError):
+    """0件を測ってしまった。**その数字は「速い」ではなく「何も測っていない」。**"""
+
+
+def _timed(label: str, fn, repeats: int, *, expect_rows: bool = True) -> list[tuple[float, str]]:
+    """同じ処理を`repeats`回測る(裁定B55: 1回で結論してはいけない)。
+
+    **0件を測ったら例外にする(`expect_rows=True`のとき)。**
+
+    **なぜ必要か(2026-08-30に実際に踏んだ)**: このワークフローの初回の成功実行は
+    「ラベル領域 0.036秒 / 支出領域 0.014秒 0行」という**もっともらしい表**を
+    出した。約10万件の全走査が0.036秒で終わるはずがなく、実際には
+    **クエリが1件も当たっていなかった** ——
+    `fuseki-server --loc=` を直接叩いてリポジトリの設定
+    (`fuseki/kg.ttl` の `tdb2:unionDefaultGraph true`)を回避したため、
+    データが全て名前付きグラフにあるのに既定グラフが空だった。
+
+    **データセットの同一性検査(クアッド数がmanifestと一致)は通っていた** ——
+    **データが正しいことを検査しても、クエリがそのデータを見ていることは
+    検査していなかった。** これが「空虚なテスト」(このプロジェクトの
+    再発欠陥2)の測定版である。**記録していたら「配備先のコールド読みは
+    0.036秒」という完全な虚偽を公開していた。**
+    """
     out: list[tuple[float, str]] = []
     for i in range(repeats):
         t0 = time.monotonic()
+        rows: int | None = None
         try:
-            note = fn() or ""
+            result = fn()
+            if isinstance(result, tuple):
+                rows, note = result
+            else:
+                note = result or ""
         except Exception as exc:  # noqa: BLE001 - 失敗も測定結果として記録する
             note = f"**失敗**: {type(exc).__name__}: {exc}"
         out.append((time.monotonic() - t0, str(note)))
         print(f"  {label} {i + 1}回目: {out[-1][0]:8.3f} 秒  {out[-1][1]}", flush=True)
+        if expect_rows and rows == 0:
+            raise VacuousMeasurement(
+                f"{label}が0件を返した。**この測定は空虚である**"
+                f"(0.0N秒という数字は「速い」ではなく「何も測っていない」)。"
+                f" 既定グラフが空でないか(fuseki/kg.ttl の unionDefaultGraph)、"
+                f" ベースURIが合っているかを確認すること"
+            )
     return out
 
 
@@ -148,32 +181,44 @@ def main(argv: list[str]) -> int:
         "\n=== 2. ラベル領域(warm_up = search_entities。裁定B60)===",
         flush=True,
     )
-    label = _timed("ラベル領域", lambda: None if warm_up(client, base_uri) else "温めが失敗", args.repeats)
+    # **`warm_up` は所要秒数しか返さないので、行数は別に数える。**
+    # `warm_up` を測るのは「APIが起動時に実際に払うコスト」を測るためだが、
+    # それだけでは0件を測っても気づけない(上の`_timed`のdocstring参照)
+    def _label_region() -> tuple[int, str]:
+        elapsed = warm_up(client, base_uri)
+        hits = search_entities(client, base_uri, "", 1)
+        return (len(hits.results), "温めが失敗" if elapsed is None else f"{len(hits.results)}件")
+
+    label = _timed("ラベル領域", _label_region, args.repeats)
 
     print("\n=== 3. 支出領域(legacy-cq06。§19.3が175.250秒を測った領域)===", flush=True)
     cq06 = LEGACY_CQ06.read_text(encoding="utf-8").replace(
         "https://jgkg.norr-tech.com", base_uri
     )
-    expenditure = _timed(
-        "支出領域", lambda: f"{len(client.query(cq06))} 行", args.repeats
-    )
+    def _expenditure_region() -> tuple[int, str]:
+        rows = client.query(cq06)
+        return (len(rows), f"{len(rows)} 行")
+
+    expenditure = _timed("支出領域", _expenditure_region, args.repeats)
 
     print("\n=== 4. エンティティ詳細(1エンティティ分)===", flush=True)
     hits = search_entities(client, base_uri, "省", 1)
-    if hits.results:
-        target = hits.results[0].id_path
-        detail = _timed(
-            "エンティティ詳細",
-            lambda: (
-                f"{len(d.relationships)} 関係グループ"
-                if (d := get_entity_detail(client, base_uri, target, 50))
-                else "None"
-            ),
-            args.repeats,
+    if not hits.results:
+        # **黙って飛ばさない。** 検索が0件なら、上の段の数字も疑わしい
+        raise VacuousMeasurement(
+            "検索が0件で測定対象を選べなかった。**この測定は空虚である。**"
+            " 既定グラフが空でないか(fuseki/kg.ttl の unionDefaultGraph)、"
+            " ベースURIが合っているかを確認すること"
         )
-    else:
-        print("  検索が0件で対象を選べなかった", flush=True)
-        detail = []
+    target = hits.results[0].id_path
+
+    def _entity_detail() -> tuple[int, str]:
+        d = get_entity_detail(client, base_uri, target, 50)
+        if d is None:
+            return (0, "None")
+        return (len(d.relationships) + len(d.attributes), f"{len(d.relationships)} 関係グループ")
+
+    detail = _timed("エンティティ詳細", _entity_detail, args.repeats)
 
     rows = [
         ("Fusekiが応答を返すまで", [(ready, "索引のページインを含まない")]),

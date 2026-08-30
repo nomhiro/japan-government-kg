@@ -13,10 +13,18 @@ name: Cold read measurement (manual)
 # **`workflow_dispatch` のみ。** ci.yml に足すと毎pushで44MBのダウンロードと
 # Fuseki起動が乗る——この測定は「配備の判断をする前に1回」でよい。
 #
-# Dockerを使わず Java で fuseki-server を直接動かす理由: (1) イメージのビルド
-# 時間を払わない (2) **索引がランナーのネイティブFS上に置かれることを
-# 確実にする**(compose越しのバインドマウントでも Linux では実質ネイティブだが、
-# 経路を短くして「何を測っているか」を曖昧にしない)。
+# **配信は `docker compose`(リポジトリ自身の構成)で行う。**
+#
+# 初稿は「イメージのビルド時間を払わない」「経路を短くして『何を測っているか』を
+# 曖昧にしない」という理由で `fuseki-server --loc=` を直接叩いていた。
+# **その判断が測定を空虚にした** —— `fuseki/kg.ttl` の
+# `tdb2:unionDefaultGraph true` を回避してしまい、データが全て名前付きグラフに
+# あるのに既定グラフが空になり、「ラベル領域 0.036秒 / 支出領域 0行」という
+# **もっともらしいが何も測っていない表**が出た(2026-08-30の実行)。
+#
+# **経路を短くすると「何を測っているか」が変わる。** 配信構成は配備先と
+# 同じものを使う。Linux では compose のバインドマウントは実質ネイティブFSなので、
+# 測定の趣旨(Windowsのバインドマウントでない実Linux FS)も損なわない。
 
 on:
   workflow_dispatch:
@@ -48,25 +56,6 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --extra dev
-
-      - name: Resolve the Java version the Fuseki image pins
-        id: java
-        run: |
-          # **docker/fuseki.Dockerfile から導出する(直書きしない)。**
-          # 実測(2026-08-30、このワークフローの初回実行): ランナーの既定Javaは17で、
-          # Fuseki 6.2.0 は class file 65.0(Java 21)でコンパイルされているため
-          # `UnsupportedClassVersionError` で起動しなかった。**配備先(Dockerイメージ)
-          # が使う版と同じ版で測らないと、測定そのものが別物になる。**
-          version="$(grep -oE 'FROM eclipse-temurin:[0-9]+' docker/fuseki.Dockerfile | grep -oE '[0-9]+$')"
-          test -n "$version" || { echo "::error::fuseki.Dockerfile から Java の版を読み取れない"; exit 1; }
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Java $version を使う(docker/fuseki.Dockerfile から導出)"
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: ${{ steps.java.outputs.version }}
 
       - name: Resolve the pinned Jena version
         id: jena
@@ -105,47 +94,35 @@ jobs:
           uv run python -m jgkg.serve work/release
           du -sh data/artifact/current/tdb2
 
-      - name: Download the pinned Jena Fuseki
+      - name: Start Fuseki with the repo's own compose configuration
         env:
           JENA_VERSION: ${{ steps.jena.outputs.version }}
         run: |
-          curl -fsSL -o work/fuseki.tar.gz \
-            "https://archive.apache.org/dist/jena/binaries/apache-jena-fuseki-${JENA_VERSION}.tar.gz"
-          tar -xzf work/fuseki.tar.gz -C work
-          test -x "work/apache-jena-fuseki-${JENA_VERSION}/fuseki-server"
+          # **リポジトリ自身の配信構成を使う(docker compose)。**
+          #
+          # 初回の「成功」実行では `fuseki-server --loc=` を直接叩いていた ——
+          # 経路を短くしたつもりが、**`fuseki/kg.ttl` の
+          # `tdb2:unionDefaultGraph true` を回避してしまい**、データが全て
+          # 名前付きグラフにあるのに既定グラフが空になった。
+          # 結果は「ラベル領域 0.036秒 / 支出領域 0行」という
+          # **もっともらしいが何も測っていない表**だった。
+          #
+          # **経路を短くすると「何を測っているか」が変わる。**
+          # 配信構成は配備先と同じものを使う。Linux では compose の
+          # バインドマウントは実質ネイティブFSなので、測定の趣旨
+          # (バインドマウントでない実Linux FS)も損なわない。
+          docker compose up -d --build fuseki
+          docker compose ps
 
-      - name: Start Fuseki and measure the cold read
+      - name: Measure the cold read
         env:
-          JENA_VERSION: ${{ steps.jena.outputs.version }}
           REPEATS: ${{ inputs.repeats }}
         run: |
-          # `jgkg.serve` の既定の配置先。手で探さない
-          loc="data/artifact/current/tdb2"
-          test -d "$loc" || { echo "::error::$loc が無い(照合・展開段が失敗している)"; exit 1; }
-          echo "TDB2 の場所: $loc"
-
-          # **索引に触らずに起動する。** ここから先の時間は測定スクリプトが測る
-          "work/apache-jena-fuseki-${JENA_VERSION}/fuseki-server" \
-            --loc="$loc" /kg > work/fuseki.log 2>&1 &
-          fuseki_pid=$!
-          echo "fuseki-server を起動した(pid $fuseki_pid)"
-
-          # **プロセスが死んでいたら即座に落とす。** 初回実行では
-          # `UnsupportedClassVersionError` で即死していたのに、測定スクリプトの
-          # 起動待ちが300秒回り続け、**本当の原因が5分隠れた** ——
-          # 「待って諦める」は「なぜ待っても来ないのか」を隠す。
-          sleep 5
-          if ! kill -0 "$fuseki_pid" 2>/dev/null; then
-            echo "::error::fuseki-server が起動直後に終了した。ログ:"
-            cat work/fuseki.log
-            exit 1
-          fi
-
           # **--manifest を渡す。** 渡さないとデータセットの同一性を検査せず
-          # 警告だけになる(観察O16: 「接続できた」は「正しいデータセットに
-          # 接続できた」ではない)
+          # 警告だけになる(観察O16)。**ただし同一性検査だけでは足りない**
+          # —— 測定スクリプト側が「0件を測ったら止める」ことも併せて効かせる
           uv run python scripts/measure-cold-read.py --manifest work/release/manifest.json --repeats "${REPEATS:-3}"
 
       - name: Show the Fuseki log if something failed
         if: failure()
-        run: tail -60 work/fuseki.log || true
+        run: docker compose logs --tail=80 fuseki || true
