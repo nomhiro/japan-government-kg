@@ -123,13 +123,46 @@ def test_entity_detail_top_level_type_is_the_most_specific_when_dual_typed(clien
 
 
 def test_entity_detail_relationships_carry_provenance(client):
+    """関係に出典が付く。**ただし埋め込みではなく`graphs`マップへのキー参照**
+    (D-4の裁定2で正規化した)。
+    """
     detail = get_entity_detail(client, BASE, PROJECT_CORE_ID, limit=50)
     assert detail is not None
-    prov = detail.relationships["Ministry"][0].provenance
-    assert prov.graph == f"{BASE}/graph/rs-system/{fx.DAY.isoformat()}"
+    graph_key = detail.relationships["Ministry"][0].graph
+    assert graph_key == f"{BASE}/graph/rs-system/{fx.DAY.isoformat()}"
+    prov = detail.graphs[graph_key]
+    assert prov.graph == graph_key
     assert prov.source, "sourceが空"
     assert prov.fetched_on, "fetched_onが空"
     assert prov.license, "licenseが空"
+
+
+def test_every_relationship_graph_key_exists_in_the_graphs_map(client):
+    """**`models.py`が宣言した保証をテストで縛る**: 応答に現れるすべての
+    `Relationship.graph` が `graphs` に存在すること(消費者はキーの不在を
+    扱わなくてよい)。
+
+    **空虚にしない**: 検査対象の辺が0件なら落ちる。
+    """
+    detail = get_entity_detail(client, BASE, PROJECT_CORE_ID, limit=50)
+    assert detail is not None
+    keys = [rel.graph for rels in detail.relationships.values() for rel in rels]
+    assert keys, "検査対象の関係が0件(前提が崩れている)"
+    missing = sorted({k for k in keys if k not in detail.graphs})
+    assert not missing, f"graphsマップに存在しないキーが関係から参照されている: {missing}"
+
+
+def test_graphs_map_has_no_unreferenced_entries(client):
+    """`graphs` に、どの関係からも参照されないグラフを入れない
+    (**送る意味の無いデータを応答に混ぜない**。決定#33: 件数上限は
+    外向き通信量のコスト対策でもある)。
+    """
+    detail = get_entity_detail(client, BASE, PROJECT_CORE_ID, limit=50)
+    assert detail is not None
+    referenced = {rel.graph for rels in detail.relationships.values() for rel in rels}
+    assert detail.graphs, "graphsが空(前提が崩れている)"
+    unreferenced = sorted(set(detail.graphs) - referenced)
+    assert not unreferenced, f"どの関係からも参照されないgraphsのエントリ: {unreferenced}"
 
 
 def test_entity_detail_relationships_disappear_if_provenance_is_removed(kg, client):

@@ -137,7 +137,25 @@ class Relationship(_Envelope):
     #: (D-3ブリーフ「関係の向きを両方」)
     direction: str
     related: EntityRef
-    provenance: Provenance
+    #: **出典は名前付きグラフのキーで持ち、`Provenance`を埋め込まない**
+    #: (D-4の裁定2。以前はここに`provenance: Provenance`を埋め込んでいた)。
+    #: 実体は応答のトップレベルの`graphs`マップにある。
+    #:
+    #: **理由は2つ、どちらも重要度が高い**:
+    #:
+    #: **(1) 埋め込み形は自己矛盾を許す。** 同じ名前付きグラフ由来の2つの辺が
+    #: **異なるライセンスを主張できてしまう**形になっていた。出典は
+    #: **名前付きグラフの属性**であって辺の属性ではない ——
+    #: 辺ごとに複製すると、複製の間で食い違える構造を作る
+    #: (このプロジェクトの再発欠陥4: 自己矛盾する定義)。
+    #: キー参照にすれば、**同一グラフの辺が違う出典を主張することが
+    #: 構造的に不可能**になる。
+    #:
+    #: **(2) 外向き通信量がコストである**(設計書§6.3・決定#33:
+    #: 「§9.1のAPI層の件数上限は、性能対策であると同時にコスト対策である」)。
+    #: 名前付きグラフは7本、辺は近傍サブグラフ(D-4)で数百本になりうる ——
+    #: 同じ4つの文字列を数百回送る意味は無い。
+    graph: str
 
 
 class EntityDetailResponse(_Envelope):
@@ -157,6 +175,13 @@ class EntityDetailResponse(_Envelope):
     #: エンティティ」の型のローカル名(例: "Law"・"Ministry"・"Expenditure")。
     #: 属性には現れない、関係固有の軸なので、属性のグループ化とは別に持つ
     relationships: dict[str, list[Relationship]]
+    #: **名前付きグラフのキー → その出典**(D-4の裁定2で正規化した)。
+    #: `Relationship.graph` はこのマップのキーである。
+    #:
+    #: **この応答に現れるすべての `Relationship.graph` がここに存在することを
+    #: 保証する**(消費者はキーの不在を扱わなくてよい)——
+    #: 保証はテストで縛る(`tests/test_api_entity.py`)。
+    graphs: dict[str, Provenance]
     #: 実際に採用された上限
     relationships_limit: int
     #: **黙って切らない**(SearchResponse.truncatedと同じ理由)

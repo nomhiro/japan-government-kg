@@ -428,11 +428,24 @@ def get_entity_detail(
             related_info[uri] = (_most_specific_type(types), label)
 
     relationships: dict[str, list[Relationship]] = {}
+    # **出典を辺ごとに複製せず、グラフのキーで参照する**(D-4の裁定2)。
+    # 同じグラフ由来の辺が違う出典を主張することが構造的に不可能になり、
+    # かつ同じ4つの文字列を辺の数だけ送らなくなる(決定#33: 件数上限は
+    # 外向き通信量のコスト対策でもある)。`models.py`の`Relationship.graph`参照
+    graphs: dict[str, Provenance] = {}
     for row in kept_edges:
         other = _value(row, "other")
         if other is None:
             continue
         related_type, related_label = related_info.get(other, ("unknown", None))
+        graph = _value(row, "g") or ""
+        if graph and graph not in graphs:
+            graphs[graph] = Provenance(
+                graph=graph,
+                source=_value(row, "source") or "",
+                fetched_on=_value(row, "fetchedOn") or "",
+                license=_value(row, "license") or "",
+            )
         rel = Relationship(
             predicate=_local_name(_value(row, "p")),
             direction=_value(row, "direction") or "outgoing",
@@ -442,12 +455,7 @@ def get_entity_detail(
                 type=related_type,
                 label=related_label,
             ),
-            provenance=Provenance(
-                graph=_value(row, "g") or "",
-                source=_value(row, "source") or "",
-                fetched_on=_value(row, "fetchedOn") or "",
-                license=_value(row, "license") or "",
-            ),
+            graph=graph,
         )
         # **型別にグループ化する(D-3ブリーフ)。** キーは相手側エンティティの
         # 型——「所管府省」と「根拠法令」のような述語別ではなく、Law/
@@ -468,6 +476,7 @@ def get_entity_detail(
         label=own_label,
         attributes=attributes,
         relationships=relationships,
+        graphs=graphs,
         relationships_limit=limit,
         relationships_truncated=truncated,
     )
