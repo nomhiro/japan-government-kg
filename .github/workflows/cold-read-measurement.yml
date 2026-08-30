@@ -1,0 +1,120 @@
+name: Cold read measurement (manual)
+
+# **裁定B55・B61・B62が3回繰り越した数字を出すためのワークフロー(裁定B71)。**
+#
+# なぜ開発機で測れないか: 真のコールドキャッシュが必要で、開発機では
+# `wsl --shutdown` かVM内の `drop_caches` を要し、他の並行ジョブを巻き込む。
+# `docker restart` では足りない(VMのページキャッシュが残る)。
+#
+# **GitHub Actions のランナーは真にコールドである**: 毎回新しい仮想マシンで、
+# ダウンロードしたばかりのファイルに対してページキャッシュが空であり、
+# **実Linuxファイルシステム(ext4。Windowsのバインドマウントではない)**である。
+#
+# **`workflow_dispatch` のみ。** ci.yml に足すと毎pushで44MBのダウンロードと
+# Fuseki起動が乗る——この測定は「配備の判断をする前に1回」でよい。
+#
+# Dockerを使わず Java で fuseki-server を直接動かす理由: (1) イメージのビルド
+# 時間を払わない (2) **索引がランナーのネイティブFS上に置かれることを
+# 確実にする**(compose越しのバインドマウントでも Linux では実質ネイティブだが、
+# 経路を短くして「何を測っているか」を曖昧にしない)。
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "測定対象のリリースタグ(空なら最新)"
+        required: false
+        default: ""
+      repeats:
+        description: "各段の測定回数(裁定B55: 1回で結論しない)"
+        required: false
+        default: "3"
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Resolve the pinned Jena version
+        id: jena
+        run: |
+          # **.env.example から導出する(直書きしない)。** 設計書§6.3が
+          # 「Jenaのバージョンをmanifestに記録し実行側で照合する」を要求しており、
+          # このワークフローがそこからずれた版で測ると測定自体が別物になる
+          version="$(grep -E '^JENA_VERSION=' .env.example | cut -d= -f2)"
+          test -n "$version" || { echo "::error::.env.example に JENA_VERSION が無い"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Jena $version を使う"
+
+      - name: Download the published KG artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          mkdir -p work/release
+          if [ -n "$TAG" ]; then
+            gh release download "$TAG" --pattern 'tdb2.tar.gz' --pattern 'manifest.json' --dir work/release
+          else
+            gh release download --pattern 'tdb2.tar.gz' --pattern 'manifest.json' --dir work/release
+          fi
+          ls -la work/release
+
+      - name: Verify and stage the artifact with the repo's own gate
+        env:
+          JENA_VERSION: ${{ steps.jena.outputs.version }}
+        run: |
+          # **照合を手で書き直さない。** `jgkg.serve`(`stage_release`)が
+          # 「展開より先に sha256 と Jenaバージョンを照合する」唯一の場所であり
+          # (設計書§6.3・レビューI3)、そこを通らない経路を作ると
+          # 「照合しない記録は記録の演技」に戻る。既定の配置先
+          # (data/artifact/current/tdb2)はこのチェックアウト内=ランナーの
+          # ネイティブFS上にある。
+          uv run python -m jgkg.serve work/release
+          du -sh data/artifact/current/tdb2
+
+      - name: Download the pinned Jena Fuseki
+        env:
+          JENA_VERSION: ${{ steps.jena.outputs.version }}
+        run: |
+          curl -fsSL -o work/fuseki.tar.gz \
+            "https://archive.apache.org/dist/jena/binaries/apache-jena-fuseki-${JENA_VERSION}.tar.gz"
+          tar -xzf work/fuseki.tar.gz -C work
+          test -x "work/apache-jena-fuseki-${JENA_VERSION}/fuseki-server"
+
+      - name: Start Fuseki and measure the cold read
+        env:
+          JENA_VERSION: ${{ steps.jena.outputs.version }}
+          REPEATS: ${{ inputs.repeats }}
+        run: |
+          # `jgkg.serve` の既定の配置先。手で探さない
+          loc="data/artifact/current/tdb2"
+          test -d "$loc" || { echo "::error::$loc が無い(照合・展開段が失敗している)"; exit 1; }
+          echo "TDB2 の場所: $loc"
+
+          # **索引に触らずに起動する。** ここから先の時間は測定スクリプトが測る
+          "work/apache-jena-fuseki-${JENA_VERSION}/fuseki-server" \
+            --loc="$loc" /kg > work/fuseki.log 2>&1 &
+          echo "fuseki-server を起動した(pid $!)"
+
+          # **--manifest を渡す。** 渡さないとデータセットの同一性を検査せず
+          # 警告だけになる(観察O16: 「接続できた」は「正しいデータセットに
+          # 接続できた」ではない)
+          uv run python scripts/measure-cold-read.py \n            --manifest work/release/manifest.json \n            --repeats "${REPEATS:-3}"
+
+      - name: Show the Fuseki log if something failed
+        if: failure()
+        run: tail -60 work/fuseki.log || true
