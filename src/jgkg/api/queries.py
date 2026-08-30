@@ -8,10 +8,20 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
-from jgkg.api.kgclient import KGClient, Row, canonical_iri, sparql_iri, sparql_string_literal
+from jgkg.api.kgclient import (
+    KGClient,
+    Row,
+    canonical_iri,
+    sparql_iri,
+    sparql_iri_for_canonical_uri,
+    sparql_string_literal,
+)
 from jgkg.api.models import (
     EntityDetailResponse,
     EntityRef,
+    GraphEdge,
+    NeighborhoodResponse,
+    PathResponse,
     Provenance,
     Relationship,
     SearchHit,
@@ -410,22 +420,7 @@ def get_entity_detail(
     kept_edges = edge_rows[:limit]
 
     related_uris = {_value(r, "other") for r in kept_edges if _value(r, "other")}
-    related_info: dict[str, tuple[str, str | None]] = {}
-    if related_uris:
-        label_rows = client.query(_build_related_labels_query(base_uri, related_uris))
-        acc: dict[str, tuple[list[str], str | None]] = {}
-        for row in label_rows:
-            uri = _value(row, "entity")
-            if uri is None:
-                continue
-            types, label = acc.get(uri, ([], None))
-            related_type = _value(row, "type")
-            if related_type:
-                types.append(_local_name(related_type))
-            label = label or _value(row, "label")
-            acc[uri] = (types, label)
-        for uri, (types, label) in acc.items():
-            related_info[uri] = (_most_specific_type(types), label)
+    related_refs = _hydrate_entity_refs(client, base_uri, related_uris)
 
     relationships: dict[str, list[Relationship]] = {}
     # **出典を辺ごとに複製せず、グラフのキーで参照する**(D-4の裁定2)。
@@ -437,7 +432,8 @@ def get_entity_detail(
         other = _value(row, "other")
         if other is None:
             continue
-        related_type, related_label = related_info.get(other, ("unknown", None))
+        related_ref = related_refs.get(other) or _unknown_entity_ref(base_uri, other)
+        related_type = related_ref.type
         graph = _value(row, "g") or ""
         if graph and graph not in graphs:
             graphs[graph] = Provenance(
@@ -449,12 +445,7 @@ def get_entity_detail(
         rel = Relationship(
             predicate=_local_name(_value(row, "p")),
             direction=_value(row, "direction") or "outgoing",
-            related=EntityRef(
-                id=other,
-                id_path=_id_path(base_uri, other),
-                type=related_type,
-                label=related_label,
-            ),
+            related=related_ref,
             graph=graph,
         )
         # **型別にグループ化する(D-3ブリーフ)。** キーは相手側エンティティの
@@ -479,4 +470,460 @@ def get_entity_detail(
         graphs=graphs,
         relationships_limit=limit,
         relationships_truncated=truncated,
+    )
+
+
+# =============================================================================
+# 共通: ノードの型・ラベルの取得と、出典の取得
+# =============================================================================
+
+
+def _unknown_entity_ref(base_uri: str, uri: str) -> EntityRef:
+    """型もラベルも引けなかったIRIの`EntityRef`。
+
+    **黙って落とさない。** KGに`rdf:type`が無いIRIが関係の相手側に現れること
+    はありうる(隔離されたソースの残骸など)——応答から消すと利用者には
+    「そこには何も無い」と見えるので、`type="unknown"`として出す。
+    """
+    return EntityRef(id=uri, id_path=_id_path(base_uri, uri), type="unknown", label=None)
+
+
+def _hydrate_entity_refs(
+    client: KGClient, base_uri: str, uris: Iterable[str]
+) -> dict[str, EntityRef]:
+    """IRIの集合に対して型とラベルを**1回のクエリ**で引き、`EntityRef`にする。
+
+    **1本にまとめる理由**: エンティティ詳細・近傍サブグラフ・パス探索の
+    3箇所が同じことをする。箇所ごとに書くと、`id_path`の導出や「型は最も
+    具体的なもの1つ」(`_most_specific_type`)の規則がばらつく——
+    **裁定B59とB69がまさにその族の欠陥だった**(同じ値を2つの規則で作る)。
+    """
+    wanted = sorted({u for u in uris if u})
+    if not wanted:
+        return {}
+    rows = client.query(_build_related_labels_query(base_uri, wanted))
+    acc: dict[str, tuple[list[str], str | None]] = {}
+    for row in rows:
+        uri = _value(row, "entity")
+        if uri is None:
+            continue
+        types, label = acc.get(uri, ([], None))
+        type_uri = _value(row, "type")
+        if type_uri:
+            types.append(_local_name(type_uri))
+        label = label or _value(row, "label")
+        acc[uri] = (types, label)
+    return {
+        uri: EntityRef(
+            id=uri,
+            id_path=_id_path(base_uri, uri),
+            type=_most_specific_type(types),
+            label=label,
+        )
+        for uri, (types, label) in acc.items()
+    }
+
+
+def _build_provenance_query(base_uri: str, graph_uris: Iterable[str]) -> str:
+    """名前付きグラフの集合に対して出典を**1回のクエリ**で引く。
+
+    **探索の途中で出典を結合しない**(D-4)。`_build_relationship_edges_query`
+    は出典を**必須で**結合しているため、`prov:wasDerivedFrom`等を持たない
+    グラフの辺は**黙って消える**——エンティティ詳細の契約としてはそれでよいが
+    (壊し確認のテストがその挙動を固定している)、**連結性の探索では
+    辺が消えると経路が見つからなくなる。** そのため探索は軽いクエリ
+    (`?direction ?p ?other ?g`だけ)で行い、出典は**最後に一度だけ**引く。
+    グラフは7本程度なので1本のクエリで足りる。
+    """
+    values = " ".join(f"<{g}>" for g in sorted({g for g in graph_uris if g}))
+    return _prefixes(base_uri) + f"""
+SELECT ?g ?source ?fetchedOn ?license WHERE {{
+  VALUES ?g {{ {values} }}
+  ?g prov:wasDerivedFrom ?source ;
+     prov:generatedAtTime ?fetchedOn ;
+     dcterms:rights ?license .
+}}
+"""
+
+
+def _hydrate_graphs(
+    client: KGClient, base_uri: str, graph_uris: Iterable[str]
+) -> dict[str, Provenance]:
+    """グラフのキー → 出典のマップを作る(D-4の裁定2の正規化形)。
+
+    **出典が引けなかったグラフも、キーだけは残さない** ——
+    `models.py`が「応答に現れるすべての`graph`が`graphs`に存在する」と
+    宣言しているため、引けなかったものは空文字列の`Provenance`で埋める。
+    **黙って欠かすと消費者がキーの不在を扱わなければならなくなる。**
+    """
+    wanted = sorted({g for g in graph_uris if g})
+    if not wanted:
+        return {}
+    rows = client.query(_build_provenance_query(base_uri, wanted))
+    found: dict[str, Provenance] = {}
+    for row in rows:
+        g = _value(row, "g")
+        if g is None:
+            continue
+        found[g] = Provenance(
+            graph=g,
+            source=_value(row, "source") or "",
+            fetched_on=_value(row, "fetchedOn") or "",
+            license=_value(row, "license") or "",
+        )
+    for g in wanted:
+        if g not in found:
+            found[g] = Provenance(graph=g, source="", fetched_on="", license="")
+    return found
+
+
+# =============================================================================
+# 近傍サブグラフとパス探索(D-4。仕様§9.1の残る2用途)
+# =============================================================================
+
+#: 深さは**1か2のみ**。仕様§9.1が「指定ノードから深さ1-2のノード/エッジ」と
+#: 書いている。3以上は拒否する(黙って2に丸めない——上のlimitの節と同じ理由)。
+NEIGHBORHOOD_DEFAULT_DEPTH = 1
+NEIGHBORHOOD_MAX_DEPTH = 2
+
+#: 総ノード数・総エッジ数の上限。Sigma.js(仕様§9.2)で一画面に描いて
+#: 意味が読める規模を既定にし、上限はその5倍に置いた。**「全体グラフの
+#: 一括表示は実装しない」(§9.2)ため、上限を大きくする動機が無い。**
+NEIGHBORHOOD_DEFAULT_NODE_LIMIT = 100
+NEIGHBORHOOD_MAX_NODE_LIMIT = 500
+NEIGHBORHOOD_DEFAULT_EDGE_LIMIT = 200
+NEIGHBORHOOD_MAX_EDGE_LIMIT = 1000
+
+#: **1ノードあたりの分岐数の上限。総数の上限だけでは足りない。**
+#: 実データの府省は数千の辺を持つ(支出73,919件が事業と府省に集まる)——
+#: 深さ2で総数上限だけを掛けると、**ハブ1個の隣接だけで上限を食い潰し、
+#: 他の方向が1つも見えない**。利用者には「そこには何も無い」と見える
+#: (このプロジェクトが繰り返し扱う「報告が嘘をつく」型)。
+NEIGHBORHOOD_DEFAULT_FANOUT_LIMIT = 25
+NEIGHBORHOOD_MAX_FANOUT_LIMIT = 100
+
+#: パス探索の深さ。**法令↔法人の経路は「法令→府省→事業→支出→法人」で
+#: 4ホップ**(設計書§1.2(C)の縦スライスそのもの)なので、既定を4に置いた。
+#: 上限6は、その縦スライスに1〜2ホップの寄り道が入っても届く余裕。
+PATH_DEFAULT_MAX_DEPTH = 4
+PATH_MAX_MAX_DEPTH = 6
+
+#: **訪問ノード数の予算**(hairball防止をAPI側で保証する。仕様§9.1)。
+#: 双方向BFSなので、両側の訪問数の合計に効く。
+PATH_DEFAULT_VISIT_BUDGET = 400
+PATH_MAX_VISIT_BUDGET = 2000
+
+#: パス探索の1ノードあたりの分岐数の上限。**これが効くと探索は不完全になり、
+#: `exhaustive`は真になれない**(切ったのに「尽くした」と言うのは嘘である)。
+PATH_DEFAULT_FANOUT_LIMIT = 50
+PATH_MAX_FANOUT_LIMIT = 200
+
+
+def _build_expansion_query(base_uri: str, entity_iri: str, fanout_limit: int) -> str:
+    """1ホップ分の辺を**両方向**取る軽いクエリ(出典を結合しない)。
+
+    **`_build_relationship_edges_query`を流用しない理由(2つ)**:
+
+    **(1) あちらは出典を必須で結合している。** `?g prov:wasDerivedFrom ...`が
+    OPTIONALでないため、**出典3項を持たないグラフの辺は黙って消える。**
+    エンティティ詳細の契約としてはそれでよい(壊し確認のテストがその挙動を
+    固定している)が、**連結性の探索で辺が消えると経路が見つからなくなる。**
+
+    **(2) 探索中の出典の結合は無駄である。** 出典は最後に一度だけ引けばよい
+    (`_hydrate_graphs`。グラフは7本程度)——D-4の裁定2で出典を正規化した
+    ことが、ここで効いている。
+
+    **目的語をベースURI配下の`/id/`名前空間に明示的に限定する。**
+    `!isLiteral`だけでは語彙の項(`/def/`)や外部IRIも通る——
+    実測では現状`/def/`を指すのは`rdf:type`だけ(除外済み)で等価だが、
+    **規則として名前空間で縛る方が将来のデータに対して安全**である。
+    """
+    excluded = " , ".join(f"<{p}>" for p in sorted(_TYPE_AND_LABEL_PREDICATES))
+    return _prefixes(base_uri) + f"""
+SELECT ?direction ?p ?other ?g WHERE {{
+  {{
+    GRAPH ?g {{ {entity_iri} ?p ?other }}
+    BIND("outgoing" AS ?direction)
+  }} UNION {{
+    GRAPH ?g {{ ?other ?p {entity_iri} }}
+    BIND("incoming" AS ?direction)
+  }}
+  FILTER(?p NOT IN ({excluded}))
+  FILTER(isIRI(?other))
+  FILTER(STRSTARTS(STR(?other), "{base_uri}/id/"))
+}}
+ORDER BY ?direction ?p ?other
+LIMIT {fanout_limit + 1}
+"""
+
+
+@dataclass(frozen=True)
+class _Hop:
+    """探索中の1本の辺。`GraphEdge`にする前の内部表現。"""
+
+    source: str
+    target: str
+    predicate: str
+    graph: str
+
+    def other_than(self, uri: str) -> str:
+        return self.target if self.source == uri else self.source
+
+
+def _expand(
+    client: KGClient, base_uri: str, uri: str, fanout_limit: int
+) -> tuple[list[_Hop], bool]:
+    """1ノードの隣接を取る。戻り値は`(辺, 分岐数の上限で切ったか)`。
+
+    **フロンティアをVALUESで束ねて1クエリにしない。** 束ねると1つのLIMITが
+    全体に効き、**ハブが予算を食い潰して他のノードが1本も寄与できない**
+    ——それは仕様§9.1が「API側で保証する」と定めたhairball防止の失敗そのもの
+    である。**1ノード1クエリにすれば、1ノードあたりの分岐数の上限が
+    構造から出てくる。** 束ねるのは後の最適化であって最初の形ではない。
+    """
+    # **`sparql_iri`を使わない。** `uri`はSPARQLの結果として受け取った
+    # **既に正準形の**完全IRIであり、`_id_path`で剥がして`sparql_iri`に渡すと
+    # **セグメントごとに再エンコードされて二重エンコードになる**
+    # (`%E5%8E%9A` -> `%25E5%258E%259A`)——D-4の実装中に実際に踏み、
+    # `%`を含むノード(厚生省)の辺が1本も見つからなかった。
+    # 裁定B59・B69と同じ族(同じ値を2つの規則で作る)が1層深いところにあった。
+    # 使い分けの規則は`kgclient.sparql_iri_for_canonical_uri`のdocstringにある
+    iri = sparql_iri_for_canonical_uri(uri)
+    rows = client.query(_build_expansion_query(base_uri, iri, fanout_limit))
+    truncated = len(rows) > fanout_limit
+    hops: list[_Hop] = []
+    for row in rows[:fanout_limit]:
+        other = _value(row, "other")
+        predicate = _value(row, "p")
+        if other is None or predicate is None:
+            continue
+        outgoing = (_value(row, "direction") or "outgoing") == "outgoing"
+        hops.append(
+            _Hop(
+                source=uri if outgoing else other,
+                target=other if outgoing else uri,
+                predicate=_local_name(predicate),
+                graph=_value(row, "g") or "",
+            )
+        )
+    return hops, truncated
+
+
+def _entity_exists(client: KGClient, base_uri: str, id_path: str) -> EntityRef | None:
+    """エンティティが存在すれば`EntityRef`を返す。無ければ`None`(呼び出し側が404)。"""
+    iri = sparql_iri(base_uri, id_path)
+    rows = client.query(_build_own_type_query(base_uri, iri))
+    if not rows:
+        return None
+    uri = canonical_iri(base_uri, id_path)
+    types = [_local_name(_value(r, "type")) for r in rows if _value(r, "type")]
+    label = next((_value(r, "label") for r in rows if _value(r, "label")), None)
+    return EntityRef(
+        id=uri, id_path=_id_path(base_uri, uri), type=_most_specific_type(types), label=label
+    )
+
+
+def get_neighborhood(
+    client: KGClient,
+    base_uri: str,
+    id_path: str,
+    depth: int,
+    node_limit: int,
+    edge_limit: int,
+    fanout_limit: int,
+) -> NeighborhoodResponse | None:
+    """近傍サブグラフの本体。存在しなければ`None`(呼び出し側が404にする)。"""
+    center = _entity_exists(client, base_uri, id_path)
+    if center is None:
+        return None
+
+    seen_nodes: dict[str, None] = {center.id: None}  # 挿入順を保つ集合
+    hops: dict[_Hop, None] = {}  # 同じ辺が両端から2回出るので重複を除く
+    fanout_truncated_nodes: list[str] = []
+    nodes_truncated = False
+    edges_truncated = False
+
+    frontier = [center.id]
+    for _level in range(depth):
+        next_frontier: list[str] = []
+        for node in frontier:
+            if len(hops) >= edge_limit:
+                edges_truncated = True
+                break
+            node_hops, hit_fanout = _expand(client, base_uri, node, fanout_limit)
+            if hit_fanout:
+                fanout_truncated_nodes.append(node)
+            for hop in node_hops:
+                if hop in hops:
+                    continue
+                if len(hops) >= edge_limit:
+                    edges_truncated = True
+                    break
+                hops[hop] = None
+                other = hop.other_than(node)
+                if other in seen_nodes:
+                    continue
+                if len(seen_nodes) >= node_limit:
+                    nodes_truncated = True
+                    continue
+                seen_nodes[other] = None
+                next_frontier.append(other)
+        frontier = next_frontier
+        if not frontier:
+            break
+
+    refs = _hydrate_entity_refs(client, base_uri, seen_nodes)
+    nodes = [refs.get(uri) or _unknown_entity_ref(base_uri, uri) for uri in seen_nodes]
+    edges = [
+        GraphEdge(source=h.source, target=h.target, predicate=h.predicate, graph=h.graph)
+        for h in hops
+    ]
+    return NeighborhoodResponse(
+        center=center,
+        depth=depth,
+        nodes=nodes,
+        edges=edges,
+        graphs=_hydrate_graphs(client, base_uri, (h.graph for h in hops)),
+        node_limit=node_limit,
+        edge_limit=edge_limit,
+        fanout_limit=fanout_limit,
+        nodes_truncated=nodes_truncated,
+        edges_truncated=edges_truncated,
+        fanout_truncated_nodes=sorted(set(fanout_truncated_nodes)),
+    )
+
+
+def find_path(
+    client: KGClient,
+    base_uri: str,
+    from_path: str,
+    to_path: str,
+    max_depth: int,
+    visit_budget: int,
+    fanout_limit: int,
+) -> PathResponse | None:
+    """パス探索の本体。両端のどちらかが存在しなければ`None`(呼び出し側が404)。
+
+    **SPARQLの可変長パス(`*`/`+`)を使わない。** あれは「到達可能か」しか
+    返さず、**経路そのものを返さない** ——仕様§9.1が要求するのは
+    「2エンティティ間の**経路**」である。884,052クアッドに対する無制限の
+    列挙は危険なので、**API層で境界付きの双方向BFS**を行う。
+
+    **辺の向きを無視して探索する(`undirected=True`)。**
+    実測: `UnresolvedReference`は出る辺771本・**入る辺0本**、
+    `Expenditure`の`project`は法令↔法人の経路にとって「逆向き」——
+    **向きを守って探索するとほとんど何も見つからない。**
+    """
+    start = _entity_exists(client, base_uri, from_path)
+    goal = _entity_exists(client, base_uri, to_path)
+    if start is None or goal is None:
+        return None
+
+    # 各側で「そのノードへ来た辺」を覚える(経路の復元用)
+    came: tuple[dict[str, _Hop | None], dict[str, _Hop | None]] = (
+        {start.id: None},
+        {goal.id: None},
+    )
+    frontiers: tuple[list[str], list[str]] = ([start.id], [goal.id])
+    visited = {start.id, goal.id}
+    fanout_truncated = False
+    searched_depth = 0
+    budget_exhausted = False
+    meeting: str | None = None
+
+    if start.id == goal.id:
+        meeting = start.id
+
+    while meeting is None and searched_depth < max_depth:
+        # 小さい方のフロンティアを広げる(双方向BFSの定石。訪問数を抑える)
+        side = 0 if len(frontiers[0]) <= len(frontiers[1]) else 1
+        if not frontiers[side]:
+            break
+        searched_depth += 1
+        next_frontier: list[str] = []
+        for node in frontiers[side]:
+            if len(visited) >= visit_budget:
+                budget_exhausted = True
+                break
+            node_hops, hit_fanout = _expand(client, base_uri, node, fanout_limit)
+            if hit_fanout:
+                fanout_truncated = True
+            for hop in node_hops:
+                other = hop.other_than(node)
+                if other in came[side]:
+                    continue
+                came[side][other] = hop
+                if other in came[1 - side]:
+                    meeting = other
+                    break
+                if len(visited) >= visit_budget:
+                    budget_exhausted = True
+                    break
+                visited.add(other)
+                next_frontier.append(other)
+            if meeting is not None or budget_exhausted:
+                break
+        frontiers = (next_frontier, frontiers[1]) if side == 0 else (frontiers[0], next_frontier)
+        if meeting is not None or budget_exhausted:
+            break
+
+    depth_limited = meeting is None and searched_depth >= max_depth
+    # **片側のフロンティアが空になれば、その側の到達可能集合を尽くしたことに
+    # なるので、経路は存在しない**(双方向BFSの性質)。「両方が空」を条件に
+    # すると、辺を1本も持たないノード(実データの`LawRevision` 9,550件。
+    # 観察O10)を始点にしたときに「尽くした」と言えなくなる ——
+    # **正しく言えるときに言わないのも、応答が実態とずれることである。**
+    frontiers_empty = not frontiers[0] or not frontiers[1]
+    # **切ったのに「尽くした」と言わない。** 予算切れ・深さ打ち切り・
+    # 分岐数の上限のいずれかが効いていたら、探索は不完全である
+    exhaustive = (
+        meeting is None
+        and not budget_exhausted
+        and not depth_limited
+        and not fanout_truncated
+        and frontiers_empty
+    )
+
+    node_uris: list[str] = []
+    path_hops: list[_Hop] = []
+    if meeting is not None:
+        forward: list[_Hop] = []
+        cursor = meeting
+        while (hop := came[0].get(cursor)) is not None:
+            forward.append(hop)
+            cursor = hop.other_than(cursor)
+        forward.reverse()
+        backward: list[_Hop] = []
+        cursor = meeting
+        while (hop := came[1].get(cursor)) is not None:
+            backward.append(hop)
+            cursor = hop.other_than(cursor)
+        path_hops = forward + backward
+        node_uris = [start.id]
+        cursor = start.id
+        for hop in path_hops:
+            cursor = hop.other_than(cursor)
+            node_uris.append(cursor)
+
+    refs = _hydrate_entity_refs(client, base_uri, node_uris)
+    return PathResponse(
+        start=start,
+        goal=goal,
+        nodes=[refs.get(u) or _unknown_entity_ref(base_uri, u) for u in node_uris],
+        edges=[
+            GraphEdge(source=h.source, target=h.target, predicate=h.predicate, graph=h.graph)
+            for h in path_hops
+        ],
+        graphs=_hydrate_graphs(client, base_uri, (h.graph for h in path_hops)),
+        found=meeting is not None,
+        max_depth=max_depth,
+        visit_budget=visit_budget,
+        visited=len(visited),
+        searched_depth=searched_depth,
+        budget_exhausted=budget_exhausted,
+        depth_limited=depth_limited,
+        fanout_limit=fanout_limit,
+        fanout_truncated=fanout_truncated,
+        exhaustive=exhaustive,
+        undirected=True,
     )

@@ -27,8 +27,6 @@ Windows限定にしてあり**、Linux(CIの実行環境)では以下のフィ�
 バイト単位で同じ)効く——実害の範囲をこのローカル開発環境だけに
 限定している。
 """
-import socket as _socket_module
-import sys
 
 import conftest
 import phase1_fixture as fx
@@ -43,41 +41,18 @@ from jgkg.api.warmup import warm_up
 
 BASE = "https://jgkg.norr-tech.com"
 
-# **収集時点(conftest.pyの遮断がまだ効いていない時点)で本物のconnectを捕捉する。**
-# フィクスチャの中で`socket.socket.connect`を読んでも、その時点では既に
-# conftest.pyの`_block_network`(autouse)が`_blocked`へ書き換え済みである
-# ため、本物を取れない
-_REAL_SOCKET_CONNECT = _socket_module.socket.connect
-_REAL_SOCKET_CONNECT_EX = _socket_module.socket.connect_ex
-_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
-
-
 @pytest.fixture(autouse=True)
-def _allow_loopback_for_asgi_testclient(monkeypatch):
-    """127.0.0.1/::1宛だけ本物のconnectを通す。他は従来通り`conftest._blocked`。
+def _allow_loopback(allow_loopback_for_asgi_testclient):
+    """`TestClient`のためのループバック限定の抜け穴を要求する。
 
-    **Windows限定。** Linux(`socket.socketpair()`がAF_UNIXで実装されており
-    この摩擦がそもそも起きない)では何もパッチしない——CIの遮断挙動は
-    このファイルが無かった場合と完全に同じ。
+    **定義は`tests/conftest.py`の`allow_loopback_for_asgi_testclient`に
+    1本化した(D-4)。** 以前はこのファイルが定義を持っていたが、
+    `test_api_graph.py`も`TestClient`を使うようになったため ——
+    **セキュリティに関わる緩和を2箇所に複製すると、片方だけが直される**
+    (再発欠陥3: 部分適用)。下の
+    `test_loopback_exemption_still_blocks_non_loopback_hosts`が、
+    その抜け穴がループバック限定のままであることを検査している。
     """
-    if sys.platform != "win32":
-        yield
-        return
-
-    def _connect(sock, address, *args, **kwargs):
-        host = address[0] if isinstance(address, tuple) else address
-        if host in _LOOPBACK_HOSTS:
-            return _REAL_SOCKET_CONNECT(sock, address, *args, **kwargs)
-        return conftest._blocked(sock, address, *args, **kwargs)
-
-    def _connect_ex(sock, address, *args, **kwargs):
-        host = address[0] if isinstance(address, tuple) else address
-        if host in _LOOPBACK_HOSTS:
-            return _REAL_SOCKET_CONNECT_EX(sock, address, *args, **kwargs)
-        return conftest._blocked(sock, address, *args, **kwargs)
-
-    monkeypatch.setattr(_socket_module.socket, "connect", _connect)
-    monkeypatch.setattr(_socket_module.socket, "connect_ex", _connect_ex)
     yield
 
 
@@ -416,12 +391,40 @@ def test_entity_detail_limit_over_max_is_rejected_not_silently_clamped(app_and_s
 
 
 def test_no_route_accepts_a_raw_sparql_query(app_and_spy):
-    """このアプリのルートは`/search`と`/entity/{id}`しか無いこと自体が
-    「公開SPARQLを作らない」ことの証拠になる——OpenAPIスキーマのパス一覧で確認する。
+    """仕様§9.1「SPARQL を外に出さず、用途別のエンドポイントを提供する」の検査。
+
+    **ルートの集合を厳密一致で固定する**ので、新しいルートを足すときは
+    ここを意図的に更新しなければならない(閉じた集合にすることで、
+    公開SPARQLの経路が黙って生えるのを防ぐ)。仕様§9.1が定める4用途:
+    検索・エンティティ詳細・近傍サブグラフ・パス探索。
+
+    **併せて、どのルートもSPARQLを受け取る名前のパラメータを持たないことを
+    検査する。** パス一覧だけでは「`/search`に`sparql=`パラメータが増えた」
+    という形の違反を捕まえられない——**閉じた集合はルートの数を縛るが、
+    ルートの中身は縛らない。**
     """
     app, _ = app_and_spy
-    paths = set(app.openapi()["paths"])
-    assert paths == {"/search", "/entity/{entity_id}"}, paths
+    schema = app.openapi()
+    paths = set(schema["paths"])
+    assert paths == {
+        "/search",
+        "/entity/{entity_id}",
+        "/neighborhood/{entity_id}",
+        "/path",
+    }, paths
+
+    # SPARQL(やその断片)を受け取る名前のパラメータが1つも無いこと。
+    # 検索語の`q`は正当なので禁止しない
+    forbidden = {"sparql", "query", "sparql_query", "select", "construct", "ask", "where"}
+    param_names = {
+        param["name"]
+        for path_item in schema["paths"].values()
+        for operation in path_item.values()
+        for param in operation.get("parameters", [])
+    }
+    assert param_names, "パラメータが1つも無い(前提が崩れている)"
+    offending = sorted(param_names & forbidden)
+    assert not offending, f"SPARQLを受け取りうる名前のパラメータがある: {offending}"
 
 
 # =============================================================================

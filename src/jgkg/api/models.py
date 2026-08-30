@@ -158,6 +158,111 @@ class Relationship(_Envelope):
     graph: str
 
 
+class GraphEdge(_Envelope):
+    """近傍サブグラフ・パス探索の辺1本。
+
+    **`Relationship`と別の型にする理由**: `Relationship`は「あるエンティティ
+    から見た関係」なので`direction`(自分が主語か目的語か)を持つ。
+    サブグラフの辺は**特定の視点を持たない**ので、代わりに`source`/`target`
+    (どちらも完全IRI)で向きを表す。`direction`を流用すると「誰から見た
+    向きなのか」が応答から読めなくなる。
+    """
+
+    #: 主語側の完全IRI
+    source: str
+    #: 目的語側の完全IRI
+    target: str
+    #: 述語のローカル名
+    predicate: str
+    #: `graphs`マップのキー(`Relationship.graph`と同じ正規化。D-4の裁定2)
+    graph: str
+
+
+class NeighborhoodResponse(_Envelope):
+    """近傍サブグラフ(仕様§9.1「指定ノードから深さ1-2のノード/エッジ」)。
+
+    **既知の限界(観察O10)**: `LawRevision`(実データで9,550件)は
+    **グラフの辺を1本も持たない** —— 法令への結びつきは`lawId`という
+    リテラルとIRIのパスに埋まった法令IDだけで、辺として存在しない。
+    **したがって法令の近傍に改正は一度も現れない。**
+    利用者が「この法令の近傍にはこれしか無い」と読むのは誤りである
+    (辺を足すのはPhase 2の課題)。**黙っていないためにここに書く**
+    (このプロジェクトの再発欠陥6: 報告が嘘をつく)。
+    """
+
+    center: EntityRef
+    #: 実際に採用された深さ(1 または 2)
+    depth: int
+    #: 中心を含む(重複しない)ノードの一覧
+    nodes: list[EntityRef]
+    edges: list[GraphEdge]
+    graphs: dict[str, Provenance]
+    #: 実際に採用された上限
+    node_limit: int
+    edge_limit: int
+    #: **1ノードあたりの分岐数の上限。** 総数の上限だけでは足りない ——
+    #: ハブ(数千の辺を持つ府省など)1個の隣接が上限を食い潰し、他の方向が
+    #: 1つも見えなくなる。利用者には「そこには何も無い」と見える
+    fanout_limit: int
+    #: **黙って切らない**(SearchResponse.truncatedと同じ理由)
+    nodes_truncated: bool
+    edges_truncated: bool
+    #: **分岐数の上限で隣接を切られたノードのIRI。** boolではなく一覧にする
+    #: —— 「どのノードの先がまだあるのか」が分かる方が、利用者が次に何を
+    #: 展開すべきか判断できる
+    fanout_truncated_nodes: list[str]
+
+
+class PathResponse(_Envelope):
+    """パス探索(仕様§9.1「2エンティティ間の経路(法令↔法人など)」)。
+
+    **`found=False`の読み方を応答の形で強制する。**
+    「max_depth以内に経路が無かった」と「経路が存在しない」は違う ——
+    空の結果だけを返すと利用者は後者だと読む(このプロジェクトが繰り返し
+    重い欠陥として扱ってきた「報告が嘘をつく」型)。`exhaustive`が真で
+    初めて後者を意味する。
+    """
+
+    start: EntityRef
+    goal: EntityRef
+    #: 見つかった経路の`start`から`goal`までのノード列。見つからなければ空
+    nodes: list[EntityRef]
+    #: `nodes`を順に繋ぐ辺(`len(nodes) - 1`本)。向きは`source`/`target`が持つ
+    #: —— **経路は辺の向きに逆らって進むことがある**(下の`undirected`参照)
+    edges: list[GraphEdge]
+    graphs: dict[str, Provenance]
+    found: bool
+    #: 実際に採用された上限
+    max_depth: int
+    #: **訪問ノード数の予算。** hairball防止をAPI側で保証する(仕様§9.1)
+    visit_budget: int
+    #: 実際に訪問したノード数
+    visited: int
+    #: 実際に探索が到達した深さ
+    searched_depth: int
+    #: **予算を使い切った。** 真なら「見つからなかった」であって「無い」ではない
+    budget_exhausted: bool
+    #: **max_depthに達して打ち切った。** 同上
+    depth_limited: bool
+    #: **1ノードあたりの分岐数の上限**(近傍サブグラフと同じ理由。ハブで
+    #: 探索が破綻するのを防ぐ)
+    fanout_limit: int
+    #: **分岐数の上限で隣接を切ったノードがあった。**
+    #: 真なら探索は不完全であり、`exhaustive`は真になれない ——
+    #: **切ったのに「尽くした」と言うのは嘘である**
+    fanout_truncated: bool
+    #: **探索を尽くした**(予算内・深さ内で到達可能な全ノードを見た)。
+    #: **`found=False`かつ`exhaustive=True`のときだけ「経路は存在しない」を
+    #: 意味する** —— ただし「この深さ・この予算の中では」という限定は残る
+    exhaustive: bool
+    #: **辺の向きを無視して探索した**ことを明示する。実データでは
+    #: `UnresolvedReference`が出る辺771本・入る辺0本、`Expenditure`の
+    #: `project`は法令↔法人の経路にとって「逆向き」——**向きを守って
+    #: 探索するとほとんど何も見つからない**(controller実測)。
+    #: 常に`true`だが、応答に出すことで消費者が向きを誤解しないようにする
+    undirected: bool
+
+
 class EntityDetailResponse(_Envelope):
     id: str
     #: `EntityRef.id_path`と同じ導出規則・同じ理由(裁定B59)。
