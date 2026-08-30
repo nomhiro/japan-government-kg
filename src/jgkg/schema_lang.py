@@ -4,9 +4,27 @@ linkml==1.11.1 の gen-owl / gen-shacl には言語タグを付けるCLIオプ�
 (公式ドキュメントには記載があるが、どのリリース版にも未実装)。設計書§5.7が
 求める「日本語の用語定義」を満たすため、生成後にタグを付け直す。
 
-タグを付けるのは定義文(skos:definition / sh:description)だけにする。
+タグを付けるのは定義文(skos:definition / sh:description)と表示名
+(dcterms:title)にする。表示名は仕様§9.2「専門用語を避けた表示名」に
+応えるため`schema/*.yaml`のクラス/スロットに`title:`として足すもので
+(裁定B78)、定義文と同じく日本語の文字列である。
 rdfs:label はスキーマの要素名(houjinBangou 等のASCII識別子)なので、
 日本語として印を付けるのは誤りになる。
+
+**`title:` を足すと、実は `dcterms:title` だけでは済まない(実測)。**
+`gen-shacl` は同じ表示名を、クラスなら生成される`sh:NodeShape`の
+`rdfs:label`に、スロットなら`sh:PropertyShape`の`sh:name`にも書く
+(SHACLには`dcterms:title`は一切出ない——出るのは`*.owl.ttl`だけ)。
+この2つは**このモジュールでは意図的にタグ付けの対象外のままにする**:
+`sh:name`は`title:`が無いスロットには出ないので値そのものは安全に
+タグ付けできるが、`rdfs:label`をTARGET_PREDICATESに加えると
+`*.owl.ttl`側のASCII識別子(`"BudgetProject"`等)まで日本語として誤タグ
+してしまう——このモジュールはファイルの種類(OWLかSHACLか)を見ずに
+同じTARGET_PREDICATESを両方に適用するため、`rdfs:label`だけを狙って
+タグ付けする手段が無い。したがって`sh:name`/`rdfs:label`(SHACL側)は
+日本語の文字列を持つが言語タグは付かない、という非対称が残る
+(裁定B78の実装範囲としてはこれで足りる——公開する表示名の正の場所は
+`*.owl.ttl`の`dcterms:title`であり、`site/index.html`もそちらを指す)。
 
 **さらに、生成物を入力が同じなら常にバイト単位で同一の出力にする(正準化)。**
 gen-owl / gen-shacl は入力(schema/*.yaml)を一切変えずに再実行するだけで
@@ -52,13 +70,17 @@ from pathlib import Path
 from rdflib import OWL, RDF, BNode, Graph, Literal, URIRef
 from rdflib.collection import Collection
 from rdflib.compare import to_canonical_graph
-from rdflib.namespace import SH, SKOS
+from rdflib.namespace import DCTERMS, SH, SKOS
 
 from jgkg.config import get_settings
 
 LANG = "ja"
-# 日本語の散文が入る述語だけを対象にする
-TARGET_PREDICATES = (SKOS.definition, SH.description)
+# 日本語の文字列が入る述語だけを対象にする(定義文・説明文・表示名)。
+# dcterms:title は裁定B78: `schema/*.yaml` の `title:` がここに生成される
+# 表示名で、仕様§9.2「専門用語を避けた表示名」に応える。モジュール単位の
+# `title:`(例: 「日本政府ナレッジグラフ コアスキーマ」)も同じ述語で出るため
+# 同様にタグが付く——これも日本語の文字列であり、対象から除く理由が無い
+TARGET_PREDICATES = (SKOS.definition, SH.description, DCTERMS.title)
 
 # 順序に意味が無いと確認済みの述語だけをここに登録する。
 # sh:path の連鎖パスや owl:propertyChainAxiom は順序そのものが意味を持つので、

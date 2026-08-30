@@ -7,9 +7,9 @@
 未知の述語がリストを持っていたら例外になることを固定する。
 """
 import pytest
-from rdflib import OWL, BNode, Graph, URIRef
+from rdflib import OWL, BNode, Graph, Literal, URIRef
 from rdflib.collection import Collection
-from rdflib.namespace import SH
+from rdflib.namespace import DCTERMS, SH, SKOS
 
 from jgkg import schema_lang
 
@@ -17,6 +17,48 @@ A = URIRef("http://example.test/a")
 B = URIRef("http://example.test/b")
 C = URIRef("http://example.test/c")
 SHAPE = URIRef("http://example.test/Shape")
+
+
+# =============================================================================
+# 裁定B78: dcterms:title(表示名)も定義文と同じ扱いでタグ付けされること
+# =============================================================================
+
+
+def test_tag_language_tags_dcterms_title_alongside_definition_and_description():
+    """`dcterms:title`(裁定B78で足した表示名)が`skos:definition`/`sh:description`
+    と同じくタグ付けの対象であること。
+
+    **何があれば落ちるか**: `TARGET_PREDICATES`から`DCTERMS.title`を外すと、
+    `tagged`が2件に減り、`g.value(A, DCTERMS.title).language`が`None`のまま
+    残るので、このテストの最後のループ(dcterms:titleの分)が落ちる。
+    """
+    g = Graph()
+    g.add((A, DCTERMS.title, Literal("予算事業")))
+    g.add((A, SKOS.definition, Literal("説明文")))
+    g.add((A, SH.description, Literal("説明文2")))
+
+    tagged = schema_lang.tag_language(g)
+
+    assert tagged == 3, f"3件ともタグ付け対象になるはずが{tagged}件だった"
+    for predicate in (DCTERMS.title, SKOS.definition, SH.description):
+        obj = g.value(A, predicate)
+        assert obj is not None, f"{predicate}の値が消えている"
+        assert obj.language == "ja", f"{predicate}に@jaが付いていない: {obj!r}"
+
+
+def test_tag_language_does_not_retag_already_tagged_title():
+    """既に言語タグ(または型)を持つリテラルは対象外(冪等性の前提)。
+
+    `dcterms:title`を追加してもこの既存の判定条件(`o.language is not None or
+    o.datatype is not None`のときスキップ)は変わらないことを固定する。
+    """
+    g = Graph()
+    g.add((A, DCTERMS.title, Literal("既にタグ済み", lang="ja")))
+
+    tagged = schema_lang.tag_language(g)
+
+    assert tagged == 0
+    assert g.value(A, DCTERMS.title).language == "ja"
 
 
 def test_sort_rdf_lists_normalizes_allow_listed_predicate_order():
