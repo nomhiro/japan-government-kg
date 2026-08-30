@@ -462,3 +462,139 @@ def test_path_accepts_a_percent_encoded_id_in_either_form(client, kg):
     starts = {r.json()["start"]["id"] for r in (by_params, by_url, by_decoded)}
     assert len(starts) == 1, f"送り方によってstartのidが違う(同じIRIに収束していない): {starts}"
     assert "%" in next(iter(starts)), f"startのidが正準形(エンコード済み)になっていない: {starts}"
+
+
+# =============================================================================
+# 不変条件: すべての辺の端点が nodes にある(ダングリングエッジを許さない)
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ("depth", "node_limit", "edge_limit", "fanout_limit"),
+    [
+        (1, 100, 200, 25),  # どの上限も効かない
+        (1, 2, 200, 25),  # **ノード数の上限が効く**(ダングリングエッジが出ていた組)
+        (1, 200, 2, 25),  # エッジ数の上限が効く
+        (1, 200, 200, 2),  # 分岐数の上限が効く
+        (2, 3, 200, 25),  # 深さ2でノード数の上限が効く
+        (2, 200, 3, 25),  # 深さ2でエッジ数の上限が効く
+        (2, 4, 5, 2),  # 3つ全部が効く
+    ],
+)
+def test_neighborhood_edges_never_dangle(client, depth, node_limit, edge_limit, fanout_limit):
+    """**応答のすべての辺の source と target が nodes にあること。**
+
+    **これはタスクレビューが実証した欠陥である。** `node_limit` に達したとき、
+    以前の実装は辺を確定した**後**に相手ノードの上限を判定していたため、
+    **`nodes` に無いノードを指す辺が残った**(ハブが6辺・node_limit=2 で
+    6辺中5辺がダングリング)。
+
+    **`nodes_truncated` は正直に真を返していた** —— 打ち切りの報告は正しいのに
+    **返したグラフ自体が壊れていた。** 既存の上限のテストは
+    `len(nodes) <= 2` とフラグしか見ておらず、この不整合を検出しなかった
+    (「アサーションは正しいが不完全」——観察O14と同じ族)。
+
+    **上限の組み合わせを掃く**のは、1つの組み合わせだけを見て
+    「不変条件が成り立つ」と結論しないため(裁定B55の「1回で結論しない」の
+    構造版)。
+    """
+    r = client.get(
+        f"/neighborhood/{HUB_PROJECT}",
+        params={
+            "depth": depth,
+            "node_limit": node_limit,
+            "edge_limit": edge_limit,
+            "fanout_limit": fanout_limit,
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+
+    node_ids = {n["id"] for n in body["nodes"]}
+    dangling = [
+        e for e in body["edges"] if e["source"] not in node_ids or e["target"] not in node_ids
+    ]
+    assert not dangling, (
+        f"nodes に無いノードを指す辺がある(depth={depth} node_limit={node_limit} "
+        f"edge_limit={edge_limit} fanout_limit={fanout_limit}): "
+        f"{[(e['source'], e['predicate'], e['target']) for e in dangling[:3]]}"
+    )
+    # 上限の範囲内であること(切ったなら上限以下)
+    assert len(body["nodes"]) <= node_limit
+    assert len(body["edges"]) <= edge_limit
+
+
+def test_neighborhood_dangling_edge_check_is_not_vacuous(client):
+    """上のパラメトリックな検査が**実際に辺を検査している**ことを固定する。
+
+    すべての組み合わせで `edges` が空なら、上のテストは何も検査していない
+    (このプロジェクトの再発欠陥2: 空虚なテスト)。
+    """
+    counts = []
+    for node_limit, edge_limit, fanout_limit in [(100, 200, 25), (2, 200, 25), (200, 2, 25)]:
+        body = client.get(
+            f"/neighborhood/{HUB_PROJECT}",
+            params={
+                "depth": 1,
+                "node_limit": node_limit,
+                "edge_limit": edge_limit,
+                "fanout_limit": fanout_limit,
+            },
+        ).json()
+        counts.append(len(body["edges"]))
+    assert all(c > 0 for c in counts), (
+        f"辺が0本の組み合わせがある —— 上の不変条件の検査が空虚になる: {counts}"
+    )
+
+
+def test_neighborhood_marks_a_graph_whose_provenance_is_missing(kg):
+    """**出典が引けないグラフを`available=False`で明示すること。**
+
+    近傍サブグラフの1ホップ展開は、探索を軽くするため出典を**必須で結合しない**
+    (必須にすると`prov:wasDerivedFrom`等を持たないグラフの辺が黙って消え、
+    連結性が壊れる)。そのため出典が引けないグラフがありうる。
+
+    **タスクレビューの指摘**: この分岐は当初テストで一度も踏まれておらず、
+    「実データに一度も当てていない層は緑でも未検証」(再発欠陥9)だった。
+    しかも空文字列だけを返す実装は**「出典が無い」ことを黙って隠して**おり、
+    仕様§9.2「全表示要素に一次資料へのリンクと取得日時を出す」に対して
+    UIが空のリンクを描くことになる。
+
+    **壊し確認の形で書く**: provenanceグラフから対象グラフの記述を実際に外し、
+    (a) 辺が消えないこと (b) `available=False` が立つこと の両方を見る。
+    """
+    from rdflib import URIRef
+
+    from jgkg.api.kgclient import RdflibKGClient
+
+    base_ok = TestClient(create_app(client=RdflibKGClient(kg), base_uri=BASE))
+    before = base_ok.get(f"/neighborhood/{HUB_PROJECT}", params={"depth": 1}).json()
+    assert before["edges"], "壊す前から辺が無い(前提が崩れている)"
+    assert all(p["available"] for p in before["graphs"].values()), (
+        f"壊す前から available=False のグラフがある: {before['graphs']}"
+    )
+    target_graph = before["edges"][0]["graph"]
+
+    # provenanceグラフから、その名前付きグラフについての記述を全て外す
+    prov_graph = kg.graph(URIRef(f"{BASE}/graph/provenance"))
+    removed = list(prov_graph.triples((URIRef(target_graph), None, None)))
+    assert removed, f"除去対象のprovenanceトリプルが見つからない: {target_graph}"
+    for triple in removed:
+        prov_graph.remove(triple)
+
+    after = TestClient(create_app(client=RdflibKGClient(kg), base_uri=BASE)).get(
+        f"/neighborhood/{HUB_PROJECT}", params={"depth": 1}
+    ).json()
+
+    # (a) 辺は消えない —— 探索は出典を必須にしていない
+    assert after["edges"], "出典を外したら辺が消えた(連結性の探索が壊れている)"
+    keys = {e["graph"] for e in after["edges"]}
+    assert target_graph in keys, "対象グラフの辺が消えた"
+
+    # (b) 引けなかったことが応答に現れる
+    prov = after["graphs"][target_graph]
+    assert prov["available"] is False, (
+        f"出典が引けないのに available=True のまま(黙って隠している): {prov}"
+    )
+    assert prov["source"] == ""
+    assert prov["graph"] == target_graph, "キーだけ落として消費者に不在を扱わせていない"

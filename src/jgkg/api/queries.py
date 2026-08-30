@@ -573,7 +573,13 @@ def _hydrate_graphs(
         )
     for g in wanted:
         if g not in found:
-            found[g] = Provenance(graph=g, source="", fetched_on="", license="")
+            # **引けなかったことを`available=False`で明示する。**
+            # 空文字列だけを返すと「出典が無い」ことを黙って隠すことになり、
+            # 仕様§9.2に対してUIが空のリンクを描く(`models.py`の
+            # `Provenance.available`のdocstring参照。タスクレビューの指摘)
+            found[g] = Provenance(
+                graph=g, source="", fetched_on="", license="", available=False
+            )
     return found
 
 
@@ -759,15 +765,31 @@ def get_neighborhood(
                 if len(hops) >= edge_limit:
                     edges_truncated = True
                     break
-                hops[hop] = None
+                # **相手ノードを受け入れられるかを、辺を確定する前に決める。**
+                #
+                # 以前はここで先に `hops[hop] = None` していた —— `node_limit` に
+                # 達すると**`nodes` に無いノードを指す辺が残った**(ダングリング
+                # エッジ)。実証: ハブが6辺・node_limit=2 のとき nodes 2件に対して
+                # edges 6件が返り、そのうち5件の端点が nodes に存在しなかった。
+                # **`nodes_truncated` は正直に真を返していたのに、返したグラフ
+                # 自体が壊れていた** —— D-5が `edges.source`/`target` は常に
+                # `nodes` にある前提で描画すると破綻する。
+                #
+                # **不変条件: 応答のすべての辺の source と target が nodes にある。**
+                # (`tests/test_api_graph.py` が上限の組み合わせを掃いて検査する)
                 other = hop.other_than(node)
-                if other in seen_nodes:
-                    continue
-                if len(seen_nodes) >= node_limit:
-                    nodes_truncated = True
-                    continue
-                seen_nodes[other] = None
-                next_frontier.append(other)
+                if other not in seen_nodes:
+                    if len(seen_nodes) >= node_limit:
+                        # **ノード数の上限で相手を入れられないので、辺も入れない。**
+                        # 切ったこと自体は `nodes_truncated` が伝える
+                        # (`edges_truncated` はエッジ数の上限で切ったときだけ真に
+                        # する —— 「返した nodes の間の辺は全部ある」という意味を
+                        # 保つため)
+                        nodes_truncated = True
+                        continue
+                    seen_nodes[other] = None
+                    next_frontier.append(other)
+                hops[hop] = None
         frontier = next_frontier
         if not frontier:
             break
