@@ -49,6 +49,7 @@ e-Gov法令APIへの完全な取得(約96ページ)とrssystem.go.jpへの1リ�
 `pytest.MonkeyPatch.context()`で専用インスタンスを持つ。
 """
 import socket
+import sys
 from collections.abc import Iterator
 from typing import Never
 
@@ -87,3 +88,56 @@ def _block_network(request: pytest.FixtureRequest) -> Iterator[None]:
         mp.setattr(socket.socket, "connect", _blocked)
         mp.setattr(socket.socket, "connect_ex", _blocked)
         yield
+
+
+# =============================================================================
+# ASGIのTestClient用のループバック限定の抜け穴(Windows限定)
+# =============================================================================
+
+# **収集時点(上の`_block_network`がまだ効いていない時点)で本物のconnectを
+# 捕捉する。** フィクスチャの中で`socket.socket.connect`を読んでも、その時点
+# では既に`_blocked`へ書き換え済みなので本物が取れない。
+_REAL_SOCKET_CONNECT = socket.socket.connect
+_REAL_SOCKET_CONNECT_EX = socket.socket.connect_ex
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+@pytest.fixture
+def allow_loopback_for_asgi_testclient(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """127.0.0.1/::1宛だけ本物のconnectを通す。他は従来通り`_blocked`。
+
+    **`fastapi.testclient.TestClient`を使うテストが必要とする。**
+    Starletteのportalがループバックのsocketpairを作るため。
+
+    **autouseにしない。** autouseにすると全テストで遮断が緩む ——
+    必要なファイルが明示的に要求する形にする(`test_api_app.py`と
+    `test_api_graph.py`が各自のautouseフィクスチャからこれを要求している)。
+
+    **定義をここに1本化した理由(D-4)**: 以前は`test_api_app.py`だけが持って
+    いたが、D-4で`test_api_graph.py`も`TestClient`を使うようになった。
+    **セキュリティに関わる緩和を2箇所に複製すると、片方だけが直される**
+    (このプロジェクトの再発欠陥3: 部分適用)。
+
+    **Windows限定。** Linux(`socket.socketpair()`がAF_UNIXで実装されており
+    この摩擦がそもそも起きない)では何もパッチしない——CIの遮断挙動は
+    このフィクスチャが無かった場合と完全に同じ。
+    """
+    if sys.platform != "win32":
+        yield
+        return
+
+    def _connect(sock, address, *args, **kwargs):
+        host = address[0] if isinstance(address, tuple) else address
+        if host in _LOOPBACK_HOSTS:
+            return _REAL_SOCKET_CONNECT(sock, address, *args, **kwargs)
+        return _blocked(sock, address, *args, **kwargs)
+
+    def _connect_ex(sock, address, *args, **kwargs):
+        host = address[0] if isinstance(address, tuple) else address
+        if host in _LOOPBACK_HOSTS:
+            return _REAL_SOCKET_CONNECT_EX(sock, address, *args, **kwargs)
+        return _blocked(sock, address, *args, **kwargs)
+
+    monkeypatch.setattr(socket.socket, "connect", _connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", _connect_ex)
+    yield

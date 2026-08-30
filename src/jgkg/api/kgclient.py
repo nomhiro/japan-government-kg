@@ -221,3 +221,45 @@ def _json_binding_to_term(binding: dict[str, str] | None) -> Term | None:
         # 「無視して落とす」よりも安全側
         kind = "literal"
     return Term(value=binding["value"], kind=kind, lang=binding.get("xml:lang"))
+
+
+#: SPARQLのIRIREF(`<...>`)の中に現れられない文字(Turtle/SPARQL文法)。
+#: 制御文字と空白、そして `<>"{}|^` とバックスラッシュ、バッククォート。
+_IRIREF_FORBIDDEN = (
+    frozenset(["<", ">", '"', "{", "}", "|", "^", "`", chr(0x5C)])
+    | {chr(c) for c in range(0x21)}
+    | {chr(0x7F)}
+)
+
+
+def sparql_iri_for_canonical_uri(uri: str) -> str:
+    r"""**既に正準形の**完全IRIを、SPARQLのIRIREF(`<...>`)にする。
+
+    **`sparql_iri(base_uri, id_path)`を流用してはならない。**
+    あちらは**Starletteが1回URLデコードした経路片**を受け取る前提で
+    **セグメントごとに再エンコードする**——**既にパーセントエンコード済みの
+    IRIから作った`id_path`を渡すと`%`が`%25`になって二重エンコードになり、
+    KGのIRIと一致しなくなる。**
+
+    **D-4の実装中に実際に踏んだ。** 近傍サブグラフの1ホップ展開が、
+    SPARQLの結果として受け取った完全IRI(`.../id/org/abolished/%E5%8E%9A...`)を
+    `_id_path`で剥がして`sparql_iri`に渡していたため、
+    `%E5%8E%9A` が `%25E5%258E%259A` になって**辺が1本も見つからなかった**。
+    **裁定B59・B69と同じ族の欠陥(同じ値を2つの規則で作る)が、
+    1層深いところにあった** ——
+    **`%`を含むノードをテストの入力に選んだから出た**(観察O14:
+    テストの被覆はアサーションの強さだけでなく入力の選び方で決まる)。
+
+    **したがって使い分けは1つの規則で言える**:
+
+    - **経路パラメータ(HTTP由来。デコード済み)から作るなら`sparql_iri`**
+    - **KGから受け取った完全IRIから作るならこの関数**(何もエンコードしない)
+
+    IRIREF文法が禁じる文字が含まれていたら例外にする——KG由来のIRIなら
+    起こらないが、**黙って壊れたクエリを組み立てるより大きく失敗させる**
+    (`_id_path`が`ValueError`にするのと同じ作法)。
+    """
+    bad = sorted(_IRIREF_FORBIDDEN & set(uri))
+    if bad:
+        raise ValueError(f"SPARQLのIRIREFに使えない文字を含むIRI: {uri!r}(該当: {bad})")
+    return f"<{uri}>"
