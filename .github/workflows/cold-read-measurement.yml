@@ -113,7 +113,7 @@ jobs:
           # **--manifest を渡す。** 渡さないとデータセットの同一性を検査せず
           # 警告だけになる(観察O16: 「接続できた」は「正しいデータセットに
           # 接続できた」ではない)
-          uv run python scripts/measure-cold-read.py \n            --manifest work/release/manifest.json \n            --repeats "${REPEATS:-3}"
+          uv run python scripts/measure-cold-read.py --manifest work/release/manifest.json --repeats "${REPEATS:-3}"
 
       - name: Show the Fuseki log if something failed
         if: failure()
