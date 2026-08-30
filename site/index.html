@@ -92,6 +92,8 @@
 
   <p>用語のURIはハッシュURIです。<code>/def/core#Agent</code> のように参照し、フラグメントを外した <code>/def/core</code> がオントロジー本体を返します。SHACL形状は <code class="mono"><a href="/def/all.shacl.ttl">/def/all.shacl.ttl</a></code> にあります。いずれも <code>text/turtle</code> で配信し、CORSを開けています。</p>
 
+  <p>専門用語を避けた日本語の表示名は <code>dcterms:title</code>(<code>@ja</code>)にあります。<code>skos:prefLabel</code> ではありません——各用語は既に <code>skos:definition</code>(定義文)と <code>skos:inScheme</code>(SKOS概念としての所属)を持つため <code>skos:prefLabel</code> を探しがちですが、こちらは付けていません。</p>
+
   <h2>識別子</h2>
   <p>実体の識別子は <code>/id/org/{法人番号}</code>、出典グラフは <code>/graph/{ソース}/{取得日}</code> の形です。<strong>これらはまだ解決しません。</strong> SPARQLエンドポイントの公開後に対応します。</p>
 
