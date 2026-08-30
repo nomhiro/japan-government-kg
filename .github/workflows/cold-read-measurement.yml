@@ -49,6 +49,25 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
+      - name: Resolve the Java version the Fuseki image pins
+        id: java
+        run: |
+          # **docker/fuseki.Dockerfile から導出する(直書きしない)。**
+          # 実測(2026-08-30、このワークフローの初回実行): ランナーの既定Javaは17で、
+          # Fuseki 6.2.0 は class file 65.0(Java 21)でコンパイルされているため
+          # `UnsupportedClassVersionError` で起動しなかった。**配備先(Dockerイメージ)
+          # が使う版と同じ版で測らないと、測定そのものが別物になる。**
+          version="$(grep -oE 'FROM eclipse-temurin:[0-9]+' docker/fuseki.Dockerfile | grep -oE '[0-9]+$')"
+          test -n "$version" || { echo "::error::fuseki.Dockerfile から Java の版を読み取れない"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Java $version を使う(docker/fuseki.Dockerfile から導出)"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ steps.java.outputs.version }}
+
       - name: Resolve the pinned Jena version
         id: jena
         run: |
@@ -108,7 +127,19 @@ jobs:
           # **索引に触らずに起動する。** ここから先の時間は測定スクリプトが測る
           "work/apache-jena-fuseki-${JENA_VERSION}/fuseki-server" \
             --loc="$loc" /kg > work/fuseki.log 2>&1 &
-          echo "fuseki-server を起動した(pid $!)"
+          fuseki_pid=$!
+          echo "fuseki-server を起動した(pid $fuseki_pid)"
+
+          # **プロセスが死んでいたら即座に落とす。** 初回実行では
+          # `UnsupportedClassVersionError` で即死していたのに、測定スクリプトの
+          # 起動待ちが300秒回り続け、**本当の原因が5分隠れた** ——
+          # 「待って諦める」は「なぜ待っても来ないのか」を隠す。
+          sleep 5
+          if ! kill -0 "$fuseki_pid" 2>/dev/null; then
+            echo "::error::fuseki-server が起動直後に終了した。ログ:"
+            cat work/fuseki.log
+            exit 1
+          fi
 
           # **--manifest を渡す。** 渡さないとデータセットの同一性を検査せず
           # 警告だけになる(観察O16: 「接続できた」は「正しいデータセットに
