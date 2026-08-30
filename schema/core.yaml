@@ -52,20 +52,25 @@ slots:
     description: この出来事に関与した主体
     range: Agent
   amount_jpy:
+    title: 金額(円)
     description: 金額(円)
     range: integer
   unresolved_text:
+    title: 元の記述
     description: 正準IDに解決できなかった元の参照文字列
     range: LangString
   unresolved_reason:
+    title: 特定できなかった理由
     description: 解決できなかった理由
     range: UnresolvedReasonEnum
   unresolved_key:
+    title: 元データでの識別子
     description: >-
       解決できなかった参照の、ソース側のキー(府省コード等)。ドメイン固有の
       プロパティを UnresolvedReference に足すと閉じたSHACLシェイプに違反するため、
       汎用のキーとしてここで受ける
   unresolvedFor:
+    title: この記述が関わる項目
     description: >-
       この未解決参照が生じた主体(参照元のエンティティ)。CQ9等が未解決ノード
       からその主体へグラフパターンで辿れるようにするための辺(URIの再構成を
@@ -182,6 +187,13 @@ classes:
     exact_mappings: [skos:Concept]
 
   UnresolvedReference:
+    # 表示名は「未解決参照」にしない。仕様§9.2「専門用語を避けた表示名」——
+    # 「未解決」「参照」はいずれもこのプロジェクト固有の解決処理を知らないと
+    # 意味が取れないスキーマ内部の語である。このクラスが表すのは「元データに
+    # 何らかの記述はあったが、KGの正準IDへ対応付けできなかった」という事実
+    # そのものなので、その事実を平易な言葉で言い当てる語を選んだ
+    # (裁定B78の作業ブリーフが挙げた代替案を採用)
+    title: 対応先が特定できなかった記述
     is_a: Entity
     description: >-
       正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず

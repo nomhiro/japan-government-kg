@@ -32,6 +32,7 @@
 
 <https://jgkg.norr-tech.com/def/law#Law> a owl:Class ;
     rdfs:label "Law" ;
+    dcterms:title "法令"@ja ;
     rdfs:subClassOf [ a owl:Restriction ;
             owl:allValuesFrom xsd:date ;
             owl:onProperty <https://jgkg.norr-tech.com/def/law#promulgationDate> ],
@@ -104,6 +105,7 @@
 
 <https://jgkg.norr-tech.com/def/law#LawRevision> a owl:Class ;
     rdfs:label "LawRevision" ;
+    dcterms:title "法令の改正版"@ja ;
     rdfs:subClassOf [ a owl:Restriction ;
             owl:allValuesFrom xsd:date ;
             owl:onProperty <https://jgkg.norr-tech.com/def/law#amendmentEnforcementDate> ],
@@ -147,11 +149,12 @@
 <https://jgkg.norr-tech.com/def/law.owl.ttl> a owl:Ontology ;
     rdfs:label "jgkg-law" ;
     dcterms:license "https://creativecommons.org/licenses/by/4.0/" ;
-    dcterms:title "日本政府ナレッジグラフ 法令モジュール" ;
+    dcterms:title "日本政府ナレッジグラフ 法令モジュール"@ja ;
     skos:definition "法令(Law)と、その改正イベント(LawRevision)を表すクラスとプロパティ。正準IDは 法令ID(e-Gov法令API が付与する)であり、法令番号や題名は改正で変わり得るため 同一性の根拠にしない。 このオントロジーは日本国政府が公開するデータを第三者が構造化したものであり、日本国政府による公式なデータセットではない。"@ja .
 
 <https://jgkg.norr-tech.com/def/org#AbolishedGovernmentOrgan> a owl:Class ;
     rdfs:label "AbolishedGovernmentOrgan" ;
+    dcterms:title "廃止された行政機関"@ja ;
     rdfs:subClassOf [ a owl:Restriction ;
             owl:allValuesFrom <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> ;
             owl:onProperty <https://jgkg.norr-tech.com/def/org#succeededBy> ],
@@ -173,6 +176,7 @@
 
 <https://jgkg.norr-tech.com/def/org#Ministry> a owl:Class ;
     rdfs:label "Ministry" ;
+    dcterms:title "府省"@ja ;
     rdfs:subClassOf [ a owl:Restriction ;
             owl:minCardinality 0 ;
             owl:onProperty <https://jgkg.norr-tech.com/def/org#ministryCode> ],
@@ -237,6 +241,7 @@
 
 <https://jgkg.norr-tech.com/def/core#UnresolvedReference> a owl:Class ;
     rdfs:label "UnresolvedReference" ;
+    dcterms:title "対応先が特定できなかった記述"@ja ;
     rdfs:subClassOf [ a owl:Restriction ;
             owl:minCardinality 0 ;
             owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_reason> ],
@@ -279,18 +284,21 @@
 
 <https://jgkg.norr-tech.com/def/law#abbrev> a owl:DatatypeProperty ;
     rdfs:label "abbrev" ;
+    dcterms:title "略称"@ja ;
     rdfs:range rdf:langString ;
     skos:definition "法令の略称。e-Gov法令APIでは0件以上の複数件があり得る"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/law> .
 
 <https://jgkg.norr-tech.com/def/law#jurisdiction> a owl:ObjectProperty ;
     rdfs:label "jurisdiction" ;
+    dcterms:title "所管府省"@ja ;
     rdfs:range <https://jgkg.norr-tech.com/def/org#Organization> ;
     skos:definition "この法令を所管する府省等。法令番号からの解析(経路1)等で解決できた場合のみ設定する。 共管(複数府省の並記。例:「総理府・大蔵省令」)は府省ごとに複数のエッジを張る (設計書§7.2)。解決できない場合はこのスロットを設定せず、 core:UnresolvedReference を別に立てて unresolved_reason(OLD_MINISTRY/NO_CANDIDATE/ AMBIGUOUS)で理由を分類する(このスロット自体は未解決を表さない)"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/law> .
 
 <https://jgkg.norr-tech.com/def/org#succeededBy> a owl:ObjectProperty ;
     rdfs:label "succeededBy" ;
+    dcterms:title "後継機関"@ja ;
     rdfs:range <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> ;
     skos:definition "この廃止された行政機関の事務を承継した現存の行政機関。**多値** (1つ以上)——1つの旧機関の異なる部分が異なる承継先を持つ実例がある (412CO0000000315「従前の府省等の相当の新府省等を定める政令」の対応表。 例: 総理府国土庁のうち防災局は内閣府へ、それ以外は国土交通省へ)。 C-1(ministry_succession)が抽出した対応表からの解決を想定するが、 このスロット自体は出典を限定しない"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
@@ -335,6 +343,7 @@ skos:prefLabel a owl:DatatypeProperty ;
 
 <https://jgkg.norr-tech.com/def/core#amount_jpy> a owl:DatatypeProperty ;
     rdfs:label "amount_jpy" ;
+    dcterms:title "金額(円)"@ja ;
     rdfs:range xsd:integer ;
     skos:definition "金額(円)"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
@@ -359,72 +368,85 @@ skos:prefLabel a owl:DatatypeProperty ;
 
 <https://jgkg.norr-tech.com/def/core#unresolvedFor> a owl:ObjectProperty ;
     rdfs:label "unresolvedFor" ;
+    dcterms:title "この記述が関わる項目"@ja ;
     rdfs:range <https://jgkg.norr-tech.com/def/core#Entity> ;
     skos:definition "この未解決参照が生じた主体(参照元のエンティティ)。CQ9等が未解決ノード からその主体へグラフパターンで辿れるようにするための辺(URIの再構成を 要しない。裁定B8)。方向はUnresolvedReference→主体(逆向きにすると、 未解決を持ち得る全クラスがこのプロパティを宣言する必要が生じ、閉じた シェイプが増殖する。unresolved_keyを汎用スロットとしてUnresolvedReference 側に置いたのと同じ設計)。**必須にしない** — 主体を特定できない未解決 (例: emit_ministriesの未解決府省。参照表の1行がどの組織にも対応しない だけで、特定の「この記述の主体」が無い)を壊さないため"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 <https://jgkg.norr-tech.com/def/core#unresolved_key> a owl:DatatypeProperty ;
     rdfs:label "unresolved_key" ;
+    dcterms:title "元データでの識別子"@ja ;
     skos:definition "解決できなかった参照の、ソース側のキー(府省コード等)。ドメイン固有の プロパティを UnresolvedReference に足すと閉じたSHACLシェイプに違反するため、 汎用のキーとしてここで受ける"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 <https://jgkg.norr-tech.com/def/core#unresolved_reason> a owl:ObjectProperty ;
     rdfs:label "unresolved_reason" ;
+    dcterms:title "特定できなかった理由"@ja ;
     rdfs:range <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> ;
     skos:definition "解決できなかった理由"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 <https://jgkg.norr-tech.com/def/core#unresolved_text> a owl:DatatypeProperty ;
     rdfs:label "unresolved_text" ;
+    dcterms:title "元の記述"@ja ;
     rdfs:range rdf:langString ;
     skos:definition "正準IDに解決できなかった元の参照文字列"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 <https://jgkg.norr-tech.com/def/law#amendmentEnforcementDate> a owl:DatatypeProperty ;
     rdfs:label "amendmentEnforcementDate" ;
+    dcterms:title "施行日"@ja ;
     rdfs:range xsd:date ;
     skos:definition "この改正版の施行日。CQ8(指定時点における版の取得)の基準になる"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/law> .
 
 <https://jgkg.norr-tech.com/def/law#amendmentLawNum> a owl:DatatypeProperty ;
     rdfs:label "amendmentLawNum" ;
+    dcterms:title "改正法令番号"@ja ;
     skos:definition "この改正を行った法令の番号(改正法令番号)"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/law> .
 
 <https://jgkg.norr-tech.com/def/law#lawNum> a owl:DatatypeProperty ;
     rdfs:label "lawNum" ;
+    dcterms:title "法令番号"@ja ;
     skos:definition "法令番号(例: 「令和七年厚生労働省令第十号」)。年号・法令種別・府省名等を 含む文字列で、法令番号からの府省導出(経路1)の入力になる"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/law> .
 
 <https://jgkg.norr-tech.com/def/law#lawNumType> a owl:DatatypeProperty ;
     rdfs:label "lawNumType" ;
+    dcterms:title "法令の種別"@ja ;
     skos:definition "e-Gov法令APIが返す法令種別ラベル(Act/CabinetOrder/MinisterialOrdinance等)。 実データには例外がある(実測済み)ため、法令種別の判定は lawNum の文字列を正とし、 このスロットはAPIの生値をそのまま保持する"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/law> .
 
 <https://jgkg.norr-tech.com/def/law#lawTitle> a owl:DatatypeProperty ;
     rdfs:label "lawTitle" ;
+    dcterms:title "題名"@ja ;
     rdfs:range rdf:langString ;
     skos:definition "法令の題名(現行の正式名称)。題名改正で変わり得るため同一性の根拠にはしない(lawIdを使う)"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/law> .
 
 <https://jgkg.norr-tech.com/def/law#promulgationDate> a owl:DatatypeProperty ;
     rdfs:label "promulgationDate" ;
+    dcterms:title "公布日"@ja ;
     rdfs:range xsd:date ;
     skos:definition "公布日"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/law> .
 
 <https://jgkg.norr-tech.com/def/law#repealStatus> a owl:DatatypeProperty ;
     rdfs:label "repealStatus" ;
+    dcterms:title "廃止状態"@ja ;
     skos:definition "廃止状態(e-Gov法令APIの repeal_status に対応する分類文字列。現行・廃止等)"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/law> .
 
 <https://jgkg.norr-tech.com/def/law#revisionStatus> a owl:DatatypeProperty ;
     rdfs:label "revisionStatus" ;
+    dcterms:title "改正時点の状態"@ja ;
     skos:definition "この改正版(LawRevision)時点での状態を表す文字列(e-Gov法令API由来)"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/law> .
 
 <https://jgkg.norr-tech.com/def/org#Organization> a owl:Class ;
     rdfs:label "Organization" ;
+    dcterms:title "組織"@ja ;
     rdfs:subClassOf [ a owl:Restriction ;
             owl:minCardinality 0 ;
             owl:onProperty <https://jgkg.norr-tech.com/def/org#cityName> ],
@@ -470,18 +492,21 @@ skos:prefLabel a owl:DatatypeProperty ;
 
 <https://jgkg.norr-tech.com/def/org#abolitionDate> a owl:DatatypeProperty ;
     rdfs:label "abolitionDate" ;
+    dcterms:title "廃止日"@ja ;
     rdfs:range xsd:date ;
     skos:definition "この行政機関が廃止された日付"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
 <https://jgkg.norr-tech.com/def/org#cityName> a owl:DatatypeProperty ;
     rdfs:label "cityName" ;
+    dcterms:title "市区町村"@ja ;
     rdfs:range rdf:langString ;
     skos:definition "所在地の市区町村名"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
 <https://jgkg.norr-tech.com/def/org#houjinBangou> a owl:DatatypeProperty ;
     rdfs:label "houjinBangou" ;
+    dcterms:title "法人番号"@ja ;
     rdfs:range [ a rdfs:Datatype ;
             owl:onDatatype xsd:string ;
             owl:withRestrictions ( [ xsd:pattern "^[0-9]{13}$" ] ) ] ;
@@ -490,22 +515,26 @@ skos:prefLabel a owl:DatatypeProperty ;
 
 <https://jgkg.norr-tech.com/def/org#ministryCode> a owl:DatatypeProperty ;
     rdfs:label "ministryCode" ;
+    dcterms:title "府省コード"@ja ;
     skos:definition "府省コード。分かる場合にのみ持つ任意の識別子プロパティ(裁定B12)。 現行の全府省を安定して網羅するコード出典が見つかっておらず、 Ministryの主キーは名称(skos:prefLabel)である"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
 <https://jgkg.norr-tech.com/def/org#organizationKindCode> a owl:DatatypeProperty ;
     rdfs:label "organizationKindCode" ;
+    dcterms:title "法人の種別"@ja ;
     skos:definition "法人番号公表サイトの法人種別コード"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
 <https://jgkg.norr-tech.com/def/org#prefectureName> a owl:DatatypeProperty ;
     rdfs:label "prefectureName" ;
+    dcterms:title "都道府県"@ja ;
     rdfs:range rdf:langString ;
     skos:definition "所在地の都道府県名"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
 <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> a owl:Class ;
     rdfs:label "GovernmentOrgan" ;
+    dcterms:title "国の機関"@ja ;
     rdfs:subClassOf <https://jgkg.norr-tech.com/def/org#Organization> ;
     skos:definition "法人種別が国の機関である組織"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
@@ -529,6 +558,7 @@ skos:prefLabel a owl:DatatypeProperty ;
 
 <https://jgkg.norr-tech.com/def/law#lawId> a owl:DatatypeProperty ;
     rdfs:label "lawId" ;
+    dcterms:title "法令ID"@ja ;
     skos:definition "e-Gov法令APIが付与する法令ID。法令の正準識別子。法令番号(lawNum)や 題名(lawTitle)は改正で変わり得るため、同一性の根拠にはしない"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/law> .
 

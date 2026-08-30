@@ -32,6 +32,7 @@
 
 <https://jgkg.norr-tech.com/def/org#AbolishedGovernmentOrgan> a owl:Class ;
     rdfs:label "AbolishedGovernmentOrgan" ;
+    dcterms:title "廃止された行政機関"@ja ;
     rdfs:subClassOf [ a owl:Restriction ;
             owl:allValuesFrom <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> ;
             owl:onProperty <https://jgkg.norr-tech.com/def/org#succeededBy> ],
@@ -53,6 +54,7 @@
 
 <https://jgkg.norr-tech.com/def/org#Ministry> a owl:Class ;
     rdfs:label "Ministry" ;
+    dcterms:title "府省"@ja ;
     rdfs:subClassOf [ a owl:Restriction ;
             owl:minCardinality 0 ;
             owl:onProperty <https://jgkg.norr-tech.com/def/org#ministryCode> ],
@@ -69,11 +71,12 @@
 <https://jgkg.norr-tech.com/def/org.owl.ttl> a owl:Ontology ;
     rdfs:label "jgkg-org" ;
     dcterms:license "https://creativecommons.org/licenses/by/4.0/" ;
-    dcterms:title "日本政府ナレッジグラフ 組織モジュール" ;
+    dcterms:title "日本政府ナレッジグラフ 組織モジュール"@ja ;
     skos:definition "組織(府省・法人)を表すクラスとプロパティ。正準IDは法人番号。 このオントロジーは日本国政府が公開するデータを第三者が構造化したものであり、日本国政府による公式なデータセットではない。"@ja .
 
 <https://jgkg.norr-tech.com/def/org#Organization> a owl:Class ;
     rdfs:label "Organization" ;
+    dcterms:title "組織"@ja ;
     rdfs:subClassOf [ a owl:Restriction ;
             owl:minCardinality 0 ;
             owl:onProperty <https://jgkg.norr-tech.com/def/org#cityName> ],
@@ -193,6 +196,7 @@
 
 <https://jgkg.norr-tech.com/def/core#UnresolvedReference> a owl:Class ;
     rdfs:label "UnresolvedReference" ;
+    dcterms:title "対応先が特定できなかった記述"@ja ;
     rdfs:subClassOf [ a owl:Restriction ;
             owl:minCardinality 0 ;
             owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_reason> ],
@@ -242,6 +246,7 @@
 
 <https://jgkg.norr-tech.com/def/org#succeededBy> a owl:ObjectProperty ;
     rdfs:label "succeededBy" ;
+    dcterms:title "後継機関"@ja ;
     rdfs:range <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> ;
     skos:definition "この廃止された行政機関の事務を承継した現存の行政機関。**多値** (1つ以上)——1つの旧機関の異なる部分が異なる承継先を持つ実例がある (412CO0000000315「従前の府省等の相当の新府省等を定める政令」の対応表。 例: 総理府国土庁のうち防災局は内閣府へ、それ以外は国土交通省へ)。 C-1(ministry_succession)が抽出した対応表からの解決を想定するが、 このスロット自体は出典を限定しない"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
@@ -254,6 +259,7 @@ skos:prefLabel a owl:DatatypeProperty ;
 
 <https://jgkg.norr-tech.com/def/core#amount_jpy> a owl:DatatypeProperty ;
     rdfs:label "amount_jpy" ;
+    dcterms:title "金額(円)"@ja ;
     rdfs:range xsd:integer ;
     skos:definition "金額(円)"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
@@ -278,41 +284,48 @@ skos:prefLabel a owl:DatatypeProperty ;
 
 <https://jgkg.norr-tech.com/def/core#unresolvedFor> a owl:ObjectProperty ;
     rdfs:label "unresolvedFor" ;
+    dcterms:title "この記述が関わる項目"@ja ;
     rdfs:range <https://jgkg.norr-tech.com/def/core#Entity> ;
     skos:definition "この未解決参照が生じた主体(参照元のエンティティ)。CQ9等が未解決ノード からその主体へグラフパターンで辿れるようにするための辺(URIの再構成を 要しない。裁定B8)。方向はUnresolvedReference→主体(逆向きにすると、 未解決を持ち得る全クラスがこのプロパティを宣言する必要が生じ、閉じた シェイプが増殖する。unresolved_keyを汎用スロットとしてUnresolvedReference 側に置いたのと同じ設計)。**必須にしない** — 主体を特定できない未解決 (例: emit_ministriesの未解決府省。参照表の1行がどの組織にも対応しない だけで、特定の「この記述の主体」が無い)を壊さないため"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 <https://jgkg.norr-tech.com/def/core#unresolved_key> a owl:DatatypeProperty ;
     rdfs:label "unresolved_key" ;
+    dcterms:title "元データでの識別子"@ja ;
     skos:definition "解決できなかった参照の、ソース側のキー(府省コード等)。ドメイン固有の プロパティを UnresolvedReference に足すと閉じたSHACLシェイプに違反するため、 汎用のキーとしてここで受ける"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 <https://jgkg.norr-tech.com/def/core#unresolved_reason> a owl:ObjectProperty ;
     rdfs:label "unresolved_reason" ;
+    dcterms:title "特定できなかった理由"@ja ;
     rdfs:range <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> ;
     skos:definition "解決できなかった理由"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 <https://jgkg.norr-tech.com/def/core#unresolved_text> a owl:DatatypeProperty ;
     rdfs:label "unresolved_text" ;
+    dcterms:title "元の記述"@ja ;
     rdfs:range rdf:langString ;
     skos:definition "正準IDに解決できなかった元の参照文字列"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 <https://jgkg.norr-tech.com/def/org#abolitionDate> a owl:DatatypeProperty ;
     rdfs:label "abolitionDate" ;
+    dcterms:title "廃止日"@ja ;
     rdfs:range xsd:date ;
     skos:definition "この行政機関が廃止された日付"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
 <https://jgkg.norr-tech.com/def/org#cityName> a owl:DatatypeProperty ;
     rdfs:label "cityName" ;
+    dcterms:title "市区町村"@ja ;
     rdfs:range rdf:langString ;
     skos:definition "所在地の市区町村名"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
 <https://jgkg.norr-tech.com/def/org#houjinBangou> a owl:DatatypeProperty ;
     rdfs:label "houjinBangou" ;
+    dcterms:title "法人番号"@ja ;
     rdfs:range [ a rdfs:Datatype ;
             owl:onDatatype xsd:string ;
             owl:withRestrictions ( [ xsd:pattern "^[0-9]{13}$" ] ) ] ;
@@ -321,22 +334,26 @@ skos:prefLabel a owl:DatatypeProperty ;
 
 <https://jgkg.norr-tech.com/def/org#ministryCode> a owl:DatatypeProperty ;
     rdfs:label "ministryCode" ;
+    dcterms:title "府省コード"@ja ;
     skos:definition "府省コード。分かる場合にのみ持つ任意の識別子プロパティ(裁定B12)。 現行の全府省を安定して網羅するコード出典が見つかっておらず、 Ministryの主キーは名称(skos:prefLabel)である"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
 <https://jgkg.norr-tech.com/def/org#organizationKindCode> a owl:DatatypeProperty ;
     rdfs:label "organizationKindCode" ;
+    dcterms:title "法人の種別"@ja ;
     skos:definition "法人番号公表サイトの法人種別コード"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
 <https://jgkg.norr-tech.com/def/org#prefectureName> a owl:DatatypeProperty ;
     rdfs:label "prefectureName" ;
+    dcterms:title "都道府県"@ja ;
     rdfs:range rdf:langString ;
     skos:definition "所在地の都道府県名"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
 <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> a owl:Class ;
     rdfs:label "GovernmentOrgan" ;
+    dcterms:title "国の機関"@ja ;
     rdfs:subClassOf <https://jgkg.norr-tech.com/def/org#Organization> ;
     skos:definition "法人種別が国の機関である組織"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .

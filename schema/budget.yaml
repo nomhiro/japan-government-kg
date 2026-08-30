@@ -26,6 +26,7 @@ imports:
 
 slots:
   projectId:
+    title: 事業ID
     required: true
     description: >-
       行政事業レビュー(RS)の予算事業ID。**単独では一意でない** — 同じ
@@ -40,9 +41,11 @@ slots:
       (Task 7 報告書の逸脱台帳を参照。ブリーフ本文は project_id(identifier)と
       書いているが、この点だけ意図的に外した)
   projectName:
+    title: 事業名
     range: LangString
     description: 予算事業名(RSのレビューシートに記載された事業名)
   fiscalYear:
+    title: 予算年度
     required: true
     range: integer
     description: >-
@@ -53,6 +56,11 @@ slots:
       自体の年度分のみを1つのBudgetProjectとしてモデル化する(過去4年度分の
       履歴は対象外。Task 7報告書の逸脱台帳を参照)
   ministry:
+    # jurisdictionと同じ「所管府省」ではなく「所管府省庁」にする——RS自身が
+    # この列を「政策所管府省庁欄」と呼ぶため、出典の呼称に揃える(law.yamlの
+    # jurisdictionは別の出典・別の解決経路で決まるスロットであり、同じ日本語
+    # ラベルにすると2つの異なる述語が画面上で区別できなくなる)
+    title: 所管府省庁
     range: Organization
     description: >-
       所管府省庁。RSの政策所管府省庁欄(rs_columns.RS_COLのministry_name。
@@ -60,6 +68,7 @@ slots:
       突合する。突合できない場合はこのスロットを設定せず、
       core:UnresolvedReference を別に立てる
   budgetAmount:
+    title: 予算額
     range: integer
     description: >-
       当初予算(合計)。単位は円(RSのCSVヘッダに単位表記は無いが、実データの
@@ -67,6 +76,7 @@ slots:
       「検証8」参照)。'0'(ゼロ予算)は有効な値であり欠損ではない
       (rs_columns.find_budget_aggregate_row のdocstring参照)
   basisLaw:
+    title: 根拠法令
     range: Law
     multivalued: true
     description: >-
@@ -78,9 +88,11 @@ slots:
       条項で引用しても、このスロットには法令単位で1エッジのみ張る
       (rs_columns.py照合記録「検証4」参照)
   project:
+    title: 予算事業
     range: BudgetProject
     description: この支出が属する予算事業
   recipient:
+    title: 支払先
     range: Agent
     description: >-
       この支出の支払先。法人番号による直結を主とし、無い場合は名称正規化の
@@ -95,6 +107,7 @@ slots:
       (3) 解決を試みて失敗した場合(束ね行・センチネルのいずれでもないのに
       一致しない)は core:UnresolvedReference を別に立てる
   payeeLabel:
+    title: 支払先の表示名
     range: LangString
     description: >-
       支払先の表示名(RS上の名称。「個人Ａ」等)。`recipient`がセンチネル
@@ -104,6 +117,7 @@ slots:
       同じ役割を果たすため、このスロットは「照合対象ではないと分かっている」
       行専用にする(task-7-review.md指摘1)
   role:
+    title: 役割
     range: string
     description: >-
       RSの[16]事業を行う上での役割の文言をそのまま保存する(verbatim。
@@ -114,6 +128,7 @@ slots:
       どう扱うか(モデル化するか、一次支出先のみを対象にするか)はTask 9の
       裁定事項であり、Task 7はデータを保存するだけにとどめる
   recipientMatchCategory:
+    title: 支払先の照合区分
     required: true
     range: RecipientMatchCategoryEnum
     description: >-
@@ -166,6 +181,7 @@ enums:
 
 classes:
   BudgetProject:
+    title: 予算事業
     is_a: Work
     description: >-
       行政事業レビュー(RS)の予算事業。projectIdとfiscalYearの組で同一性を持つ
@@ -173,6 +189,7 @@ classes:
     slots: [projectId, projectName, fiscalYear, ministry, budgetAmount, basisLaw]
 
   Expenditure:
+    title: 支出
     is_a: MonetaryItem
     description: >-
       予算事業からの1件の支出(支出先1件分)。金額(amount_jpy)はMonetaryItemから

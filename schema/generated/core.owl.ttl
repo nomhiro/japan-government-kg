@@ -33,7 +33,7 @@
 <https://jgkg.norr-tech.com/def/core.owl.ttl> a owl:Ontology ;
     rdfs:label "jgkg-core" ;
     dcterms:license "https://creativecommons.org/licenses/by/4.0/" ;
-    dcterms:title "日本政府ナレッジグラフ コアスキーマ" ;
+    dcterms:title "日本政府ナレッジグラフ コアスキーマ"@ja ;
     skos:definition "6軸(誰が/何を/どこで/いつ/いくらで/何について)の基底クラスと、 出典を表す用語を定義する。ドメイン固有のクラスは各ドメインモジュールで このモジュールを import して継承する。 このオントロジーは日本国政府が公開するデータを第三者が構造化したものであり、日本国政府による公式なデータセットではない。"@ja .
 
 <https://jgkg.norr-tech.com/def/core#Concept> a owl:Class ;
@@ -112,6 +112,7 @@
 
 <https://jgkg.norr-tech.com/def/core#UnresolvedReference> a owl:Class ;
     rdfs:label "UnresolvedReference" ;
+    dcterms:title "対応先が特定できなかった記述"@ja ;
     rdfs:subClassOf [ a owl:Restriction ;
             owl:minCardinality 0 ;
             owl:onProperty <https://jgkg.norr-tech.com/def/core#unresolved_reason> ],
@@ -167,6 +168,7 @@ skos:prefLabel a owl:DatatypeProperty ;
 
 <https://jgkg.norr-tech.com/def/core#amount_jpy> a owl:DatatypeProperty ;
     rdfs:label "amount_jpy" ;
+    dcterms:title "金額(円)"@ja ;
     rdfs:range xsd:integer ;
     skos:definition "金額(円)"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
@@ -191,23 +193,27 @@ skos:prefLabel a owl:DatatypeProperty ;
 
 <https://jgkg.norr-tech.com/def/core#unresolvedFor> a owl:ObjectProperty ;
     rdfs:label "unresolvedFor" ;
+    dcterms:title "この記述が関わる項目"@ja ;
     rdfs:range <https://jgkg.norr-tech.com/def/core#Entity> ;
     skos:definition "この未解決参照が生じた主体(参照元のエンティティ)。CQ9等が未解決ノード からその主体へグラフパターンで辿れるようにするための辺(URIの再構成を 要しない。裁定B8)。方向はUnresolvedReference→主体(逆向きにすると、 未解決を持ち得る全クラスがこのプロパティを宣言する必要が生じ、閉じた シェイプが増殖する。unresolved_keyを汎用スロットとしてUnresolvedReference 側に置いたのと同じ設計)。**必須にしない** — 主体を特定できない未解決 (例: emit_ministriesの未解決府省。参照表の1行がどの組織にも対応しない だけで、特定の「この記述の主体」が無い)を壊さないため"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 <https://jgkg.norr-tech.com/def/core#unresolved_key> a owl:DatatypeProperty ;
     rdfs:label "unresolved_key" ;
+    dcterms:title "元データでの識別子"@ja ;
     skos:definition "解決できなかった参照の、ソース側のキー(府省コード等)。ドメイン固有の プロパティを UnresolvedReference に足すと閉じたSHACLシェイプに違反するため、 汎用のキーとしてここで受ける"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 <https://jgkg.norr-tech.com/def/core#unresolved_reason> a owl:ObjectProperty ;
     rdfs:label "unresolved_reason" ;
+    dcterms:title "特定できなかった理由"@ja ;
     rdfs:range <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> ;
     skos:definition "解決できなかった理由"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
 <https://jgkg.norr-tech.com/def/core#unresolved_text> a owl:DatatypeProperty ;
     rdfs:label "unresolved_text" ;
+    dcterms:title "元の記述"@ja ;
     rdfs:range rdf:langString ;
     skos:definition "正準IDに解決できなかった元の参照文字列"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .

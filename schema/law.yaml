@@ -24,33 +24,41 @@ imports:
 
 slots:
   lawId:
+    title: 法令ID
     description: >-
       e-Gov法令APIが付与する法令ID。法令の正準識別子。法令番号(lawNum)や
       題名(lawTitle)は改正で変わり得るため、同一性の根拠にはしない
   lawNum:
+    title: 法令番号
     description: >-
       法令番号(例: 「令和七年厚生労働省令第十号」)。年号・法令種別・府省名等を
       含む文字列で、法令番号からの府省導出(経路1)の入力になる
   lawNumType:
+    title: 法令の種別
     description: >-
       e-Gov法令APIが返す法令種別ラベル(Act/CabinetOrder/MinisterialOrdinance等)。
       実データには例外がある(実測済み)ため、法令種別の判定は lawNum の文字列を正とし、
       このスロットはAPIの生値をそのまま保持する
   lawTitle:
+    title: 題名
     range: LangString
     description: >-
       法令の題名(現行の正式名称)。題名改正で変わり得るため同一性の根拠にはしない(lawIdを使う)
   abbrev:
+    title: 略称
     range: LangString
     multivalued: true
     description: 法令の略称。e-Gov法令APIでは0件以上の複数件があり得る
   promulgationDate:
+    title: 公布日
     range: date
     description: 公布日
   repealStatus:
+    title: 廃止状態
     description: >-
       廃止状態(e-Gov法令APIの repeal_status に対応する分類文字列。現行・廃止等)
   jurisdiction:
+    title: 所管府省
     range: Organization
     multivalued: true
     description: >-
@@ -60,15 +68,19 @@ slots:
       core:UnresolvedReference を別に立てて unresolved_reason(OLD_MINISTRY/NO_CANDIDATE/
       AMBIGUOUS)で理由を分類する(このスロット自体は未解決を表さない)
   amendmentLawNum:
+    title: 改正法令番号
     description: この改正を行った法令の番号(改正法令番号)
   amendmentEnforcementDate:
+    title: 施行日
     range: date
     description: この改正版の施行日。CQ8(指定時点における版の取得)の基準になる
   revisionStatus:
+    title: 改正時点の状態
     description: この改正版(LawRevision)時点での状態を表す文字列(e-Gov法令API由来)
 
 classes:
   Law:
+    title: 法令
     is_a: Work
     description: 法令。版(LawRevision)とは独立に、法令IDで同一性を持つ
     slots: [lawId, lawNum, lawNumType, lawTitle, abbrev,
@@ -77,6 +89,7 @@ classes:
       lawId: { identifier: true }
 
   LawRevision:
+    title: 法令の改正版
     is_a: Event
     description: 改正イベント。どの法令の・いつ施行の版かを表す(CQ8の器)
     slots: [lawId, amendmentLawNum, amendmentEnforcementDate, revisionStatus]

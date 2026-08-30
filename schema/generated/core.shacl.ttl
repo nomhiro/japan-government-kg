@@ -96,6 +96,7 @@
         [ sh:datatype xsd:integer ;
             sh:description "金額(円)"@ja ;
             sh:maxCount 1 ;
+            sh:name "金額(円)" ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
             sh:path <https://jgkg.norr-tech.com/def/core#amount_jpy> ],
@@ -124,26 +125,30 @@
     sh:targetClass <https://jgkg.norr-tech.com/def/core#Place> .
 
 <https://jgkg.norr-tech.com/def/core#UnresolvedReference> a sh:NodeShape ;
+    rdfs:label "対応先が特定できなかった記述" ;
     rdfs:comment "正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず KGに残して計測できるようにするためのクラス" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
     sh:property [ sh:description "解決できなかった理由"@ja ;
             sh:in ( "AMBIGUOUS" "NO_CANDIDATE" "OBSOLETE_ORGANIZATION" "OLD_MINISTRY" ) ;
             sh:maxCount 1 ;
+            sh:name "特定できなかった理由" ;
             sh:order 1 ;
             sh:path <https://jgkg.norr-tech.com/def/core#unresolved_reason> ],
-        [ sh:datatype xsd:string ;
-            sh:description "解決できなかった参照の、ソース側のキー(府省コード等)。ドメイン固有の プロパティを UnresolvedReference に足すと閉じたSHACLシェイプに違反するため、 汎用のキーとしてここで受ける"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 2 ;
-            sh:path <https://jgkg.norr-tech.com/def/core#unresolved_key> ],
         [ sh:datatype rdf:langString ;
             sh:description "正準IDに解決できなかった元の参照文字列"@ja ;
             sh:maxCount 1 ;
+            sh:name "元の記述" ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
             sh:path <https://jgkg.norr-tech.com/def/core#unresolved_text> ],
+        [ sh:datatype xsd:string ;
+            sh:description "解決できなかった参照の、ソース側のキー(府省コード等)。ドメイン固有の プロパティを UnresolvedReference に足すと閉じたSHACLシェイプに違反するため、 汎用のキーとしてここで受ける"@ja ;
+            sh:maxCount 1 ;
+            sh:name "元データでの識別子" ;
+            sh:nodeKind sh:Literal ;
+            sh:order 2 ;
+            sh:path <https://jgkg.norr-tech.com/def/core#unresolved_key> ],
         [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
@@ -157,6 +162,7 @@
             sh:path <https://jgkg.norr-tech.com/def/core#id> ],
         [ sh:description "この未解決参照が生じた主体(参照元のエンティティ)。CQ9等が未解決ノード からその主体へグラフパターンで辿れるようにするための辺(URIの再構成を 要しない。裁定B8)。方向はUnresolvedReference→主体(逆向きにすると、 未解決を持ち得る全クラスがこのプロパティを宣言する必要が生じ、閉じた シェイプが増殖する。unresolved_keyを汎用スロットとしてUnresolvedReference 側に置いたのと同じ設計)。**必須にしない** — 主体を特定できない未解決 (例: emit_ministriesの未解決府省。参照表の1行がどの組織にも対応しない だけで、特定の「この記述の主体」が無い)を壊さないため"@ja ;
             sh:maxCount 1 ;
+            sh:name "この記述が関わる項目" ;
             sh:nodeKind sh:IRI ;
             sh:order 3 ;
             sh:path <https://jgkg.norr-tech.com/def/core#unresolvedFor> ] ;

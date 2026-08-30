@@ -19,6 +19,7 @@ imports:
 
 slots:
   houjinBangou:
+    title: 法人番号
     description: >-
       国税庁が付与する13桁の法人番号。組織の正準ID。
       required にしないのは、出典管理のためグラフをソース別に分けており、
@@ -29,17 +30,21 @@ slots:
     # `[0-9]`にはマッチしない — uris.HOUJIN_BANGOU_REと同じ理由
     pattern: "^[0-9]{13}$"
   organizationKindCode:
+    title: 法人の種別
     description: 法人番号公表サイトの法人種別コード
   ministryCode:
+    title: 府省コード
     description: >-
       府省コード。分かる場合にのみ持つ任意の識別子プロパティ(裁定B12)。
       現行の全府省を安定して網羅するコード出典が見つかっておらず、
       Ministryの主キーは名称(skos:prefLabel)である
     required: false
   prefectureName:
+    title: 都道府県
     description: 所在地の都道府県名
     range: LangString
   succeededBy:
+    title: 後継機関
     range: GovernmentOrgan
     multivalued: true
     required: true
@@ -51,25 +56,30 @@ slots:
       C-1(ministry_succession)が抽出した対応表からの解決を想定するが、
       このスロット自体は出典を限定しない
   abolitionDate:
+    title: 廃止日
     range: date
     required: true
     description: この行政機関が廃止された日付
   cityName:
+    title: 市区町村
     description: 所在地の市区町村名
     range: LangString
 
 classes:
   Organization:
+    title: 組織
     is_a: Agent
     description: 法人番号を持つ組織
     slots: [houjinBangou, organizationKindCode, prefectureName, cityName]
     close_mappings: [schema:Organization]
 
   GovernmentOrgan:
+    title: 国の機関
     is_a: Organization
     description: 法人種別が国の機関である組織
 
   Ministry:
+    title: 府省
     is_a: GovernmentOrgan
     # 定義文の変遷(生成物には伝播しないコメントとして記録する。修正ラウンド1・
     # 裁定B36で追記):
@@ -95,6 +105,7 @@ classes:
     slots: [ministryCode]
 
   AbolishedGovernmentOrgan:
+    title: 廃止された行政機関
     is_a: GovernmentOrgan
     # **`Ministry`のサブクラスにしない(C-2裁定)。** `Ministry`は「現存する」
     # 国の行政機関と定義している(裁定B36。上のコメント参照)。廃止済みの

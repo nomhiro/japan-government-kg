@@ -96,6 +96,7 @@
         [ sh:datatype xsd:integer ;
             sh:description "金額(円)"@ja ;
             sh:maxCount 1 ;
+            sh:name "金額(円)" ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
             sh:path <https://jgkg.norr-tech.com/def/core#amount_jpy> ],
@@ -124,29 +125,33 @@
     sh:targetClass <https://jgkg.norr-tech.com/def/core#Place> .
 
 <https://jgkg.norr-tech.com/def/core#UnresolvedReference> a sh:NodeShape ;
+    rdfs:label "対応先が特定できなかった記述" ;
     rdfs:comment "正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず KGに残して計測できるようにするためのクラス" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
     sh:property [ sh:datatype xsd:string ;
             sh:description "解決できなかった参照の、ソース側のキー(府省コード等)。ドメイン固有の プロパティを UnresolvedReference に足すと閉じたSHACLシェイプに違反するため、 汎用のキーとしてここで受ける"@ja ;
             sh:maxCount 1 ;
+            sh:name "元データでの識別子" ;
             sh:nodeKind sh:Literal ;
             sh:order 2 ;
             sh:path <https://jgkg.norr-tech.com/def/core#unresolved_key> ],
-        [ sh:description "解決できなかった理由"@ja ;
-            sh:in ( "AMBIGUOUS" "NO_CANDIDATE" "OBSOLETE_ORGANIZATION" "OLD_MINISTRY" ) ;
-            sh:maxCount 1 ;
-            sh:order 1 ;
-            sh:path <https://jgkg.norr-tech.com/def/core#unresolved_reason> ],
         [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
             sh:order 5 ;
             sh:path skos:prefLabel ],
+        [ sh:description "解決できなかった理由"@ja ;
+            sh:in ( "AMBIGUOUS" "NO_CANDIDATE" "OBSOLETE_ORGANIZATION" "OLD_MINISTRY" ) ;
+            sh:maxCount 1 ;
+            sh:name "特定できなかった理由" ;
+            sh:order 1 ;
+            sh:path <https://jgkg.norr-tech.com/def/core#unresolved_reason> ],
         [ sh:datatype rdf:langString ;
             sh:description "正準IDに解決できなかった元の参照文字列"@ja ;
             sh:maxCount 1 ;
+            sh:name "元の記述" ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
             sh:path <https://jgkg.norr-tech.com/def/core#unresolved_text> ],
@@ -157,6 +162,7 @@
             sh:path <https://jgkg.norr-tech.com/def/core#id> ],
         [ sh:description "この未解決参照が生じた主体(参照元のエンティティ)。CQ9等が未解決ノード からその主体へグラフパターンで辿れるようにするための辺(URIの再構成を 要しない。裁定B8)。方向はUnresolvedReference→主体(逆向きにすると、 未解決を持ち得る全クラスがこのプロパティを宣言する必要が生じ、閉じた シェイプが増殖する。unresolved_keyを汎用スロットとしてUnresolvedReference 側に置いたのと同じ設計)。**必須にしない** — 主体を特定できない未解決 (例: emit_ministriesの未解決府省。参照表の1行がどの組織にも対応しない だけで、特定の「この記述の主体」が無い)を壊さないため"@ja ;
             sh:maxCount 1 ;
+            sh:name "この記述が関わる項目" ;
             sh:nodeKind sh:IRI ;
             sh:order 3 ;
             sh:path <https://jgkg.norr-tech.com/def/core#unresolvedFor> ] ;
@@ -180,17 +186,20 @@
     sh:targetClass <https://jgkg.norr-tech.com/def/core#Work> .
 
 <https://jgkg.norr-tech.com/def/law#Law> a sh:NodeShape ;
+    rdfs:label "法令" ;
     rdfs:comment "法令。版(LawRevision)とは独立に、法令IDで同一性を持つ" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
     sh:property [ sh:datatype rdf:langString ;
             sh:description "法令の略称。e-Gov法令APIでは0件以上の複数件があり得る"@ja ;
+            sh:name "略称" ;
             sh:nodeKind sh:Literal ;
             sh:order 4 ;
             sh:path <https://jgkg.norr-tech.com/def/law#abbrev> ],
         [ sh:datatype xsd:string ;
             sh:description "e-Gov法令APIが返す法令種別ラベル(Act/CabinetOrder/MinisterialOrdinance等)。 実データには例外がある(実測済み)ため、法令種別の判定は lawNum の文字列を正とし、 このスロットはAPIの生値をそのまま保持する"@ja ;
             sh:maxCount 1 ;
+            sh:name "法令の種別" ;
             sh:nodeKind sh:Literal ;
             sh:order 2 ;
             sh:path <https://jgkg.norr-tech.com/def/law#lawNumType> ],
@@ -200,37 +209,29 @@
             sh:nodeKind sh:Literal ;
             sh:order 9 ;
             sh:path skos:prefLabel ],
+        [ sh:datatype xsd:string ;
+            sh:description "廃止状態(e-Gov法令APIの repeal_status に対応する分類文字列。現行・廃止等)"@ja ;
+            sh:maxCount 1 ;
+            sh:name "廃止状態" ;
+            sh:nodeKind sh:Literal ;
+            sh:order 6 ;
+            sh:path <https://jgkg.norr-tech.com/def/law#repealStatus> ],
         [ sh:description "この法令を所管する府省等。法令番号からの解析(経路1)等で解決できた場合のみ設定する。 共管(複数府省の並記。例:「総理府・大蔵省令」)は府省ごとに複数のエッジを張る (設計書§7.2)。解決できない場合はこのスロットを設定せず、 core:UnresolvedReference を別に立てて unresolved_reason(OLD_MINISTRY/NO_CANDIDATE/ AMBIGUOUS)で理由を分類する(このスロット自体は未解決を表さない)"@ja ;
+            sh:name "所管府省" ;
             sh:nodeKind sh:IRI ;
             sh:order 7 ;
             sh:path <https://jgkg.norr-tech.com/def/law#jurisdiction> ],
         [ sh:datatype xsd:string ;
-            sh:description "廃止状態(e-Gov法令APIの repeal_status に対応する分類文字列。現行・廃止等)"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 6 ;
-            sh:path <https://jgkg.norr-tech.com/def/law#repealStatus> ],
-        [ sh:datatype xsd:string ;
-            sh:description "法令番号(例: 「令和七年厚生労働省令第十号」)。年号・法令種別・府省名等を 含む文字列で、法令番号からの府省導出(経路1)の入力になる"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 1 ;
-            sh:path <https://jgkg.norr-tech.com/def/law#lawNum> ],
-        [ sh:datatype rdf:langString ;
-            sh:description "法令の題名(現行の正式名称)。題名改正で変わり得るため同一性の根拠にはしない(lawIdを使う)"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 3 ;
-            sh:path <https://jgkg.norr-tech.com/def/law#lawTitle> ],
-        [ sh:datatype xsd:string ;
             sh:description "e-Gov法令APIが付与する法令ID。法令の正準識別子。法令番号(lawNum)や 題名(lawTitle)は改正で変わり得るため、同一性の根拠にはしない"@ja ;
             sh:maxCount 1 ;
+            sh:name "法令ID" ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
             sh:path <https://jgkg.norr-tech.com/def/law#lawId> ],
         [ sh:datatype xsd:date ;
             sh:description "公布日"@ja ;
             sh:maxCount 1 ;
+            sh:name "公布日" ;
             sh:nodeKind sh:Literal ;
             sh:order 5 ;
             sh:path <https://jgkg.norr-tech.com/def/law#promulgationDate> ],
@@ -238,10 +239,25 @@
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
             sh:order 8 ;
-            sh:path <https://jgkg.norr-tech.com/def/core#id> ] ;
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ],
+        [ sh:datatype rdf:langString ;
+            sh:description "法令の題名(現行の正式名称)。題名改正で変わり得るため同一性の根拠にはしない(lawIdを使う)"@ja ;
+            sh:maxCount 1 ;
+            sh:name "題名" ;
+            sh:nodeKind sh:Literal ;
+            sh:order 3 ;
+            sh:path <https://jgkg.norr-tech.com/def/law#lawTitle> ],
+        [ sh:datatype xsd:string ;
+            sh:description "法令番号(例: 「令和七年厚生労働省令第十号」)。年号・法令種別・府省名等を 含む文字列で、法令番号からの府省導出(経路1)の入力になる"@ja ;
+            sh:maxCount 1 ;
+            sh:name "法令番号" ;
+            sh:nodeKind sh:Literal ;
+            sh:order 1 ;
+            sh:path <https://jgkg.norr-tech.com/def/law#lawNum> ] ;
     sh:targetClass <https://jgkg.norr-tech.com/def/law#Law> .
 
 <https://jgkg.norr-tech.com/def/law#LawRevision> a sh:NodeShape ;
+    rdfs:label "法令の改正版" ;
     rdfs:comment "改正イベント。どの法令の・いつ施行の版かを表す(CQ8の器)" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
@@ -257,24 +273,20 @@
             sh:nodeKind sh:Literal ;
             sh:order 4 ;
             sh:path <https://jgkg.norr-tech.com/def/core#occurred_on> ],
-        [ sh:datatype xsd:date ;
-            sh:description "この改正版の施行日。CQ8(指定時点における版の取得)の基準になる"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 2 ;
-            sh:path <https://jgkg.norr-tech.com/def/law#amendmentEnforcementDate> ],
         [ sh:datatype xsd:string ;
             sh:description "e-Gov法令APIが付与する法令ID。法令の正準識別子。法令番号(lawNum)や 題名(lawTitle)は改正で変わり得るため、同一性の根拠にはしない"@ja ;
             sh:maxCount 1 ;
+            sh:name "法令ID" ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
             sh:path <https://jgkg.norr-tech.com/def/law#lawId> ],
-        [ sh:datatype xsd:string ;
-            sh:description "この改正を行った法令の番号(改正法令番号)"@ja ;
+        [ sh:datatype xsd:date ;
+            sh:description "この改正版の施行日。CQ8(指定時点における版の取得)の基準になる"@ja ;
             sh:maxCount 1 ;
+            sh:name "施行日" ;
             sh:nodeKind sh:Literal ;
-            sh:order 1 ;
-            sh:path <https://jgkg.norr-tech.com/def/law#amendmentLawNum> ],
+            sh:order 2 ;
+            sh:path <https://jgkg.norr-tech.com/def/law#amendmentEnforcementDate> ],
         [ sh:description "このリソースのURI"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
@@ -286,14 +298,23 @@
             sh:order 5 ;
             sh:path <https://jgkg.norr-tech.com/def/core#involves_agent> ],
         [ sh:datatype xsd:string ;
+            sh:description "この改正を行った法令の番号(改正法令番号)"@ja ;
+            sh:maxCount 1 ;
+            sh:name "改正法令番号" ;
+            sh:nodeKind sh:Literal ;
+            sh:order 1 ;
+            sh:path <https://jgkg.norr-tech.com/def/law#amendmentLawNum> ],
+        [ sh:datatype xsd:string ;
             sh:description "この改正版(LawRevision)時点での状態を表す文字列(e-Gov法令API由来)"@ja ;
             sh:maxCount 1 ;
+            sh:name "改正時点の状態" ;
             sh:nodeKind sh:Literal ;
             sh:order 3 ;
             sh:path <https://jgkg.norr-tech.com/def/law#revisionStatus> ] ;
     sh:targetClass <https://jgkg.norr-tech.com/def/law#LawRevision> .
 
 <https://jgkg.norr-tech.com/def/org#AbolishedGovernmentOrgan> a sh:NodeShape ;
+    rdfs:label "廃止された行政機関" ;
     rdfs:comment "中央省庁等改革(2001年)等により廃止された、かつて国の行政機関で あった組織。旧省庁名の判定集合(`data/reference/old-ministries.csv`) に載る名称のうち、法令の対応表(`412CO0000000315`等)から後継が 解決できたものがこのクラスのインスタンスになる想定(C-1の `ministry_succession`参照)。解決できない名称は`OLD_MINISTRY`の 未解決参照のままで、このクラスのインスタンスにはならない (data/reference/old-ministries.csv・transform/old_ministries.py参照)" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
@@ -305,28 +326,25 @@
             sh:path skos:prefLabel ],
         [ sh:description "この廃止された行政機関の事務を承継した現存の行政機関。**多値** (1つ以上)——1つの旧機関の異なる部分が異なる承継先を持つ実例がある (412CO0000000315「従前の府省等の相当の新府省等を定める政令」の対応表。 例: 総理府国土庁のうち防災局は内閣府へ、それ以外は国土交通省へ)。 C-1(ministry_succession)が抽出した対応表からの解決を想定するが、 このスロット自体は出典を限定しない"@ja ;
             sh:minCount 1 ;
+            sh:name "後継機関" ;
             sh:nodeKind sh:IRI ;
             sh:order 0 ;
             sh:path <https://jgkg.norr-tech.com/def/org#succeededBy> ],
-        [ sh:datatype rdf:langString ;
-            sh:description "所在地の都道府県名"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 4 ;
-            sh:path <https://jgkg.norr-tech.com/def/org#prefectureName> ],
         [ sh:datatype xsd:string ;
             sh:description "国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する"@ja ;
             sh:maxCount 1 ;
+            sh:name "法人番号" ;
             sh:nodeKind sh:Literal ;
             sh:order 2 ;
             sh:path <https://jgkg.norr-tech.com/def/org#houjinBangou> ;
             sh:pattern "^[0-9]{13}$" ],
         [ sh:datatype rdf:langString ;
-            sh:description "所在地の市区町村名"@ja ;
+            sh:description "所在地の都道府県名"@ja ;
             sh:maxCount 1 ;
+            sh:name "都道府県" ;
             sh:nodeKind sh:Literal ;
-            sh:order 5 ;
-            sh:path <https://jgkg.norr-tech.com/def/org#cityName> ],
+            sh:order 4 ;
+            sh:path <https://jgkg.norr-tech.com/def/org#prefectureName> ],
         [ sh:description "このリソースのURI"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
@@ -335,19 +353,29 @@
         [ sh:datatype xsd:string ;
             sh:description "法人番号公表サイトの法人種別コード"@ja ;
             sh:maxCount 1 ;
+            sh:name "法人の種別" ;
             sh:nodeKind sh:Literal ;
             sh:order 3 ;
             sh:path <https://jgkg.norr-tech.com/def/org#organizationKindCode> ],
+        [ sh:datatype rdf:langString ;
+            sh:description "所在地の市区町村名"@ja ;
+            sh:maxCount 1 ;
+            sh:name "市区町村" ;
+            sh:nodeKind sh:Literal ;
+            sh:order 5 ;
+            sh:path <https://jgkg.norr-tech.com/def/org#cityName> ],
         [ sh:datatype xsd:date ;
             sh:description "この行政機関が廃止された日付"@ja ;
             sh:maxCount 1 ;
             sh:minCount 1 ;
+            sh:name "廃止日" ;
             sh:nodeKind sh:Literal ;
             sh:order 1 ;
             sh:path <https://jgkg.norr-tech.com/def/org#abolitionDate> ] ;
     sh:targetClass <https://jgkg.norr-tech.com/def/org#AbolishedGovernmentOrgan> .
 
 <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> a sh:NodeShape ;
+    rdfs:label "国の機関" ;
     rdfs:comment "法人種別が国の機関である組織" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/org#abolitionDate> <https://jgkg.norr-tech.com/def/org#ministryCode> <https://jgkg.norr-tech.com/def/org#succeededBy> ) ;
@@ -357,39 +385,44 @@
             sh:nodeKind sh:Literal ;
             sh:order 5 ;
             sh:path skos:prefLabel ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 4 ;
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ],
         [ sh:datatype rdf:langString ;
             sh:description "所在地の都道府県名"@ja ;
             sh:maxCount 1 ;
+            sh:name "都道府県" ;
             sh:nodeKind sh:Literal ;
             sh:order 2 ;
             sh:path <https://jgkg.norr-tech.com/def/org#prefectureName> ],
         [ sh:datatype xsd:string ;
             sh:description "国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する"@ja ;
             sh:maxCount 1 ;
+            sh:name "法人番号" ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
             sh:path <https://jgkg.norr-tech.com/def/org#houjinBangou> ;
             sh:pattern "^[0-9]{13}$" ],
-        [ sh:description "このリソースのURI"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:IRI ;
-            sh:order 4 ;
-            sh:path <https://jgkg.norr-tech.com/def/core#id> ],
         [ sh:datatype xsd:string ;
             sh:description "法人番号公表サイトの法人種別コード"@ja ;
             sh:maxCount 1 ;
+            sh:name "法人の種別" ;
             sh:nodeKind sh:Literal ;
             sh:order 1 ;
             sh:path <https://jgkg.norr-tech.com/def/org#organizationKindCode> ],
         [ sh:datatype rdf:langString ;
             sh:description "所在地の市区町村名"@ja ;
             sh:maxCount 1 ;
+            sh:name "市区町村" ;
             sh:nodeKind sh:Literal ;
             sh:order 3 ;
             sh:path <https://jgkg.norr-tech.com/def/org#cityName> ] ;
     sh:targetClass <https://jgkg.norr-tech.com/def/org#GovernmentOrgan> .
 
 <https://jgkg.norr-tech.com/def/org#Ministry> a sh:NodeShape ;
+    rdfs:label "府省" ;
     rdfs:comment "府省及び外局等、行政事業レビューシステム(RS)実データの所管府省庁欄・ 府省庁欄に現れるか、又は法令(府省令・規則)の発令機関としてe-Gov法令API 実データに現れる、現存する国の行政機関(名称が主キーで、府省コードは 分かる場合のみ持つ。廃止済みの名称は`old-ministries.csv`により OLD_MINISTRYの未解決参照になり、このクラスのインスタンスにはならない)" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
@@ -402,24 +435,14 @@
         [ sh:datatype xsd:string ;
             sh:description "法人番号公表サイトの法人種別コード"@ja ;
             sh:maxCount 1 ;
+            sh:name "法人の種別" ;
             sh:nodeKind sh:Literal ;
             sh:order 2 ;
             sh:path <https://jgkg.norr-tech.com/def/org#organizationKindCode> ],
-        [ sh:datatype rdf:langString ;
-            sh:description "所在地の市区町村名"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 4 ;
-            sh:path <https://jgkg.norr-tech.com/def/org#cityName> ],
-        [ sh:datatype rdf:langString ;
-            sh:description "所在地の都道府県名"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:Literal ;
-            sh:order 3 ;
-            sh:path <https://jgkg.norr-tech.com/def/org#prefectureName> ],
         [ sh:datatype xsd:string ;
             sh:description "国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する"@ja ;
             sh:maxCount 1 ;
+            sh:name "法人番号" ;
             sh:nodeKind sh:Literal ;
             sh:order 1 ;
             sh:path <https://jgkg.norr-tech.com/def/org#houjinBangou> ;
@@ -429,15 +452,31 @@
             sh:nodeKind sh:IRI ;
             sh:order 5 ;
             sh:path <https://jgkg.norr-tech.com/def/core#id> ],
+        [ sh:datatype rdf:langString ;
+            sh:description "所在地の市区町村名"@ja ;
+            sh:maxCount 1 ;
+            sh:name "市区町村" ;
+            sh:nodeKind sh:Literal ;
+            sh:order 4 ;
+            sh:path <https://jgkg.norr-tech.com/def/org#cityName> ],
         [ sh:datatype xsd:string ;
             sh:description "府省コード。分かる場合にのみ持つ任意の識別子プロパティ(裁定B12)。 現行の全府省を安定して網羅するコード出典が見つかっておらず、 Ministryの主キーは名称(skos:prefLabel)である"@ja ;
             sh:maxCount 1 ;
+            sh:name "府省コード" ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
-            sh:path <https://jgkg.norr-tech.com/def/org#ministryCode> ] ;
+            sh:path <https://jgkg.norr-tech.com/def/org#ministryCode> ],
+        [ sh:datatype rdf:langString ;
+            sh:description "所在地の都道府県名"@ja ;
+            sh:maxCount 1 ;
+            sh:name "都道府県" ;
+            sh:nodeKind sh:Literal ;
+            sh:order 3 ;
+            sh:path <https://jgkg.norr-tech.com/def/org#prefectureName> ] ;
     sh:targetClass <https://jgkg.norr-tech.com/def/org#Ministry> .
 
 <https://jgkg.norr-tech.com/def/org#Organization> a sh:NodeShape ;
+    rdfs:label "組織" ;
     rdfs:comment "法人番号を持つ組織" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/org#abolitionDate> <https://jgkg.norr-tech.com/def/org#ministryCode> <https://jgkg.norr-tech.com/def/org#succeededBy> ) ;
@@ -447,33 +486,37 @@
             sh:nodeKind sh:Literal ;
             sh:order 5 ;
             sh:path skos:prefLabel ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 4 ;
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ],
         [ sh:datatype rdf:langString ;
             sh:description "所在地の都道府県名"@ja ;
             sh:maxCount 1 ;
+            sh:name "都道府県" ;
             sh:nodeKind sh:Literal ;
             sh:order 2 ;
             sh:path <https://jgkg.norr-tech.com/def/org#prefectureName> ],
         [ sh:datatype xsd:string ;
             sh:description "国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する"@ja ;
             sh:maxCount 1 ;
+            sh:name "法人番号" ;
             sh:nodeKind sh:Literal ;
             sh:order 0 ;
             sh:path <https://jgkg.norr-tech.com/def/org#houjinBangou> ;
             sh:pattern "^[0-9]{13}$" ],
-        [ sh:description "このリソースのURI"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:IRI ;
-            sh:order 4 ;
-            sh:path <https://jgkg.norr-tech.com/def/core#id> ],
         [ sh:datatype xsd:string ;
             sh:description "法人番号公表サイトの法人種別コード"@ja ;
             sh:maxCount 1 ;
+            sh:name "法人の種別" ;
             sh:nodeKind sh:Literal ;
             sh:order 1 ;
             sh:path <https://jgkg.norr-tech.com/def/org#organizationKindCode> ],
         [ sh:datatype rdf:langString ;
             sh:description "所在地の市区町村名"@ja ;
             sh:maxCount 1 ;
+            sh:name "市区町村" ;
             sh:nodeKind sh:Literal ;
             sh:order 3 ;
             sh:path <https://jgkg.norr-tech.com/def/org#cityName> ] ;

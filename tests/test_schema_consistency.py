@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 from rdflib import OWL, RDF, Graph, URIRef
-from rdflib.namespace import SH, SKOS
+from rdflib.namespace import DCTERMS, SH, SKOS
 
 from jgkg import validate
 
@@ -584,4 +584,105 @@ def test_government_organ_shape_wording_names_every_literal_segment_the_code_acc
     assert not missing, (
         f"{value}の定義文が_MINISTRY_LITERAL_SEGMENTSの要素を言い当てていない: "
         f"{missing}(定義文: {definition})"
+    )
+
+
+# =============================================================================
+# 裁定B78: 日本語の表示名(dcterms:title)の対象範囲
+# =============================================================================
+
+#: `/entity/{id}`・`/neighborhood/{id}`が実際に返す述語(`rdf:type`・
+#: `skos:prefLabel`を除く。`queries._TYPE_AND_LABEL_PREDICATES`が除外する2つと
+#: 同じ)。`src/jgkg/rdf/emit.py`が書くトリプルの述語を数え上げたもの
+#: (`grep -o 'ns\["[a-z]*"\]\["[a-zA-Z_]*"\]' src/jgkg/rdf/emit.py | sort -u`で
+#: 確認済み——クラス名(大文字始まり)を除いた残りがこの34件)。
+#: 手で列挙してはいるが、生成元はemit.pyの実際のトリプル出力であり、
+#: このテストが集合の両方向の一致(不足/余剰)を見ることで、対象の付け忘れ
+#: (再発欠陥3「部分適用」)と関係の無い箇所への付けすぎの両方を検出する。
+_EXPECTED_TITLED_PREDICATE_LOCAL_IRIS = frozenset({
+    # org.yaml(emit_organizations/emit_ministries/emit_abolished_ministries)
+    "org#houjinBangou", "org#organizationKindCode", "org#ministryCode",
+    "org#prefectureName", "org#succeededBy", "org#abolitionDate", "org#cityName",
+    # law.yaml(emit_laws)
+    "law#lawId", "law#lawNum", "law#lawNumType", "law#lawTitle", "law#abbrev",
+    "law#promulgationDate", "law#repealStatus", "law#jurisdiction",
+    "law#amendmentLawNum", "law#amendmentEnforcementDate", "law#revisionStatus",
+    # budget.yaml(emit_budget)
+    "budget#projectId", "budget#projectName", "budget#fiscalYear", "budget#ministry",
+    "budget#budgetAmount", "budget#basisLaw", "budget#project", "budget#recipient",
+    "budget#payeeLabel", "budget#role", "budget#recipientMatchCategory",
+    # core.yaml(UnresolvedReferenceの汎用スロット・MonetaryItemのamount_jpy)
+    "core#amount_jpy", "core#unresolved_text", "core#unresolved_reason",
+    "core#unresolved_key", "core#unresolvedFor",
+})
+
+
+def test_display_names_cover_exactly_the_api_visible_types_and_predicates():
+    """`dcterms:title@ja`を持つ主語の集合が、APIが実際に見せる型+述語と厳密に一致すること。
+
+    裁定B78(task-labels-brief.md): 仕様§9.2「専門用語を避けた表示名」に応え、
+    `schema/*.yaml`のクラス/スロットに`title:`を足して`dcterms:title`として
+    生成する。公開物の`/def/`配下68項目のうちAPIが実際に返さないものは対象外
+    (ブリーフの絞り込み方針)。
+
+    型の期待集合は`queries._SEARCHABLE_TYPES`/`_TYPE_SPECIFICITY`という
+    実装の定数から導出する(ブリーフが指定した決め方そのもの)。ローカル名から
+    OWLクラスIRIへは、`all.owl.ttl`に実在する`owl:Class`宣言を逆引きして解決する
+    ——モジュール名の対応表をこのテストに手書きしないため。
+
+    厳密な集合の一致(不足も余剰も無し)で検査する。
+    **何があれば落ちるか**: `schema/*.yaml`から`title:`を1つ消して再生成すると、
+    そのURIがdcterms:titleを失い「不足」側に現れて落ちる。対象外のクラス/
+    スロットに`title:`を足すと「余剰」側に現れて落ちる(部分適用・過剰適用の
+    どちらも検出する)。
+
+    モジュール単位の`title:`(各`schema/*.yaml`先頭の、例:「日本政府ナレッジ
+    グラフ コアスキーマ」)は対象外——そのオントロジー本体のIRIは`#`を持たず
+    フラグメントで終わらない(クラス/スロットのIRIとの形の違い)ため、
+    フィルタで自然に除ける。
+    """
+    from jgkg.api.queries import _SEARCHABLE_TYPES, _TYPE_SPECIFICITY
+
+    g = _load(GENERATED / "all.owl.ttl")
+
+    tagged = {
+        str(s)
+        for s, o in g.subject_objects(DCTERMS.title)
+        if getattr(o, "language", None) == "ja" and "#" in str(s)
+    }
+
+    base = "https://jgkg.norr-tech.com/def/"
+    expected_predicates = {base + local for local in _EXPECTED_TITLED_PREDICATE_LOCAL_IRIS}
+
+    # _SEARCHABLE_TYPES(prefix:Name形式)が_TYPE_SPECIFICITY(ローカル名のみ)の
+    # 部分集合であることを確認してから、後者だけを型の期待集合の入力に使う
+    # (ブリーフが両方を根拠に挙げているため、片方だけを読んで漏らさないことを
+    # 明示的に固定する)
+    searchable_local_names = {t.split(":", 1)[1] for t in _SEARCHABLE_TYPES}
+    assert searchable_local_names <= set(_TYPE_SPECIFICITY), (
+        "_SEARCHABLE_TYPESに_TYPE_SPECIFICITYが持たないローカル名がある: "
+        f"{searchable_local_names - set(_TYPE_SPECIFICITY)}"
+    )
+
+    owl_classes = {str(s) for s in g.subjects(RDF.type, OWL.Class)}
+    expected_types = set()
+    for name in _TYPE_SPECIFICITY:
+        matches = {c for c in owl_classes if c.endswith(f"#{name}")}
+        assert matches, (
+            f"_TYPE_SPECIFICITYの{name!r}に対応するOWLクラスがall.owl.ttlに無い"
+        )
+        assert len(matches) == 1, f"{name!r}が複数のOWLクラスIRIに一致した: {sorted(matches)}"
+        expected_types |= matches
+    assert len(expected_types) == len(_TYPE_SPECIFICITY), (
+        f"_TYPE_SPECIFICITYの要素数({len(_TYPE_SPECIFICITY)})と解決できたクラスURIの"
+        f"数({len(expected_types)})が一致しない"
+    )
+
+    expected = expected_predicates | expected_types
+    missing = expected - tagged
+    extra = tagged - expected
+    assert not missing and not extra, (
+        "表示名(dcterms:title@ja)の対象が食い違っている。"
+        f" 不足({len(missing)}件): {sorted(missing)}"
+        f" 余剰({len(extra)}件): {sorted(extra)}"
     )

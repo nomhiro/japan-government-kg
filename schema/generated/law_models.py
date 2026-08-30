@@ -171,7 +171,7 @@ class MonetaryItem(Entity):
     """
     linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/core'})
 
-    amount_jpy: Optional[int] = Field(default=None, description="""金額(円)""", json_schema_extra = { "linkml_meta": {'domain_of': ['MonetaryItem']} })
+    amount_jpy: Optional[int] = Field(default=None, title="金額(円)", description="""金額(円)""", json_schema_extra = { "linkml_meta": {'domain_of': ['MonetaryItem']} })
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
 
@@ -191,12 +191,13 @@ class UnresolvedReference(Entity):
     """
     正準IDに解決できなかった参照。設計書§8.2により、未解決を沈黙させず KGに残して計測できるようにするためのクラス
     """
-    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/core'})
+    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/core',
+         'title': '対応先が特定できなかった記述'})
 
-    unresolved_text: Optional[str] = Field(default=None, description="""正準IDに解決できなかった元の参照文字列""", json_schema_extra = { "linkml_meta": {'domain_of': ['UnresolvedReference']} })
-    unresolved_reason: Optional[UnresolvedReasonEnum] = Field(default=None, description="""解決できなかった理由""", json_schema_extra = { "linkml_meta": {'domain_of': ['UnresolvedReference']} })
-    unresolved_key: Optional[str] = Field(default=None, description="""解決できなかった参照の、ソース側のキー(府省コード等)。ドメイン固有の プロパティを UnresolvedReference に足すと閉じたSHACLシェイプに違反するため、 汎用のキーとしてここで受ける""", json_schema_extra = { "linkml_meta": {'domain_of': ['UnresolvedReference']} })
-    unresolvedFor: Optional[str] = Field(default=None, description="""この未解決参照が生じた主体(参照元のエンティティ)。CQ9等が未解決ノード からその主体へグラフパターンで辿れるようにするための辺(URIの再構成を 要しない。裁定B8)。方向はUnresolvedReference→主体(逆向きにすると、 未解決を持ち得る全クラスがこのプロパティを宣言する必要が生じ、閉じた シェイプが増殖する。unresolved_keyを汎用スロットとしてUnresolvedReference 側に置いたのと同じ設計)。**必須にしない** — 主体を特定できない未解決 (例: emit_ministriesの未解決府省。参照表の1行がどの組織にも対応しない だけで、特定の「この記述の主体」が無い)を壊さないため""", json_schema_extra = { "linkml_meta": {'domain_of': ['UnresolvedReference']} })
+    unresolved_text: Optional[str] = Field(default=None, title="元の記述", description="""正準IDに解決できなかった元の参照文字列""", json_schema_extra = { "linkml_meta": {'domain_of': ['UnresolvedReference']} })
+    unresolved_reason: Optional[UnresolvedReasonEnum] = Field(default=None, title="特定できなかった理由", description="""解決できなかった理由""", json_schema_extra = { "linkml_meta": {'domain_of': ['UnresolvedReference']} })
+    unresolved_key: Optional[str] = Field(default=None, title="元データでの識別子", description="""解決できなかった参照の、ソース側のキー(府省コード等)。ドメイン固有の プロパティを UnresolvedReference に足すと閉じたSHACLシェイプに違反するため、 汎用のキーとしてここで受ける""", json_schema_extra = { "linkml_meta": {'domain_of': ['UnresolvedReference']} })
+    unresolvedFor: Optional[str] = Field(default=None, title="この記述が関わる項目", description="""この未解決参照が生じた主体(参照元のエンティティ)。CQ9等が未解決ノード からその主体へグラフパターンで辿れるようにするための辺(URIの再構成を 要しない。裁定B8)。方向はUnresolvedReference→主体(逆向きにすると、 未解決を持ち得る全クラスがこのプロパティを宣言する必要が生じ、閉じた シェイプが増殖する。unresolved_keyを汎用スロットとしてUnresolvedReference 側に置いたのと同じ設計)。**必須にしない** — 主体を特定できない未解決 (例: emit_ministriesの未解決府省。参照表の1行がどの組織にも対応しない だけで、特定の「この記述の主体」が無い)を壊さないため""", json_schema_extra = { "linkml_meta": {'domain_of': ['UnresolvedReference']} })
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
 
@@ -206,12 +207,13 @@ class Organization(Agent):
     法人番号を持つ組織
     """
     linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'close_mappings': ['schema:Organization'],
-         'from_schema': 'https://jgkg.norr-tech.com/def/org'})
+         'from_schema': 'https://jgkg.norr-tech.com/def/org',
+         'title': '組織'})
 
-    houjinBangou: Optional[str] = Field(default=None, description="""国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
-    organizationKindCode: Optional[str] = Field(default=None, description="""法人番号公表サイトの法人種別コード""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
-    prefectureName: Optional[str] = Field(default=None, description="""所在地の都道府県名""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
-    cityName: Optional[str] = Field(default=None, description="""所在地の市区町村名""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
+    houjinBangou: Optional[str] = Field(default=None, title="法人番号", description="""国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
+    organizationKindCode: Optional[str] = Field(default=None, title="法人の種別", description="""法人番号公表サイトの法人種別コード""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
+    prefectureName: Optional[str] = Field(default=None, title="都道府県", description="""所在地の都道府県名""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
+    cityName: Optional[str] = Field(default=None, title="市区町村", description="""所在地の市区町村名""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
 
@@ -233,12 +235,12 @@ class GovernmentOrgan(Organization):
     """
     法人種別が国の機関である組織
     """
-    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/org'})
+    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/org', 'title': '国の機関'})
 
-    houjinBangou: Optional[str] = Field(default=None, description="""国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
-    organizationKindCode: Optional[str] = Field(default=None, description="""法人番号公表サイトの法人種別コード""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
-    prefectureName: Optional[str] = Field(default=None, description="""所在地の都道府県名""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
-    cityName: Optional[str] = Field(default=None, description="""所在地の市区町村名""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
+    houjinBangou: Optional[str] = Field(default=None, title="法人番号", description="""国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
+    organizationKindCode: Optional[str] = Field(default=None, title="法人の種別", description="""法人番号公表サイトの法人種別コード""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
+    prefectureName: Optional[str] = Field(default=None, title="都道府県", description="""所在地の都道府県名""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
+    cityName: Optional[str] = Field(default=None, title="市区町村", description="""所在地の市区町村名""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
 
@@ -260,13 +262,13 @@ class Ministry(GovernmentOrgan):
     """
     府省及び外局等、行政事業レビューシステム(RS)実データの所管府省庁欄・ 府省庁欄に現れるか、又は法令(府省令・規則)の発令機関としてe-Gov法令API 実データに現れる、現存する国の行政機関(名称が主キーで、府省コードは 分かる場合のみ持つ。廃止済みの名称は`old-ministries.csv`により OLD_MINISTRYの未解決参照になり、このクラスのインスタンスにはならない)
     """
-    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/org'})
+    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/org', 'title': '府省'})
 
-    ministryCode: Optional[str] = Field(default=None, description="""府省コード。分かる場合にのみ持つ任意の識別子プロパティ(裁定B12)。 現行の全府省を安定して網羅するコード出典が見つかっておらず、 Ministryの主キーは名称(skos:prefLabel)である""", json_schema_extra = { "linkml_meta": {'domain_of': ['Ministry']} })
-    houjinBangou: Optional[str] = Field(default=None, description="""国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
-    organizationKindCode: Optional[str] = Field(default=None, description="""法人番号公表サイトの法人種別コード""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
-    prefectureName: Optional[str] = Field(default=None, description="""所在地の都道府県名""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
-    cityName: Optional[str] = Field(default=None, description="""所在地の市区町村名""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
+    ministryCode: Optional[str] = Field(default=None, title="府省コード", description="""府省コード。分かる場合にのみ持つ任意の識別子プロパティ(裁定B12)。 現行の全府省を安定して網羅するコード出典が見つかっておらず、 Ministryの主キーは名称(skos:prefLabel)である""", json_schema_extra = { "linkml_meta": {'domain_of': ['Ministry']} })
+    houjinBangou: Optional[str] = Field(default=None, title="法人番号", description="""国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
+    organizationKindCode: Optional[str] = Field(default=None, title="法人の種別", description="""法人番号公表サイトの法人種別コード""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
+    prefectureName: Optional[str] = Field(default=None, title="都道府県", description="""所在地の都道府県名""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
+    cityName: Optional[str] = Field(default=None, title="市区町村", description="""所在地の市区町村名""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
 
@@ -288,14 +290,14 @@ class AbolishedGovernmentOrgan(GovernmentOrgan):
     """
     中央省庁等改革(2001年)等により廃止された、かつて国の行政機関で あった組織。旧省庁名の判定集合(`data/reference/old-ministries.csv`) に載る名称のうち、法令の対応表(`412CO0000000315`等)から後継が 解決できたものがこのクラスのインスタンスになる想定(C-1の `ministry_succession`参照)。解決できない名称は`OLD_MINISTRY`の 未解決参照のままで、このクラスのインスタンスにはならない (data/reference/old-ministries.csv・transform/old_ministries.py参照)
     """
-    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/org'})
+    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/org', 'title': '廃止された行政機関'})
 
-    succeededBy: list[str] = Field(default=..., description="""この廃止された行政機関の事務を承継した現存の行政機関。**多値** (1つ以上)——1つの旧機関の異なる部分が異なる承継先を持つ実例がある (412CO0000000315「従前の府省等の相当の新府省等を定める政令」の対応表。 例: 総理府国土庁のうち防災局は内閣府へ、それ以外は国土交通省へ)。 C-1(ministry_succession)が抽出した対応表からの解決を想定するが、 このスロット自体は出典を限定しない""", json_schema_extra = { "linkml_meta": {'domain_of': ['AbolishedGovernmentOrgan']} })
-    abolitionDate: date = Field(default=..., description="""この行政機関が廃止された日付""", json_schema_extra = { "linkml_meta": {'domain_of': ['AbolishedGovernmentOrgan']} })
-    houjinBangou: Optional[str] = Field(default=None, description="""国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
-    organizationKindCode: Optional[str] = Field(default=None, description="""法人番号公表サイトの法人種別コード""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
-    prefectureName: Optional[str] = Field(default=None, description="""所在地の都道府県名""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
-    cityName: Optional[str] = Field(default=None, description="""所在地の市区町村名""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
+    succeededBy: list[str] = Field(default=..., title="後継機関", description="""この廃止された行政機関の事務を承継した現存の行政機関。**多値** (1つ以上)——1つの旧機関の異なる部分が異なる承継先を持つ実例がある (412CO0000000315「従前の府省等の相当の新府省等を定める政令」の対応表。 例: 総理府国土庁のうち防災局は内閣府へ、それ以外は国土交通省へ)。 C-1(ministry_succession)が抽出した対応表からの解決を想定するが、 このスロット自体は出典を限定しない""", json_schema_extra = { "linkml_meta": {'domain_of': ['AbolishedGovernmentOrgan']} })
+    abolitionDate: date = Field(default=..., title="廃止日", description="""この行政機関が廃止された日付""", json_schema_extra = { "linkml_meta": {'domain_of': ['AbolishedGovernmentOrgan']} })
+    houjinBangou: Optional[str] = Field(default=None, title="法人番号", description="""国税庁が付与する13桁の法人番号。組織の正準ID。 required にしないのは、出典管理のためグラフをソース別に分けており、 1つのエンティティの記述が複数グラフに分かれるため。SHACL検証はグラフ単位 (グラフが置換の単位)なので、グラフを跨いだ必須制約は原理的に検証できない。 「全Organizationが法人番号を持つ」ことはCQのSPARQLテストで担保する""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
+    organizationKindCode: Optional[str] = Field(default=None, title="法人の種別", description="""法人番号公表サイトの法人種別コード""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
+    prefectureName: Optional[str] = Field(default=None, title="都道府県", description="""所在地の都道府県名""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
+    cityName: Optional[str] = Field(default=None, title="市区町村", description="""所在地の市区町村名""", json_schema_extra = { "linkml_meta": {'domain_of': ['Organization']} })
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
 
@@ -318,16 +320,17 @@ class Law(Work):
     法令。版(LawRevision)とは独立に、法令IDで同一性を持つ
     """
     linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/law',
-         'slot_usage': {'lawId': {'identifier': True, 'name': 'lawId'}}})
+         'slot_usage': {'lawId': {'identifier': True, 'name': 'lawId'}},
+         'title': '法令'})
 
-    lawId: str = Field(default=..., description="""e-Gov法令APIが付与する法令ID。法令の正準識別子。法令番号(lawNum)や 題名(lawTitle)は改正で変わり得るため、同一性の根拠にはしない""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law', 'LawRevision']} })
-    lawNum: Optional[str] = Field(default=None, description="""法令番号(例: 「令和七年厚生労働省令第十号」)。年号・法令種別・府省名等を 含む文字列で、法令番号からの府省導出(経路1)の入力になる""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law']} })
-    lawNumType: Optional[str] = Field(default=None, description="""e-Gov法令APIが返す法令種別ラベル(Act/CabinetOrder/MinisterialOrdinance等)。 実データには例外がある(実測済み)ため、法令種別の判定は lawNum の文字列を正とし、 このスロットはAPIの生値をそのまま保持する""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law']} })
-    lawTitle: Optional[str] = Field(default=None, description="""法令の題名(現行の正式名称)。題名改正で変わり得るため同一性の根拠にはしない(lawIdを使う)""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law']} })
-    abbrev: Optional[list[str]] = Field(default=None, description="""法令の略称。e-Gov法令APIでは0件以上の複数件があり得る""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law']} })
-    promulgationDate: Optional[date] = Field(default=None, description="""公布日""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law']} })
-    repealStatus: Optional[str] = Field(default=None, description="""廃止状態(e-Gov法令APIの repeal_status に対応する分類文字列。現行・廃止等)""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law']} })
-    jurisdiction: Optional[list[str]] = Field(default=None, description="""この法令を所管する府省等。法令番号からの解析(経路1)等で解決できた場合のみ設定する。 共管(複数府省の並記。例:「総理府・大蔵省令」)は府省ごとに複数のエッジを張る (設計書§7.2)。解決できない場合はこのスロットを設定せず、 core:UnresolvedReference を別に立てて unresolved_reason(OLD_MINISTRY/NO_CANDIDATE/ AMBIGUOUS)で理由を分類する(このスロット自体は未解決を表さない)""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law']} })
+    lawId: str = Field(default=..., title="法令ID", description="""e-Gov法令APIが付与する法令ID。法令の正準識別子。法令番号(lawNum)や 題名(lawTitle)は改正で変わり得るため、同一性の根拠にはしない""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law', 'LawRevision']} })
+    lawNum: Optional[str] = Field(default=None, title="法令番号", description="""法令番号(例: 「令和七年厚生労働省令第十号」)。年号・法令種別・府省名等を 含む文字列で、法令番号からの府省導出(経路1)の入力になる""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law']} })
+    lawNumType: Optional[str] = Field(default=None, title="法令の種別", description="""e-Gov法令APIが返す法令種別ラベル(Act/CabinetOrder/MinisterialOrdinance等)。 実データには例外がある(実測済み)ため、法令種別の判定は lawNum の文字列を正とし、 このスロットはAPIの生値をそのまま保持する""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law']} })
+    lawTitle: Optional[str] = Field(default=None, title="題名", description="""法令の題名(現行の正式名称)。題名改正で変わり得るため同一性の根拠にはしない(lawIdを使う)""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law']} })
+    abbrev: Optional[list[str]] = Field(default=None, title="略称", description="""法令の略称。e-Gov法令APIでは0件以上の複数件があり得る""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law']} })
+    promulgationDate: Optional[date] = Field(default=None, title="公布日", description="""公布日""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law']} })
+    repealStatus: Optional[str] = Field(default=None, title="廃止状態", description="""廃止状態(e-Gov法令APIの repeal_status に対応する分類文字列。現行・廃止等)""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law']} })
+    jurisdiction: Optional[list[str]] = Field(default=None, title="所管府省", description="""この法令を所管する府省等。法令番号からの解析(経路1)等で解決できた場合のみ設定する。 共管(複数府省の並記。例:「総理府・大蔵省令」)は府省ごとに複数のエッジを張る (設計書§7.2)。解決できない場合はこのスロットを設定せず、 core:UnresolvedReference を別に立てて unresolved_reason(OLD_MINISTRY/NO_CANDIDATE/ AMBIGUOUS)で理由を分類する(このスロット自体は未解決を表さない)""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law']} })
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
 
@@ -336,12 +339,12 @@ class LawRevision(Event):
     """
     改正イベント。どの法令の・いつ施行の版かを表す(CQ8の器)
     """
-    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/law'})
+    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/law', 'title': '法令の改正版'})
 
-    lawId: Optional[str] = Field(default=None, description="""e-Gov法令APIが付与する法令ID。法令の正準識別子。法令番号(lawNum)や 題名(lawTitle)は改正で変わり得るため、同一性の根拠にはしない""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law', 'LawRevision']} })
-    amendmentLawNum: Optional[str] = Field(default=None, description="""この改正を行った法令の番号(改正法令番号)""", json_schema_extra = { "linkml_meta": {'domain_of': ['LawRevision']} })
-    amendmentEnforcementDate: Optional[date] = Field(default=None, description="""この改正版の施行日。CQ8(指定時点における版の取得)の基準になる""", json_schema_extra = { "linkml_meta": {'domain_of': ['LawRevision']} })
-    revisionStatus: Optional[str] = Field(default=None, description="""この改正版(LawRevision)時点での状態を表す文字列(e-Gov法令API由来)""", json_schema_extra = { "linkml_meta": {'domain_of': ['LawRevision']} })
+    lawId: Optional[str] = Field(default=None, title="法令ID", description="""e-Gov法令APIが付与する法令ID。法令の正準識別子。法令番号(lawNum)や 題名(lawTitle)は改正で変わり得るため、同一性の根拠にはしない""", json_schema_extra = { "linkml_meta": {'domain_of': ['Law', 'LawRevision']} })
+    amendmentLawNum: Optional[str] = Field(default=None, title="改正法令番号", description="""この改正を行った法令の番号(改正法令番号)""", json_schema_extra = { "linkml_meta": {'domain_of': ['LawRevision']} })
+    amendmentEnforcementDate: Optional[date] = Field(default=None, title="施行日", description="""この改正版の施行日。CQ8(指定時点における版の取得)の基準になる""", json_schema_extra = { "linkml_meta": {'domain_of': ['LawRevision']} })
+    revisionStatus: Optional[str] = Field(default=None, title="改正時点の状態", description="""この改正版(LawRevision)時点での状態を表す文字列(e-Gov法令API由来)""", json_schema_extra = { "linkml_meta": {'domain_of': ['LawRevision']} })
     occurred_on: Optional[date] = Field(default=None, description="""この出来事が起きた日""", json_schema_extra = { "linkml_meta": {'domain_of': ['Event']} })
     involves_agent: Optional[str] = Field(default=None, description="""この出来事に関与した主体""", json_schema_extra = { "linkml_meta": {'domain_of': ['Event']} })
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
