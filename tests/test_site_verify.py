@@ -556,3 +556,87 @@ def test_run_all_checks_with_retries_defaults_to_a_single_attempt(tmp_path):
     )
     assert not report.ok
     assert calls == [], "既定でリトライしてしまっている"
+
+
+def _asset_byte_failure(report):
+    """資産のsha256比較の失敗を1件返す(無ければAssertionError)。"""
+    hits = [
+        r
+        for r in report.failures
+        if "同一バイト列" in r.label and "/assets/" in r.label
+    ]
+    assert len(hits) == 1, [f"{r.label}: {r.detail}" for r in report.failures]
+    return hits[0]
+
+
+def test_byte_mismatch_says_whether_the_body_was_an_html_fallback(tmp_path):
+    """**sha256不一致が「HTMLフォールバックか否か」を言うこと(裁定B84)。**
+
+    2026-09-02、配信直後の本番検査で `/assets/index-*.js` の不一致だけが
+    6回連続で報告されたが、詳細は `status=200 live_sha256=… local_sha256=…`
+    しか無く、**「反映が終わっていない(欠落パスにHTMLが200で返る)」のか
+    「配備されたバイト列が本当に違う」のかを切り分けられなかった。**
+    前者は待てば消え、後者は待っても消えない——対処が正反対である。
+
+    Cloudflare Pages は欠落パスに index.html を 200 で返し、`_headers` の
+    Content-Type を被せるので、**ヘッダでは判定できない**(裁定B63の実測)。
+    だから本文で判定する。
+    """
+    _full_build(tmp_path)
+    live = tmp_path.parent / (tmp_path.name + "-live")
+    shutil.copytree(tmp_path, live)
+
+    # 欠落パスへのHTMLフォールバックを再現する(本文をindex.htmlにする)
+    (live / "assets" / "index-fakehash123.js").write_text(
+        _FAKE_APP_INDEX_HTML, encoding="utf-8"
+    )
+
+    client = _client(live)
+    report = site_verify.run_all_checks("https://jgkg.norr-tech.com", tmp_path, GENERATED, client)
+    assert not report.ok
+    failure = _asset_byte_failure(report)
+    assert "本文がHTML" in failure.detail, failure.detail
+    assert "待てば消える" in failure.detail, failure.detail
+    # 生のsha256も落とさずに残っていること(診断に両方必要)
+    assert "live_sha256=" in failure.detail and "local_sha256=" in failure.detail, failure.detail
+
+
+def test_byte_mismatch_says_the_bytes_really_differ_when_the_body_is_not_html(tmp_path):
+    """**HTMLでない不一致は「実際に違う」と言うこと(裁定B84)。**
+
+    こちらは待っても消えない種類なので、`本文がHTML` と**同じ文言にしては
+    いけない**——同じなら切り分けの役に立たない。
+    """
+    _full_build(tmp_path)
+    live = tmp_path.parent / (tmp_path.name + "-live")
+    shutil.copytree(tmp_path, live)
+
+    # 構文もHTMLでもない、ただ違うバイト列にする
+    (live / "assets" / "index-fakehash123.js").write_text(
+        "console.log('別のビルド')", encoding="utf-8"
+    )
+
+    client = _client(live)
+    report = site_verify.run_all_checks("https://jgkg.norr-tech.com", tmp_path, GENERATED, client)
+    assert not report.ok
+    failure = _asset_byte_failure(report)
+    assert "本文はHTMLではない" in failure.detail, failure.detail
+    assert "本文がHTML(" not in failure.detail, failure.detail
+
+
+def test_byte_match_detail_stays_quiet(tmp_path):
+    """一致しているときは診断文を足さないこと(OK行を騒がしくしない)。"""
+    _full_build(tmp_path)
+    live = tmp_path.parent / (tmp_path.name + "-live")
+    shutil.copytree(tmp_path, live)
+
+    client = _client(live)
+    report = site_verify.run_all_checks("https://jgkg.norr-tech.com", tmp_path, GENERATED, client)
+    assert report.ok, [f"{r.label}: {r.detail}" for r in report.failures]
+    asset_checks = [
+        r for r in report.results if "同一バイト列" in r.label and "/assets/" in r.label
+    ]
+    assert len(asset_checks) == 2, [r.label for r in asset_checks]
+    for r in asset_checks:
+        assert r.detail.startswith("sha256="), r.detail
+        assert "本文" not in r.detail, r.detail

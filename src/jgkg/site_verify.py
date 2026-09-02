@@ -416,12 +416,28 @@ def run_all_checks(
         fr = cache.get(url_path)
         expected_sha256 = build.file_sha256(local_path)
         actual_sha256 = hashlib.sha256(fr.body).hexdigest()
+        # 不一致のとき、**それがHTMLフォールバックかどうかを言う**(裁定B84)。
+        # 2026-09-02、`/assets/index-*.js` の不一致だけが6回連続で報告され、
+        # 「status=200 で sha256 が違う」以外の情報が無かったため、
+        # 「配備が伝播していない(欠落パスにHTMLが200で返る)」のか
+        # 「配備されたバイト列が本当に違う」のかを切り分けられなかった。
+        # 前者は待てば消えるが後者は待っても消えない——対処が正反対である。
+        # `is_html_fallback` は本文で判定する(CloudflareがContent-Typeを
+        # 被せるので、ヘッダでは判定できない。裁定B63の実測)。
+        detail = f"sha256={expected_sha256}"
+        if actual_sha256 != expected_sha256 or fr.status != 200:
+            detail = f"status={fr.status} live_sha256={actual_sha256} local_sha256={expected_sha256}"
+            if is_html_fallback(fr.body):
+                detail += (
+                    " ← 本文がHTML(欠落パスへのフォールバック)。"
+                    "配備が伝播していない可能性——待てば消える種類の失敗"
+                )
+            else:
+                detail += " ← 本文はHTMLではない。配備されたバイト列が実際に違う"
         check(
             f"{url_path} が配信物(site/)と同一バイト列(sha256一致)",
             fr.status == 200 and actual_sha256 == expected_sha256,
-            f"status={fr.status} live_sha256={actual_sha256} local_sha256={expected_sha256}"
-            if actual_sha256 != expected_sha256 or fr.status != 200
-            else f"sha256={expected_sha256}",
+            detail,
         )
 
     # --- 裁定B66: 配信された.ttl全件のIRIがRFC 3986に適合していること --------
