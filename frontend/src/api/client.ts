@@ -21,6 +21,44 @@ export const API_BASE: string = (import.meta.env.VITE_API_BASE ?? "http://localh
   "",
 );
 
+const _LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1"]);
+
+/**
+ * `apiBaseUrl`がループバックを指しているのに、`pageHostname`がループバック
+ * ではないなら、そのAPIには原理的に到達できない(裁定B82(2))。
+ *
+ * D-6b(APIの配備先)が未決の間、本番デプロイでは`API_BASE`の既定値
+ * (`http://localhost:8000`)がそのまま焼き込まれる——ページ自身は
+ * `jgkg.norr-tech.com`のような別ホストから配信されるため、ブラウザは
+ * `localhost`(=デプロイ先のサーバ自身ではなく、閲覧者のPCのlocalhost)に
+ * 到達できない。**これは1回リクエストを送って確かめる必要がある事柄ではなく、
+ * 2つの文字列の比較だけで確実に判定できる**——探りに行かない
+ * (team-leadの裁定: 「ネットワークを1回も叩かずに分かる」)。
+ *
+ * ネットワークやDOMのグローバル(`location`)に依存しない形にしてある
+ * ——テスト(`api/client.test.ts`)がjsdom等を必要とせずに呼べるように。
+ */
+export function computeApiUnavailableReason(apiBaseUrl: string, pageHostname: string): string | null {
+  let apiHost: string;
+  try {
+    apiHost = new URL(apiBaseUrl).hostname;
+  } catch {
+    return null;
+  }
+  if (_LOOPBACK_HOSTS.has(apiHost) && !_LOOPBACK_HOSTS.has(pageHostname)) {
+    return (
+      "検索・エンティティ詳細などのデータを提供するAPIの配備先がまだ決まっていません" +
+      "(ビルド時の設定 VITE_API_BASE が未設定のまま、既定のローカルアドレスを指しています)。"
+    );
+  }
+  return null;
+}
+
+/** 実行中のページに対する`computeApiUnavailableReason()`。DOM(`location`)を使う実際の呼び出し口。 */
+export function apiUnavailableReason(): string | null {
+  return computeApiUnavailableReason(API_BASE, location.hostname);
+}
+
 /**
  * クエリ文字列の値を正しくエンコードする(裁定B73)。
  *

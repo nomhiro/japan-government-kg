@@ -9,7 +9,7 @@
 // 満たせない。ここでは無いものを捏造せず、その旨を明示する
 // (このプロジェクトの「報告が嘘をつく」を避ける方針と同じ理由)。
 import type { EntityDetailResponse, Relationship } from "../api/client";
-import { entityDetail } from "../api/client";
+import { apiUnavailableReason, entityDetail } from "../api/client";
 import { esc, provenanceHtml, truncationNotice } from "../format";
 import type { GraphController } from "./graph";
 import { renderNeighborhoodGraph } from "./graph";
@@ -32,6 +32,16 @@ export interface EntityViewController {
 }
 
 export function renderEntity(container: HTMLElement, idPath: string): EntityViewController {
+  // 裁定B82(2)と同じ判断: APIが未配備なら、失敗するとわかっている取得を
+  // 試みない(検索ビューと同じ理由)。
+  const unavailable = apiUnavailableReason();
+  if (unavailable) {
+    container.innerHTML = `
+      <p class="jgkg-notice">データ検索は準備中です。${esc(unavailable)}</p>
+      <p><a href="#/">検索に戻る</a></p>`;
+    return { destroy(): void {} };
+  }
+
   container.innerHTML = '<p class="jgkg-muted">読み込み中…</p>';
   let graphController: GraphController | undefined;
   // 画面遷移で描画中に離脱した場合、後から届く応答でDOM/Sigmaを触らない

@@ -36,6 +36,15 @@ jobs:
       - name: Lint
         run: uv run ruff check src tests scripts
 
+      - name: Test the frontend (裁定B82(3): 表示の正直さの純粋関数を縛る)
+        # `describePathResult`(found=falseの読み方。裁定B77の族)・
+        # `computeApiUnavailableReason`(裁定B82(2))・表示名フォールバック等、
+        # DOM非依存の純粋関数だけを対象にする(jsdom等は導入していない——
+        # 「画面が実際にどう見えるか」はD-5の実データ+実ブラウザでの手動確認で
+        # 担保する、という判断を維持する)。
+        run: npm test
+        working-directory: frontend
+
       - name: Regenerate schema and fail if it differs from the committed output
         run: |
           ./scripts/generate-schema.sh

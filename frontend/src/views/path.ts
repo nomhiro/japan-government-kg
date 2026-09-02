@@ -1,8 +1,8 @@
 // パス探索(仕様§9.2「近傍サブグラフ展開 → パス探索」)。
 import type { GraphEdge, PathResponse, SearchHit } from "../api/client";
-import { findPath, search } from "../api/client";
+import { apiUnavailableReason, findPath, search } from "../api/client";
 import { PATH_FANOUT_LIMIT, PATH_MAX_DEPTH, PATH_VISIT_BUDGET } from "../api/limits";
-import { esc, provenanceHtml } from "../format";
+import { describePathResult, esc, provenanceHtml } from "../format";
 import { predicateLabel, typeLabel } from "../labels";
 import { navigate } from "../router";
 
@@ -69,16 +69,13 @@ function edgeRow(edge: GraphEdge, graphs: PathResponse["graphs"]): string {
   return `<li><span class="jgkg-rel-predicate">${esc(predicateLabel(edge.predicate))}</span> ${provenanceHtml(graphs[edge.graph])}</li>`;
 }
 
-function reasonText(res: PathResponse): string {
-  const reasons: string[] = [];
-  if (res.budget_exhausted) reasons.push(`訪問予算(${res.visit_budget}件)を使い切りました`);
-  if (res.depth_limited) reasons.push(`探索の深さ上限(${res.max_depth})に達しました`);
-  if (res.fanout_truncated) reasons.push("分岐数の上限で一部の経路を切り落としました");
-  return reasons.join("・");
-}
-
+// **文言の選択(found=falseの読み方。裁定B77の族)は`format.ts`の
+// `describePathResult`(純粋関数。DOM非依存)に切り出してある——
+// `format.test.ts`が「exhaustiveを無視すると壊れる」ことを直接検査する。
 function renderResult(container: HTMLElement, res: PathResponse): void {
-  if (res.found) {
+  const description = describePathResult(res);
+
+  if (description.kind === "found") {
     const nodeNames = res.nodes.map((n) => n.label ?? typeLabel(n.type)).join(" → ");
     container.innerHTML = `
       <p class="jgkg-path-found">経路が見つかりました(${res.nodes.length}ノード・訪問${res.visited}件・深さ${res.searched_depth})</p>
@@ -89,17 +86,15 @@ function renderResult(container: HTMLElement, res: PathResponse): void {
     return;
   }
 
-  // **found=falseの読み方(裁定B77の族)。** exhaustive=trueのときだけ
-  // 「経路は存在しない」と言ってよい。それ以外は「この深さ・この予算では
-  // 見つからなかった」であり、「無い」と混同してはならない。
-  if (res.exhaustive) {
+  if (description.kind === "not-found-exhaustive") {
     container.innerHTML = `
       <p class="jgkg-path-not-found">
         経路は存在しません(深さ${res.max_depth}以内・予算${res.visit_budget}訪問まで探索を尽くしました)。
       </p>`;
     return;
   }
-  const reason = reasonText(res);
+
+  const reason = description.reasons.join("・");
   container.innerHTML = `
     <p class="jgkg-path-inconclusive">
       見つかりませんでした(この深さ・この予算では見つかりませんでした。「存在しない」とは言えません)。
@@ -108,6 +103,16 @@ function renderResult(container: HTMLElement, res: PathResponse): void {
 }
 
 export function renderPath(container: HTMLElement, initialFrom?: string, initialTo?: string): void {
+  // 裁定B82(2)と同じ判断: APIが未配備なら、失敗するとわかっている検索・
+  // 探索を試みない(検索ビューと同じ理由)。
+  const unavailable = apiUnavailableReason();
+  if (unavailable) {
+    container.innerHTML = `
+      <p><a href="#/">&larr; 検索に戻る</a></p>
+      <p class="jgkg-notice">データ検索は準備中です。${esc(unavailable)}</p>`;
+    return;
+  }
+
   container.innerHTML = `
     <p><a href="#/">&larr; 検索に戻る</a></p>
     <h1>経路を探す</h1>
