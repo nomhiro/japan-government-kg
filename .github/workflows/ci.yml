@@ -36,7 +36,7 @@ jobs:
       - name: Lint
         run: uv run ruff check src tests scripts
 
-      - name: Test the frontend (裁定B82(3): 表示の正直さの純粋関数を縛る)
+      - name: "Test the frontend (裁定B82(3): 表示の正直さの純粋関数を縛る)"
         # `describePathResult`(found=falseの読み方。裁定B77の族)・
         # `computeApiUnavailableReason`(裁定B82(2))・表示名フォールバック等、
         # DOM非依存の純粋関数だけを対象にする(jsdom等は導入していない——

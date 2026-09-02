@@ -17,7 +17,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.3", "pytest-cov>=6.0", "ruff>=0.9"]
+# pyyaml は linkml 経由で入るが、tests/test_workflows.py が直接使うので
+# 推移依存に頼らず宣言する(裁定B83)
+dev = ["pytest>=8.3", "pytest-cov>=6.0", "ruff>=0.9", "pyyaml>=6.0"]
 
 [build-system]
 requires = ["hatchling"]

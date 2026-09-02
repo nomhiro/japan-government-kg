@@ -702,6 +702,7 @@ dependencies = [
 dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "pyyaml" },
     { name = "ruff" },
 ]
 
@@ -715,6 +716,7 @@ requires-dist = [
     { name = "pyshacl", specifier = ">=0.29" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0" },
+    { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6.0" },
     { name = "rdflib", specifier = ">=7.1" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9" },
     { name = "uvicorn", specifier = ">=0.34" },
