@@ -18,15 +18,6 @@ const PALETTE = [
   "#2563eb", "#dc2626", "#059669", "#d97706", "#7c3aed",
   "#0891b2", "#db2777", "#65a30d", "#4b5563", "#ea580c",
 ];
-const typeColorCache = new Map<string, string>();
-function colorForType(type: string): string {
-  let c = typeColorCache.get(type);
-  if (!c) {
-    c = PALETTE[typeColorCache.size % PALETTE.length]!;
-    typeColorCache.set(type, c);
-  }
-  return c;
-}
 
 /**
  * ノードの座標を決める。**厳密なフォースレイアウトは入れない**
@@ -66,27 +57,44 @@ function layout(graph: MultiGraph, centerId: string): void {
   }
 }
 
-function addEntityNode(
-  graph: MultiGraph,
-  ref: EntityRef,
-  opts: { isCenter?: boolean; fanoutTruncated?: boolean } = {},
-): void {
-  if (graph.hasNode(ref.id)) return;
-  graph.addNode(ref.id, {
-    label: `${ref.label ?? "(表示名なし)"}${opts.fanoutTruncated ? " ⋯" : ""}`,
-    size: opts.isCenter ? 12 : 7,
-    color: colorForType(ref.type),
-    idPath: ref.id_path,
-    entityType: ref.type,
-    fanoutTruncated: Boolean(opts.fanoutTruncated),
-  });
-}
-
 export interface GraphController {
   destroy(): void;
 }
 
 export function renderNeighborhoodGraph(container: HTMLElement, center: EntityRef): GraphController {
+  // **このビュー(1エンティティの表示)専用のスコープにする。** 以前は
+  // モジュールスコープ(全画面で共有)に置いていたため、別のエンティティへ
+  // 遷移した後も前の画面で見た型の色が凡例に残る欠陥があった(実データで
+  // 発見: 厚生労働省の近傍を見た後に厚生省を見ると、凡例に厚生省の近傍には
+  // 実在しない「予算事業」が残った)。エンティティごとに`renderNeighborhoodGraph`
+  // が呼ばれるたびにこのMapを作り直すことで、凡例が常に「いま表示している
+  // グラフに実在する型」だけを反映する(深さ1→2の再読み込みや、分岐の
+  // 展開では同じMapを使い続けるので、その範囲では色は変わらない)。
+  const typeColorCache = new Map<string, string>();
+  function colorForType(type: string): string {
+    let c = typeColorCache.get(type);
+    if (!c) {
+      c = PALETTE[typeColorCache.size % PALETTE.length]!;
+      typeColorCache.set(type, c);
+    }
+    return c;
+  }
+  function addEntityNode(
+    graph: MultiGraph,
+    ref: EntityRef,
+    opts: { isCenter?: boolean; fanoutTruncated?: boolean } = {},
+  ): void {
+    if (graph.hasNode(ref.id)) return;
+    graph.addNode(ref.id, {
+      label: `${ref.label ?? "(表示名なし)"}${opts.fanoutTruncated ? " ⋯" : ""}`,
+      size: opts.isCenter ? 12 : 7,
+      color: colorForType(ref.type),
+      idPath: ref.id_path,
+      entityType: ref.type,
+      fanoutTruncated: Boolean(opts.fanoutTruncated),
+    });
+  }
+
   container.innerHTML = `
     <div class="jgkg-graph-toolbar">
       <label>深さ
