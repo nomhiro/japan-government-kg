@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JGKG — 日本政府ナレッジグラフ</title>
+<!-- data URIのインライン favicon。resources用の未ハッシュファイルをsite/直下に
+     増やさないための選択(site.sync_app()が扱うのはindex.html/assets/だけ)。 -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%94%8E%3C/text%3E%3C/svg%3E">
+<meta name="description" content="法令・府省・予算事業・支出・法人を検索し、出典付きでつながりを辿るアプリ。第三者による非公式なプロジェクトです。">
+</head>
+<body>
+  <!--
+    この告知は静的HTMLに直接書く(JSの実行を待たない)。理由は2つ:
+    (1) JSが読み込み中/失敗した利用者にも常に見えること。
+    (2) scripts/verify-site.py(裁定B81)が本番の"/"を取得してこの文言の
+        有無を検査する——構造検査(HTML)なので、動的に描画される文言だと
+        検査がJSを実行しない限り確認できなくなる。
+  -->
+  <div class="jgkg-notice">
+    このプロジェクトは日本国政府とは無関係です。日本国政府が公開するデータを第三者が構造化したものであり、政府による公式なデータセットではありません。判断の根拠には必ず一次資料をご確認ください。
+  </div>
+  <div id="app">読み込み中…</div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

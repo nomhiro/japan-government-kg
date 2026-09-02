@@ -36,7 +36,7 @@ if ! git diff --quiet schema/generated/; then
   exit 1
 fi
 
-echo "== 配信物を組み立てる =="
+echo "== 配信物(/def/)を組み立てる =="
 uv run python -c "
 import pathlib
 from jgkg import site
@@ -53,6 +53,35 @@ for p in sorted(made):
 # しまう(要修正2と同じ欠陥の型)。
 headers_path = site.write_headers(made, pathlib.Path('site'))
 print(f'  {headers_path} ({len(made) - 1} パス分のブロック + 共通ブロック)')
+"
+
+# **一覧ページ(裁定B81)は手書きの静的ページ。** ソースは`templates/`に置く
+# ——`site/`の中に置かないのは、`site/`全体がそのままCloudflare Pagesの
+# 配信ルートになるため、`site/`直下に置いたファイルは(意図せず)配信対象に
+# なってしまう(実際に`site/def-index.html`という形で試し、
+# `https://.../def-index.html`が誤って200を返すことをwrangler pages dev
+# で確認した)。site/def/ は上のsite.build()が毎回rmtreeしてから再構築する
+# ため、そのディレクトリの外に置いたソースをここでコピーする——build()
+# 自身に持たせない理由はsrc/jgkg/site.pyのbuilt_def_paths()のdocstring
+# 参照(turtleコンテンツの集合に一覧ページを混ぜないため)。
+echo "== 語彙の一覧ページ(/def/)を配置する =="
+cp templates/def-index.html site/def/index.html
+
+# **アプリ(裁定B81)。** フロントエンドは表示だけを作る段(D-5)であり、
+# データに影響しないツールなのでLinkML/Jenaのような厳密固定はしない
+# (controllerの設計1)。`npm ci`は事前に(手元またはCIの別ステップで)
+# 済ませておく前提——ネットワークを要する依存解決をこのスクリプトの
+# 実行そのものには含めない(uv syncと同じ扱い)。
+echo "== フロントエンド(アプリ本体)をビルドする =="
+(cd frontend && npm run build)
+
+echo "== アプリの資産をsite/へ同期する =="
+uv run python -c "
+import pathlib
+from jgkg import site
+made = site.sync_app(pathlib.Path('frontend/dist'), pathlib.Path('site'))
+for p in sorted(made):
+    print('  ', p)
 "
 
 echo

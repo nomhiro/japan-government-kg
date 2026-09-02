@@ -122,7 +122,7 @@ def build(generated_dir: Path, out_dir: Path) -> set[str]:
     # 実測: Windows上でこの指定無しに作ると、本番と16バイト(改行16本分)食い違った。
     # **`/`(アプリ。D-5)と`/def/`(語彙の一覧ページ)は`made`に入れない。**
     # 前者はViteのビルド成果物(`sync_app()`が別に書く)、後者は手書きの
-    # 静的ページ(`site/def-index.html`。build-site.shが`def/index.html`へ
+    # 静的ページ(`templates/def-index.html`。build-site.shが`def/index.html`へ
     # コピーする)であり、どちらも`schema/generated/`から導出した
     # turtleコンテンツではない——`made`をそのままsitemap行に流用すると
     # `_headers`のturtleブロック対象(下の`build_headers()`)にもこの2つが

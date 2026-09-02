@@ -15,6 +15,11 @@ from jgkg.config import get_settings
 REPO_ROOT = Path(__file__).resolve().parent.parent
 GENERATED = REPO_ROOT / "schema" / "generated"
 REAL_SITE = REPO_ROOT / "site"
+#: 一覧ページ(裁定B81)のソース。`site/`の中には置かない
+#: (`site/`全体がCloudflare Pagesの配信ルートなので、そこに置いたファイルは
+#: 意図せず配信対象になる——実際に`site/def-index.html`という形で試し、
+#: `/def-index.html`が誤って200を返すことをwrangler pages devで確認した)。
+REAL_TEMPLATES = REPO_ROOT / "templates"
 MODULES = sorted(site.module_names(GENERATED))
 
 
@@ -47,7 +52,7 @@ def _full_build(out_dir: Path) -> None:
     本物の`site/`を再現する。
 
     `site.build()`自体は一覧ページ(`def/index.html`)/`robots.txt`を作らない
-    (前者は手書きの静的ページ`site/def-index.html`を`build-site.sh`が
+    (前者は手書きの静的ページ`templates/def-index.html`を`build-site.sh`が
     コピーする構成。後者もそのまま置かれた手書きファイル)。アプリ
     (`/`。裁定B81)は`site.sync_app()`を、実際のnpm/viteの代わりに
     `_FAKE_APP_INDEX_HTML`が指す資産を持つ最小のdistディレクトリに対して
@@ -55,7 +60,7 @@ def _full_build(out_dir: Path) -> None:
     (`tests/conftest.py`のsubprocess許容とは無関係に、そもそも呼ばない)。
     """
     site.build(GENERATED, out_dir)
-    shutil.copy2(REAL_SITE / "def-index.html", out_dir / "def" / "index.html")
+    shutil.copy2(REAL_TEMPLATES / "def-index.html", out_dir / "def" / "index.html")
     shutil.copy2(REAL_SITE / "robots.txt", out_dir / "robots.txt")
 
     dist_dir = out_dir.parent / (out_dir.name + "-fake-dist")
@@ -311,9 +316,9 @@ def test_module_table_rows_raises_when_the_page_has_two_tables():
 def test_module_table_problems_is_empty_for_the_current_def_index_html():
     """**空虚な検査にしない土台。** 修正済みの本物の一覧ページ
 
-    (`site/def-index.html`。裁定B81で`/def/`へ移した)に対しては合格すること。
+    (`templates/def-index.html`。裁定B81で`/def/`へ移した)に対しては合格すること。
     """
-    html = (REAL_SITE / "def-index.html").read_text(encoding="utf-8")
+    html = (REAL_TEMPLATES / "def-index.html").read_text(encoding="utf-8")
     assert site_verify.module_table_problems(html, MODULES) == []
 
 

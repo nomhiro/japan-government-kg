@@ -62,6 +62,12 @@ site/sitemap.txt
 # 生成する(手書きのワイルドカードをやめた)。正は schema/generated/ 側
 site/_headers
 
+# アプリ(裁定B81)のビルド成果物。正は frontend/(ソース)。
+# site.sync_app() が frontend/dist/ から書く——index.html はもう手書きの
+# 静的ページではない(そちらは templates/def-index.html に移した)
+site/index.html
+site/assets/
+
 # wrangler のローカル実行が作る一時ファイル
 .wrangler/
 
