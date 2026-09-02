@@ -4,6 +4,7 @@
 要求されるパスは生成物から導出する(ハードコードしない)。モジュールを増やしたときに
 検査対象から黙って抜け落ちる、という型がこのプロジェクトで3回起きているため。
 """
+import re
 from pathlib import Path
 
 import pytest
@@ -315,17 +316,32 @@ def test_built_def_paths_excludes_the_hand_written_index_page(tmp_path):
     assert built, "turtleコンテンツが1件も観測されない"
 
 
-def test_build_headers_always_has_an_immutable_assets_wildcard_but_no_turtle_type(tmp_path):
-    """`_headers`が`/assets/*`にCache-Controlだけを与え、Content-Typeは
+def test_build_headers_gives_assets_a_short_revalidating_ttl_and_no_turtle_type(tmp_path):
+    """`_headers`が`/assets/*`に**短いTTL+再検証**だけを与えること(裁定B85)。
 
-    被せないこと(Viteの静的資産はファイル名で正しいContent-Typeを
-    Cloudflareが決めるので、ここで上書きする理由が無い——`/def/*`と違い
-    「実在しないパスに誤ったタイプを名乗らせる」問題がそもそも起きない)。
+    **1年/immutableに戻してはいけない。** `_headers`のパターンは
+    **応答の中身に関係なくパスにマッチする**ので、配備が伝播する前に
+    要求された資産パスに返る「200 + HTMLフォールバック」にも同じヘッダが付く。
+    2026-09-02、それが実際に起きてPoPが**1年間**古いHTMLを
+    `/assets/index-BZcjP9V0.js` として返し続けた(CI実行2回・20分離れて
+    同一sha256。別PoPからは正しいJSが返った)。
+    **一過性の伝播遅れが恒久的な破損に固定された。**
+
+    内容ハッシュ付きファイル名は正しさをTTLに依存させない(内容が変われば
+    別名になる)ので、1年という長さが買うのは再検証1往復の節約だけである。
+
+    Content-Typeは被せない(Viteの静的資産はファイル名からCloudflareが
+    正しく決める)。
     """
     content = site.build_headers({"/def/core", "/def/core.owl.ttl"})
-    assert "/assets/*\n  Cache-Control: public, max-age=31536000, immutable" in content
+    assert "/assets/*\n  Cache-Control: public, max-age=3600, must-revalidate" in content
     assets_block = content.split("/assets/*\n", 1)[1].split("\n\n", 1)[0]
     assert "Content-Type" not in assets_block
+    # **退行防止**: 長いTTLもimmutableも復活させない
+    assert "immutable" not in assets_block, assets_block
+    assert "31536000" not in assets_block, assets_block
+    ttl = int(re.search(r"max-age=(\d+)", assets_block).group(1))
+    assert ttl <= 3600, f"資産のTTLが長すぎる({ttl}秒)。裁定B85のdocstringを読むこと"
 
 
 def test_sync_app_copies_the_dist_index_and_hashed_assets(tmp_path):

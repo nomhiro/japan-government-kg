@@ -428,10 +428,28 @@ def run_all_checks(
         if actual_sha256 != expected_sha256 or fr.status != 200:
             detail = f"status={fr.status} live_sha256={actual_sha256} local_sha256={expected_sha256}"
             if is_html_fallback(fr.body):
-                detail += (
-                    " ← 本文がHTML(欠落パスへのフォールバック)。"
-                    "配備が伝播していない可能性——待てば消える種類の失敗"
-                )
+                # **配信元にあるのか、CDNのキャッシュが古いのかを分ける**
+                # (裁定B85)。クエリ文字列を付けるとキャッシュキーが変わるので、
+                # 配信元まで問い合わせが届く(実測 2026-09-02)。
+                # **この追加取得は失敗時にしか走らない。**
+                probe = fetch(client, origin, f"{url_path}?jgkg-cache-probe=1")
+                probe_sha256 = hashlib.sha256(probe.body).hexdigest()
+                if probe.status == 200 and probe_sha256 == expected_sha256:
+                    detail += (
+                        " ← 本文がHTML(欠落パスへのフォールバック)だが、"
+                        "**配信元には正しいバイト列がある**"
+                        "(キャッシュを迂回した取得は一致した)。"
+                        "CDNが古いフォールバックを保持している"
+                        "——待っても直らない。内容ハッシュを変えるか、"
+                        "CDNのキャッシュを消すこと"
+                    )
+                else:
+                    detail += (
+                        " ← 本文がHTML(欠落パスへのフォールバック)で、"
+                        "**キャッシュを迂回しても一致しない**"
+                        f"(probe status={probe.status} sha256={probe_sha256})。"
+                        "配備が伝播していない、または配信漏れ"
+                    )
             else:
                 detail += " ← 本文はHTMLではない。配備されたバイト列が実際に違う"
         check(

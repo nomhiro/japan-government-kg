@@ -94,18 +94,29 @@ def _content_type_for(url_path: str) -> str:
 
 
 def _handler_mirroring(
-    live_dir: Path, *, overrides: dict[str, bytes] | None = None
+    live_dir: Path,
+    *,
+    overrides: dict[str, bytes] | None = None,
+    stale_cache: dict[str, bytes] | None = None,
 ) -> "httpx.MockTransport":
     """`live_dir`を配信元として振る舞う`MockTransport`を作る(裁定B65のCORS/Content-Typeも模擬する)。
 
     `overrides`に指定したパスは、`live_dir`の実ファイルではなくこの値を返す
     (「配信済みの内容がビルド成果物と食い違っている」状態を作るため)。
+
+    `stale_cache`に指定したパスは、**クエリ文字列が無いときだけ**この値を返し、
+    クエリ文字列が付いていれば`live_dir`の実ファイルを返す(裁定B85)——
+    「CDNのキャッシュに古い応答が居座っているが、配信元は正しい」状態の模擬。
+    実際のCloudflareもクエリ文字列でキャッシュキーが変わる(実測 2026-09-02)。
     """
     overrides = overrides or {}
+    stale_cache = stale_cache or {}
 
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
-        if path in overrides:
+        if path in stale_cache and not request.url.query:
+            body = stale_cache[path]
+        elif path in overrides:
             body = overrides[path]
         else:
             local = _local_path_for(live_dir, path)
@@ -120,8 +131,15 @@ def _handler_mirroring(
     return httpx.MockTransport(handler)
 
 
-def _client(live_dir: Path, *, overrides: dict[str, bytes] | None = None) -> httpx.Client:
-    return httpx.Client(transport=_handler_mirroring(live_dir, overrides=overrides))
+def _client(
+    live_dir: Path,
+    *,
+    overrides: dict[str, bytes] | None = None,
+    stale_cache: dict[str, bytes] | None = None,
+) -> httpx.Client:
+    return httpx.Client(
+        transport=_handler_mirroring(live_dir, overrides=overrides, stale_cache=stale_cache)
+    )
 
 
 # =============================================================================
@@ -586,7 +604,8 @@ def test_byte_mismatch_says_whether_the_body_was_an_html_fallback(tmp_path):
     live = tmp_path.parent / (tmp_path.name + "-live")
     shutil.copytree(tmp_path, live)
 
-    # 欠落パスへのHTMLフォールバックを再現する(本文をindex.htmlにする)
+    # 欠落パスへのHTMLフォールバックを再現する(本文をindex.htmlにする)。
+    # 配信元にも実物が無い状態なので、キャッシュを迂回しても一致しない。
     (live / "assets" / "index-fakehash123.js").write_text(
         _FAKE_APP_INDEX_HTML, encoding="utf-8"
     )
@@ -596,9 +615,44 @@ def test_byte_mismatch_says_whether_the_body_was_an_html_fallback(tmp_path):
     assert not report.ok
     failure = _asset_byte_failure(report)
     assert "本文がHTML" in failure.detail, failure.detail
-    assert "待てば消える" in failure.detail, failure.detail
+    assert "キャッシュを迂回しても一致しない" in failure.detail, failure.detail
+    assert "配備が伝播していない、または配信漏れ" in failure.detail, failure.detail
     # 生のsha256も落とさずに残っていること(診断に両方必要)
     assert "live_sha256=" in failure.detail and "local_sha256=" in failure.detail, failure.detail
+
+
+def test_byte_mismatch_distinguishes_a_stale_cdn_cache_from_a_missing_deploy(tmp_path):
+    """**配信元は正しいのにCDNが古いフォールバックを持っている場合を見分けること
+    (裁定B85)。**
+
+    2026-09-02に実際に起きた形: 配備が伝播する前にあるPoPが資産パスを要求し、
+    Cloudflareが**200 + HTML**を返した。`_headers` の
+    `/assets/* Cache-Control: max-age=31536000, immutable` がそのHTMLにも
+    付いたため、**そのPoPは1年間その古いHTMLを資産として返し続けた**
+    (CI実行2回・20分離れて同一sha256。別PoPからは正しいJSが返った)。
+
+    **この状態は「待てば消える」ものではない** ——
+    「伝播していない」と同じ文言で報告してはならない。対処が違う
+    (内容ハッシュを変える、またはCDNのキャッシュを消す)。
+    """
+    _full_build(tmp_path)
+    live = tmp_path.parent / (tmp_path.name + "-live")
+    shutil.copytree(tmp_path, live)
+
+    # 配信元(live)は正しいまま。キャッシュだけが古いHTMLを返す
+    client = _client(
+        live,
+        stale_cache={"/assets/index-fakehash123.js": _FAKE_APP_INDEX_HTML.encode("utf-8")},
+    )
+    report = site_verify.run_all_checks("https://jgkg.norr-tech.com", tmp_path, GENERATED, client)
+    assert not report.ok, "CDNが壊れた資産を配っているのに合格させてはならない"
+    failure = _asset_byte_failure(report)
+    assert "配信元には正しいバイト列がある" in failure.detail, failure.detail
+    assert "CDNが古いフォールバックを保持している" in failure.detail, failure.detail
+    assert "待っても直らない" in failure.detail, failure.detail
+    # **「伝播していない」側の文言と混ざっていないこと**(混ざれば切り分けにならない)
+    assert "キャッシュを迂回しても一致しない" not in failure.detail, failure.detail
+    assert "配備が伝播していない、または配信漏れ" not in failure.detail, failure.detail
 
 
 def test_byte_mismatch_says_the_bytes_really_differ_when_the_body_is_not_html(tmp_path):
