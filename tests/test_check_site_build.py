@@ -40,6 +40,25 @@ def _run(out_dir: Path) -> subprocess.CompletedProcess:
     )
 
 
+def _full_build(out_dir: Path) -> None:
+    """`site.build()`に、裁定B81の一覧ページ(`def/index.html`)とアプリ
+
+    (`index.html`・`assets/`)を足して`build-site.sh`が作る実際の`site/`を
+    再現する。npm/viteは呼ばず、`site.sync_app()`が期待する最小の
+    dist形を自分で用意する(このスクリプト自体はファイル読み取りのみで
+    ネットワークにもNode.jsにも依存しないため、テストもそれに揃える)。
+    """
+    made = site.build(GENERATED, out_dir)
+    site.write_headers(made, out_dir)
+    (out_dir / "def" / "index.html").write_text("<html><body>def</body></html>", encoding="utf-8")
+
+    dist_dir = out_dir.parent / (out_dir.name + "-fake-dist")
+    (dist_dir / "assets").mkdir(parents=True, exist_ok=True)
+    (dist_dir / "index.html").write_text("<html><body>app</body></html>", encoding="utf-8")
+    (dist_dir / "assets" / "index-fakehash.js").write_text("1", encoding="utf-8")
+    site.sync_app(dist_dir, out_dir)
+
+
 def test_check_site_build_exits_nonzero_exactly_when_the_build_is_broken(tmp_path):
     """空虚にしない: 壊す前が0終了であることも、この中で確認する。
 
@@ -49,8 +68,7 @@ def test_check_site_build_exits_nonzero_exactly_when_the_build_is_broken(tmp_pat
     期待と異なる終了コードになる。controllerが手で行った壊し確認
     (`site/def/law.owl.ttl`を消す)と同じ形をpytestに固定する。
     """
-    made = site.build(GENERATED, tmp_path)
-    site.write_headers(made, tmp_path)
+    _full_build(tmp_path)
 
     healthy = _run(tmp_path)
     assert healthy.returncode == 0, (
@@ -64,3 +82,27 @@ def test_check_site_build_exits_nonzero_exactly_when_the_build_is_broken(tmp_pat
     broken = _run(tmp_path)
     assert broken.returncode == 1, f"壊した後も成功終了している。stdout:\n{broken.stdout}"
     assert "失敗" in broken.stdout
+
+
+def test_check_site_build_detects_a_missing_def_index_page(tmp_path):
+    """裁定B81: `def/index.html`(語彙の一覧ページ)が無いと落ちること。
+
+    turtleコンテンツの一致検査(built_def_paths等)はこのファイルを
+    意図的に対象外にしているので、この検査が無いと消えても検出されない。
+    """
+    _full_build(tmp_path)
+    (tmp_path / "def" / "index.html").unlink()
+
+    result = _run(tmp_path)
+    assert result.returncode == 1
+    assert "一覧ページ" in result.stdout
+
+
+def test_check_site_build_detects_a_missing_app(tmp_path):
+    """裁定B81: アプリ(`index.html`・`assets/`)が無いと落ちること。"""
+    _full_build(tmp_path)
+    (tmp_path / "index.html").unlink()
+
+    result = _run(tmp_path)
+    assert result.returncode == 1
+    assert "アプリ" in result.stdout

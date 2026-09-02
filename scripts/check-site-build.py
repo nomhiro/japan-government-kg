@@ -42,6 +42,7 @@ import sys
 from pathlib import Path
 
 from jgkg import site
+from jgkg.config import get_settings
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -91,6 +92,30 @@ def main(argv: list[str] | None = None) -> int:
         if sitemap != built
         else f"{len(sitemap)} 件",
     )
+
+    # --- 裁定B81: /(アプリ)と/def/(語彙の一覧ページ)がビルド成果物にあること ---
+    # turtleコンテンツの一致検査(上記)とは独立に確認する——一覧ページ
+    # (def/index.html)はturtleではないので`built`(built_def_paths)から
+    # 意図的に除かれており(site.pyのdocstring参照)、上の一致検査だけでは
+    # その存在自体は確認されない。同様にアプリ(index.html/assets/)も
+    # `built`の対象外なので、それぞれ別に見る。
+    def_index = args.out_dir / "def" / "index.html"
+    check("site/def/index.html(語彙の一覧ページ)が存在する", def_index.is_file())
+
+    base = get_settings().base_uri.rstrip("/")
+    sitemap_lines = (
+        (args.out_dir / "sitemap.txt").read_text(encoding="utf-8").splitlines()
+        if (args.out_dir / "sitemap.txt").is_file()
+        else []
+    )
+    check(f"sitemap.txt に {base}/def/ の行がある", f"{base}/def/" in sitemap_lines)
+    check(f"sitemap.txt に {base}/ の行がある", f"{base}/" in sitemap_lines)
+
+    app_index = args.out_dir / "index.html"
+    check("site/index.html(アプリ)が存在する", app_index.is_file())
+    assets_dir = args.out_dir / "assets"
+    app_assets = [p for p in assets_dir.glob("*") if p.is_file()] if assets_dir.is_dir() else []
+    check("site/assets/(アプリの資産)が空でない", bool(app_assets), f"{len(app_assets)} 件")
 
     print()
     if failures:
