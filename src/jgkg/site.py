@@ -120,11 +120,53 @@ def build(generated_dir: Path, out_dir: Path) -> set[str]:
     # バイトが食い違う——`scripts/generate-schema.sh`に`MSYS_NO_PATHCONV=1`を
     # 足したのと同じ理由(設計書§11.1: どの環境で実行しても同じ生成物になる)。
     # 実測: Windows上でこの指定無しに作ると、本番と16バイト(改行16本分)食い違った。
+    # **`/`(アプリ。D-5)と`/def/`(語彙の一覧ページ)は`made`に入れない。**
+    # 前者はViteのビルド成果物(`sync_app()`が別に書く)、後者は手書きの
+    # 静的ページ(`site/def-index.html`。build-site.shが`def/index.html`へ
+    # コピーする)であり、どちらも`schema/generated/`から導出した
+    # turtleコンテンツではない——`made`をそのままsitemap行に流用すると
+    # `_headers`のturtleブロック対象(下の`build_headers()`)にもこの2つが
+    # 紛れ込んでしまう(HTMLにtext/turtleを名乗らせる誤り)。ここでは
+    # ルート行と同じ扱いで、パスを直接書く(裁定B81)。
     base = _base()
-    lines = [f"{base}/"] + [f"{base}{p}" for p in sorted(made)]
+    lines = [f"{base}/", f"{base}/def/"] + [f"{base}{p}" for p in sorted(made)]
     (out_dir / "sitemap.txt").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     made.add("/sitemap.txt")
 
+    return made
+
+
+def sync_app(dist_dir: Path, out_dir: Path) -> set[str]:
+    """フロントエンド(Viteビルド。裁定B81)の出力を`out_dir`直下へ同期する。
+
+    **`/def/`配下とは完全に独立したツリーとして扱う。** Viteが書くのは
+    `index.html`(アプリのシェル)と`assets/`(内容ハッシュ付きJS/CSS)だけ
+    ——この2つに対象を絞って`out_dir`側の古い内容を`build()`の`def_dir`と
+    同じ考え方(rmtreeしてから丸ごとコピー)で入れ替える。ハッシュ名が
+    変わった古いチャンクを置き去りにしない(そうすると`site/assets/`が
+    ビルドを重ねるたびに肥大化し、`verify-site.py`のバイト比較対象が
+    「いま作ったもの」以外を含んでしまう)。
+
+    `out_dir`の他の内容(`def/`・`robots.txt`・`sitemap.txt`・`_headers`・
+    `def-index.html`)には一切触れない。
+    """
+    assets_out = out_dir / "assets"
+    if assets_out.exists():
+        shutil.rmtree(assets_out)
+    index_out = out_dir / "index.html"
+    if index_out.exists():
+        index_out.unlink()
+
+    made: set[str] = set()
+    shutil.copy2(dist_dir / "index.html", index_out)
+    made.add("/")
+
+    dist_assets = dist_dir / "assets"
+    if dist_assets.is_dir():
+        shutil.copytree(dist_assets, assets_out)
+        for p in sorted(assets_out.rglob("*")):
+            if p.is_file():
+                made.add(f"/assets/{p.relative_to(assets_out).as_posix()}")
     return made
 
 
@@ -168,6 +210,21 @@ def build_headers(made: set[str]) -> str:
             # のも困る。1時間 + 再検証で妥協する。
             "  Cache-Control: public, max-age=3600, must-revalidate"
         )
+
+    # **アプリ(裁定B81)の資産用ワイルドカード。** `/def/*`のワイルドカードを
+    # 避けた理由(上記docstring)とは事情が違う——Viteの資産は常に内容の
+    # ハッシュをファイル名に含む(`index-<hash>.js`)ため、パスが実在するか
+    # どうかにかかわらず「同じパスは常に同じ内容」が成り立ち、欠落時に
+    # 誤ったヘッダを他の内容に被せる心配が無い(欠落時はCloudflareの既定
+    # `index.html`にフォールバックし、その本文にこのCache-Controlが付くだけ
+    # ——値が「1年キャッシュしてよい」であること自体は害にならない。
+    # ハッシュが変わったファイルは別名なので、古いキャッシュを掴み続ける
+    # 心配もない)。この行は`made`の中身に関わらず常に出す
+    # ——アプリは`/def/`と並ぶ、このサイトの恒久的な構成要素だから。
+    blocks.append(
+        "/assets/*\n"
+        "  Cache-Control: public, max-age=31536000, immutable"
+    )
     blocks.append(
         "/*\n"
         "  X-Content-Type-Options: nosniff\n"
@@ -211,11 +268,21 @@ def missing_paths(generated_dir: Path, out_dir: Path) -> set[str]:
 
 
 def built_def_paths(out_dir: Path) -> set[str]:
-    """`out_dir/def/`に実在するファイルから`/def/`パスの集合を得る(観測)。"""
+    """`out_dir/def/`に実在するturtleコンテンツのファイルから`/def/`パスの集合を得る(観測)。
+
+    **`index.html`(語彙の一覧ページ。裁定B81)は除く。** この関数の
+    結果は`_headers`のturtleブロック対象・sitemapの`/def/`集合との
+    一致検査(下記)に使われる——一覧ページはTurtleではないので、
+    ここに混ぜると「HTMLにtext/turtleを名乗らせるべき」という誤った
+    要求を検査自身が生んでしまう。一覧ページ自身の存在・内容は
+    `site_verify`(構造検査。裁定B65)が別に見る。
+    """
     def_dir = out_dir / "def"
     if not def_dir.is_dir():
         return set()
-    return {f"/def/{p.name}" for p in def_dir.iterdir() if p.is_file()}
+    return {
+        f"/def/{p.name}" for p in def_dir.iterdir() if p.is_file() and p.name != "index.html"
+    }
 
 
 def headers_declared_paths(out_dir: Path) -> set[str]:
@@ -236,10 +303,16 @@ def headers_declared_paths(out_dir: Path) -> set[str]:
 
 
 def sitemap_declared_paths(out_dir: Path) -> set[str]:
-    """`out_dir/sitemap.txt`の実テキストから、`/def/`配下のURLの集合を読む。
+    """`out_dir/sitemap.txt`の実テキストから、`/def/`配下のturtleコンテンツのURLの集合を読む。
 
     各行からbase URIの接頭辞を剥がすだけで、`build()`のsitemap生成ロジック
     (`made`の集計)は呼び直しはしない。ルート行(`{base}/`)は対象外。
+
+    **`{base}/def/`(語彙の一覧ページ自身。裁定B81)も対象外。** `build()`は
+    これをルート行と同じ扱いで`made`と無関係に書く(`built_def_paths()`が
+    `index.html`を除く理由と同じ——一覧ページはTurtleではない)。ここに
+    混ぜると`built_def_paths()`との一致検査が常に「sitemap側だけ1件多い」
+    という偽の不一致を報告する。
     """
     path = out_dir / "sitemap.txt"
     if not path.is_file():
@@ -251,6 +324,6 @@ def sitemap_declared_paths(out_dir: Path) -> set[str]:
         if not line.startswith(base):
             continue
         rest = line[len(base) :]
-        if rest.startswith("/def/"):
+        if rest.startswith("/def/") and rest != "/def/":
             declared.add(rest)
     return declared

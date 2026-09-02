@@ -260,3 +260,143 @@ def test_sitemap_declared_paths_detects_a_stale_sitemap_with_the_real_file_untou
 
     assert victim not in site.sitemap_declared_paths(tmp_path)
     assert victim in site.built_def_paths(tmp_path), "実ファイルは消していないはず"
+
+
+# =============================================================================
+# 裁定B81: アプリを`/`に、語彙の一覧ページを`/def/`に置く
+# =============================================================================
+
+
+def test_sitemap_lists_the_app_root_and_the_def_index_page(tmp_path):
+    """`sitemap.txt`が`/`(アプリ)と`/def/`(一覧ページ)の両方を列挙すること。
+
+    どちらも`build()`が`schema/generated/`から導出する`made`には入らない
+    (前者はVite、後者は手書きの静的ページ)ため、ルート行と同じ扱いで
+    直接書くことを固定する。
+    """
+    site.build(GENERATED, tmp_path)
+    base = get_settings().base_uri.rstrip("/")
+    lines = (tmp_path / "sitemap.txt").read_text(encoding="utf-8").splitlines()
+    assert f"{base}/" in lines
+    assert f"{base}/def/" in lines
+
+
+def test_sitemap_declared_paths_excludes_the_bare_def_index_entry(tmp_path):
+    """`{base}/def/`(一覧ページ自身)は`sitemap_declared_paths()`の対象外。
+
+    何があれば落ちるか: この除外を外すと、`built_def_paths()`(index.htmlを
+    除く。turtleコンテンツだけ)との一致検査が常に「sitemap側だけ1件多い」
+    という偽の不一致になる(下のテストが実際にそれを確認する)。
+    """
+    site.build(GENERATED, tmp_path)
+    assert "/def/" not in site.sitemap_declared_paths(tmp_path)
+
+
+def test_sitemap_and_built_def_paths_agree_after_a_real_build(tmp_path):
+    """`/def/`一覧ページの行を足しても、turtleコンテンツの一致検査は崩れない。
+
+    (`check-site-build.py`が実際に回す比較そのもの)。
+    """
+    site.build(GENERATED, tmp_path)
+    assert site.sitemap_declared_paths(tmp_path) == site.built_def_paths(tmp_path)
+
+
+def test_built_def_paths_excludes_the_hand_written_index_page(tmp_path):
+    """`site/def/index.html`(一覧ページ。build-site.shが別途コピーする)が
+
+    実在しても、`built_def_paths()`(turtleコンテンツの観測)には含まれない
+    こと——含めると`_headers`にHTMLへのturtleブロックを要求してしまう。
+    """
+    site.build(GENERATED, tmp_path)
+    (tmp_path / "def" / "index.html").write_text("<html></html>", encoding="utf-8")
+    built = site.built_def_paths(tmp_path)
+    assert "/def/index.html" not in built
+    # 前提: 一覧ページ以外のturtleコンテンツは変わらず含まれる(空虚化防止)
+    assert built, "turtleコンテンツが1件も観測されない"
+
+
+def test_build_headers_always_has_an_immutable_assets_wildcard_but_no_turtle_type(tmp_path):
+    """`_headers`が`/assets/*`にCache-Controlだけを与え、Content-Typeは
+
+    被せないこと(Viteの静的資産はファイル名で正しいContent-Typeを
+    Cloudflareが決めるので、ここで上書きする理由が無い——`/def/*`と違い
+    「実在しないパスに誤ったタイプを名乗らせる」問題がそもそも起きない)。
+    """
+    content = site.build_headers({"/def/core", "/def/core.owl.ttl"})
+    assert "/assets/*\n  Cache-Control: public, max-age=31536000, immutable" in content
+    assets_block = content.split("/assets/*\n", 1)[1].split("\n\n", 1)[0]
+    assert "Content-Type" not in assets_block
+
+
+def test_sync_app_copies_the_dist_index_and_hashed_assets(tmp_path):
+    """`sync_app()`が`dist_dir/index.html`と`dist_dir/assets/*`を`out_dir`直下へ
+
+    コピーし、作ったURLの集合(`/`と`/assets/...`)を返すこと。npm/viteは
+    使わず、Viteが書く形を模した最小のディレクトリで検査する。
+    """
+    dist_dir = tmp_path / "dist"
+    (dist_dir / "assets").mkdir(parents=True)
+    (dist_dir / "index.html").write_text("<html>app</html>", encoding="utf-8")
+    (dist_dir / "assets" / "index-abc123.js").write_text("console.log(1)", encoding="utf-8")
+    (dist_dir / "assets" / "index-def456.css").write_text("body{}", encoding="utf-8")
+
+    out_dir = tmp_path / "site"
+    out_dir.mkdir()
+    made = site.sync_app(dist_dir, out_dir)
+
+    assert made == {"/", "/assets/index-abc123.js", "/assets/index-def456.css"}
+    assert (out_dir / "index.html").read_text(encoding="utf-8") == "<html>app</html>"
+    assert (out_dir / "assets" / "index-abc123.js").is_file()
+
+
+def test_sync_app_removes_stale_hashed_assets_from_a_previous_build(tmp_path):
+    """`sync_app()`を2回呼ぶと、1回目だけに存在したハッシュ名のファイルが
+
+    2回目の後には残らないこと(裁定B81: `verify-site.py`のバイト比較対象を
+    「いま作ったもの」だけに保つ——古いチャンクが残っていると、比較対象の
+    集合そのものが増え続ける)。
+    """
+    out_dir = tmp_path / "site"
+    out_dir.mkdir()
+
+    dist1 = tmp_path / "dist1"
+    (dist1 / "assets").mkdir(parents=True)
+    (dist1 / "index.html").write_text("v1", encoding="utf-8")
+    (dist1 / "assets" / "index-old111.js").write_text("old", encoding="utf-8")
+    site.sync_app(dist1, out_dir)
+    assert (out_dir / "assets" / "index-old111.js").is_file()
+
+    dist2 = tmp_path / "dist2"
+    (dist2 / "assets").mkdir(parents=True)
+    (dist2 / "index.html").write_text("v2", encoding="utf-8")
+    (dist2 / "assets" / "index-new222.js").write_text("new", encoding="utf-8")
+    made = site.sync_app(dist2, out_dir)
+
+    assert not (out_dir / "assets" / "index-old111.js").exists(), "古いハッシュ付き資産が残っている"
+    assert (out_dir / "assets" / "index-new222.js").is_file()
+    assert made == {"/", "/assets/index-new222.js"}
+    assert (out_dir / "index.html").read_text(encoding="utf-8") == "v2"
+
+
+def test_sync_app_does_not_touch_the_def_directory_or_other_site_files(tmp_path):
+    """`sync_app()`が`/def/`・`sitemap.txt`・`_headers`等に一切触れないこと
+
+    (`/`と`/def/`は完全に独立したツリーという裁定B81の前提の直接確認)。
+    """
+    out_dir = tmp_path / "site"
+    made_def = site.build(GENERATED, out_dir)
+    site.write_headers(made_def, out_dir)
+    before_def = {p: p.read_bytes() for p in sorted((out_dir / "def").rglob("*")) if p.is_file()}
+    before_sitemap = (out_dir / "sitemap.txt").read_bytes()
+    before_headers = (out_dir / "_headers").read_bytes()
+
+    dist_dir = tmp_path / "dist"
+    (dist_dir / "assets").mkdir(parents=True)
+    (dist_dir / "index.html").write_text("app", encoding="utf-8")
+    (dist_dir / "assets" / "a-123.js").write_text("x", encoding="utf-8")
+    site.sync_app(dist_dir, out_dir)
+
+    after_def = {p: p.read_bytes() for p in sorted((out_dir / "def").rglob("*")) if p.is_file()}
+    assert after_def == before_def
+    assert (out_dir / "sitemap.txt").read_bytes() == before_sitemap
+    assert (out_dir / "_headers").read_bytes() == before_headers
