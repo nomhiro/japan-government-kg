@@ -20,6 +20,19 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
+      # D-5: フロントエンド(Vite+TypeScript+Sigma.js)。build-site.sh の
+      # `npm run build` と、下の型/表示名の再生成ステップが必要とする。
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
       - name: Lint
         run: uv run ruff check src tests scripts
 
@@ -35,6 +48,23 @@ jobs:
             exit 1
           fi
 
+      - name: Regenerate frontend types/labels and fail if they differ from the committed output
+        run: |
+          # D-5ブリーフ設計2・裁定B78: APIの型・オントロジーの表示名は
+          # 手書きしない。上のschema regen-diffと同じ形で、
+          # frontend/openapi.json・frontend/src/api/openapi-types.ts・
+          # frontend/src/generated/labels.json が実際の導出元(app.openapi()・
+          # schema/generated/all.owl.ttl)と一致していることを確認する
+          # ——一致しないコミットは「オントロジー/APIを変えたのに
+          # フロントエンドの生成物を再生成し忘れた」ことを意味する。
+          bash scripts/generate-frontend-types.sh
+          if [ -n "$(git status --porcelain frontend/openapi.json frontend/src/api/openapi-types.ts frontend/src/generated/labels.json)" ]; then
+            git status --porcelain frontend/openapi.json frontend/src/api/openapi-types.ts frontend/src/generated/labels.json
+            git diff -- frontend/openapi.json frontend/src/api/openapi-types.ts frontend/src/generated/labels.json || true
+            echo "::error::フロントエンドの生成物がコミットされたものと異なる。scripts/generate-frontend-types.sh を実行してコミットする"
+            exit 1
+          fi
+
       - name: Assert the base URI is consistent everywhere it is baked in
         run: |
           # 旧版はドメイン文字列を src/**.py から grep するだけで、実際に
@@ -43,7 +73,14 @@ jobs:
           # 検査を本物にする(設計書§4.2 / レビューC1)
           uv run python -m jgkg.base_uri --check
 
-      - name: Build the static site (schema/generated/ -> site/)
+      - name: Check the frontend build is byte-for-byte reproducible (裁定B81)
+        # `npm run build`(2回)は型検査(tsc --noEmit)も含むので、
+        # この1ステップで型検査とビルド再現性の両方を確認する
+        # ——別に`npm run typecheck`のステップを置くと同じtscを
+        # 何度も走らせるだけになる。
+        run: uv run python scripts/check-frontend-build.py
+
+      - name: Build the static site (schema/generated/ + frontend/ -> site/)
         run: bash scripts/build-site.sh
 
       - name: Check the site build's content (no server needed; A-2)
@@ -57,10 +94,11 @@ jobs:
 
       - name: Assert building the site left the working tree clean
         run: |
-          # site/def/・site/sitemap.txt・site/_headers は.gitignore対象だが、
-          # ビルドがそれ以外の追跡ファイルを変えていないことを確認する
-          # (schema/generated/ の差分は1つ上のステップで既に確認済みだが、
-          # ここは「site構築の副作用」という別の観点の確認)。
+          # site/def/・site/sitemap.txt・site/_headers・site/index.html・
+          # site/assets/ は.gitignore対象だが、ビルドがそれ以外の追跡ファイルを
+          # 変えていないことを確認する(schema/generated/・frontend/の生成物の
+          # 差分は上のステップで既に確認済みだが、ここは「site構築の副作用」
+          # という別の観点の確認)。
           if [ -n "$(git status --porcelain)" ]; then
             git status --porcelain
             echo "::error::site/ のビルドが追跡ファイルを変えた。想定外の副作用がある"
@@ -105,6 +143,17 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --extra dev
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
 
       - name: Build the static site
         run: bash scripts/build-site.sh
