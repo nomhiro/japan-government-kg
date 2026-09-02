@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager
 from urllib.parse import unquote
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 
 from jgkg.api.kgclient import KGClient, RemoteKGClient
 from jgkg.api.models import (
@@ -71,6 +72,24 @@ def create_app(client: KGClient, base_uri: str | None = None) -> FastAPI:
     app = FastAPI(title="Japan Government KG API", lifespan=lifespan)
     app.state.kg_client = client
     app.state.base_uri = resolved_base_uri
+
+    # **CORSを全オリジンに開ける(D-5で追加)。** D-3/D-4はこのAPIを実装した
+    # 時点でCORSヘッダを付けていなかった——ブラウザから直接呼ぶ経路
+    # (このアプリ自身がその最初の消費者)が無かったため、抜けが露見して
+    # いなかった。この4本のGETエンドポイントは認証も副作用も持たない
+    # 読み取り専用の公開APIであり、`site.py`の`build_headers()`が
+    # `/def/*`(公開オントロジー)に対して既に採っている「公共財として
+    # 公開しているのでオリジンを絞る理由が無い」という判断をそのまま
+    # 適用する。D-6b(配備先。本番のAPIのドメイン)は未決だが、CORSは
+    # 配備先が決まる前に必要になる(このアプリがデプロイされた別オリジンから
+    # APIを呼ぶため)——D-5の表示層が実際に機能するための追加であり、
+    # 「表示だけを作る」の範囲を超える判断としてD-5報告に明記する。
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["GET"],
+        allow_headers=["*"],
+    )
 
     @app.get("/search", response_model=SearchResponse)
     def search(

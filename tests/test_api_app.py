@@ -428,6 +428,26 @@ def test_no_route_accepts_a_raw_sparql_query(app_and_spy):
 
 
 # =============================================================================
+# D-5で追加したCORS: ブラウザから直接叩く経路(このアプリ自身)が動くために必要
+# =============================================================================
+
+
+def test_cors_is_open_for_get_requests(app_and_spy):
+    """`/def/*`(公開オントロジー)と同じ「公共財として公開しているので
+
+    オリジンを絞る理由が無い」という判断を、この4本の読み取り専用GET
+    エンドポイントにも適用する。ブラウザからの実際のクロスオリジンGETを
+    模した検査(`Origin`ヘッダ付きのリクエスト)——CORSMiddlewareを
+    足し忘れると、この検査は`access-control-allow-origin`が無いことで落ちる。
+    """
+    app, _ = app_and_spy
+    with TestClient(app) as tc:
+        resp = tc.get("/search", params={"q": "厚生労働省"}, headers={"Origin": "https://jgkg.norr-tech.com"})
+    assert resp.status_code == 200, resp.text
+    assert resp.headers.get("access-control-allow-origin") == "*"
+
+
+# =============================================================================
 # Windows用ループバック限定の抜け穴(このファイル冒頭)が
 # 127.0.0.1以外を今も遮断していることの確認(壊し確認)
 # =============================================================================
