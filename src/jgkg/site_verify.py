@@ -114,8 +114,14 @@ def served_files(out_dir: Path) -> dict[str, Path]:
     実在するファイルをそのままURLに変換するだけでよい。モジュールを追加した
     ときにこの集合が自動的に増える(手書きの一覧なら増えない)。
 
-    ルートの`index.html`だけは`/`に対応する(ブラウザ/検証が実際に読みに行く
-    パス)。それ以外は`out_dir`からの相対パスをそのままURLパスにする。
+    **ディレクトリの`index.html`は、そのディレクトリ自身(末尾スラッシュ)に
+    対応する**(裁定B81)——ルートの`index.html`が`/`に対応するのと同じ規則を
+    `def/index.html`にも一般化し、`/def/`(一覧ページ)がブラウザ/検証が
+    実際に読みに行くパスと一致するようにする。CloudflarePagesの
+    ディレクトリインデックス配信を模した規則であり、実測は
+    `wrangler pages dev`のローカル再現で確認する(このモジュールの
+    テスト・呼び出し側のdocstring参照)。それ以外は`out_dir`からの
+    相対パスをそのままURLパスにする。
     """
     served: dict[str, Path] = {}
     for path in sorted(out_dir.rglob("*")):
@@ -124,16 +130,22 @@ def served_files(out_dir: Path) -> dict[str, Path]:
         rel = path.relative_to(out_dir)
         if len(rel.parts) == 1 and rel.name in _RESERVED_ROOT_FILES:
             continue
-        if rel.as_posix() == "index.html":
-            served["/"] = path
+        if rel.name == "index.html":
+            dir_parts = rel.parts[:-1]
+            served["/" + "/".join(dir_parts) + ("/" if dir_parts else "")] = path
             continue
         served[f"/{rel.as_posix()}"] = path
     return served
 
 
 def is_html_path(url_path: str) -> bool:
-    """このパスがHTML(構造検査の対象)かどうか。非HTMLはsha256比較の対象。"""
-    return url_path == "/" or url_path.endswith(".html")
+    """このパスがHTML(構造検査の対象)かどうか。非HTMLはsha256比較の対象。
+
+    `/`(アプリ)・`/def/`(一覧ページ)はどちらも末尾スラッシュのディレクトリ
+    インデックスなので`.endswith("/")`で一括して捕まえる(裁定B81。
+    以前は`url_path == "/"`だけの特別扱いだった)。
+    """
+    return url_path.endswith(("/", ".html"))
 
 
 # =============================================================================
@@ -276,6 +288,37 @@ def module_table_rows(html: str) -> list[list[str]]:
             "モジュール表の検査はどの表を見るべきか機械的に決められない"
         )
     return parser.tables[0]
+
+
+_ASSET_URL_RE = re.compile(r'(?:src|href)="(/assets/[^"]+)"')
+
+
+def referenced_app_asset_urls(html: str) -> set[str]:
+    """アプリのHTML(`/`)が`<script src=...>`/`<link href=...>`で参照する
+
+    `/assets/`配下のURLの集合(裁定B81)。Viteは資産のファイル名に内容の
+    ハッシュを埋め込むので、この集合は「そのビルドが実際に要求している
+    正確なファイル名」そのものになる。
+    """
+    return set(_ASSET_URL_RE.findall(html))
+
+
+def stale_app_asset_urls(html: str, served: dict[str, Path]) -> set[str]:
+    """本番のHTML(`html`)が参照しているのに、`served`(いま手元で作った
+
+    最新のビルド成果物)には存在しないURL(裁定B81「アプリの陳腐化検出」)。
+
+    **部分集合の判定にする理由。** Viteは動的import由来のチャンクを
+    エントリHTMLの`<script>`/`<link>`には出さないことがある
+    (コード分割)——ビルド成果物の`/assets/`配下ファイル全部とHTML参照の
+    完全一致を要求すると、そうした正当な「HTMLからは参照されないが
+    実在する」ファイルを誤検出する。ここで検出したいのは「本番HTMLが
+    指すハッシュ付きファイルが、いま作った最新ビルドに存在しない」という
+    一方向の食い違い(=新しいビルドで名前が変わったのに本番が古い名前を
+    まだ指している)だけなので、部分集合の判定で十分であり、かつ
+    過剰検出を避けられる。
+    """
+    return {u for u in referenced_app_asset_urls(html) if u not in served}
 
 
 def module_table_problems(html: str, expected_modules: Iterable[str]) -> list[str]:
@@ -441,7 +484,11 @@ def run_all_checks(
     )
     check("SHACL形状が対象クラスを持っている", bool(shapes), f"{len(shapes)} クラス")
 
-    # --- 裁定B64/B65: 人向けの入口(HTML)は構造検査(ハッシュ比較しない) -------
+    # --- 裁定B64/B65/B81: 人向けの入口(HTML)は構造検査(ハッシュ比較しない) ---
+    # `/`(アプリ。裁定B81)と`/def/`(語彙の一覧ページ)は役割が違うので、
+    # 検査も分ける——`/`にモジュール表を要求したり、`/def/`に資産の
+    # 陳腐化検査を要求したりすると、両方とも常にNGになる(空虚化どころか
+    # 常時赤くなる検査になってしまう)。
     for url_path in sorted(served):
         if not is_html_path(url_path):
             continue
@@ -450,18 +497,29 @@ def run_all_checks(
         try:
             text = fr.body.decode("utf-8")
         except UnicodeDecodeError:
-            check(f"{url_path} のモジュール表がmodule_names()と一致し、説明文が揃っている", False, "本文がUTF-8でない")
+            check(f"{url_path} の本文が読める(UTF-8)", False, "本文がUTF-8でない")
             continue
         check(
-            "入口に非公式であることの明示がある",
+            f"{url_path} に非公式であることの明示がある",
             "政府による公式なデータセットではありません" in text,
         )
-        problems = module_table_problems(text, modules)
-        check(
-            f"{url_path} のモジュール表が module_names() と一致し、説明文が揃っている",
-            not problems,
-            "; ".join(problems),
-        )
+
+        if url_path == "/def/":
+            problems = module_table_problems(text, modules)
+            check(
+                f"{url_path} のモジュール表が module_names() と一致し、説明文が揃っている",
+                not problems,
+                "; ".join(problems),
+            )
+        elif url_path == "/":
+            referenced = referenced_app_asset_urls(text)
+            check(f"{url_path} が /assets/ 配下の資産を参照している(空虚化防止)", bool(referenced), f"{len(referenced)} 件")
+            stale = stale_app_asset_urls(text, served)
+            check(
+                f"{url_path} が参照する資産は、いまビルドした成果物に存在する(アプリの陳腐化検出)",
+                not stale,
+                f"存在しない参照: {sorted(stale)}" if stale else f"{len(referenced)} 件",
+            )
 
     for path in ("/robots.txt", "/sitemap.txt"):
         fr = cache.get(path)

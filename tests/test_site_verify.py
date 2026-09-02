@@ -26,31 +26,62 @@ def _fixed_base(monkeypatch):
     get_settings.cache_clear()
 
 
-def _full_build(out_dir: Path) -> None:
-    """`site.build()`(生成物)に、git管理下の静的ファイルを足して本物の`site/`を再現する。
+#: `sync_app()`が期待する最小のVite dist形(index.html + 内容ハッシュ付き資産1本)。
+#: npm/viteは使わず、`_full_build`がこの内容から`site/`上に模擬のアプリを作る。
+_FAKE_APP_INDEX_HTML = (
+    "<!doctype html><html><head><title>JGKG</title></head>"
+    "<body>"
+    '<p class="notice">このプロジェクトは日本国政府とは無関係です。'
+    "日本国政府が公開するデータを第三者が構造化したものであり、"
+    "政府による公式なデータセットではありません。</p>"
+    '<div id="app"></div>'
+    '<script type="module" src="/assets/index-fakehash123.js"></script>'
+    '<link rel="stylesheet" href="/assets/index-fakehash456.css">'
+    "</body></html>"
+)
 
-    `site.build()`自体は`index.html`/`robots.txt`を作らない(それらは手書きの
-    静的ファイルで、`build-site.sh`はビルド先に生成物だけを追加する構成)。
+
+def _full_build(out_dir: Path) -> None:
+    """`site.build()`(生成物)に、git管理下の静的ファイルと模擬アプリを足して
+
+    本物の`site/`を再現する。
+
+    `site.build()`自体は一覧ページ(`def/index.html`)/`robots.txt`を作らない
+    (前者は手書きの静的ページ`site/def-index.html`を`build-site.sh`が
+    コピーする構成。後者もそのまま置かれた手書きファイル)。アプリ
+    (`/`。裁定B81)は`site.sync_app()`を、実際のnpm/viteの代わりに
+    `_FAKE_APP_INDEX_HTML`が指す資産を持つ最小のdistディレクトリに対して
+    呼ぶことで再現する——このテストファイルはNode/npmに依存しない
+    (`tests/conftest.py`のsubprocess許容とは無関係に、そもそも呼ばない)。
     """
     site.build(GENERATED, out_dir)
-    shutil.copy2(REAL_SITE / "index.html", out_dir / "index.html")
+    shutil.copy2(REAL_SITE / "def-index.html", out_dir / "def" / "index.html")
     shutil.copy2(REAL_SITE / "robots.txt", out_dir / "robots.txt")
+
+    dist_dir = out_dir.parent / (out_dir.name + "-fake-dist")
+    (dist_dir / "assets").mkdir(parents=True, exist_ok=True)
+    (dist_dir / "index.html").write_text(_FAKE_APP_INDEX_HTML, encoding="utf-8")
+    (dist_dir / "assets" / "index-fakehash123.js").write_text("console.log('jgkg')", encoding="utf-8")
+    (dist_dir / "assets" / "index-fakehash456.css").write_text("body{margin:0}", encoding="utf-8")
+    site.sync_app(dist_dir, out_dir)
 
 
 def _local_path_for(live_dir: Path, url_path: str) -> Path:
     """テスト用の擬似配信サーバが、`url_path`に対して返すべき実ファイルを解決する。
 
-    `site_verify.served_files`と同じ規則(ルート"/"は"index.html")をここでも
-    適用する——適用しないと`live_dir / "".lstrip("/")`が`live_dir`自身
-    (ディレクトリ)になり、"/"へのGETが常に404になる。
+    `site_verify.served_files`と同じ規則(ディレクトリの既定ページは
+    末尾スラッシュのパスに対応する。裁定B81でルート"/"だけの特別扱いから
+    一般化した)をここでも適用する——適用しないと`live_dir / "".lstrip("/")`
+    が`live_dir`自身(ディレクトリ)になり、"/"や"/def/"へのGETが常に
+    404になる。
     """
-    if url_path == "/":
-        return live_dir / "index.html"
+    if url_path.endswith("/"):
+        return live_dir / url_path.strip("/") / "index.html"
     return live_dir / url_path.lstrip("/")
 
 
 def _content_type_for(url_path: str) -> str:
-    if url_path == "/":
+    if url_path.endswith(("/", ".html")):
         return "text/html; charset=utf-8"
     if url_path.endswith(".ttl") or (url_path.startswith("/def/") and "." not in url_path.rsplit("/", 1)[-1]):
         return "text/turtle; charset=utf-8"
@@ -140,9 +171,23 @@ def test_served_files_grows_when_a_file_is_added_to_the_build(tmp_path):
 
 def test_is_html_path():
     assert site_verify.is_html_path("/")
+    assert site_verify.is_html_path("/def/")
     assert site_verify.is_html_path("/about.html")
     assert not site_verify.is_html_path("/def/core.owl.ttl")
     assert not site_verify.is_html_path("/robots.txt")
+
+
+def test_served_files_maps_def_index_html_to_the_def_directory_path(tmp_path):
+    """`site.py`と対になる規則(裁定B81): `def/index.html`は`/def/`
+
+    (末尾スラッシュ)に対応すること。`/def/index.html`という鍵は作らない
+    ——`served_files`のこの規則が無いと、`/def/`(実際にブラウザ/検証が
+    読みに行くパス)に対応する実ファイルが見つからない。
+    """
+    _full_build(tmp_path)
+    served = site_verify.served_files(tmp_path)
+    assert served["/def/"] == tmp_path / "def" / "index.html"
+    assert "/def/index.html" not in served
 
 
 # =============================================================================
@@ -263,9 +308,12 @@ def test_module_table_rows_raises_when_the_page_has_two_tables():
         site_verify.module_table_rows(_PRE_B64_FIX_TABLE_HTML + "<table><tr><td>x</td></tr></table>")
 
 
-def test_module_table_problems_is_empty_for_the_current_index_html():
-    """**空虚な検査にしない土台。** 修正済みの本物の`index.html`に対しては合格すること。"""
-    html = (REAL_SITE / "index.html").read_text(encoding="utf-8")
+def test_module_table_problems_is_empty_for_the_current_def_index_html():
+    """**空虚な検査にしない土台。** 修正済みの本物の一覧ページ
+
+    (`site/def-index.html`。裁定B81で`/def/`へ移した)に対しては合格すること。
+    """
+    html = (REAL_SITE / "def-index.html").read_text(encoding="utf-8")
     assert site_verify.module_table_problems(html, MODULES) == []
 
 
@@ -353,30 +401,80 @@ def test_run_all_checks_does_not_hash_compare_html_even_when_cloudflare_injects_
     live = tmp_path.parent / (tmp_path.name + "-live")
     shutil.copytree(tmp_path, live)
 
-    original = (live / "index.html").read_text(encoding="utf-8")
+    original = (live / "def" / "index.html").read_text(encoding="utf-8")
     injected = original.replace(
         "</body>",
         '<script src="/cdn-cgi/challenge-platform/scripts/jsd/main.js"></script></body>',
     )
     assert injected != original
-    (live / "index.html").write_text(injected, encoding="utf-8")
+    (live / "def" / "index.html").write_text(injected, encoding="utf-8")
 
     client = _client(live)
     report = site_verify.run_all_checks("https://jgkg.norr-tech.com", tmp_path, GENERATED, client)
     assert report.ok, [f"{r.label}: {r.detail}" for r in report.failures]
 
 
-def test_run_all_checks_detects_a_module_missing_from_the_live_index_html(tmp_path):
+def test_run_all_checks_detects_a_module_missing_from_the_live_def_index_html(tmp_path):
     """裁定B64の再発防止を`run_all_checks`レベルでも確認する。"""
     _full_build(tmp_path)
     live = tmp_path.parent / (tmp_path.name + "-live")
     shutil.copytree(tmp_path, live)
-    (live / "index.html").write_text(_PRE_B64_FIX_TABLE_HTML, encoding="utf-8")
+    (live / "def" / "index.html").write_text(_PRE_B64_FIX_TABLE_HTML, encoding="utf-8")
 
     client = _client(live)
     report = site_verify.run_all_checks("https://jgkg.norr-tech.com", tmp_path, GENERATED, client)
     assert not report.ok
     assert any("モジュール表" in r.label for r in report.failures), [r.label for r in report.failures]
+
+
+# =============================================================================
+# 裁定B81: アプリ(`/`)の資産の陳腐化検出(HTMLハッシュ比較の代わり)
+# =============================================================================
+
+
+def test_referenced_app_asset_urls_finds_script_src_and_link_href():
+    urls = site_verify.referenced_app_asset_urls(_FAKE_APP_INDEX_HTML)
+    assert urls == {"/assets/index-fakehash123.js", "/assets/index-fakehash456.css"}
+
+
+def test_stale_app_asset_urls_is_empty_when_every_reference_exists(tmp_path):
+    _full_build(tmp_path)
+    html = (tmp_path / "index.html").read_text(encoding="utf-8")
+    served = site_verify.served_files(tmp_path)
+    assert site_verify.stale_app_asset_urls(html, served) == set()
+
+
+def test_stale_app_asset_urls_flags_a_hash_the_current_build_no_longer_has(tmp_path):
+    """**アプリの陳腐化検出の核心。** 本番HTMLが指すハッシュ付きファイルが、
+
+    いま手元で作った最新ビルドには存在しない(=新しいデプロイでハッシュが
+    変わったのに、本番のHTMLだけ古いハッシュを参照し続けている)状態を
+    検出できること。
+    """
+    _full_build(tmp_path)
+    served = site_verify.served_files(tmp_path)
+    stale_html = _FAKE_APP_INDEX_HTML.replace("index-fakehash123.js", "index-oldhash999.js")
+    stale = site_verify.stale_app_asset_urls(stale_html, served)
+    assert stale == {"/assets/index-oldhash999.js"}
+
+
+def test_run_all_checks_detects_a_stale_app_deploy(tmp_path):
+    """`run_all_checks`レベルでも、本番の`/`が古いハッシュを参照していれば落ちること
+
+    (裁定B81「アプリの陳腐化検出」がverify-site.py経由で実際に効くことの確認)。
+    """
+    _full_build(tmp_path)
+    live = tmp_path.parent / (tmp_path.name + "-live")
+    shutil.copytree(tmp_path, live)
+    stale_html = _FAKE_APP_INDEX_HTML.replace("index-fakehash123.js", "index-oldhash999.js")
+    (live / "index.html").write_text(stale_html, encoding="utf-8")
+
+    client = _client(live)
+    report = site_verify.run_all_checks("https://jgkg.norr-tech.com", tmp_path, GENERATED, client)
+    assert not report.ok
+    assert any("陳腐化検出" in r.label and "index-oldhash999.js" in r.detail for r in report.failures), [
+        f"{r.label}: {r.detail}" for r in report.failures
+    ]
 
 
 # =============================================================================
