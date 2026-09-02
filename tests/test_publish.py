@@ -668,3 +668,51 @@ def test_cli_allow_dirty_flag_permits_a_dirty_build_through_dry_run(tmp_path, mo
     monkeypatch.setattr(publish, "_gh_release_create", _must_not_be_called)
 
     assert publish.main([str(release_dir), "--allow-dirty"]) == 0
+
+
+def test_make_kg_nq_gz_rejects_and_deletes_a_partially_written_gz(tmp_path, monkeypatch):
+    """**新規作成した kg.nq.gz の展開内容も照合すること(裁定B80)。**
+
+    以前は `exists()` 側だけが照合しており、**新規作成した `.gz` の内容は
+    一度も検査されなかった** —— `build.file_sha256(gz_path)` は**圧縮バイト列
+    自身**のハッシュであって「展開したら kg.nq と一致するか」は見ていない。
+    **`--publish` を綺麗なディレクトリで直接叩くと、作成と同時に
+    アップロードされ、内容照合を一度も経なかった。**
+
+    2026-09-02、実際に**途中で切れた `kg.nq.gz`**(展開すると132 MiBちょうどで
+    終わる)がリリースディレクトリに残っているのを `exists()` 側の照合が
+    掴んで止めた。**あの `.gz` が生まれた経路がここである可能性が高い。**
+
+    何があれば落ちるか: 書き込みが途中で終わった `.gz` をそのまま公開すると、
+    **ダウンロードした人が展開できないKGを受け取る。**
+
+    **併せて「壊れた `.gz` を残さない」ことも検査する** —— 残すと次回の実行が
+    「食い違い」で止まり、事情を知らない人には理由が見えない。
+    """
+    release_dir, m = _make_release_dir(tmp_path)
+    gz_path = release_dir / publish.KG_NQ_GZ_NAME
+    assert not gz_path.exists(), "前提(まだkg.nq.gzが無い)が崩れている"
+
+    # 書き込みを途中で終わらせる(部分書き込みの模擬)
+    real_copyfileobj = publish.shutil.copyfileobj
+
+    def _partial_copy(src, dst, *args, **kwargs):
+        head = src.read(8)  # 先頭だけ書いて残りを捨てる
+        dst.write(head)
+
+    monkeypatch.setattr(publish.shutil, "copyfileobj", _partial_copy)
+
+    with pytest.raises(ValueError, match="展開内容がkg.nqと一致しない"):
+        publish.make_kg_nq_gz(release_dir, m)
+
+    assert not gz_path.exists(), (
+        "壊れた kg.nq.gz が残っている —— 次回の実行が「食い違い」で止まり、"
+        "事情を知らない人には理由が見えない"
+    )
+
+    # 復元すれば正しく作れる(この検査自体が経路を塞いでいないことの確認)
+    monkeypatch.setattr(publish.shutil, "copyfileobj", real_copyfileobj)
+    ok_path, _sha, _size = publish.make_kg_nq_gz(release_dir, m)
+    assert ok_path.exists()
+    with gzip.open(ok_path, "rb") as f:
+        assert hashlib.sha256(f.read()).hexdigest() == m.nquads_sha256

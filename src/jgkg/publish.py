@@ -151,6 +151,14 @@ def make_kg_nq_gz(release_dir: Path, manifest: build.Manifest) -> tuple[Path, st
     確かめる**——古い`kg.nq.gz`が残っているのに気付かず、更新された`kg.nq`と
     食い違うものを配ってしまう事故を防ぐ。食い違っていたら例外にする
     (黙って上書きもしない。手動で削除してから再実行させる)。
+
+    **新規に作った場合も、作った直後に同じ照合をする(裁定B80)。**
+    以前は再利用の側だけが照合しており、**新規作成した`.gz`の内容は一度も
+    検査されなかった** ——`--publish`を綺麗なディレクトリで直接叩くと、
+    作成と同時にアップロードされ、内容照合を経なかった。
+    こちらは食い違ったら**壊れた`.gz`を削除してから**例外にする
+    (残すと次回の実行が「食い違い」で止まり、事情を知らない人には
+    理由が見えない)。
     """
     nquads_path = release_dir / KG_NQ_NAME
     gz_path = release_dir / KG_NQ_GZ_NAME
@@ -167,6 +175,33 @@ def make_kg_nq_gz(release_dir: Path, manifest: build.Manifest) -> tuple[Path, st
     else:
         with nquads_path.open("rb") as src, gzip.open(gz_path, "wb") as dst:
             shutil.copyfileobj(src, dst)
+        # **作った直後にも展開内容を照合する(裁定B80)。**
+        #
+        # 以前は上の`exists()`側だけが照合しており、**新規作成した`.gz`の内容は
+        # 一度も検査されなかった。** `gz_sha256 = build.file_sha256(gz_path)` は
+        # **圧縮バイト列自身**のハッシュであって、「展開したら`kg.nq`と一致するか」
+        # は見ていない —— **`--publish`を綺麗なディレクトリで直接叩くと、
+        # 作成と同時にアップロードされ、内容照合を一度も経なかった。**
+        #
+        # 2026-09-02、実際に**途中で切れた`kg.nq.gz`**(展開すると132 MiBちょうどで
+        # 終わる)がリリースディレクトリに残っているのを、`exists()`側の照合が
+        # 掴んで止めた。**あの`.gz`が生まれた経路がここである可能性が高い。**
+        #
+        # **圧縮の非決定性とは別の話である**(上のdocstring参照)——
+        # gzipのバイト列は実装で変わりうるが、**展開した内容が一致するかは
+        # 決定的に検査できる。**
+        #
+        # **壊れた`.gz`を残さない。** 残すと次回の実行が「食い違い」で止まり、
+        # 事情を知らない人には理由が見えない。
+        created_content_sha256 = _sha256_of_gzip_content(gz_path)
+        if created_content_sha256 != manifest.nquads_sha256:
+            gz_path.unlink(missing_ok=True)
+            raise ValueError(
+                f"作成した{gz_path}の展開内容がkg.nqと一致しない(展開後sha256="
+                f"{created_content_sha256}、manifest.nquads_sha256="
+                f"{manifest.nquads_sha256})。書き込みが途中で終わった可能性がある。"
+                " 壊れた.gzは削除した(再実行すれば作り直す)"
+            )
 
     gz_sha256 = build.file_sha256(gz_path)
     gz_size = gz_path.stat().st_size
