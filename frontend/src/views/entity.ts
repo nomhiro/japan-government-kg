@@ -1,14 +1,18 @@
 // エンティティページ(型別レイアウト。仕様§9.2)。
 //
-// **属性(attributes)には出典が付けられない(気になる点)。** D-4までのAPIは
-// `attributes: dict[述語, 値の一覧]`だけを返し、どの名前付きグラフから来た
-// リテラルかを保持していない(`queries.py`の`_build_attributes_query`は
-// `GRAPH`句を使わない設計)。関係(relationships)・近傍サブグラフの辺には
-// `graph`があるが、属性には無い——したがって属性の値については
-// 「一次資料へのリンクと取得日時を出す」(仕様§9.2)を今のAPI応答からは
-// 満たせない。ここでは無いものを捏造せず、その旨を明示する
-// (このプロジェクトの「報告が嘘をつく」を避ける方針と同じ理由)。
-import type { EntityDetailResponse, Relationship } from "../api/client";
+// **属性にも出典が付く**(裁定B82(4a)で仕様§9.2の未達を直した)。以前は
+// `attributes: dict[述語, 値の一覧(素の文字列)]`で、どの名前付きグラフ由来か
+// を保持していなかった——関係(relationships)には出典が付くのに属性には
+// 付かない、仕様§9.2「全表示要素に一次資料へのリンクと取得日時を出す」の
+// 未達だった。APIが`attributes: dict[述語, AttributeValue[]]`
+// (`AttributeValue = { value, graphs }`)を返すようになったので、ここで
+// 実際のリンクに置き換える。
+//
+// **`graphs`が単数ではなく複数(`AttributeValue.graphs: string[]`)な理由**:
+// 同じ値を複数の名前付きグラフが主張することがある(`models.py`の
+// `AttributeValue`docstring参照)——その場合は値ごとに複数の一次資料リンクを
+// 並べる。
+import type { AttributeValue, EntityDetailResponse, Relationship } from "../api/client";
 import { apiUnavailableReason, entityDetail } from "../api/client";
 import { esc, provenanceHtml, truncationNotice } from "../format";
 import type { GraphController } from "./graph";
@@ -25,6 +29,21 @@ function relationshipRow(rel: Relationship, graphs: EntityDetailResponse["graphs
       <a href="#" class="jgkg-rel-target" data-id-path="${esc(rel.related.id_path)}">${esc(label)}</a>
       <span class="jgkg-muted jgkg-rel-prov">${provenanceHtml(graphs[rel.graph])}</span>
     </li>`;
+}
+
+/**
+ * 属性の1つの値(`AttributeValue`)を、値そのものと出典リンクで描く。
+ *
+ * **`available === false`のときは空リンクを描かない**(`provenanceHtml`が
+ * 既に守る。D-5と同じ扱い。裁定B82)。`graphs`が複数あれば
+ * (同じ値を複数の名前付きグラフが主張する場合)一次資料リンクを複数並べる。
+ */
+function attributeValueHtml(av: AttributeValue, graphs: EntityDetailResponse["graphs"]): string {
+  const provenances = av.graphs.map((g) => provenanceHtml(graphs[g])).join(" / ");
+  return (
+    `<span class="jgkg-attr-value">${esc(av.value)}</span>` +
+    `<span class="jgkg-muted jgkg-attr-prov"> (${provenances})</span>`
+  );
 }
 
 export interface EntityViewController {
@@ -68,7 +87,9 @@ export function renderEntity(container: HTMLElement, idPath: string): EntityView
     const attrRows = Object.entries(entity.attributes)
       .map(
         ([pred, values]) =>
-          `<tr><th>${esc(predicateLabel(pred))}</th><td>${values.map((v) => esc(v)).join("、")}</td></tr>`,
+          `<tr><th>${esc(predicateLabel(pred))}</th><td>${values
+            .map((v) => attributeValueHtml(v, entity!.graphs))
+            .join("、")}</td></tr>`,
       )
       .join("");
 
@@ -88,10 +109,6 @@ export function renderEntity(container: HTMLElement, idPath: string): EntityView
       <h1>${esc(entity.label ?? "(表示名なし)")}</h1>
 
       ${attrRows ? `<table class="jgkg-attr-table">${attrRows}</table>` : ""}
-      <p class="jgkg-muted jgkg-attr-note">
-        属性の一次資料へのリンクはAPIからまだ提供されていません(気になる点として報告済み)。
-        下の関係・近傍サブグラフの出典は表示されます。
-      </p>
 
       <h2>関係${truncationNotice(entity.relationships_truncated, entity.relationships_limit, "関係")}</h2>
       ${relGroups || '<p class="jgkg-muted">関係はありません。</p>'}

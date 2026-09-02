@@ -17,6 +17,7 @@ from jgkg.api.kgclient import (
     sparql_string_literal,
 )
 from jgkg.api.models import (
+    AttributeValue,
     EntityDetailResponse,
     EntityRef,
     GraphEdge,
@@ -332,18 +333,56 @@ SELECT ?type ?label WHERE {{
 
 
 def _build_attributes_query(base_uri: str, entity_iri: str) -> str:
-    # **上限を付けない。** 属性はスキーマで決まる有限個の述語であり、
-    # 関係(相手が別エンティティ、fan-outしうる)と違ってhairballの原因に
-    # ならない——上限は「データ依存で際限なく増えうるもの」にだけ効かせる、
-    # というD-3ブリーフの上限の趣旨(hairball防止)に合わせた区別
+    """属性の値がどの名前付きグラフから来たかを`?g`で返す(裁定B82(4a))。
+
+    **上限を付けない。** 属性はスキーマで決まる有限個の述語であり、
+    関係(相手が別エンティティ、fan-outしうる)と違ってhairballの原因に
+    ならない——上限は「データ依存で際限なく増えうるもの」にだけ効かせる、
+    というD-3ブリーフの上限の趣旨(hairball防止)に合わせた区別。
+
+    **出典を必須で結合しない(`_build_relationship_edges_query`とは異なる
+    選択。ここが裁定B82(4a)でcontrollerが指摘した判断そのもの)**:
+
+    `_build_relationship_edges_query`は出典を**必須で**結合している
+    (`?g prov:wasDerivedFrom ?source ; ...`)。必須結合にすると、出典3項を
+    持たないグラフの値は**黙って消える**——関係についてはこれを受け入れて
+    いる(壊し確認のテストがその挙動を固定している。
+    `tests/test_api_entity.py`の
+    `test_entity_detail_relationships_disappear_if_provenance_is_removed`)。
+
+    **属性ではこれを選ばない。** 属性が消えるのは関係が消えるより見えにくい
+    ——利用者は「この事業には金額が入っていない」と欠落だと気づけないまま
+    読んでしまう(controllerの裁定B82(4a)での指摘)。関係が1件消えても
+    「この事業には支出先が1件少ない」程度にしか見えないのに対し、属性は
+    エンティティそのものの記述が薄くなったように見え、しかも属性は
+    そもそも1エンティティあたり少数(このKGでは数個)しかないため、
+    1件の消失が全体に対して占める割合が大きい。
+
+    **そのため`_build_relationship_edges_query`ではなく
+    `_build_expansion_query`と同じ形(`GRAPH`句のみ・出典を結合しない)を
+    採る。** 出典は最後に`_hydrate_graphs`で一度だけ引く
+    (`_build_provenance_query`のdocstring参照。グラフは7本程度なので
+    1本のクエリで足りる)。
+
+    **実データでの確認(2026-09-02実測。Fuseki 884,052クアッド)**:
+    メタデータ専用の`graph/provenance`自身を除く、実在する名前付きグラフ
+    6本(houjin-bangou・houjin-bangou-payees・ministry-codes・egov-law・
+    egov-law-data・rs-system)は**全6本が出典3項をすべて持っていた**——
+    「出典3項を持たないグラフ」は現状のデータには1つも存在しない。
+    **つまり今この選択と必須結合との間には、観測できる挙動差が無い。**
+    それでも、将来出典3項を欠くグラフが増えても属性を黙って落とさない
+    ための選択として、この形を採用する(必須結合は「今のデータでは安全」
+    という理由だけでは正当化できない——将来のデータに対する規律の方を
+    優先する)。
+    """
     excluded = " , ".join(f"<{p}>" for p in sorted(_TYPE_AND_LABEL_PREDICATES))
     return _prefixes(base_uri) + f"""
-SELECT ?p ?o WHERE {{
-  {entity_iri} ?p ?o .
+SELECT ?p ?o ?g WHERE {{
+  GRAPH ?g {{ {entity_iri} ?p ?o }}
   FILTER(isLiteral(?o))
   FILTER(?p NOT IN ({excluded}))
 }}
-ORDER BY ?p ?o
+ORDER BY ?p ?o ?g
 """
 
 
@@ -406,13 +445,25 @@ def get_entity_detail(
     type_local = _most_specific_type(own_types)
 
     attribute_rows = client.query(_build_attributes_query(base_uri, entity_iri))
-    attributes: dict[str, list[str]] = {}
+    attributes: dict[str, list[AttributeValue]] = {}
+    # **同じ(述語, 値)の組は1行にまとめ、主張するグラフを`graphs`に集める。**
+    # ここで複製すると、複数ソースが同じ事実を持つだけで「別々の値が2つ
+    # ある」ように見えてしまう(`AttributeValue`のdocstring参照)。
+    _attr_rows_by_key: dict[tuple[str, str], AttributeValue] = {}
     for row in attribute_rows:
         pred = _local_name(_value(row, "p"))
         value = _value(row, "o")
         if value is None:
             continue
-        attributes.setdefault(pred, []).append(value)
+        graph = _value(row, "g") or ""
+        key = (pred, value)
+        attr_value = _attr_rows_by_key.get(key)
+        if attr_value is None:
+            attr_value = AttributeValue(value=value, graphs=[])
+            _attr_rows_by_key[key] = attr_value
+            attributes.setdefault(pred, []).append(attr_value)
+        if graph and graph not in attr_value.graphs:
+            attr_value.graphs.append(graph)
 
     fetch_limit = limit + 1
     edge_rows = client.query(_build_relationship_edges_query(base_uri, entity_iri, fetch_limit))
@@ -453,6 +504,17 @@ def get_entity_detail(
         # Ministry/Expenditureのような相手の型別に束ねる方が、型別レイアウト
         # (仕様§9.2)のUIパネル構成に直接使える
         relationships.setdefault(related_type, []).append(rel)
+
+    # **属性が参照するグラフの出典を、最後に一度だけ引く。**
+    # 関係の出典クエリ(`_build_relationship_edges_query`)は必須結合なので
+    # `graphs`に既に3項が揃っている——属性は必須結合していない
+    # (`_build_attributes_query`のdocstring参照)ため、まだ引けていない
+    # グラフだけを`_hydrate_graphs`で追加で引く(`get_neighborhood`・
+    # `find_path`と同じ「探索は軽く・出典は最後に一度だけ」という形)。
+    attribute_graph_uris = {g for values in attributes.values() for av in values for g in av.graphs}
+    missing_graph_uris = attribute_graph_uris - graphs.keys()
+    if missing_graph_uris:
+        graphs.update(_hydrate_graphs(client, base_uri, missing_graph_uris))
 
     return EntityDetailResponse(
         id=entity_uri,

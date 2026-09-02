@@ -176,6 +176,28 @@ class Relationship(_Envelope):
     graph: str
 
 
+class AttributeValue(_Envelope):
+    """属性の1つの値と、それを主張する名前付きグラフの一覧(裁定B82(4a))。
+
+    **単数の`graph`ではなく`graphs: list[str]`にする理由**: 同じ値が複数の
+    名前付きグラフから主張されうる(複数ソースが同じ事実を持つ場合)。
+    値の行を複製すると、同じ事実を主張する別々の値が2つあるように見える
+    ——1つの値に対して「それを主張しているグラフの一覧」を持つのが正確
+    (`Relationship.graph`のキー参照と同じ設計の理由)。**実データで実在を
+    確認済み**(2026-09-02実測。Fuseki 884,052クアッド。`org:cityName`・
+    `org:houjinBangou`等が`houjin-bangou`と`houjin-bangou-payees`のように
+    別の名前付きグラフから同じ値を主張する組が実在する。
+    `queries.py`の`_build_attributes_query`docstring参照)。
+    """
+
+    value: str
+    #: **`graphs`マップ(`EntityDetailResponse.graphs`)のキーの一覧**
+    #: (`Relationship.graph`と同じ規約。ただし複数持てる点が違う)。
+    #: このリストの全要素が`EntityDetailResponse.graphs`に存在することを
+    #: テストで縛る(`tests/test_api_entity.py`)。
+    graphs: list[str]
+
+
 class GraphEdge(_Envelope):
     """近傍サブグラフ・パス探索の辺1本。
 
@@ -292,8 +314,15 @@ class EntityDetailResponse(_Envelope):
     type: str
     label: str | None
     #: 述語(ローカル名)→値のリスト。1述語が複数値を持つことがあるため
-    #: 常にlistにする(単値/多値で応答の形が変わると消費者側の分岐が増える)
-    attributes: dict[str, list[str]]
+    #: 常にlistにする(単値/多値で応答の形が変わると消費者側の分岐が増える)。
+    #:
+    #: **訂正(裁定B82(4a)。以前は`dict[str, list[str]]`で出典が無かった)**:
+    #: 以前のこの型は値を素の`str`で持っており、どの名前付きグラフ由来かが
+    #: 分からなかった——`relationships`には出典が付くのに`attributes`には
+    #: 付かない、仕様§9.2「全表示要素に一次資料へのリンクと取得日時を出す」
+    #: の未達だった(D-5の実装者が発見)。**値を`AttributeValue`
+    #: (値+出典グラフキーの一覧)にすることで直した。**
+    attributes: dict[str, list[AttributeValue]]
     #: **関係の一覧を型別にグループ化**(D-3ブリーフ)。キーは「相手側
     #: エンティティ」の型のローカル名(例: "Law"・"Ministry"・"Expenditure")。
     #: 属性には現れない、関係固有の軸なので、属性のグループ化とは別に持つ

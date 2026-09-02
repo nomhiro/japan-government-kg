@@ -76,11 +76,31 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AttributeValue
+         * @description 属性の1つの値と、それを主張する名前付きグラフの一覧(裁定B82(4a))。
+         *
+         *     **単数の`graph`ではなく`graphs: list[str]`にする理由**: 同じ値が複数の
+         *     名前付きグラフから主張されうる(複数ソースが同じ事実を持つ場合)。
+         *     値の行を複製すると、同じ事実を主張する別々の値が2つあるように見える
+         *     ——1つの値に対して「それを主張しているグラフの一覧」を持つのが正確
+         *     (`Relationship.graph`のキー参照と同じ設計の理由)。**実データで実在を
+         *     確認済み**(2026-09-02実測。Fuseki 884,052クアッド。`org:cityName`・
+         *     `org:houjinBangou`等が`houjin-bangou`と`houjin-bangou-payees`のように
+         *     別の名前付きグラフから同じ値を主張する組が実在する。
+         *     `queries.py`の`_build_attributes_query`docstring参照)。
+         */
+        AttributeValue: {
+            /** Graphs */
+            graphs: string[];
+            /** Value */
+            value: string;
+        };
         /** EntityDetailResponse */
         EntityDetailResponse: {
             /** Attributes */
             attributes: {
-                [key: string]: string[];
+                [key: string]: components["schemas"]["AttributeValue"][];
             };
             /** Graphs */
             graphs: {

@@ -94,7 +94,7 @@ a { color: var(--accent); }
   vertical-align: top;
 }
 .jgkg-attr-table th { font-weight: 400; color: var(--muted); white-space: nowrap; }
-.jgkg-attr-note { margin-top: 0.25rem; }
+.jgkg-attr-prov { font-size: 0.8rem; }
 
 .jgkg-rel-group { margin-bottom: 1rem; }
 .jgkg-rel-list li { padding: 0.35rem 0; border-bottom: 1px solid var(--rule); display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: baseline; }
