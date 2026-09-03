@@ -5508,3 +5508,63 @@ pytest等の再実行なし(私の実測を使うよう指示した)、実Fuseki
 ブラウザでの描画確認なし、`645681f` 以外のコミットは読んでいない。
 **私自身は実データ・実HTTP面で4型(パーセントエンコードが必要な
 廃止行政機関を含む)を確認しているので、この分担で足りる。**
+
+## 観察 O19: 公開済みの述語IRIの命名が不統一で、直せない
+
+列挙値の表示名タスク(裁定B82(4b))のブリーフを見直す過程で見つけた。
+
+| 公開IRI | 命名 |
+|---|---|
+| `budget:recipientMatchCategory` | camelCase |
+| `core:unresolved_reason` | **snake_case** |
+| `core:unresolved_text` | snake_case |
+| `core:unresolved_key` | snake_case |
+| `core:unresolvedFor` | **camelCase** |
+
+**同じスロット一覧(`schema/core.yaml:201`)の中で混在している。**
+`emit.py` は `core:unresolved_reason` を4箇所で書いており、
+**APIの応答にもこの名前で出る。**
+
+### 直せない
+
+**`/def/*` のIRIは恒久的なLOD識別子である**(裁定B81)。
+`schema/*.yaml` のスロット名を変えるとIRIが変わり、
+**既に公開した識別子が壊れる。**
+
+### なぜ記録するか
+
+**これは利用者が踏む罠である。** 我々の語彙に対してSPARQLを書く第三者は、
+`recipientMatchCategory` を見た後に `core:unresolvedReason` と推測して
+**0件を得る**。「データが無い」と読んでしまう。
+
+**恒久識別子は、不統一も恒久である。** 直せないなら、
+**書いておくのが唯一できることである。**
+
+### 残っている作業
+
+**`/def/`(`templates/def-index.html`)にこの不統一を書く。**
+語彙を引く人が最初に読むページなので、そこに書くのが正しい場所である。
+**この時点では実装者が稼働中なので保留した**(統制4: 実装者稼働中に
+テストを回さない。テンプレートを変えるとサイト検査を回す必要がある)。
+
+### 派生: 私がブリーフに書いていた引き方も曖昧だった
+
+同じ見直しで、ブリーフの「許容値の表示名は、IRIの最後の `/` 以降が
+リテラルと一致するのでその対応で引ける」という記述が
+**裸のリテラルからの対応で原理的に曖昧**だと気づいた
+(2つの列挙型が同じ値文字列を持てば衝突する)。
+
+**測ったら、曖昧さの無い経路がオントロジーにあった:**
+
+```
+述語IRI --rdfs:range--> 列挙型IRI --('/' + リテラル)--> 許容値IRI --dcterms:title--> 表示名
+```
+
+`rdfs:range` が実在する(`recipientMatchCategory` → `RecipientMatchCategoryEnum`、
+`unresolved_reason` → `UnresolvedReasonEnum`)。**ブリーフを書き換えた。**
+
+**また、許容値は `skos:inScheme` を持たない**(`rdfs:label`・
+`skos:definition`・`rdfs:subClassOf`・`rdf:type` の4つ)。
+私は最初 `skos:inScheme` で許容値を数えて**60件**を得たが、
+それはクラスやスロットにも付いているためで、
+**正しくは8件**だった。**同じ罠をブリーフに書き残した。**
