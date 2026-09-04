@@ -11,6 +11,13 @@ data/quarantine/
 data/snapshots/
 data/generated/
 *.zip
+
+# D-6b-1: docker/serve.Dockerfile の INDEX_SOURCE=local が読む一時的な
+# ステージング場所(scripts/build-serve-images.sh がビルド直前に
+# data/artifact/<release>/ から1世代分だけコピーする)。data/ と同じ理由
+# (成果物はローカル専用)でコミットしない。ディレクトリ自体は.gitkeepで残す
+docker/local-release/*
+!docker/local-release/.gitkeep
 *.n3
 *.nt
 *.ttl.gz

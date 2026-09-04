@@ -99,6 +99,10 @@ ALLOWED_EXTERNAL_HOSTS: frozenset[str] = frozenset({
     # テスト専用のダミー(RFC 2606 / RFC 6761 の予約名)
     "example.test",
     "uri-test.invalid",
+    # D-6b-1: docker-compose.serve.ymlのserve-apiが公開するホスト側ポート
+    # (3030・8000は開発用Fuseki・フロントエンド開発用に避けている)。
+    # `scripts/smoke-test-api.py`の`--base-url`既定値がこのポートを指す
+    "localhost:8055",
     # `tests/test_network_block.py`がconftest.pyの遮断(`socket.socket.connect`
     # レベル)を検証するための宛先。名前解決を経ない**リテラルIP**にする必要が
     # あった——`.invalid`のように名前解決自体が失敗する宛先だと、遮断より先に

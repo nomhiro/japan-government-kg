@@ -1,0 +1,30 @@
+# D-6b-1: docker/serve.Dockerfile・docker/api.Dockerfileがsrc/やdata/をCOPYするために追加。
+#
+# **理由**: これが無いと `docker build` はリポジトリ全体(`data/` だけで13GB。
+# 過去16世代のリリース+現行tdb2+lake)をビルドコンテキストとしてDockerデーモンへ
+# 送る。COPYで使うかどうかとは無関係に、送信そのものが遅い。
+.venv/
+.git/
+.pytest_cache/
+.ruff_cache/
+.wrangler/
+.playwright-mcp/
+node_modules/
+frontend/node_modules/
+frontend/dist/
+site/
+__pycache__/
+*.pyc
+
+# data/ は無条件に除外する(13GB。過去16世代のリリース+現行tdb2+lake)。
+# **.dockerignoreはARGより先に静的に決まるため、「使うときだけ許可する」が
+# できない** —— data/artifact/*/ を丸ごと許可すると索引の入手経路(A: ローカル)を
+# 使わないビルド(既定のB)まで2.3GB(全世代のmanifest+tdb2.tar.gz合計)を
+# 毎回コンテキストとして送ることになる。
+#
+# **そのため(A)はdata/を直接COPYしない。** `scripts/build-serve-images.sh`が
+# ビルド直前に選んだ1世代の`manifest.json`・`tdb2.tar.gz`だけを
+# `docker/local-release/`(下では除外していないのでそのまま送られる。
+# 使わない限り空で0バイト)へコピーし、Dockerfileはそこから読む。
+# data/ への参照はビルド前のスクリプト側に閉じる。
+data/

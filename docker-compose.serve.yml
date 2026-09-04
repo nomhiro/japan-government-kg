@@ -1,0 +1,72 @@
+# 提供用(自己完結イメージ)の構成。D-6b-1。
+#
+# **既存の docker-compose.yml は変えない。** そちらの `fuseki` サービス
+# (バインドマウント方式)は開発と索引構築に使っている。ここは別ファイルにした
+# ——「別のサービス名か別のcomposeファイル」のうち後者を選んだ理由:
+#   1. ビルド方式が根本的に違う(索引をイメージ層に焼く vs バインドマウント)。
+#      同じcompose内で両方を持つと、どちらが「開発用」でどちらが「提供用の
+#      検証」かが1ファイルの中で曖昧になる
+#   2. `docker compose up`(ファイル指定なし)は今までどおり開発用の
+#      `fuseki`/`jena-tools`だけを対象にする。この提供用構成を動かすには
+#      `-f docker-compose.serve.yml`を明示させ、「検証のために別物を起動する」
+#      という意図表明を要求する(このプロジェクトが繰り返す「外向きの操作は
+#      意図の表明を要求する」作法——ここは外向きではないが、既存の開発用
+#      Fuseki(3030番。止めてはならない)と混同しない、という同じ精神)
+#
+# `name:` でプロジェクト名を固定し、既存の `docker-compose.yml`(既定の
+# プロジェクト名 `requirements-draft`)のコンテナ名前空間と混同しないようにする。
+name: jgkg-serve
+
+services:
+  serve-fuseki:
+    build:
+      context: .
+      dockerfile: docker/serve.Dockerfile
+      args:
+        JENA_VERSION: ${JENA_VERSION:?JENA_VERSION を .env に設定する}
+        INDEX_SOURCE: ${INDEX_SOURCE:-release}
+        RELEASE_TAG: ${RELEASE_TAG:-}
+        RELEASE_REPO: ${RELEASE_REPO:-nomhiro/japan-government-kg}
+        GIT_COMMIT: ${GIT_COMMIT:-}
+        GIT_DIRTY: ${GIT_DIRTY:-unknown}
+        BUILD_DATE: ${BUILD_DATE:-}
+    image: jgkg-serve-fuseki:${IMAGE_TAG:-local}
+    # 3030は開発用Fuseki(requirements-draft-fuseki-1)が使用中なので避ける。
+    # 8000はフロントエンド開発のローカルAPI(uvicorn既定ポート)向けに空けておく
+    ports:
+      - "${SERVE_FUSEKI_PORT:-8060}:3030"
+    # **ボリュームを一切マウントしない。** これが自己完結イメージの検証点そのもの
+    # (索引はイメージ層に焼き込み済み。docker/serve.Dockerfile参照)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3030/$$/ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 5s
+    restart: unless-stopped
+
+  serve-api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-}
+        GIT_DIRTY: ${GIT_DIRTY:-unknown}
+        BUILD_DATE: ${BUILD_DATE:-}
+    image: jgkg-api:${IMAGE_TAG:-local}
+    ports:
+      - "${SERVE_API_PORT:-8055}:8000"
+    environment:
+      # **URLを直書きしない**(src/jgkg/config.pyのSettingsが読む)。
+      # compose内はサービス名でDNS解決できるので `serve-fuseki` を使う。
+      #
+      # **ACAでは違う**: ACAのsidecarパターンは同一アプリ内のコンテナが
+      # ディスクとネットワークを共有し、`localhost:<port>` で通信する
+      # (サービス名DNSではない)。この構成はcompose上での自己完結イメージの
+      # 検証が目的であり、ACAの実際の到達性モデルの再現ではない——D-6b-2
+      # (実配備)ではここを `http://localhost:3030/kg/sparql` に変える
+      - JGKG_SPARQL_ENDPOINT=http://serve-fuseki:3030/kg/sparql
+    depends_on:
+      serve-fuseki:
+        condition: service_healthy
+    restart: unless-stopped
