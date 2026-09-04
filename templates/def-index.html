@@ -94,6 +94,13 @@
 
   <p>専門用語を避けた日本語の表示名は <code>dcterms:title</code>(<code>@ja</code>)にあります。<code>skos:prefLabel</code> ではありません——各用語は既に <code>skos:definition</code>(定義文)と <code>skos:inScheme</code>(SKOS概念としての所属)を持つため <code>skos:prefLabel</code> を探しがちですが、こちらは付けていません。<strong>列挙型の許容値(8件。<code>resolved</code> や <code>OLD_MINISTRY</code> など)にはまだ付いていません</strong>——実測値のまま返ります。</p>
 
+  <!--
+    観察O19: 公開済みの述語IRIの命名が不統一で、恒久識別子なので直せない。
+    利用者が `core:unresolvedReason` と推測して0件を得る罠なので、
+    ここに書いておくのが唯一できることである。
+  -->
+  <p><strong>述語の命名は統一されていません。</strong> <code>budget:recipientMatchCategory</code> は camelCase ですが、<code>core:unresolved_reason</code>・<code>core:unresolved_text</code>・<code>core:unresolved_key</code> は snake_case です(<code>core:unresolvedFor</code> は camelCase)。<strong>これらは恒久的な識別子なので変更しません</strong>——名前を変えると、すでに公開した URI が壊れます。問い合わせを書くときは上の各モジュールの定義で実際の綴りを確認してください。</p>
+
   <h2>識別子</h2>
   <p>実体の識別子は <code>/id/org/{法人番号}</code>、出典グラフは <code>/graph/{ソース}/{取得日}</code> の形です。<strong>これらはまだ解決しません。</strong> SPARQLエンドポイントの公開後に対応します。</p>
 
