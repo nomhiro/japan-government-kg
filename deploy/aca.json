@@ -1,0 +1,157 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_jgkg_notice": "D-6b-2で作成。az での実行は一度もしていない。構文としてJSONとしてパースできることだけを検査済み(tests/test_deploy_aca.py)。実行手順と、初回に失敗しうる箇所はdocs/deploy-aca.mdを読むこと。",
+    "_jgkg_scope": "既存のManaged Environment(az containerapp env create等で事前に作成)にContainer App1つをsidecar構成(fuseki+api)で置く。Environment自体・ACR・ロール割り当てはこのテンプレートの外(docs/deploy-aca.mdのazコマンド)。"
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "metadata": {
+        "description": "デプロイ先リージョン(例: japaneast)。実在するリージョン名を利用者が明示する。既定値は置かない(タスクブリーフの要求: サブスクリプションID・リソースグループ名・リージョン・ACR名は既定値に実在しそうな名前を置かない)。"
+      }
+    },
+    "managedEnvironmentId": {
+      "type": "string",
+      "metadata": {
+        "description": "既存のAzure Container Apps Managed EnvironmentのリソースID(/subscriptions/.../providers/Microsoft.App/managedEnvironments/...)。このテンプレートはEnvironment自体を作らない——docs/deploy-aca.mdの `az containerapp env create` が事前に作る前提。"
+      }
+    },
+    "containerAppName": {
+      "type": "string",
+      "defaultValue": "jgkg",
+      "metadata": {
+        "description": "Container Appのリソース名。既存のイメージ名(jgkg-api・jgkg-serve-fuseki)・compose名(jgkg-serve)と同じ命名を既定にしている(実在の他者のリソースではなく、この公開リポジトリ自身の命名の延長)。"
+      }
+    },
+    "acrName": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure Container Registryのリソース名(*.azurecr.ioの*部分)。既定値は置かない。"
+      }
+    },
+    "imageTag": {
+      "type": "string",
+      "metadata": {
+        "description": "デプロイするイメージのタグ。**既定値を持たせない(:latestを既定にしない)**——D-6b-1がOCIラベル(org.opencontainers.image.revision・com.jgkg.kg.release-tag)に刻む追跡可能性を、配備定義の側でも壊さないため。scripts/build-serve-images.shが使ったのと同じ値をここに渡す。"
+      }
+    },
+    "minReplicas": {
+      "type": "int",
+      "defaultValue": 0,
+      "metadata": {
+        "description": "既定は0。この事業は資金の無い公開財であり、0なら『レプリカが動いていない間は使用料が課金されない』(Azure公式)。代償は最初の1人がイメージ取得+コンテナ起動を待つこと(D-6b-1実測。controllerの数字はここに転記しない。docs/measurements-phase1.md参照)。**待たずに済ませたいなら、この値を1にする1箇所の変更だけで切り替わる**(docs/deploy-aca.md参照)——垂直スケーリングは非対応なので、レプリカ数の下限だけが「常時起動しておくか否か」のノブになる。"
+      }
+    },
+    "maxReplicas": {
+      "type": "int",
+      "defaultValue": 3,
+      "metadata": {
+        "description": "既定は3。上限を設けない(既定10)と、想定外の負荷やスケールルールの誤りが際限なく課金を積む——minReplicas=0と同じ『資金の無い公開財』という前提に基づくコスト上限。実測に基づく値ではない。負荷を実際に観測してから見直すこと。"
+      }
+    },
+    "fusekiCpu": {
+      "type": "string",
+      "defaultValue": "0.75",
+      "metadata": {
+        "description": "serve-fusekiコンテナのvCPU数(Consumption環境が要求する0.25刻み・cpu:memory=1:2の組み合わせの一部として、json()でnumberに変換して使う)。**根拠が無い**——このプロセスの実際のRSS/ヒープ使用量を実測した値ではない。決めた理由は構造的な制約だけ: (1) TDB2はmmapで1.08GBの索引(イメージ層。実行時のephemeral storageではない)を開く(D-6b-1実測)。(2) Azure Container AppsのConsumption環境は、レプリカに割り当てる一時ディスク量をレプリカ全体(sidecarの合計)のvCPU数で決めており、公式ドキュメントの表は『1vCPU以下→4GiB、1vCPU超→8GiB』——このプロジェクトの前提(裁定B30: 一時ディスク上限8GiBに索引が収まる)を成り立たせるには、fusekiCpu+apiCpuの合計が1vCPUを超える必要がある。既定(0.75+0.5=1.25)はこの下限を機械的に満たすだけの値であり、実際にFusekiがそれで十分/余裕があるかは実測していない。実配備後に `az containerapp revision show` 等でメモリ使用率・再起動(OOM)の有無を測って調整すること。"
+      }
+    },
+    "fusekiMemory": {
+      "type": "string",
+      "defaultValue": "1.5Gi",
+      "metadata": {
+        "description": "serve-fusekiコンテナのメモリ。fusekiCpu(0.75)とAzure Container Apps Consumptionの組み合わせ表が要求する対の値(0.75vCPU→1.5Gi)を機械的に選んでいるだけで、実測に基づく値ではない(fusekiCpuの説明参照)。"
+      }
+    },
+    "apiCpu": {
+      "type": "string",
+      "defaultValue": "0.5",
+      "metadata": {
+        "description": "serve-apiコンテナのvCPU数。FastAPI/uvicornの薄いプロセスで、Fusekiほどの常駐メモリ・mmapは無い(D-6b-1のDockerfileコメント参照)という構造的な判断はあるが、実測(RSS等)に基づく値ではない。fusekiCpuと合わせて合計1.25vCPU(>1vCPU)にすることで、レプリカの一時ディスク階梯を8GiB側にする(fusekiCpuの説明参照)。"
+      }
+    },
+    "apiMemory": {
+      "type": "string",
+      "defaultValue": "1Gi",
+      "metadata": {
+        "description": "serve-apiコンテナのメモリ。apiCpu(0.5)との対応値(0.5vCPU→1Gi)を機械的に選んでいるだけで、実測に基づく値ではない。"
+      }
+    }
+  },
+  "variables": {
+    "acrLoginServer": "[format('{0}.azurecr.io', parameters('acrName'))]",
+    "fusekiImage": "[format('{0}/jgkg-serve-fuseki:{1}', variables('acrLoginServer'), parameters('imageTag'))]",
+    "apiImage": "[format('{0}/jgkg-api:{1}', variables('acrLoginServer'), parameters('imageTag'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-03-01",
+      "name": "[parameters('containerAppName')]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "managedEnvironmentId": "[parameters('managedEnvironmentId')]",
+        "configuration": {
+          "activeRevisionsMode": "Single",
+          "ingress": {
+            "external": true,
+            "targetPort": 8000,
+            "transport": "http",
+            "allowInsecure": false
+          },
+          "registries": [
+            {
+              "server": "[variables('acrLoginServer')]",
+              "identity": "system"
+            }
+          ]
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "fuseki",
+              "image": "[variables('fusekiImage')]",
+              "resources": {
+                "cpu": "[json(parameters('fusekiCpu'))]",
+                "memory": "[parameters('fusekiMemory')]"
+              }
+            },
+            {
+              "name": "api",
+              "image": "[variables('apiImage')]",
+              "env": [
+                {
+                  "name": "JGKG_SPARQL_ENDPOINT",
+                  "value": "http://localhost:3030/kg/sparql"
+                }
+              ],
+              "resources": {
+                "cpu": "[json(parameters('apiCpu'))]",
+                "memory": "[parameters('apiMemory')]"
+              }
+            }
+          ],
+          "scale": {
+            "minReplicas": "[parameters('minReplicas')]",
+            "maxReplicas": "[parameters('maxReplicas')]"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "containerAppFqdn": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('containerAppName')), '2024-03-01').configuration.ingress.fqdn]"
+    },
+    "principalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('containerAppName')), '2024-03-01', 'full').identity.principalId]"
+    }
+  }
+}
