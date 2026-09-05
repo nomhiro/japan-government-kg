@@ -196,7 +196,8 @@ RSのいずれも不成立)。参照表は**名称を主キー**に変更し、�
 | D-6a | 配備先の初回読みの実測(裁定B71) | **完了。** ラベル領域のコールドが **2.948秒**(開発機の142.234秒に対して約48×)。裁定B76でB55/B61/B62の未決が解けた |
 | D-6b-1 | 提供用イメージ(Azureには触らない) | **完了**(裁定B87)。`docker/serve.Dockerfile`(索引をイメージ層に焼く。既定は公開リリースから取得)+ `docker/api.Dockerfile`。**controllerが実測**: イメージ **1.08GB** + API 467MB、**コンテナ作り直し→APIの最初の200まで10.938秒**(温めは起動に吸収され利用者は払わない)、`/search` 0.672秒・`/entity` 0.531秒。**壊し確認2件**(sha256を1文字変えるとビルドが落ちる / `unionDefaultGraph` を外すとGRAPH句なしが0件) |
 | D-6b-2 | ACAへの配線(定義と手順) | **完了**(裁定B89)。`deploy/aca.json`(ARM JSON)・`docs/deploy-aca.md`・テスト9件。**資格情報ゼロ**(ACR取得はシステム割り当てマネージドID)。`minReplicas` 既定0、`imageTag` は既定なし。**この定義は一度も実行されていない** —— 確認できたのは構文と構造だけ |
-| D-6b-3 | 実配備 | **完了**(裁定B90。ユーザーが実行を委任)。`rg-jgkg` に ACR `acrjgkg` + 環境 `cae-jgkg` + アプリ `jgkg`。**`az group delete --name rg-jgkg` 1つで消せる。** API = `https://jgkg.gentlemeadow-d9ba6656.japaneast.azurecontainerapps.io`。**予告したAcrPullの順序依存は的中**(手順6は初回必ず失敗→手順7で解決)。**予告に無い罠**: WindowsのGit Bashで `MSYS_NO_PATHCONV=1` が必須(3度目の同型)。実測: 起動から200まで**5.2秒**、5経路すべて実データで通る、CORSも通る |
+| D-6b-3 | 実配備 | **完了**(裁定B90。ユーザーが実行を委任)。`rg-jgkg` に ACR `acrjgkg` + 環境 `cae-jgkg` + アプリ `jgkg`。**`az group delete --name rg-jgkg` 1つで消せる。** API = `https://jgkg.gentlemeadow-d9ba6656.japaneast.azurecontainerapps.io`。**予告したAcrPullの順序依存は的中**(手順6は初回必ず失敗→手順7で解決)。**予告に無い罠**: WindowsのGit Bashで `MSYS_NO_PATHCONV=1` が必須(3度目の同型)。実測: **真のコールドスタート(ゼロ→最初の200)35.297秒**(温まると0.9〜1.3秒)、5経路すべて実データで通る、CORSも通る。**アプリは本番で検索→詳細→出典まで動作(実ブラウザで確認)** |
+| D-6b-4 | コールドな訪問のブラウザ体験 | **未検証。** 35秒間フロントエンドが何を表示するか測っていない(明示的なタイムアウトを持たない)。**次にやること** |
 
 **D-4では、controllerが実装し実データで検証してもなお見落とした欠陥を、
 第三者のタスクレビューが実証した**(ダングリングエッジ。裁定B77)——
