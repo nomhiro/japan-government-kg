@@ -1,6 +1,59 @@
 # Azure Container Apps への配備手順(D-6b-2)
 
-## この文書とテンプレートは一度も実行されていない
+## 2026-09-06: この手順は実行され、通った(裁定B90)
+
+**以下の記述は「一度も実行されていない」状態のときに書かれたものである。
+実際に実行した結果を先に書く。**
+
+**実配備が成功した。** 作ったもの(すべてリソースグループ `rg-jgkg` の中。
+`az group delete --name rg-jgkg` 1つで消せる):
+
+| リソース | 値 |
+|---|---|
+| リソースグループ | `rg-jgkg`(`japaneast`) |
+| ACR | `acrjgkg`(Basic) |
+| Container Apps 環境 | `cae-jgkg`。**`--logs-destination none`** で作った(Log Analyticsを作らない=課金を増やさない判断。必要になれば後から `az containerapp env update` で足せる) |
+| Container App | `jgkg` |
+
+**実測した数字**(controllerが自分で測った):
+
+| 測ったこと | 結果 |
+|---|---|
+| ロール割り当て後、リクエストで起きてAPIが200を返すまで | **5.2秒** |
+| `scripts/smoke-test-api.py` の5経路 | **全経路が実データで通った**(パーセントエンコードのIDを含む) |
+| CORS | `access-control-allow-origin: *`・preflight 200・`allow-methods: GET` |
+
+### **予告した失敗はそのとおり起きた**(下の「1. イメージのpullが…」)
+
+`az deployment group create` は
+**`ContainerAppOperationError: Failed to provision revision for container app
+'jgkg'. Error details: Operation expired.`** で失敗した。
+**アプリ自身とマネージドIDは作られていた**ので、手順7の
+`az role assignment create --role AcrPull` を実行し、
+そのあとHTTPリクエストでレプリカを起こしたら通った。
+
+**つまり「一度デプロイ→ロール割り当て→起こす」という手順の順序は正しい。**
+**ただし手順6のコマンドは初回に必ず失敗する**ので、
+**その失敗を見て手を止めないこと**——手順7へ進むのが正しい。
+
+### **Windowsで実行するなら `MSYS_NO_PATHCONV=1` が必須**(Git Bash)
+
+`managedEnvironmentId` と `--scope` に渡す `/subscriptions/...` が、
+Git Bashのパス変換で **`C:/Program Files/Git/subscriptions/...`** に
+書き換えられ、`InvalidEnvironmentId` で失敗する。**実際に踏んだ。**
+
+```bash
+MSYS_NO_PATHCONV=1 az deployment group create ...
+MSYS_NO_PATHCONV=1 az role assignment create ...
+```
+
+**この罠はこのプロジェクトで3度目である**(裁定B66の
+`gen-owl --enum-iri-separator /`、`docker exec` のパス、そしてここ)。
+PowerShellやLinuxでは踏まない。
+
+---
+
+## (元の記述)この文書とテンプレートは一度も実行されていない
 
 `deploy/aca.json` は `az` を1回も実行せずに書いた。確認したのは
 **構文としてJSONとしてパースできること**(`tests/test_deploy_aca.py`)と
@@ -12,6 +65,10 @@
 このプロジェクトの再発欠陥9「実データに一度も当てていない層は緑でも
 未検証」がそのまま当てはまる段——テストが緑でも、Azure実環境という
 「実データ」にはまだ一度も当てていない。
+
+**↑ この段落は2026-09-06に解消した。** 上の節を読むこと。
+**予告の1(AcrPullの順序)は的中し、予告に無かった罠
+(Windowsのパス変換)が1つ出た。**
 
 ### 初回の実行で失敗しうる箇所(心当たり)
 
