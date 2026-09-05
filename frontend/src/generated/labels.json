@@ -1,4 +1,18 @@
 {
+  "enumValues": {
+    "recipientMatchCategory": {
+      "bundled": "複数の支払先をまとめた行",
+      "resolved": "法人番号で特定できた",
+      "sentinel_or_nonexistent_houjin_bangou": "法人番号が仮の値か、存在しない",
+      "unresolved": "支払先を特定できなかった"
+    },
+    "unresolved_reason": {
+      "AMBIGUOUS": "候補が複数あって決められない",
+      "NO_CANDIDATE": "候補が見つからなかった",
+      "OBSOLETE_ORGANIZATION": "府省庁らしい名称だが確認できない",
+      "OLD_MINISTRY": "2001年の再編で廃止された府省名"
+    }
+  },
   "predicates": {
     "abbrev": "略称",
     "abolitionDate": "廃止日",

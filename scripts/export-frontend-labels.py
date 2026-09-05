@@ -30,7 +30,10 @@ def main() -> int:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(labels, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     OUT.write_text(text, encoding="utf-8", newline="\n")
-    print(f"wrote {OUT} (types={len(labels['types'])}, predicates={len(labels['predicates'])})")
+    print(
+        f"wrote {OUT} (types={len(labels['types'])}, predicates={len(labels['predicates'])}, "
+        f"enumValues={len(labels['enumValues'])})"
+    )
     return 0
 
 
