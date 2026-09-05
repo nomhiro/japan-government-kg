@@ -9,10 +9,11 @@ vi.mock("./generated/labels.json", () => ({
   default: {
     types: { Law: "法令" },
     predicates: { basisLaw: "根拠法令" },
+    enumValues: { recipientMatchCategory: { resolved: "法人番号で特定できた" } },
   },
 }));
 
-import { predicateLabel, typeLabel } from "./labels";
+import { enumValueLabel, predicateLabel, typeLabel } from "./labels";
 
 // =============================================================================
 // 表示名の引き当て(D-5ブリーフ「専門用語を避けた表示名」・裁定B78)
@@ -38,5 +39,22 @@ describe("predicateLabel", () => {
 
   it("フォールバック: dcterms:titleが無い述語はローカル名をそのまま返す", () => {
     expect(predicateLabel("unresolved_reason")).toBe("unresolved_reason");
+  });
+});
+
+describe("enumValueLabel", () => {
+  it("表示名がある述語+値の組は日本語表示名を返す", () => {
+    expect(enumValueLabel("recipientMatchCategory", "resolved")).toBe("法人番号で特定できた");
+  });
+
+  it("フォールバック: 値が未翻訳(表示名テーブルに無い)なら値をそのまま返す", () => {
+    // recipientMatchCategoryは表示名テーブルに載っているが、"bundled"は
+    // このモックには無い——`resolved`だけを持つ述語でも他の値まで
+    // 引けてしまわないことを確認する
+    expect(enumValueLabel("recipientMatchCategory", "bundled")).toBe("bundled");
+  });
+
+  it("フォールバック: 列挙型を範囲に持たない述語なら値をそのまま返す", () => {
+    expect(enumValueLabel("basisLaw", "resolved")).toBe("resolved");
   });
 });

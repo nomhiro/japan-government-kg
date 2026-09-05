@@ -17,7 +17,7 @@ import { apiUnavailableReason, entityDetail } from "../api/client";
 import { esc, provenanceHtml, truncationNotice } from "../format";
 import type { GraphController } from "./graph";
 import { renderNeighborhoodGraph } from "./graph";
-import { predicateLabel, typeLabel } from "../labels";
+import { enumValueLabel, predicateLabel, typeLabel } from "../labels";
 import { navigate } from "../router";
 
 function relationshipRow(rel: Relationship, graphs: EntityDetailResponse["graphs"]): string {
@@ -37,11 +37,20 @@ function relationshipRow(rel: Relationship, graphs: EntityDetailResponse["graphs
  * **`available === false`のときは空リンクを描かない**(`provenanceHtml`が
  * 既に守る。D-5と同じ扱い。裁定B82)。`graphs`が複数あれば
  * (同じ値を複数の名前付きグラフが主張する場合)一次資料リンクを複数並べる。
+ *
+ * **`pred`(述語のローカル名)を`enumValueLabel`に渡して列挙型の許容値を
+ * 日本語に引き当てる**(裁定B82(4b))。列挙型を範囲に持たない述語の値は
+ * 表示名が無いので`av.value`がそのまま返る(フォールバックは
+ * `enumValueLabel`自身が持つ)。
  */
-function attributeValueHtml(av: AttributeValue, graphs: EntityDetailResponse["graphs"]): string {
+function attributeValueHtml(
+  pred: string,
+  av: AttributeValue,
+  graphs: EntityDetailResponse["graphs"],
+): string {
   const provenances = av.graphs.map((g) => provenanceHtml(graphs[g])).join(" / ");
   return (
-    `<span class="jgkg-attr-value">${esc(av.value)}</span>` +
+    `<span class="jgkg-attr-value">${esc(enumValueLabel(pred, av.value))}</span>` +
     `<span class="jgkg-muted jgkg-attr-prov"> (${provenances})</span>`
   );
 }
@@ -88,7 +97,7 @@ export function renderEntity(container: HTMLElement, idPath: string): EntityView
       .map(
         ([pred, values]) =>
           `<tr><th>${esc(predicateLabel(pred))}</th><td>${values
-            .map((v) => attributeValueHtml(v, entity!.graphs))
+            .map((v) => attributeValueHtml(pred, v, entity!.graphs))
             .join("、")}</td></tr>`,
       )
       .join("");
