@@ -157,19 +157,29 @@ enums:
     enum_uri: jgkgbudget:RecipientMatchCategoryEnum
     permissible_values:
       resolved:
+        # 表示名(裁定B82(4b))。ブリーフの例そのまま採用(2026-09-05付ブリーフ)
+        title: 法人番号で特定できた
         description: >-
           法人番号の直結、または名称正規化の一意一致で支払先(Agent)へ
           解決できた(`recipient`スロットを持つ)
       unresolved:
+        # 「NO_CANDIDATE/AMBIGUOUS」はcore:UnresolvedReasonEnumの値名で
+        # 専門用語なので表示名には持ち込まない
+        title: 支払先を特定できなかった
         description: >-
           束ね行でもセンチネル・実在しない法人番号でもないが、解決を試みて
           一致しなかった(NO_CANDIDATE/AMBIGUOUS。core:UnresolvedReferenceが
           別に立つ)
       bundled:
+        title: 複数の支払先をまとめた行
         description: >-
           「その他」等への意図的な集約行。そもそも1法人に帰属しないため
           解決を試みない(RSのその他支出先フラグ・その他支出先名)
       sentinel_or_nonexistent_houjin_bangou:
+        # ブリーフの例(「番号が仮の値か存在しない」)に「法人」を補い、
+        # 何の番号かを明示した。「センチネル」はこの値名自体が持つ専門用語
+        # なので表示名には使わない
+        title: 法人番号が仮の値か、存在しない
         description: >-
           RSが法人番号を持たない支払先(個人・職員等)に使うセンチネル
           法人番号(`9999999999999`。B18裁定)の行と、法人番号の形はして

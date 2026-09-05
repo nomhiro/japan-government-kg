@@ -2,7 +2,7 @@
 from pathlib import Path
 
 import pytest
-from rdflib import OWL, RDF, Graph, URIRef
+from rdflib import OWL, RDF, RDFS, Graph, URIRef
 from rdflib.namespace import DCTERMS, SH, SKOS
 
 from jgkg import validate
@@ -640,6 +640,15 @@ def test_display_names_cover_exactly_the_api_visible_types_and_predicates():
     グラフ コアスキーマ」)は対象外——そのオントロジー本体のIRIは`#`を持たず
     フラグメントで終わらない(クラス/スロットのIRIとの形の違い)ため、
     フィルタで自然に除ける。
+
+    **列挙型の許容値(裁定B82(4b))も対象外にする。** 許容値のIRIは
+    `{列挙型名}/{値}`という形(裁定B66: 単一の`#`の後に`/`が入る)を持つ
+    `owl:Class`で、B78時点では`title:`を持たなかったため元々このテストの
+    対象に入っていなかった。今回`title:`を足すと、フィルタしない場合
+    このテストの`tagged`に紛れ込み「余剰」判定で落ちる——型/述語とは
+    別の対象なので、専用の
+    `test_display_names_cover_exactly_the_api_visible_enum_permissible_values`
+    で検査する(このテストの対象から除くのが正しい切り分け)。
     """
     from jgkg.api.queries import _SEARCHABLE_TYPES, _TYPE_SPECIFICITY
 
@@ -648,7 +657,9 @@ def test_display_names_cover_exactly_the_api_visible_types_and_predicates():
     tagged = {
         str(s)
         for s, o in g.subject_objects(DCTERMS.title)
-        if getattr(o, "language", None) == "ja" and "#" in str(s)
+        if getattr(o, "language", None) == "ja"
+        and "#" in str(s)
+        and "/" not in str(s).rsplit("#", 1)[-1]
     }
 
     base = "https://jgkg.norr-tech.com/def/"
@@ -683,6 +694,85 @@ def test_display_names_cover_exactly_the_api_visible_types_and_predicates():
     extra = tagged - expected
     assert not missing and not extra, (
         "表示名(dcterms:title@ja)の対象が食い違っている。"
+        f" 不足({len(missing)}件): {sorted(missing)}"
+        f" 余剰({len(extra)}件): {sorted(extra)}"
+    )
+
+
+# =============================================================================
+# 裁定B82(4b): 列挙型の許容値の表示名(dcterms:title)の対象範囲
+# =============================================================================
+
+
+def test_display_names_cover_exactly_the_api_visible_enum_permissible_values():
+    """`dcterms:title@ja`を持つ列挙型許容値の集合が、APIが実際に返す列挙型の
+
+    許容値と厳密に一致すること(裁定B82(4b)。task-enum-labels-brief.md)。
+
+    **期待集合を手で列挙しない。** controllerのブリーフは「8件」と実測
+    済みだが、その数を転記せず、以下の経路で`all.owl.ttl`自身から導出する
+    (ブリーフが実測で示した、曖昧さの無い経路そのもの):
+
+        1. `_EXPECTED_TITLED_PREDICATE_LOCAL_IRIS`(裁定B78。APIが実際に
+           返す述語の集合。既に上のテストが厳密一致で守っている)のうち、
+           `rdfs:range`が指す先を集める。
+        2. その先が`rdfs:subClassOf`で指されている(=許容値を持つ)なら、
+           それは列挙型のIRIである——「述語のうちどれが列挙型を範囲に
+           持つか」を手で言い当てない。
+        3. その列挙型を`rdfs:subClassOf`で指す許容値IRIの全体が期待集合。
+
+    厳密な集合の一致(不足も余剰も無し)で検査する。
+    **何があれば落ちるか**: `schema/{core,budget}.yaml`の許容値から
+    `title:`を1つ消して再生成すると、そのURIが「不足」側に現れて落ちる
+    (実際に消して確認した。報告書参照)。対象外の許容値に`title:`を
+    足すと「余剰」側に現れて落ちる。
+    """
+    g = _load(GENERATED / "all.owl.ttl")
+
+    base = "https://jgkg.norr-tech.com/def/"
+    api_predicates = {URIRef(base + local) for local in _EXPECTED_TITLED_PREDICATE_LOCAL_IRIS}
+
+    def _is_enum_value_shaped(iri) -> bool:
+        # 裁定B66: 許容値IRIは単一の"#"の後に"/"を持つ(区切り文字を
+        # "/"にした結果)。通常のクラス継承(例: org:Ministry rdfs:subClassOf
+        # org:GovernmentOrgan)もrdfs:subClassOfで指されるが、この形を
+        # 持たないので区別できる
+        s = str(iri)
+        return "#" in s and "/" in s.rsplit("#", 1)[-1]
+
+    enum_classes = set()
+    for predicate in api_predicates:
+        for range_cls in g.objects(predicate, RDFS.range):
+            # 範囲が列挙型かどうかは「rdfs:subClassOfで指す先が許容値の形を
+            # している」で判定する——「recipientMatchCategory/unresolved_reason
+            # が列挙型を範囲に持つ」という事実自体をここで手書きしない。
+            # (通常のクラスも継承でrdfs:subClassOfの対象になるため、
+            # 「subClassOfの主語が1件でもあるか」だけでは判定できない
+            # ——実測: 最初にこの弱い条件で書いたところ、org:Ministry等の
+            # 通常継承クラスまでenum_classesに紛れ込んで11件の余剰が出た)
+            if any(_is_enum_value_shaped(v) for v in g.subjects(RDFS.subClassOf, range_cls)):
+                enum_classes.add(range_cls)
+    assert enum_classes, (
+        "API可視の述語(_EXPECTED_TITLED_PREDICATE_LOCAL_IRIS)のうち、"
+        "rdfs:rangeが許容値を持つ列挙型を指すものが1件も無い"
+    )
+
+    expected = set()
+    for enum_class in enum_classes:
+        values = {str(v) for v in g.subjects(RDFS.subClassOf, enum_class) if _is_enum_value_shaped(v)}
+        assert values, f"{enum_class}の許容値が1件も見つからない"
+        expected |= values
+
+    tagged = {
+        str(s)
+        for s, o in g.subject_objects(DCTERMS.title)
+        if getattr(o, "language", None) == "ja" and _is_enum_value_shaped(s)
+    }
+
+    missing = expected - tagged
+    extra = tagged - expected
+    assert not missing and not extra, (
+        "列挙型の許容値の表示名(dcterms:title@ja)の対象が食い違っている。"
         f" 不足({len(missing)}件): {sorted(missing)}"
         f" 余剰({len(extra)}件): {sorted(extra)}"
     )

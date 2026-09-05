@@ -88,19 +88,19 @@ class UnresolvedReasonEnum(str, Enum):
     """
     参照が未解決である理由の分類
     """
-    NO_CANDIDATE = "NO_CANDIDATE"
+    候補が見つからなかった = "NO_CANDIDATE"
     """
     候補が見つからず、政府機関の形(省/府/庁/院/委員会で終わる、又は 「人事院」「閣」そのもの)にも当たらない。抽出そのものを疑うべき警報
     """
-    AMBIGUOUS = "AMBIGUOUS"
+    候補が複数あって決められない = "AMBIGUOUS"
     """
     候補が複数あり一意に決められなかった
     """
-    OBSOLETE_ORGANIZATION = "OBSOLETE_ORGANIZATION"
+    府省庁らしい名称だが確認できない = "OBSOLETE_ORGANIZATION"
     """
     政府機関の形(省/府/庁/院/委員会で終わる、又は「人事院」「閣」 そのもの)をしているが、現存府省の参照表にも `old-ministries.csv` (OLD_MINISTRY が一致を見る、2001年の中央省庁再編で廃止された名称の 一覧)にも一致しない — **判定はOLD_MINISTRYを先に見て、そこに当たらなかったものの残り**。 2001年より前に廃止された省庁名や、参照表にまだ収録されていない 現存機関などが該当し得る(裁定B7。列挙ではなく形から導出するため、 参照表の完全性次第で現存機関がここに一時的に入り得る)
     """
-    OLD_MINISTRY = "OLD_MINISTRY"
+    number_2001年の再編で廃止された府省名 = "OLD_MINISTRY"
     """
     参照表に一意に一致すれば resolved、複数一致すれば AMBIGUOUS が 先に成立する。**いずれでもない場合に限り** `old-ministries.csv`(2001年の中央省庁再編で廃止された名称の一覧。 高信頼・出典あり)との一致を見て、一致すればこの値になる。 **この一覧に一致しない場合は OBSOLETE_ORGANIZATION 側で判定する** (裁定B7でこの enum の意味をこの一覧との一致に狭めた — それ以前に廃止された省庁は `OBSOLETE_ORGANIZATION` に分類する)
     """
@@ -110,19 +110,19 @@ class RecipientMatchCategoryEnum(str, Enum):
     """
     Expenditureの支払先(recipient)の照合が、どの決定分岐を通ったかの分類 (D-2裁定)。パイプライン自身の分岐から書くので、値の一覧はrs.pyの `resolve_recipient`/`build_projects`が実際に区別する4分類そのもの
     """
-    resolved = "resolved"
+    法人番号で特定できた = "resolved"
     """
     法人番号の直結、または名称正規化の一意一致で支払先(Agent)へ 解決できた(`recipient`スロットを持つ)
     """
-    unresolved = "unresolved"
+    支払先を特定できなかった = "unresolved"
     """
     束ね行でもセンチネル・実在しない法人番号でもないが、解決を試みて 一致しなかった(NO_CANDIDATE/AMBIGUOUS。core:UnresolvedReferenceが 別に立つ)
     """
-    bundled = "bundled"
+    複数の支払先をまとめた行 = "bundled"
     """
     「その他」等への意図的な集約行。そもそも1法人に帰属しないため 解決を試みない(RSのその他支出先フラグ・その他支出先名)
     """
-    sentinel_or_nonexistent_houjin_bangou = "sentinel_or_nonexistent_houjin_bangou"
+    法人番号が仮の値かIDEOGRAPHIC_COMMA存在しない = "sentinel_or_nonexistent_houjin_bangou"
     """
     RSが法人番号を持たない支払先(個人・職員等)に使うセンチネル 法人番号(`9999999999999`。B18裁定)の行と、法人番号の形はして いるが法人番号公表サイトの全件データに存在しない行 (Ruling B27)の**合算**。グラフ上この2つを区別する情報は無い — 区別するにはemit側に理由トリプルを追加する必要があり、 Phase 2に送った(裁定B42。この値の名前自体が「合算である」ことを 示す)
     """
