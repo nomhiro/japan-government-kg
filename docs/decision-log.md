@@ -2,7 +2,7 @@
 
 この文書は、このプロジェクトの**実装中に下した判断の記録**である。
 実装は計画を1タスクずつサブエージェントに渡して進め、その過程で計画や仕様が
-実データと合わなかった箇所を裁定して先へ進めた。その裁定(**B1〜B89**)と理由をここに残す。
+実データと合わなかった箇所を裁定して先へ進めた。その裁定(**B1〜B90**)と理由をここに残す。
 
 ## この文書の位置づけ
 
@@ -6016,3 +6016,116 @@ scale-to-zero のクールダウンは **300秒** なので、
 **`??` と `||` の違いが表示の正直さに直結する例である。**
 
 **ステップ名は引用符で囲まれている**(裁定B83の教訓が適用済み)。
+
+## 裁定 B90: 実配備が通った。予告した失敗は的中し、予告に無い罠が1つ出た
+
+**ユーザーが「私の手順もあなたが実行していいよ」と実行を委任した。**
+controllerが `docs/deploy-aca.md` の手順に沿って実配備した。
+
+### 認証は controller が扱っていない
+
+**`az login` は実行していない。** 既にログイン済みのセッション
+(`nomhiro1204@gmail.com` / サブスクリプション `shirokuma`)を使った。
+`az acr login` も既存セッション経由で、**パスワードやトークンを
+1回も入力していない。**
+
+### 作ったもの(すべて1つのリソースグループの中)
+
+| リソース | 値 |
+|---|---|
+| リソースグループ | `rg-jgkg`(`japaneast`) |
+| ACR | `acrjgkg`(Basic) |
+| Container Apps 環境 | `cae-jgkg`。**`--logs-destination none`** |
+| Container App | `jgkg` |
+| API | `https://jgkg.gentlemeadow-d9ba6656.japaneast.azurecontainerapps.io` |
+
+**`az group delete --name rg-jgkg` 1つで全部消える。**
+「元に戻せる形で作る」ことを設計の条件にした。
+
+**`--logs-destination none` の判断**: Log Analyticsワークスペースを
+作らない(課金を増やさない)。**代償はログが見られないこと。**
+初回のpull失敗の診断では、Log Analyticsではなく
+`az containerapp revision show` の `runningState`/`healthState` で足りた。
+**必要になれば `az containerapp env update` で後から足せる。**
+
+**リージョンは `japaneast`** を選んだ。理由: ユーザーの既存リソースが
+そこに集まっており、データが日本政府のもので、利用者も日本に居る。
+**既存の別プロジェクトのリソース(ACR・環境)は一切流用していない** ——
+専用のRGを新規に作った。
+
+### 予告した失敗は、予告どおりに起きた
+
+`docs/deploy-aca.md` の「初回の実行で失敗しうる箇所」の1番目
+(ACRのAcrPullロールはContainer App作成後にしか付けられない)が的中した:
+
+```
+ContainerAppOperationError: Failed to provision revision for
+container app 'jgkg'. Error details: Operation expired.
+```
+
+**`az deployment group create` は失敗で終わった。**
+しかし**アプリ自身とマネージドIDは作られていた**
+(`principalId` が取得できた)。手順7の
+`az role assignment create --role AcrPull` を実行し、
+HTTPリクエストでレプリカを起こしたら通った。
+
+**つまり手順の順序(デプロイ→ロール割り当て→起こす)は正しい。**
+**ただし手順6のコマンドは初回に必ず失敗する。**
+**「その失敗を見て手を止めないこと」を手順書に明記した** ——
+予告があっても、実際に赤い出力を見た人は止まりうる。
+
+**これは「資格情報を書かない」ことの代償である。**
+マネージドIDを使う限り、IDはアプリ作成後にしか存在しない。
+**代償を払う判断(裁定B89)は変えない。**
+
+### 予告に無かった罠が1つ出た(3度目の同型)
+
+**Windows(Git Bash)では `MSYS_NO_PATHCONV=1` が必須だった。**
+
+```
+InvalidEnvironmentId: EnvironmentId
+'C:/Program Files/Git/subscriptions/f80766c9-.../managedEnvironments/cae-jgkg'
+is invalid.
+```
+
+`managedEnvironmentId` と `--scope` に渡す `/subscriptions/...` の
+先頭スラッシュが、Git Bashのパス変換で書き換えられる。
+
+**このプロジェクトで3度目である**:
+1. 裁定B66: `gen-owl --enum-iri-separator /` の `/` が同じ形で壊れた
+2. 2026-09-03: `docker exec ... ls /fuseki/databases/kg` で踏んだ
+3. 今回: `az` の2コマンド
+
+**3度踏んだ罠は、道具の問題ではなく統制の問題である。**
+**統制**: **Windowsで `/` 始まりの引数を外部コマンドへ渡すときは、
+最初から `MSYS_NO_PATHCONV=1` を付ける。** 踏んでから思い出すのをやめる。
+
+### controller が自分で測ったこと
+
+| 測ったこと | 結果 |
+|---|---|
+| ロール割り当て後、リクエストで起きてAPIが200を返すまで | **5.2秒** |
+| `scripts/smoke-test-api.py` の5経路 | **全経路が実データで通った** |
+| `/entity/org/4000012090001` | 属性値4件(4述語)/ 出典グラフ3件 |
+| **`/entity/org/abolished/%E5%8E%9A%E7%94%9F%E7%9C%81`** | 属性値1件 / 出典グラフ2件(**裁定B69・B73の対象**) |
+| `/search?q=省` | 5件(truncated=True) |
+| `/neighborhood/org/4000012090001` | ノード26件 / エッジ25件 |
+| `/path` | found=True visited=3 nodes=2 |
+| CORS | `access-control-allow-origin: *`・preflight 200・`allow-methods: GET` |
+
+**CORSを配線前に確認したのは、これが効いていないと
+別オリジンのフロントエンドから呼べないからである** ——
+「APIは動いた」と「アプリから使える」は違う。
+
+### イメージはHEADで再ビルドしてからpushした
+
+既存のローカルイメージは `0dbf2d1` 時点のもので、
+**OCIラベルの `revision` が配備物と食い違う**。
+`scripts/build-serve-images.sh release 2026-08-28-d2-recipient-category-v2`
+で再ビルドし、ラベルが `e7f00e8`(当時のHEAD)・
+`index-source=release`・`release-tag=2026-08-28-d2-recipient-category-v2`・
+`git-dirty=false` になったことを確認してからpushした。
+
+**裁定B87で「配備されたものが何かを後から辿れる」性質を要求した。
+それを自分で守った** —— 手元にあるイメージを使い回せば1回のビルドを
+節約できたが、その節約は追跡可能性と引き換えになる。
