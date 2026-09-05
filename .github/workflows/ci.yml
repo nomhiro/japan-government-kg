@@ -164,6 +164,21 @@ jobs:
         run: npm ci
         working-directory: frontend
 
+      - name: "Pass VITE_API_BASE to the production build if configured (D-6b-2)"
+        # `vars.VITE_API_BASE` が未設定のリポジトリでは `${{ vars.VITE_API_BASE }}`
+        # は空文字列に評価される。それを `env:` に直接書くと `VITE_API_BASE=""`
+        # という**空文字列の環境変数**がセットされてしまい、
+        # `frontend/src/api/client.ts` の
+        # `import.meta.env.VITE_API_BASE ?? "http://localhost:8000"` は
+        # `??`(nullish coalescing)なので空文字列では既定値にフォールバック
+        # しない——`API_BASE` が空文字列になり、裁定B82(2)の「APIが未配備」
+        # 表示が出せなくなる(`new URL("")` が例外になり `computeApiUnavailableReason`
+        # が早期に null を返す)。**未設定なら環境変数そのものを作らない**ことで、
+        # `import.meta.env.VITE_API_BASE` を undefined のままにし、既存の
+        # 挙動(裁定B82の「準備中」表示・検索ボックスを出さない)を保つ。
+        if: vars.VITE_API_BASE != ''
+        run: echo "VITE_API_BASE=${{ vars.VITE_API_BASE }}" >> "$GITHUB_ENV"
+
       - name: Build the static site
         run: bash scripts/build-site.sh
 
