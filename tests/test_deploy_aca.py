@@ -53,12 +53,27 @@ def test_required_parameters_have_no_default_value() -> None:
     """
     doc = _load()
     params = doc["parameters"]
-    required = {"location", "managedEnvironmentId", "acrName", "imageTag"}
+    # **環境ごとに違う値**(利用者のサブスクリプションに固有のもの)。
+    # ここに実在しそうな既定値を置くと、他人の環境を指したまま
+    # デプロイが通ってしまう
+    required = {
+        "location",
+        "managedEnvironmentId",
+        "acrName",
+        "imageTag",
+        "acrPullIdentityId",  # 裁定B91でユーザー割り当てIDに変えたときに増えた
+    }
     assert required <= set(params), f"必須パラメータが足りない: {required - set(params)}"
-    for name in required:
-        assert "defaultValue" not in params[name], (
-            f"parameters.{name} に defaultValue がある(既定値を持たない設計のはず)"
-        )
+
+    # **両方向で縛る**: 既定値を持たないパラメータの集合が、上とちょうど一致すること。
+    # 片方向(`required` に既定値が無い)だけだと、**新しい必須パラメータが
+    # 増えたときに検査対象から漏れる** —— 実際に `acrPullIdentityId` を
+    # 足したとき、手書きの集合に入れ忘れて漏れた(再発欠陥1)。
+    without_default = {n for n, spec in params.items() if "defaultValue" not in spec}
+    assert without_default == required, (
+        f"既定値を持たないパラメータの集合がずれている: "
+        f"余分={without_default - required} 不足={required - without_default}"
+    )
 
 
 def test_min_replicas_defaults_to_zero() -> None:
@@ -114,13 +129,26 @@ def test_api_container_points_at_localhost_fuseki() -> None:
 
 
 def test_registry_pull_uses_managed_identity_not_a_credential() -> None:
-    """資格情報を一切書かない(システム割り当てマネージドIDでpullする)。"""
+    """資格情報を一切書かない(マネージドIDでpullする)。
+
+    **`UserAssigned` であること(裁定B91)。** かつて `SystemAssigned` だったが、
+    **システム割り当てIDはContainer Appを作成した後にしか存在しない**ため、
+    同じARM操作の中で走るイメージのpullがAcrPull無しで必ず失敗する
+    ——2026-09-06に実際にそうなった。**IDを先に作ってAcrPullを付けてから
+    配備すれば1回で成功する。** 資格情報を書かないという本質は変えていない。
+    """
     app = _container_app()
     registries = app["properties"]["configuration"]["registries"]
     assert len(registries) == 1
-    assert registries[0]["identity"] == "system"
-    assert app["identity"]["type"] == "SystemAssigned"
+    identity = app["identity"]
+    assert identity["type"] == "UserAssigned", identity
+    # 参照先はパラメータであること(実在のリソースIDを埋め込まない)
+    assert list(identity["userAssignedIdentities"]) == ["[parameters('acrPullIdentityId')]"]
+    assert registries[0]["identity"] == "[parameters('acrPullIdentityId')]"
 
+    # **`SystemAssigned` へ戻さないこと**(初回デプロイが必ず失敗する形に戻る)
     text = TEMPLATE_PATH.read_text(encoding="utf-8")
+    assert "SystemAssigned" not in text, "システム割り当てIDに戻すと初回デプロイが必ず失敗する(裁定B91)"
+
     for forbidden in ("passwordSecretRef", "username", "clientSecret", "\"password\""):
         assert forbidden not in text, f"資格情報らしき鍵がテンプレートに含まれている: {forbidden}"

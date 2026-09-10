@@ -2,7 +2,7 @@
 
 この文書は、このプロジェクトの**実装中に下した判断の記録**である。
 実装は計画を1タスクずつサブエージェントに渡して進め、その過程で計画や仕様が
-実データと合わなかった箇所を裁定して先へ進めた。その裁定(**B1〜B90**)と理由をここに残す。
+実データと合わなかった箇所を裁定して先へ進めた。その裁定(**B1〜B91**)と理由をここに残す。
 
 ## この文書の位置づけ
 
@@ -6180,3 +6180,131 @@ APIの最初の200まで」であり、レジストリからの1.08GBのイメ�
 確認していない。** 再発欠陥9(実データに当てていない層は未検証)。
 
 **これは次にやるべきことである。**
+
+## 裁定 B91: 「応答した」と「配備された」は違う。Failed のまま放置した宣言状態が数日後に空の抜け殻になった
+
+**ユーザーの報告**: アプリで検索すると
+`TypeError: Failed to fetch` で失敗する(2026-09-10)。
+
+### 何が起きていたか
+
+`az containerapp show` を見ると:
+
+```
+provisioningState: Failed
+ingress          : null
+registries       : null
+scale            : null
+containers       : []
+identity         : null
+latestRevision   : None
+```
+
+**Container Appは空の抜け殻になっていた。** 環境も
+`ManagedClusterSuspended: The compute resource for managed environment
+cae-jgkg has been suspended due to no container applications.`
+
+### 原因は私の検証の穴である
+
+2026-09-06、初回の `az deployment group create` は
+`Operation expired` で **Failed** に終わった(裁定B90。AcrPullの順序依存)。
+**私はそこでAcrPullを付け、HTTPリクエストでレプリカを起こし、
+「動いた」ことを確認した** —— 5経路・CORS・実ブラウザまで見た。
+
+**しかしARMリソースの `provisioningState` は Failed のままだった。**
+動いていたのは、失敗したデプロイの途中で作られたリビジョンである。
+**構成が宣言として定着していなかった。**
+数日後、プラットフォーム側で片付けられ、空の抜け殻になった。
+
+**手順書には「手順6を再実行するか `az containerapp revision restart` を使う」
+と書いてあった。私はどちらもせず、リクエストで起こす方を選んだ。**
+その場は動いたので、それで足りたと判断した。**足りていなかった。**
+
+**欠陥の型**: **挙動を検証して、宣言状態を検証しなかった。**
+「5経路が200を返す」は「配備が成立している」を意味しない。
+**再発欠陥6(応答が偽を主張する)の変種で、
+「正しい観測から、観測していない性質を結論した」形。**
+
+**統制**: **宣言的な配備では、`provisioningState` が `Succeeded` に
+なったことを確認するまで完了としない。** エンドポイントが答えることは
+必要条件であって十分条件ではない。**失敗したデプロイを
+「動いているから良い」で終わらせない。**
+
+### 直したもの: システム割り当て → ユーザー割り当てマネージドID
+
+**根本原因は「システム割り当てIDはアプリを作成した後にしか存在しない」
+という構造である。** 同じARM操作の中でpullが走るので、初回は必ず失敗する。
+裁定B89では「資格情報を書かないことの代償」として受け入れた。
+**受け入れる必要は無かった。**
+
+**ユーザー割り当てIDを先に作り、AcrPullを付けてから配備すれば1回で成功する。**
+資格情報を書かないという本質は変わらない。
+
+```
+az identity create --name id-jgkg-acrpull --resource-group rg-jgkg
+az role assignment create --assignee-object-id <principalId> \
+  --assignee-principal-type ServicePrincipal \
+  --scope <ACRのID> --role AcrPull
+```
+
+`deploy/aca.json` の変更:
+- `parameters.acrPullIdentityId`(**既定値なし**)を追加
+- `identity` を `UserAssigned` にし、そのIDを参照
+- `configuration.registries[0].identity` を同じIDに
+
+**テストで戻れないようにした**: `SystemAssigned` という文字列が
+テンプレートに現れたら落ちる。
+
+### 直す途中でもう1つ踏んだ: outputs の `principalId`
+
+ユーザー割り当てに変えた1回目のデプロイが
+**`DeploymentOutputEvaluationFailed`** で失敗した:
+
+```
+The template output 'principalId' is not valid: The language expression
+property 'principalId' doesn't exist, available properties are
+'type, userAssignedIdentities'.
+```
+
+**リソースの作成自体は成功していたのに、出力の評価で失敗し、
+デプロイ全体が Failed になった** —— まさに今回直そうとしている状態である。
+`outputs.principalId` はAcrPullを後から付けるための出力だったので、
+**先に付ける設計にした今は不要**。`acrPullIdentityId` を出す形に替えた。
+
+**「Failed で終わるデプロイ」は、リソースが動いていても Failed である**
+ことを、同じ日に2度確認した。
+
+### 必須パラメータのテストが手書きで、新しいものが漏れた
+
+`acrPullIdentityId` を足したとき、
+`test_required_parameters_have_no_default_value` の
+`required = {...}` は**手書きの集合**だったので検査対象から漏れた
+(再発欠陥1)。**両方向で縛る形に直した** ——
+「既定値を持たないパラメータの集合が、期待する集合とちょうど一致する」。
+これなら新しい必須パラメータが増えたときに落ちる。
+
+### ユーザーの選択: `minReplicas = 1`
+
+**「1インスタンス常時起動でもいいよ」** —— 真のコールドスタートが
+**35.297秒**だった(裁定B90の追記)ことを受けての判断。
+**この配備は `minReplicas=1` で入れた。**
+テンプレートの**既定は0のまま**にしている(資金の無い公開財に対する
+中立な既定であり、第三者が同じ定義を使うときはゼロが正しい)。
+
+**代償**: 無償枠は月40時間で、常時稼働は約690時間が課金対象になる
+(裁定B89の算術)。**ユーザーがそれを承知の上で選んだ。**
+
+### 実測(controller が自分で確認した)
+
+| 確認 | 結果 |
+|---|---|
+| `provisioningState` | **Succeeded**(前回はここが Failed だった) |
+| `runningStatus` | Running |
+| リビジョン | `Running` / `Healthy` / 1レプリカ |
+| **FQDN** | **`jgkg.gentlemeadow-d9ba6656.japaneast.azurecontainerapps.io`(以前と同一)** —— `VITE_API_BASE` の変更は不要 |
+| `smoke-test-api.py` の5経路 | 全経路が実データで通った |
+| **ユーザーが失敗した検索「年金」** | **実ブラウザで20件返った**(予算事業・法令・組織が混在)。コンソールのエラー0件 |
+
+**FQDNが同一だったのは、環境の接尾辞(`gentlemeadow-d9ba6656`)が
+環境に属し、アプリ名が同じだから。** 消して作り直しても変わらない
+——ただしこれは**測って確認した**ことであり、仮定していたわけではない。

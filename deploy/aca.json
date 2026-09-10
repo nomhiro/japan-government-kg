@@ -78,6 +78,12 @@
       "metadata": {
         "description": "serve-apiコンテナのメモリ。apiCpu(0.5)との対応値(0.5vCPU→1Gi)を機械的に選んでいるだけで、実測に基づく値ではない。"
       }
+    },
+    "acrPullIdentityId": {
+      "type": "string",
+      "metadata": {
+        "description": "ACRからイメージをpullするための**ユーザー割り当て**マネージドIDのリソースID(/subscriptions/.../userAssignedIdentities/<name>)。**システム割り当てではなくユーザー割り当てにする理由(裁定B91)**: システム割り当てIDはContainer Appを作成した後にしか存在しないため、同じARM操作の中で走るイメージのpullがAcrPull無しで失敗する——2026-09-06に実際にそうなり、デプロイは Failed で終わった(その後ロールを付けて起こすと動いたが、ARMリソースの宣言状態は Failed のままで構成が定着せず、数日後に空の抜け殻になった)。**IDを先に作ってAcrPullを付けてから配備すれば1回で成功する。** 資格情報は依然として一切書かない。"
+      }
     }
   },
   "variables": {
@@ -92,7 +98,10 @@
       "name": "[parameters('containerAppName')]",
       "location": "[parameters('location')]",
       "identity": {
-        "type": "SystemAssigned"
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[parameters('acrPullIdentityId')]": {}
+        }
       },
       "properties": {
         "managedEnvironmentId": "[parameters('managedEnvironmentId')]",
@@ -107,7 +116,7 @@
           "registries": [
             {
               "server": "[variables('acrLoginServer')]",
-              "identity": "system"
+              "identity": "[parameters('acrPullIdentityId')]"
             }
           ]
         },
@@ -149,9 +158,12 @@
       "type": "string",
       "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('containerAppName')), '2024-03-01').configuration.ingress.fqdn]"
     },
-    "principalId": {
+    "acrPullIdentityId": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('containerAppName')), '2024-03-01', 'full').identity.principalId]"
+      "metadata": {
+        "description": "ACRからのpullに使っているユーザー割り当てIDのリソースID。**かつてここは `principalId`(システム割り当てIDの主体ID)を出していたが、ユーザー割り当てに変えたことで存在しなくなり、**`DeploymentOutputEvaluationFailed` でデプロイ全体が Failed になった(2026-09-10に実際に踏んだ。裁定B91)。AcrPullの割り当ては配備前に済ませる設計なので、主体IDを出す必要はもう無い。"
+      },
+      "value": "[parameters('acrPullIdentityId')]"
     }
   }
 }

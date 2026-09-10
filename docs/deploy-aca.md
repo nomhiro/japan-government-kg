@@ -32,9 +32,16 @@
 `az role assignment create --role AcrPull` を実行し、
 そのあとHTTPリクエストでレプリカを起こしたら通った。
 
-**つまり「一度デプロイ→ロール割り当て→起こす」という手順の順序は正しい。**
-**ただし手順6のコマンドは初回に必ず失敗する**ので、
-**その失敗を見て手を止めないこと**——手順7へ進むのが正しい。
+**↑ この対処は間に合わせだった。** その場は動いたが
+**ARMリソースの宣言状態は `Failed` のままで、数日後に空の抜け殻になった**
+(裁定B91)。
+
+**2026-09-10に根本から直した**: **ユーザー割り当てマネージドIDを先に作り、
+AcrPullを付けてから配備する**(手順3.5)。これで**初回から `Succeeded` に
+なる** —— 順序問題がそもそも起きない。資格情報は依然として書かない。
+
+**したがって上の「初回は必ず失敗する」はもう当てはまらない。**
+失敗したら、それは別の原因である。
 
 ### **Windowsで実行するなら `MSYS_NO_PATHCONV=1` が必須**(Git Bash)
 
@@ -157,6 +164,40 @@ ENV_ID=$(az containerapp env show \
   --name "$ENV_NAME" --resource-group "$RESOURCE_GROUP" --query id -o tsv)
 ```
 
+### 3.5 **ACRからpullするユーザー割り当てIDを先に作り、AcrPullを付ける**
+
+**この段が「初回デプロイが必ず失敗する」問題を消す**(裁定B91)。
+かつてテンプレートはシステム割り当てIDを使っていたが、
+**そのIDはContainer Appを作成した後にしか存在しない**ため、
+同じARM操作の中で走るpullがAcrPull無しで必ず失敗していた。
+**IDを先に作れば、その順序問題はそもそも起きない。**
+資格情報は依然として一切書かない。
+
+```bash
+IDENTITY_NAME="id-jgkg-acrpull"
+
+az identity create \
+  --name "$IDENTITY_NAME" --resource-group "$RESOURCE_GROUP" --location "$LOCATION"
+
+IDENTITY_ID=$(az identity show \
+  --name "$IDENTITY_NAME" --resource-group "$RESOURCE_GROUP" --query id -o tsv)
+IDENTITY_PRINCIPAL=$(az identity show \
+  --name "$IDENTITY_NAME" --resource-group "$RESOURCE_GROUP" --query principalId -o tsv)
+
+ACR_ID=$(az acr show \
+  --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP" --query id -o tsv)
+
+# **`--assignee-object-id` + `--assignee-principal-type` を使う。**
+# 作りたてのIDは Microsoft Entra ID への反映に遅れがあり、
+# `--assignee` だと解決に失敗しうる
+MSYS_NO_PATHCONV=1 az role assignment create \
+  --assignee-object-id "$IDENTITY_PRINCIPAL" \
+  --assignee-principal-type ServicePrincipal \
+  --scope "$ACR_ID" --role AcrPull
+```
+
+`$IDENTITY_ID` を手順6の `acrPullIdentityId` に渡す。
+
 ### 4. イメージをビルドする(D-6b-1の道具をそのまま使う。再実装しない)
 
 **既定の`release`経路(公開リリースから索引を取る)を使うこと。**
@@ -197,26 +238,27 @@ az deployment group create \
       # 既定値を使うなら省略してよい(deploy/aca.jsonのparameters.*.metadata.description参照)
 ```
 
-### 7. ACRへのpull権限を、Container Appのマネージドidに与える
-
-**上の「初回の実行で失敗しうる箇所1」がここ。** 手順6の直後は
-イメージのpullがまだ失敗している可能性がある。
+### 7. **配備が `Succeeded` になったことを確認する(飛ばさないこと)**
 
 ```bash
-PRINCIPAL_ID=$(az containerapp show \
+MSYS_NO_PATHCONV=1 az containerapp show \
   --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" \
-  --query identity.principalId -o tsv)
-
-ACR_ID=$(az acr show \
-  --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP" --query id -o tsv)
-
-az role assignment create \
-  --assignee "$PRINCIPAL_ID" --scope "$ACR_ID" --role AcrPull
+  --query "{state:properties.provisioningState, running:properties.runningStatus, fqdn:properties.configuration.ingress.fqdn}" -o tsv
 ```
 
-ロール割り当てが反映されてもレプリカが古い失敗状態のままなら、
-新しいリビジョンを作って再試行させる(手順6を再実行するか、
-`az containerapp revision restart`を使う)。
+**`provisioningState` が `Succeeded` であることを確認するまで、
+配備は完了していない**(裁定B91)。
+
+**この確認を飛ばして事故を起こした。** 2026-09-06、デプロイは `Failed` で
+終わったが、その場でロールを付けてリクエストで起こしたら5経路とも動いた。
+**「動いたから良い」と判断して先へ進んだ。**
+ARMリソースの宣言状態は `Failed` のままで構成が定着しておらず、
+**数日後に空の抜け殻(`ingress: null`・`containers: []`)になり、
+アプリが `TypeError: Failed to fetch` で使えなくなった。**
+
+**エンドポイントが答えることは、配備が成立していることを意味しない。**
+`Failed` で終わったデプロイは、リソースが動いていても `Failed` である。
+その場合は**原因を直して `Succeeded` になるまで配備し直すこと。**
 
 ### 8. 配備後の検証(D-6b-1の道具をそのまま使う。再実装しない)
 
