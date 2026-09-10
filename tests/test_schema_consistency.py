@@ -689,7 +689,26 @@ def test_display_names_cover_exactly_the_api_visible_types_and_predicates():
         f"数({len(expected_types)})が一致しない"
     )
 
-    expected = expected_predicates | expected_types
+    # **6軸の基底クラスも表示名の対象である(裁定B93)。**
+    # E-1でグラフの凡例が軸を見出しとして表示するようになったため、
+    # 「APIが返す型」だけでは表示面を覆えなくなった——`Agent`/`Work`等は
+    # エンティティの型として返ることは無いが、**凡例に出るので日本語が要る**
+    # (実ブラウザで `Agent`/`Work`/`MonetaryItem` が英語のまま出ているのを
+    # controllerが確認した)。
+    #
+    # **手書きで列挙しない。** `core#Entity` を直接の親に持つクラス、という
+    # 構造から導出する(`frontend_labels.py` が型→軸を導出するのと同じ根拠)。
+    # 7軸目が増えたらこのテストが「不足」で落ちる=表示名を足す必要が分かる。
+    entity_iri = URIRef(base + "core#Entity")
+    expected_axes = {str(s) for s in g.subjects(RDFS.subClassOf, entity_iri)}
+    assert len(expected_axes) == 7, (
+        "core#Entity の直接の子(6軸+UnresolvedReference)が7件でない: "
+        f"{sorted(expected_axes)}"
+    )
+    # 軸自身(`core#Entity`)は表示面に出ないので対象外
+    assert str(entity_iri) not in expected_axes
+
+    expected = expected_predicates | expected_types | expected_axes
     missing = expected - tagged
     extra = tagged - expected
     assert not missing and not extra, (

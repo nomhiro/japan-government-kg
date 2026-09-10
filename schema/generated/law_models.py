@@ -124,7 +124,8 @@ class Agent(Entity):
     「誰が」の軸。行為の主体。組織と人の上位
     """
     linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'exact_mappings': ['prov:Agent'],
-         'from_schema': 'https://jgkg.norr-tech.com/def/core'})
+         'from_schema': 'https://jgkg.norr-tech.com/def/core',
+         'title': '誰が(主体)'})
 
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
@@ -135,7 +136,8 @@ class Work(Entity):
     「何を」の軸。法令・政策・事業・文書・司法判断の上位
     """
     linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'close_mappings': ['schema:CreativeWork'],
-         'from_schema': 'https://jgkg.norr-tech.com/def/core'})
+         'from_schema': 'https://jgkg.norr-tech.com/def/core',
+         'title': '何を(法令・事業など)'})
 
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
@@ -146,7 +148,8 @@ class Place(Entity):
     「どこで」の軸。行政区域・住所・地物の上位
     """
     linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'close_mappings': ['schema:Place'],
-         'from_schema': 'https://jgkg.norr-tech.com/def/core'})
+         'from_schema': 'https://jgkg.norr-tech.com/def/core',
+         'title': 'どこで(場所)'})
 
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
@@ -157,7 +160,8 @@ class Event(Entity):
     「いつ」の軸。時点を持つ出来事。関係を実体化するための中心クラス。 「AがBに影響した」を直接のエッジにせず、原則としてこのクラスを介す
     """
     linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'close_mappings': ['prov:Activity'],
-         'from_schema': 'https://jgkg.norr-tech.com/def/core'})
+         'from_schema': 'https://jgkg.norr-tech.com/def/core',
+         'title': 'いつ(出来事)'})
 
     occurred_on: Optional[date] = Field(default=None, description="""この出来事が起きた日""", json_schema_extra = { "linkml_meta": {'domain_of': ['Event']} })
     involves_agent: Optional[str] = Field(default=None, description="""この出来事に関与した主体""", json_schema_extra = { "linkml_meta": {'domain_of': ['Event']} })
@@ -169,7 +173,7 @@ class MonetaryItem(Entity):
     """
     「いくらで」の軸。予算科目・支出の上位
     """
-    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/core'})
+    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/core', 'title': 'いくらで(金額)'})
 
     amount_jpy: Optional[int] = Field(default=None, title="金額(円)", description="""金額(円)""", json_schema_extra = { "linkml_meta": {'domain_of': ['MonetaryItem']} })
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
@@ -181,7 +185,8 @@ class Concept(Entity):
     「何について」の軸。主題・指標・制度手続きの上位
     """
     linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'exact_mappings': ['skos:Concept'],
-         'from_schema': 'https://jgkg.norr-tech.com/def/core'})
+         'from_schema': 'https://jgkg.norr-tech.com/def/core',
+         'title': '何について(主題)'})
 
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })

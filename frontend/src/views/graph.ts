@@ -18,7 +18,7 @@ import { attributeValueHtml, esc, neighborhoodStatusText, provenanceHtml } from 
 import { colorForType, groupByAxis, UNKNOWN_AXIS } from "../graph-colors";
 import { axisForType, predicateLabel, typeLabel } from "../labels";
 import { navigate } from "../router";
-import { planExpansion } from "./graph-merge";
+import { liveGraphCounts, planExpansion } from "./graph-merge";
 
 /**
  * 辺の太さ(ピクセル)。**見た目だけの値ではない。**
@@ -139,6 +139,12 @@ export function renderNeighborhoodGraph(container: HTMLElement, center: EntityRe
   let sigma: Sigma | undefined;
   let destroyed = false;
   let graphs: Record<string, Provenance> = {};
+  /**
+   * **最初の近傍取得が打ち切られたかどうか**(裁定B93)。
+   * 件数と分岐上限の残件は`refreshStatus`がグラフから数え直すが、
+   * 「最初の取得が打ち切られた」という事実は展開しても変わらないので保持する。
+   */
+  let fetchTruncated = { nodes: false, edges: false };
   // ノード詳細パネルの非同期取得が、後から来た別のクリックの結果を
   // 上書きしないためのガード(`showNodeDetail`参照)。
   let detailRequestId = 0;
@@ -165,12 +171,19 @@ export function renderNeighborhoodGraph(container: HTMLElement, center: EntityRe
     legend.innerHTML = groups
       .map((g) => {
         const axisLabel = g.axis === UNKNOWN_AXIS ? "軸不明" : typeLabel(g.axis);
-        const items = g.items
-          .map(
-            (it) =>
-              `<span class="jgkg-legend-item"><span class="jgkg-legend-dot" style="background:${it.color}"></span>${esc(typeLabel(it.type))}</span>`,
-          )
-          .join("");
+        // **軸そのものが唯一の型のときは、同じ表示名を2回出さない(裁定B93)。**
+        // `UnresolvedReference` は軸でも型でもあるため、素朴に描くと
+        // 「対応先が特定できなかった記述対応先が特定できなかった記述」になる
+        // ——controllerが実ブラウザで踏んだ。軸見出しだけを残す。
+        const isAxisItself = g.items.length === 1 && g.items[0]!.type === g.axis;
+        const items = isAxisItself
+          ? `<span class="jgkg-legend-item"><span class="jgkg-legend-dot" style="background:${g.items[0]!.color}"></span></span>`
+          : g.items
+              .map(
+                (it) =>
+                  `<span class="jgkg-legend-item"><span class="jgkg-legend-dot" style="background:${it.color}"></span>${esc(typeLabel(it.type))}</span>`,
+              )
+              .join("");
         return `<div class="jgkg-legend-group"><span class="jgkg-legend-axis">${esc(axisLabel)}</span>${items}</div>`;
       })
       .join("");
@@ -248,13 +261,10 @@ export function renderNeighborhoodGraph(container: HTMLElement, center: EntityRe
       detail.innerHTML = `<p><strong>${esc(String(attrs.label ?? ""))}</strong></p><p>${provenanceHtml(prov)}</p>`;
     });
 
-    status.textContent = neighborhoodStatusText({
-      nodeCount: res.nodes.length + 1,
-      edgeCount: res.edges.length,
-      nodesTruncated: res.nodes_truncated,
-      edgesTruncated: res.edges_truncated,
-      fanoutTruncatedCount: res.fanout_truncated_nodes.length,
-    });
+    // **最初の取得についての打ち切りは、展開しても変わらない事実**なので保持する
+    // (件数と分岐上限の残件は`refreshStatus`がグラフから数え直す。裁定B93)
+    fetchTruncated = { nodes: res.nodes_truncated, edges: res.edges_truncated };
+    refreshStatus();
 
     renderLegend();
   }
@@ -387,7 +397,29 @@ export function renderNeighborhoodGraph(container: HTMLElement, center: EntityRe
       String(graph.getNodeAttribute(fromNodeId, "label")).replace(/ ⋯$/, ""),
     );
     renderLegend(); // 展開で新しい型(=新しい軸の項目)が増えることがある
+    refreshStatus(); // **忘れると表示が偽を主張する(裁定B93)**
     detail.innerHTML = "";
+  }
+
+  /**
+   * 状態行を**いまのグラフから**書き直す(裁定B93)。
+   *
+   * `load()`の直後と、展開の直後の両方から呼ぶ。
+   * **展開の直後に呼び忘れると、件数と分岐上限の注記が古いまま残り、
+   * 表示が現在のグラフについて偽を主張する** ——
+   * controllerが実ブラウザで実際に踏んだ欠陥である。
+   */
+  function refreshStatus(): void {
+    if (!sigma) return;
+    const graph = sigma.getGraph() as MultiGraph;
+    const flags = graph.mapNodes((_n, attrs) => attrs.fanoutTruncated === true);
+    const live = liveGraphCounts(flags, graph.size);
+    status.textContent = neighborhoodStatusText({
+      ...live,
+      // **最初の取得が打ち切られた事実は、展開しても変わらない**ので持ち回る
+      nodesTruncated: fetchTruncated.nodes,
+      edgesTruncated: fetchTruncated.edges,
+    });
   }
 
   depthSelect.addEventListener("change", () => {

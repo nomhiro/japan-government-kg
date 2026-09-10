@@ -40,3 +40,29 @@ export function planExpansion(
   }
   return { newNodes, edges };
 }
+
+/**
+ * **状態行に出す件数を、いま画面にあるグラフから数える(裁定B93)。**
+ *
+ * 展開の直後に状態行を更新し忘れると、
+ * **表示が現在のグラフについて偽を主張する** ——
+ * controllerが実ブラウザで踏んだ:
+ * 厚生労働省の予算事業50件を展開した後も
+ * 「ノード27件・辺25件。1件のノードで分岐数の上限に達しています」と
+ * 出たままだった(グラフは実際には77件になり、その上限ももう当てはまらない)。
+ * このプロジェクトの再発欠陥6(表示が偽を主張する)である。
+ *
+ * `nodesTruncated`/`edgesTruncated` は**最初の取得**についての事実なので
+ * そのまま持ち回る(展開してもその取得が打ち切られた事実は変わらない)。
+ * **件数と分岐上限の残件だけがグラフから導出される。**
+ */
+export function liveGraphCounts(
+  nodeFanoutFlags: readonly boolean[],
+  edgeCount: number,
+): { nodeCount: number; edgeCount: number; fanoutTruncatedCount: number } {
+  return {
+    nodeCount: nodeFanoutFlags.length,
+    edgeCount,
+    fanoutTruncatedCount: nodeFanoutFlags.filter((f) => f).length,
+  };
+}

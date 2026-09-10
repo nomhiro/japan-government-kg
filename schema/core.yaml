@@ -168,21 +168,25 @@ classes:
 
   Agent:
     is_a: Entity
+    title: 誰が(主体)
     description: 「誰が」の軸。行為の主体。組織と人の上位
     exact_mappings: [prov:Agent]
 
   Work:
     is_a: Entity
+    title: 何を(法令・事業など)
     description: 「何を」の軸。法令・政策・事業・文書・司法判断の上位
     close_mappings: [schema:CreativeWork]
 
   Place:
     is_a: Entity
+    title: どこで(場所)
     description: 「どこで」の軸。行政区域・住所・地物の上位
     close_mappings: [schema:Place]
 
   Event:
     is_a: Entity
+    title: いつ(出来事)
     description: >-
       「いつ」の軸。時点を持つ出来事。関係を実体化するための中心クラス。
       「AがBに影響した」を直接のエッジにせず、原則としてこのクラスを介す
@@ -191,11 +195,13 @@ classes:
 
   MonetaryItem:
     is_a: Entity
+    title: いくらで(金額)
     description: 「いくらで」の軸。予算科目・支出の上位
     slots: [amount_jpy]
 
   Concept:
     is_a: Entity
+    title: 何について(主題)
     description: 「何について」の軸。主題・指標・制度手続きの上位
     exact_mappings: [skos:Concept]
 

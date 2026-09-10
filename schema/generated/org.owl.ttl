@@ -122,6 +122,7 @@
 
 <https://jgkg.norr-tech.com/def/core#Concept> a owl:Class ;
     rdfs:label "Concept" ;
+    dcterms:title "何について(主題)"@ja ;
     rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#Entity> ;
     skos:definition "「何について」の軸。主題・指標・制度手続きの上位"@ja ;
     skos:exactMatch skos:Concept ;
@@ -129,6 +130,7 @@
 
 <https://jgkg.norr-tech.com/def/core#Event> a owl:Class ;
     rdfs:label "Event" ;
+    dcterms:title "いつ(出来事)"@ja ;
     rdfs:subClassOf [ a owl:Restriction ;
             owl:allValuesFrom xsd:date ;
             owl:onProperty <https://jgkg.norr-tech.com/def/core#occurred_on> ],
@@ -154,6 +156,7 @@
 
 <https://jgkg.norr-tech.com/def/core#MonetaryItem> a owl:Class ;
     rdfs:label "MonetaryItem" ;
+    dcterms:title "いくらで(金額)"@ja ;
     rdfs:subClassOf [ a owl:Restriction ;
             owl:minCardinality 0 ;
             owl:onProperty <https://jgkg.norr-tech.com/def/core#amount_jpy> ],
@@ -169,6 +172,7 @@
 
 <https://jgkg.norr-tech.com/def/core#Place> a owl:Class ;
     rdfs:label "Place" ;
+    dcterms:title "どこで(場所)"@ja ;
     rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#Entity> ;
     skos:closeMatch <http://schema.org/Place> ;
     skos:definition "「どこで」の軸。行政区域・住所・地物の上位"@ja ;
@@ -243,6 +247,7 @@
 
 <https://jgkg.norr-tech.com/def/core#Work> a owl:Class ;
     rdfs:label "Work" ;
+    dcterms:title "何を(法令・事業など)"@ja ;
     rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#Entity> ;
     skos:closeMatch <http://schema.org/CreativeWork> ;
     skos:definition "「何を」の軸。法令・政策・事業・文書・司法判断の上位"@ja ;
@@ -364,6 +369,7 @@ skos:prefLabel a owl:DatatypeProperty ;
 
 <https://jgkg.norr-tech.com/def/core#Agent> a owl:Class ;
     rdfs:label "Agent" ;
+    dcterms:title "誰が(主体)"@ja ;
     rdfs:subClassOf <https://jgkg.norr-tech.com/def/core#Entity> ;
     skos:definition "「誰が」の軸。行為の主体。組織と人の上位"@ja ;
     skos:exactMatch prov:Agent ;

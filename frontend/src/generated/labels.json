@@ -68,13 +68,19 @@
   },
   "types": {
     "AbolishedGovernmentOrgan": "廃止された行政機関",
+    "Agent": "誰が(主体)",
     "BudgetProject": "予算事業",
+    "Concept": "何について(主題)",
+    "Event": "いつ(出来事)",
     "Expenditure": "支出",
     "GovernmentOrgan": "国の機関",
     "Law": "法令",
     "LawRevision": "法令の改正版",
     "Ministry": "府省",
+    "MonetaryItem": "いくらで(金額)",
     "Organization": "組織",
-    "UnresolvedReference": "対応先が特定できなかった記述"
+    "Place": "どこで(場所)",
+    "UnresolvedReference": "対応先が特定できなかった記述",
+    "Work": "何を(法令・事業など)"
   }
 }

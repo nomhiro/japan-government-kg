@@ -131,6 +131,7 @@
     sh:targetClass <https://jgkg.norr-tech.com/def/budget#Expenditure> .
 
 <https://jgkg.norr-tech.com/def/core#Agent> a sh:NodeShape ;
+    rdfs:label "誰が(主体)" ;
     rdfs:comment "「誰が」の軸。行為の主体。組織と人の上位" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/org#abolitionDate> <https://jgkg.norr-tech.com/def/org#cityName> <https://jgkg.norr-tech.com/def/org#houjinBangou> <https://jgkg.norr-tech.com/def/org#ministryCode> <https://jgkg.norr-tech.com/def/org#organizationKindCode> <https://jgkg.norr-tech.com/def/org#prefectureName> <https://jgkg.norr-tech.com/def/org#succeededBy> ) ;
@@ -148,6 +149,7 @@
     sh:targetClass <https://jgkg.norr-tech.com/def/core#Agent> .
 
 <https://jgkg.norr-tech.com/def/core#Concept> a sh:NodeShape ;
+    rdfs:label "何について(主題)" ;
     rdfs:comment "「何について」の軸。主題・指標・制度手続きの上位" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
@@ -182,6 +184,7 @@
     sh:targetClass <https://jgkg.norr-tech.com/def/core#Entity> .
 
 <https://jgkg.norr-tech.com/def/core#Event> a sh:NodeShape ;
+    rdfs:label "いつ(出来事)" ;
     rdfs:comment "「いつ」の軸。時点を持つ出来事。関係を実体化するための中心クラス。 「AがBに影響した」を直接のエッジにせず、原則としてこのクラスを介す" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/law#amendmentEnforcementDate> <https://jgkg.norr-tech.com/def/law#amendmentLawNum> <https://jgkg.norr-tech.com/def/law#lawId> <https://jgkg.norr-tech.com/def/law#revisionStatus> ) ;
@@ -210,6 +213,7 @@
     sh:targetClass <https://jgkg.norr-tech.com/def/core#Event> .
 
 <https://jgkg.norr-tech.com/def/core#MonetaryItem> a sh:NodeShape ;
+    rdfs:label "いくらで(金額)" ;
     rdfs:comment "「いくらで」の軸。予算科目・支出の上位" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/budget#fiscalYear> <https://jgkg.norr-tech.com/def/budget#payeeLabel> <https://jgkg.norr-tech.com/def/budget#project> <https://jgkg.norr-tech.com/def/budget#recipient> <https://jgkg.norr-tech.com/def/budget#recipientMatchCategory> <https://jgkg.norr-tech.com/def/budget#role> ) ;
@@ -234,6 +238,7 @@
     sh:targetClass <https://jgkg.norr-tech.com/def/core#MonetaryItem> .
 
 <https://jgkg.norr-tech.com/def/core#Place> a sh:NodeShape ;
+    rdfs:label "どこで(場所)" ;
     rdfs:comment "「どこで」の軸。行政区域・住所・地物の上位" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
@@ -295,6 +300,7 @@
     sh:targetClass <https://jgkg.norr-tech.com/def/core#UnresolvedReference> .
 
 <https://jgkg.norr-tech.com/def/core#Work> a sh:NodeShape ;
+    rdfs:label "何を(法令・事業など)" ;
     rdfs:comment "「何を」の軸。法令・政策・事業・文書・司法判断の上位" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/budget#basisLaw> <https://jgkg.norr-tech.com/def/budget#budgetAmount> <https://jgkg.norr-tech.com/def/budget#fiscalYear> <https://jgkg.norr-tech.com/def/budget#ministry> <https://jgkg.norr-tech.com/def/budget#projectId> <https://jgkg.norr-tech.com/def/budget#projectName> <https://jgkg.norr-tech.com/def/law#abbrev> <https://jgkg.norr-tech.com/def/law#jurisdiction> <https://jgkg.norr-tech.com/def/law#lawId> <https://jgkg.norr-tech.com/def/law#lawNum> <https://jgkg.norr-tech.com/def/law#lawNumType> <https://jgkg.norr-tech.com/def/law#lawTitle> <https://jgkg.norr-tech.com/def/law#promulgationDate> <https://jgkg.norr-tech.com/def/law#repealStatus> ) ;

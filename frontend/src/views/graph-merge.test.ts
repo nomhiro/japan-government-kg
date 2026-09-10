@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EntityRef, Relationship } from "../api/client";
-import { planExpansion } from "./graph-merge";
+import { liveGraphCounts, planExpansion } from "./graph-merge";
 
 function ref(id: string, type = "BudgetProject"): EntityRef {
   return { id, id_path: id, type, label: id };
@@ -59,5 +59,51 @@ describe("planExpansion", () => {
     const plan = planExpansion("center", [], new Set(["center"]));
     expect(plan.newNodes).toEqual([]);
     expect(plan.edges).toEqual([]);
+  });
+});
+
+// =============================================================================
+// liveGraphCounts: 状態行の件数を「いまのグラフ」から数える(裁定B93)。
+//
+// **controllerが実ブラウザで踏んだ欠陥の再発防止**: 厚生労働省の予算事業
+// 50件を展開した後も、状態行が「ノード27件・辺25件。1件のノードで分岐数の
+// 上限に達しています」のまま残った。グラフは実際には77件になり、その分岐上限も
+// もう当てはまらない——**表示が現在のグラフについて偽を主張していた**
+// (再発欠陥6)。
+// =============================================================================
+
+describe("liveGraphCounts", () => {
+  it("ノード数はフラグ配列の長さ、辺数は渡した値をそのまま返す", () => {
+    expect(liveGraphCounts([false, false, false], 2)).toEqual({
+      nodeCount: 3,
+      edgeCount: 2,
+      fanoutTruncatedCount: 0,
+    });
+  });
+
+  it("分岐上限に達しているノードの件数を数える", () => {
+    expect(liveGraphCounts([true, false, true, false, false], 4).fanoutTruncatedCount).toBe(2);
+  });
+
+  it("**展開でノードが増え、分岐上限が解消したことが件数に反映される**", () => {
+    // 展開前: 27ノード・25辺・中心1件が分岐上限
+    const before = liveGraphCounts([true, ...Array(26).fill(false)], 25);
+    expect(before).toEqual({ nodeCount: 27, edgeCount: 25, fanoutTruncatedCount: 1 });
+
+    // 展開後: 中心のフラグが解消し、50ノード・50辺が増える
+    const after = liveGraphCounts([false, ...Array(76).fill(false)], 75);
+    expect(after).toEqual({ nodeCount: 77, edgeCount: 75, fanoutTruncatedCount: 0 });
+
+    // **件数と分岐上限の両方が変わることを縛る**(片方だけ更新しても通らない)
+    expect(after.nodeCount).not.toBe(before.nodeCount);
+    expect(after.fanoutTruncatedCount).not.toBe(before.fanoutTruncatedCount);
+  });
+
+  it("空のグラフでも0件を返す(空虚化防止のため明示的に確認する)", () => {
+    expect(liveGraphCounts([], 0)).toEqual({
+      nodeCount: 0,
+      edgeCount: 0,
+      fanoutTruncatedCount: 0,
+    });
   });
 });
