@@ -9,8 +9,13 @@ GitHub Actions自体は動かさない)と同じことを、ARMテンプレー�
 **この検査が確認できるのはJSONとして妥当なこと・想定するキーが
 あることだけ。** `az deployment group create`が実際に受理するか
 (プロパティ名・値の型がAzure Resource Manager側の検証を通るか)は
-確認していない——`docs/deploy-aca.md`の「初回の実行で失敗しうる箇所」
-に明記した通り、この配備定義は一度もAzureに対して実行されていない。
+ここでは確認していない。
+
+**2026-09-10追記**: かつてここには「この配備定義は一度もAzureに対して
+実行されていない」と書いてあったが、**それは偽になった。**
+2026-09-06に初回実行(裁定B90)、2026-09-10に `Succeeded` で再配備している
+(裁定B91)。**この検査の役割は「azを実行する前に構文と構造の誤りで
+気づくこと」であり、それは変わらない。**
 """
 import json
 from pathlib import Path
@@ -152,3 +157,22 @@ def test_registry_pull_uses_managed_identity_not_a_credential() -> None:
 
     for forbidden in ("passwordSecretRef", "username", "clientSecret", "\"password\""):
         assert forbidden not in text, f"資格情報らしき鍵がテンプレートに含まれている: {forbidden}"
+
+
+def test_max_replicas_defaults_to_one_while_chat_is_unauthenticated() -> None:
+    """**レプリカ上限は1(裁定B92)。**
+
+    チャット経路は認証を持たない公開エンドポイントで、LLMの費用は
+    他人に発生させられる。1リクエストの道具呼び出し回数・IPごとの
+    レート制限・1日のトークン上限は**プロセス内のカウンタ**で数えるため、
+    **レプリカが複数だと上限がレプリカ数倍に緩む。**
+
+    月400〜480訪問規模(裁定B89の算術)のデモに複数レプリカは要らないので、
+    **上限を正確にする方を採る。** 認証を入れたらこの判断を見直す
+    ——そのときはこのテストも一緒に直すこと。
+    """
+    doc = _load()
+    assert doc["parameters"]["maxReplicas"]["defaultValue"] == 1
+    # 理由が書かれていること(値だけ変えて理由を失わせない)
+    desc = doc["parameters"]["maxReplicas"]["metadata"]["description"]
+    assert "裁定B92" in desc, desc
