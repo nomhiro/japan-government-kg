@@ -89,6 +89,18 @@ class Settings(BaseSettings):
     #: **根拠が無い**。月400〜480訪問規模のデモに対する構造的な当て推量であり、
     #: 実測して調整すること。
     chat_daily_token_budget: int = 500_000
+    #: **`get_neighborhood`がLLMに渡すノード数の上限(裁定B94)。**
+    #: HTTP経路の既定(`NEIGHBORHOOD_DEFAULT_NODE_LIMIT`=100)より小さくする。
+    #:
+    #: **理由**: E-2の実装者が報告した通り、**トークン消費の主要因は道具の
+    #: 呼び出し回数ではなく1回の情報量**である——実際の調査で
+    #: `get_neighborhood`1発が100ノードを引き、それが最大の消費源だった。
+    #: **LLMが必要とするのは「つながりの形」であって全数調査ではない。**
+    #: 打ち切りは`nodes_truncated`等で応答に現れるので、
+    #: **減らしても黙って嘘をつくことにはならない**(裁定B77の族)——
+    #: LLMは「30件以上あり打ち切られた」と正しく言える。
+    #: 画面のグラフ(E-1)は100件のままで、こちらだけを絞る。
+    chat_neighborhood_node_limit: int = 30
 
     @field_validator("base_uri")
     @classmethod

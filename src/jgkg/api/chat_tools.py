@@ -198,9 +198,14 @@ class SourceCollector:
     出典の集合は道具の戻り値そのものから作る(LLMの発言や自己申告からは作らない)。
     """
 
-    def __init__(self) -> None:
+    def __init__(self, base_uri: str) -> None:
         self._sources: dict[str, _CollectedSource] = {}
         self._graphs: dict[str, Provenance] = {}
+        self._ontology_modules: set[str] = set()
+        # 語彙モジュールの引用URLを組み立てるためのベースURI(裁定B94)。
+        # **文字列を直書きしない** —— `jgkg.base_uri --check` が
+        # 実際のベースURIとのずれを検出する対象に入っている
+        self._base_uri = base_uri.rstrip("/")
 
     def add_ref(self, ref: EntityRef, graph_keys: Iterable[str] = ()) -> None:
         entry = self._sources.get(ref.id)
@@ -219,7 +224,24 @@ class SourceCollector:
     def add_graphs(self, graphs: dict[str, Provenance]) -> None:
         self._graphs.update(graphs)
 
-    def finalize(self) -> tuple[list[dict[str, object]], dict[str, Provenance]]:
+    def add_ontology_module(self, module: str) -> None:
+        """**語彙モジュールを読んだことを記録する(裁定B94)。**
+
+        `get_ontology` だけで答えた回に `sources` が空になり、画面上
+        「出典なし」に見えていた——**しかし `/def/{module}` は恒久的で
+        参照可能な公開URI**(裁定B81)であり、**語彙から答えたなら
+        語彙を引用できる。**
+
+        **`ChatSource`(政府データ)と混ぜない。** あちらは一次資料URL・
+        取得日・ライセンス(PDL1.0)を持つが、こちらは**我々自身が公開した
+        語彙定義**で、それらを持たない。混ぜると
+        「政府が出した情報」と「我々の語彙」の区別が消える。
+        """
+        self._ontology_modules.add(module)
+
+    def finalize(
+        self,
+    ) -> tuple[list[dict[str, object]], dict[str, Provenance], list[dict[str, object]]]:
         sources = [
             {
                 "id": c.ref.id,
@@ -232,7 +254,17 @@ class SourceCollector:
         ]
         used_graph_keys = {g for c in self._sources.values() for g in c.graph_keys}
         graphs = {k: v for k, v in self._graphs.items() if k in used_graph_keys}
-        return sources, graphs
+        # **語彙モジュールは別立てで返す(裁定B94)。** `sources` に混ぜない理由は
+        # `add_ontology_module` のdocstring参照(政府データの出典とは種類が違う)。
+        # **タイトルは持たせない。** 毎リクエストでTurtleを解析するのは無駄で、
+        # 対応表を手書きするのは再発欠陥1(導出すべき値の手書き)になる。
+        # `module` と**参照可能なURL**で引用は完結する(`/def/budget` を開けば
+        # そこに語彙の定義とタイトルがある。裁定B81・B84で本番確認済み)。
+        ontology_sources = [
+            {"module": m, "url": f"{self._base_uri}/def/{m}"}
+            for m in sorted(self._ontology_modules)
+        ]
+        return sources, graphs, ontology_sources
 
 
 def run_tool(
@@ -243,6 +275,7 @@ def run_tool(
     base_uri: str,
     generated_dir: Path,
     collector: SourceCollector,
+    neighborhood_node_limit: int = NEIGHBORHOOD_DEFAULT_NODE_LIMIT,
 ) -> ToolInvocationResult:
     """道具を1回実行する。未知の道具名・不正な引数はValueErrorにする
     (呼び出し側`chat.py`がこれを捉えて「壊れた呼び出し」として履歴に残す)。
@@ -252,11 +285,13 @@ def run_tool(
     if name == "get_entity":
         return _run_get_entity(arguments, kg_client, base_uri, collector)
     if name == "get_neighborhood":
-        return _run_get_neighborhood(arguments, kg_client, base_uri, collector)
+        return _run_get_neighborhood(
+            arguments, kg_client, base_uri, collector, neighborhood_node_limit
+        )
     if name == "find_path":
         return _run_find_path(arguments, kg_client, base_uri, collector)
     if name == "get_ontology":
-        return _run_get_ontology(arguments, generated_dir)
+        return _run_get_ontology(arguments, generated_dir, collector)
     raise ValueError(f"未知の道具: {name!r}")
 
 
@@ -309,7 +344,11 @@ def _run_get_entity(
 
 
 def _run_get_neighborhood(
-    arguments: dict[str, object], kg_client: KGClient, base_uri: str, collector: SourceCollector
+    arguments: dict[str, object],
+    kg_client: KGClient,
+    base_uri: str,
+    collector: SourceCollector,
+    node_limit: int = NEIGHBORHOOD_DEFAULT_NODE_LIMIT,
 ) -> ToolInvocationResult:
     id_path = arguments.get("id_path")
     if not isinstance(id_path, str) or not id_path:
@@ -323,7 +362,10 @@ def _run_get_neighborhood(
         base_uri,
         unquote(id_path),
         depth,
-        NEIGHBORHOOD_DEFAULT_NODE_LIMIT,
+        # **画面より小さい上限をLLMに使う(裁定B94)。**
+        # トークン消費の主要因は呼び出し回数ではなく1回の情報量である。
+        # 打ち切りは応答のフラグに現れるのでLLMは正しく「打ち切られた」と言える
+        node_limit,
         NEIGHBORHOOD_DEFAULT_EDGE_LIMIT,
         NEIGHBORHOOD_DEFAULT_FANOUT_LIMIT,
     )
@@ -371,7 +413,9 @@ def _run_find_path(
     return ToolInvocationResult(result_count=len(result.nodes), content=result.model_dump_json())
 
 
-def _run_get_ontology(arguments: dict[str, object], generated_dir: Path) -> ToolInvocationResult:
+def _run_get_ontology(
+    arguments: dict[str, object], generated_dir: Path, collector: SourceCollector
+) -> ToolInvocationResult:
     module = arguments.get("module")
     if not isinstance(module, str) or not module:
         return _error_result("moduleは空でない文字列が必要")
@@ -381,4 +425,7 @@ def _run_get_ontology(arguments: dict[str, object], generated_dir: Path) -> Tool
 
     path = generated_dir / f"{module}.owl.ttl"
     text = path.read_text(encoding="utf-8")
+    # **読んだ語彙は引用できる(裁定B94)。** 出典の集合は道具の戻り値から
+    # 機械的に作る——ここも同じ規律で、LLMの自己申告には依存しない
+    collector.add_ontology_module(module)
     return ToolInvocationResult(result_count=1, content=text)

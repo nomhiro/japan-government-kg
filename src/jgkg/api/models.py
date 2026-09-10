@@ -372,7 +372,13 @@ class ToolCallLogEntry(_Envelope):
 
 
 class ChatSource(_Envelope):
-    """回答の根拠として実際に道具が返したエンティティ1件(裁定B92裁定2(2))。
+    """道具が実際に返したエンティティ1件(裁定B92裁定2(2))。
+
+    **「回答の根拠」ではない(裁定B94の訂正)。** ここに入るのは
+    **道具が触れたものすべて**で、回答が使ったものに限らない ——
+    実測: 3件の予算事業を答えた回に104件が入った。
+    「回答が使ったもの」を機械的に絞ることはできない(LLMに聞けば捏造が入る)
+    ので、**呼び方を実体に合わせる**: 画面は「調べたエンティティ」と表示する。
 
     **LLMの発言からではなく、道具の戻り値から`chat_tools.SourceCollector`が
     機械的に組み立てる。** 道具が0件を返した実行では、この一覧は必ず空になる
@@ -390,9 +396,31 @@ class ChatSource(_Envelope):
     graphs: list[str]
 
 
+class ChatOntologySource(_Envelope):
+    """回答の根拠として実際に読んだ語彙モジュール1件(裁定B94)。
+
+    **`ChatSource`(政府データ)とは種類が違うので混ぜない。**
+    あちらは一次資料URL・取得日・ライセンス(PDL1.0)を持つが、
+    こちらは**我々自身が公開した語彙定義**でそれらを持たない。
+    混ぜると「政府が出した情報」と「我々の語彙」の区別が消える。
+
+    **`url` は恒久的で参照可能な公開URI**(裁定B81。`/def/budget` が
+    `text/turtle` を返すことは裁定B84で本番実測済み)。
+    タイトルは持たせない——毎リクエストでTurtleを解析するのは無駄で、
+    対応表を手書きするのは再発欠陥1になる。リンクを開けばそこにある。
+    """
+
+    module: str
+    url: str
+
+
 class ChatResponse(_Envelope):
     answer: str
     sources: list[ChatSource]
+    #: **語彙から答えた回の引用**(裁定B94)。`get_ontology`だけで答えた実行では
+    #: `sources`が空になるが、こちらが埋まる——「出典なし」ではなく
+    #: 「政府データではなく語彙を根拠にした」ことを表す
+    ontology_sources: list[ChatOntologySource]
     #: `ChatSource.graphs`が参照するグラフのキー→出典。`EntityDetailResponse.graphs`
     #: と同じ正規化(同じグラフを複数エンティティが指しても複製しない)
     graphs: dict[str, Provenance]

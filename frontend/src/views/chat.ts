@@ -77,13 +77,41 @@ export function renderChat(container: HTMLElement): void {
     const truncatedNotice = meta.truncated
       ? `<p class="jgkg-notice">モデルの出力上限に達し、回答が途中で切れている可能性があります。</p>`
       : "";
+    // **「出典」と呼ばない(裁定B94)。** ここに並ぶのは**道具が触れたもの
+    // すべて**であり、回答が実際に使ったものではない —— 実測: 3件の予算事業を
+    // 答えた回に104件が入った(`search_entities`が返した20件の法令と、
+    // `get_entity`が引いた関係の相手が全部入る)。
+    // **これを「出典」と表示するのは過大な主張である。**
+    // 機械的に集める設計自体は変えない(それが捏造を防いでいる。裁定B92裁定2)——
+    // **呼び方を実体に合わせる。**
     const sourcesHtml =
       meta.sources.length > 0
-        ? `<div class="jgkg-chat-sources">
-             <h4>出典(${meta.sources.length}件)</h4>
+        ? `<details class="jgkg-chat-sources">
+             <summary>調べたエンティティ(${meta.sources.length}件)</summary>
+             <p class="jgkg-muted">道具が実際に返したものの一覧です。回答が使ったものに限りません。</p>
              <ul>${meta.sources.map((s) => `<li>${chatSourceHtml(s, meta.graphs)}</li>`).join("")}</ul>
+           </details>`
+        : "";
+    // **語彙から答えた回の引用(裁定B94)。** `sources`が空でも
+    // 「出典なし」ではない —— `/def/{module}`は恒久的で参照可能な公開URI
+    const ontologyHtml =
+      meta.ontology_sources.length > 0
+        ? `<div class="jgkg-chat-sources">
+             <h4>根拠にした語彙(${meta.ontology_sources.length}件)</h4>
+             <ul>${meta.ontology_sources
+               .map(
+                 (o) =>
+                   `<li><a href="${esc(o.url)}" target="_blank" rel="noopener">${esc(o.module)}</a> モジュールの定義</li>`,
+               )
+               .join("")}</ul>
            </div>`
-        : `<p class="jgkg-muted">出典なし(道具が何も見つけられませんでした)</p>`;
+        : "";
+    // **何も引けなかったときだけ「出典なし」と言う。**
+    // 語彙を読んだ回に「出典なし」と出すのは偽である
+    const nothingHtml =
+      meta.sources.length === 0 && meta.ontology_sources.length === 0
+        ? `<p class="jgkg-muted">出典なし(道具が何も見つけられませんでした)</p>`
+        : "";
     const toolLogHtml = `
       <details class="jgkg-chat-tool-log">
         <summary>道具の呼び出し履歴(${meta.tool_calls.length}件)</summary>
@@ -95,7 +123,9 @@ export function renderChat(container: HTMLElement): void {
         <div class="jgkg-chat-bubble">${esc(turn.content)}</div>
         ${limitNotice}
         ${truncatedNotice}
+        ${ontologyHtml}
         ${sourcesHtml}
+        ${nothingHtml}
         ${toolLogHtml}
       </div>`;
   }

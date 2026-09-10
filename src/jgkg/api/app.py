@@ -105,6 +105,7 @@ def create_app(
             max_completion_tokens=settings.chat_max_completion_tokens,
             rate_limiter=RateLimiter(settings.chat_rate_limit_per_minute),
             daily_budget=DailyTokenBudget(settings.chat_daily_token_budget),
+            neighborhood_node_limit=settings.chat_neighborhood_node_limit,
         )
         if chat_model is not None
         else None

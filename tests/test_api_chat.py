@@ -114,7 +114,7 @@ def _service(
 
 
 def test_run_tool_search_entities_returns_exact_hit_count_for_known_query(client):
-    collector = SourceCollector()
+    collector = SourceCollector("https://jgkg.norr-tech.com")
     result = run_tool(
         "search_entities",
         {"q": "厚生労働省", "limit": 20},
@@ -129,7 +129,7 @@ def test_run_tool_search_entities_returns_exact_hit_count_for_known_query(client
     types = {hit["type"] for hit in body["results"]}
     assert types == {"Ministry", "Law"}, body["results"]
     assert result.result_count == len(body["results"])
-    sources, _ = collector.finalize()
+    sources, _, _ = collector.finalize()
     assert len(sources) == result.result_count
     # 検索はグラフ(出典)を返さない(queries.pyのSearchHit参照)——捏造しない
     assert all(s["graphs"] == [] for s in sources)
@@ -143,7 +143,7 @@ def test_run_tool_get_entity_normalizes_percent_encoded_id_path_from_search(clie
     `canonical_iri`/`sparql_iri`でもう一度エンコードされ、実在するエンティティが
     0件になる——このテストはその退化を検出する。
     """
-    collector = SourceCollector()
+    collector = SourceCollector("https://jgkg.norr-tech.com")
     search_result = run_tool(
         "search_entities",
         {"q": fx.OLD_KOUSEISHO_NAME, "limit": 20},
@@ -179,7 +179,7 @@ def test_run_tool_get_ontology_returns_requested_module_content(client):
         kg_client=client,
         base_uri=BASE,
         generated_dir=GENERATED_DIR,
-        collector=SourceCollector(),
+        collector=SourceCollector("https://jgkg.norr-tech.com"),
     )
     assert result.result_count == 1
     on_disk = (GENERATED_DIR / "core.owl.ttl").read_text(encoding="utf-8")
@@ -193,7 +193,7 @@ def test_run_tool_get_ontology_rejects_unknown_module_without_raising(client):
         kg_client=client,
         base_uri=BASE,
         generated_dir=GENERATED_DIR,
-        collector=SourceCollector(),
+        collector=SourceCollector("https://jgkg.norr-tech.com"),
     )
     assert result.result_count == 0
     assert "error" in json.loads(result.content)
@@ -201,7 +201,7 @@ def test_run_tool_get_ontology_rejects_unknown_module_without_raising(client):
 
 def test_run_tool_zero_hits_leaves_sources_empty_no_fabrication(client):
     """裁定B92裁定2: 道具が0件を返したら出典は0件のまま(捏造しない)。"""
-    collector = SourceCollector()
+    collector = SourceCollector("https://jgkg.norr-tech.com")
     result = run_tool(
         "search_entities",
         {"q": "実在しないはずの検索語_xyz123", "limit": 20},
@@ -211,7 +211,7 @@ def test_run_tool_zero_hits_leaves_sources_empty_no_fabrication(client):
         collector=collector,
     )
     assert result.result_count == 0
-    sources, graphs = collector.finalize()
+    sources, graphs, _ = collector.finalize()
     assert sources == []
     assert graphs == {}
 
@@ -458,3 +458,76 @@ def test_post_chat_history_is_forwarded_to_the_model_and_not_stored_server_side(
     roles_and_content = [(m["role"], m["content"]) for m in sent_messages]
     assert ("user", "厚生労働省について教えて") in roles_and_content
     assert ("assistant", "...") in roles_and_content
+
+
+# =============================================================================
+# 裁定B94: 語彙から答えた回も引用を持つ(`sources`が空でも「出典なし」ではない)
+# =============================================================================
+
+
+def test_get_ontology_produces_a_citable_ontology_source(client):
+    """**`get_ontology`を読んだら`ontology_sources`が埋まること(裁定B94)。**
+
+    E-2の実装では`get_ontology`だけで答えた回の`sources`が空になり、
+    画面上「出典なし」に見えていた——**しかし`/def/{module}`は恒久的で
+    参照可能な公開URI**(裁定B81。`text/turtle`を返すことは裁定B84で
+    本番実測済み)であり、**語彙から答えたなら語彙を引用できる。**
+    """
+    collector = SourceCollector("https://jgkg.norr-tech.com")
+    run_tool(
+        "get_ontology",
+        {"module": "budget"},
+        kg_client=client,
+        base_uri=BASE,
+        generated_dir=GENERATED_DIR,
+        collector=collector,
+    )
+    sources, graphs, ontology = collector.finalize()
+
+    # **政府データの出典は空のまま**(語彙はエンティティを返さない。捏造しない)
+    assert sources == []
+    assert graphs == {}
+    # **語彙の引用は1件入る**
+    assert len(ontology) == 1, ontology
+    assert ontology[0] == {
+        "module": "budget",
+        "url": "https://jgkg.norr-tech.com/def/budget",
+    }
+
+
+def test_unknown_module_does_not_produce_an_ontology_source(client):
+    """**読めなかったモジュールを引用しないこと。**
+
+    「1件以上あれば通る」テストにしない——**失敗した呼び出しで引用が
+    増えるのは捏造**である(裁定B92裁定2の族)。
+    """
+    collector = SourceCollector("https://jgkg.norr-tech.com")
+    run_tool(
+        "get_ontology",
+        {"module": "not-a-real-module"},
+        kg_client=client,
+        base_uri=BASE,
+        generated_dir=GENERATED_DIR,
+        collector=collector,
+    )
+    _, _, ontology = collector.finalize()
+    assert ontology == [], "読めなかったモジュールを引用している(捏造)"
+
+
+def test_multiple_ontology_reads_are_deduplicated_and_sorted(client):
+    """同じモジュールを2回読んでも引用は1件。複数モジュールは名前順。
+
+    **件数をアサートする**(「1件以上」で通る形にしない)。
+    """
+    collector = SourceCollector("https://jgkg.norr-tech.com")
+    for module in ("law", "budget", "law"):
+        run_tool(
+            "get_ontology",
+            {"module": module},
+            kg_client=client,
+            base_uri=BASE,
+            generated_dir=GENERATED_DIR,
+            collector=collector,
+        )
+    _, _, ontology = collector.finalize()
+    assert [o["module"] for o in ontology] == ["budget", "law"], ontology

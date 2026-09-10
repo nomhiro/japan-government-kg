@@ -26,7 +26,14 @@ from pathlib import Path
 from jgkg.api.chat_tools import SourceCollector, build_tool_schemas, run_tool
 from jgkg.api.kgclient import KGClient
 from jgkg.api.llm import ChatModel, parse_tool_arguments
-from jgkg.api.models import ChatRequest, ChatResponse, ChatSource, ToolCallLogEntry
+from jgkg.api.models import (
+    ChatOntologySource,
+    ChatRequest,
+    ChatResponse,
+    ChatSource,
+    ToolCallLogEntry,
+)
+from jgkg.api.queries import NEIGHBORHOOD_DEFAULT_NODE_LIMIT
 
 SYSTEM_PROMPT = """あなたは日本政府オープンデータのナレッジグラフ(JGKG)を、
 道具(tools)を使って調査し、その結果だけから日本語で答えるアシスタントです。
@@ -129,6 +136,11 @@ class ChatService:
     max_completion_tokens: int
     rate_limiter: RateLimiter
     daily_budget: DailyTokenBudget
+    #: **`get_neighborhood`がLLMに渡すノード数の上限(裁定B94)。**
+    #: 画面のグラフ(100件)より小さくする——トークン消費の主要因は
+    #: 呼び出し回数ではなく1回の情報量である。既定値は
+    #: `config.Settings.chat_neighborhood_node_limit`(そちらに理由を書いた)
+    neighborhood_node_limit: int = NEIGHBORHOOD_DEFAULT_NODE_LIMIT
 
     def handle_chat(self, request: ChatRequest, client_ip: str) -> ChatResponse:
         self.rate_limiter.check(client_ip)
@@ -140,7 +152,7 @@ class ChatService:
             messages.append({"role": turn.role, "content": turn.content})
         messages.append({"role": "user", "content": request.message})
 
-        collector = SourceCollector()
+        collector = SourceCollector(self.base_uri)
         tool_call_log: list[ToolCallLogEntry] = []
         tool_calls_used = 0
         limit_reached = False
@@ -202,6 +214,7 @@ class ChatService:
                         kg_client=self.kg_client,
                         base_uri=self.base_uri,
                         generated_dir=self.generated_dir,
+                        neighborhood_node_limit=self.neighborhood_node_limit,
                         collector=collector,
                     )
                 except Exception as e:  # noqa: BLE001 - 道具の失敗を必ず履歴に残す(黙って落とさない)
@@ -234,12 +247,17 @@ class ChatService:
         if tool_calls_used >= self.tool_call_limit:
             limit_reached = True
 
-        sources_raw, graphs = collector.finalize()
+        sources_raw, graphs, ontology_raw = collector.finalize()
         sources = [ChatSource.model_validate(s) for s in sources_raw]
+        # **語彙から答えた回も引用を持つ(裁定B94)。** `sources` が空でも
+        # `ontology_sources` が埋まる——`get_ontology` だけで答えた回に
+        # 画面上「出典なし」に見えていたのを直した
+        ontology_sources = [ChatOntologySource.model_validate(o) for o in ontology_raw]
         return ChatResponse(
             answer=answer,
             sources=sources,
             graphs=graphs,
+            ontology_sources=ontology_sources,
             tool_calls=tool_call_log,
             tool_call_limit=self.tool_call_limit,
             tool_call_limit_reached=limit_reached,

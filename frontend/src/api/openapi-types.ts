@@ -123,6 +123,26 @@ export interface components {
             /** Role */
             role: string;
         };
+        /**
+         * ChatOntologySource
+         * @description 回答の根拠として実際に読んだ語彙モジュール1件(裁定B94)。
+         *
+         *     **`ChatSource`(政府データ)とは種類が違うので混ぜない。**
+         *     あちらは一次資料URL・取得日・ライセンス(PDL1.0)を持つが、
+         *     こちらは**我々自身が公開した語彙定義**でそれらを持たない。
+         *     混ぜると「政府が出した情報」と「我々の語彙」の区別が消える。
+         *
+         *     **`url` は恒久的で参照可能な公開URI**(裁定B81。`/def/budget` が
+         *     `text/turtle` を返すことは裁定B84で本番実測済み)。
+         *     タイトルは持たせない——毎リクエストでTurtleを解析するのは無駄で、
+         *     対応表を手書きするのは再発欠陥1になる。リンクを開けばそこにある。
+         */
+        ChatOntologySource: {
+            /** Module */
+            module: string;
+            /** Url */
+            url: string;
+        };
         /** ChatRequest */
         ChatRequest: {
             /**
@@ -141,6 +161,8 @@ export interface components {
             graphs: {
                 [key: string]: components["schemas"]["Provenance"];
             };
+            /** Ontology Sources */
+            ontology_sources: components["schemas"]["ChatOntologySource"][];
             /** Sources */
             sources: components["schemas"]["ChatSource"][];
             /** Tool Call Limit */
@@ -154,7 +176,13 @@ export interface components {
         };
         /**
          * ChatSource
-         * @description 回答の根拠として実際に道具が返したエンティティ1件(裁定B92裁定2(2))。
+         * @description 道具が実際に返したエンティティ1件(裁定B92裁定2(2))。
+         *
+         *     **「回答の根拠」ではない(裁定B94の訂正)。** ここに入るのは
+         *     **道具が触れたものすべて**で、回答が使ったものに限らない ——
+         *     実測: 3件の予算事業を答えた回に104件が入った。
+         *     「回答が使ったもの」を機械的に絞ることはできない(LLMに聞けば捏造が入る)
+         *     ので、**呼び方を実体に合わせる**: 画面は「調べたエンティティ」と表示する。
          *
          *     **LLMの発言からではなく、道具の戻り値から`chat_tools.SourceCollector`が
          *     機械的に組み立てる。** 道具が0件を返した実行では、この一覧は必ず空になる
