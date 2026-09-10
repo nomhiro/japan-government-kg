@@ -52,6 +52,23 @@
 辿って`{述語ローカル名: {値: 表示名}}`まで解決してしまえば、フロントエンドは
 2段の結合をランタイムで行う必要が無くなる——`labels.ts`の`enumValueLabel`は
 `predicates`/`types`と同じ1段引きで済む。
+
+**`typeAxes`(型のローカル名から6軸/`UnresolvedReference`への対応。裁定B92のE-1)**
+も同じ理由でここに足す:「型→軸」の対応表を`frontend/`側に手で書くと
+再発欠陥1(導出すべき値を手書きする)そのものになる。`_type_axes`が
+`rdfs:subClassOf`を`core#Entity`まで辿って導出する(`core.yaml`の
+`Entity.children_are_mutually_disjoint`公理が「Entityの直接の子(Agent/Work/
+Place/Event/MonetaryItem/Concept/UnresolvedReference)は互いに素」と宣言して
+いる、その直接の子という構造そのものを使う——軸の名前の集合をPython側で
+列挙しない)。
+
+**E-1ブリーフの表と食い違う点(自分で導出し直して見つけた)**: ブリーフは
+「何を」軸の所属を`Entity / Work / Law / BudgetProject`(基底クラス
+`core#Entity`)としていたが、実際にたどると`Entity`はどの軸にも属さない
+(全軸の親であるアンカーそのもの)。「何を」軸の基底クラスは`core#Work`で、
+所属は`Work / Law / BudgetProject`の3件。`Entity`を含めた4件・軸名を
+`Entity`としたのは転記の誤りと判断し、`_type_axes`は`Entity`を対応表に
+含めない(`resolve()`が`Entity`自身に達したら`None`を返す)。
 """
 from __future__ import annotations
 
@@ -67,6 +84,15 @@ _CLASS = "http://www.w3.org/2002/07/owl#Class"
 _OBJECT_PROPERTY = "http://www.w3.org/2002/07/owl#ObjectProperty"
 _DATATYPE_PROPERTY = "http://www.w3.org/2002/07/owl#DatatypeProperty"
 _RELEVANT_TYPES = frozenset({_CLASS, _OBJECT_PROPERTY, _DATATYPE_PROPERTY})
+
+#: `typeAxes`導出のアンカー。**これ1つだけをハードコードする**——6軸
+#: (Agent/Work/Place/Event/MonetaryItem/Concept)とUnresolvedReferenceの
+#: 名前そのものは列挙しない。`core.yaml`で`Entity`が
+#: `children_are_mutually_disjoint: true`を宣言している対象がこの7クラスで
+#: あり(`schema/core.yaml`の`Entity`docstring参照)、それらは全て
+#: `is_a: Entity`(直接の子)なので、「Entityの直接の子」という構造だけで
+#: 軸の集合が導出できる。
+_AXIS_ROOT = "Entity"
 
 
 def extract_labels(owl_path: Path) -> dict[str, dict]:
@@ -113,6 +139,7 @@ def extract_labels(owl_path: Path) -> dict[str, dict]:
         "types": dict(sorted(types.items())),
         "predicates": dict(sorted(predicates.items())),
         "enumValues": _enum_value_labels(g),
+        "typeAxes": _type_axes(g),
     }
 
 
@@ -145,3 +172,62 @@ def _enum_value_labels(g: Graph) -> dict[str, dict[str, str]]:
             pred_local = str(predicate).rsplit("#", 1)[-1]
             enum_values[pred_local] = dict(sorted(values.items()))
     return dict(sorted(enum_values.items()))
+
+
+def _direct_subclass_map(g: Graph) -> dict[str, list[str]]:
+    """`{子クラスのローカル名: [直接の親クラスのローカル名, ...]}`。
+
+    `rdfs:subClassOf`の値がOWLの制約(`owl:Restriction`の空白節。例:
+    `Event`の`occurred_on`の基数制約)であることが多い——`URIRef`だけを
+    親として採用し、空白節は無視する。列挙型の許容値(ローカル名に"/"を
+    含む。裁定B66)も継承チェーンの対象外にする(`_type_axes`が列挙型の
+    許容値を軸に混ぜないため)。
+    """
+    edges: dict[str, list[str]] = {}
+    for child, parent in g.subject_objects(RDFS.subClassOf):
+        if not isinstance(child, URIRef) or not isinstance(parent, URIRef):
+            continue
+        if "#" not in str(child) or "#" not in str(parent):
+            continue
+        child_local = str(child).rsplit("#", 1)[-1]
+        parent_local = str(parent).rsplit("#", 1)[-1]
+        if "/" in child_local or "/" in parent_local:
+            continue
+        edges.setdefault(child_local, []).append(parent_local)
+    return edges
+
+
+def _type_axes(g: Graph) -> dict[str, str]:
+    """型のローカル名から、それが属する6軸(またはUnresolvedReference)のローカル名への対応(裁定B92)。
+
+    **対応表を手書きしない。** `rdfs:subClassOf`の直接の子→親のグラフを
+    `_direct_subclass_map`で作り、そこから`_AXIS_ROOT`(`"Entity"`)の直接の
+    子の集合を求める——この集合が6軸+UnresolvedReferenceであることは、
+    `core.yaml`の`Entity.children_are_mutually_disjoint`公理が構造として
+    保証している(このモジュールでは軸の名前を1つも列挙しない)。
+    あとは各クラスから`rdfs:subClassOf`を`_AXIS_ROOT`の子に着くまで遡るだけ。
+
+    `_AXIS_ROOT`自身(`"Entity"`)は対応表に含めない——全軸の親であり、
+    どの軸にも属さない(E-1ブリーフの表がここを取り違えていた。モジュール
+    docstring参照)。列挙型(`RecipientMatchCategoryEnum`等)は`Entity`まで
+    遡る経路が無いため、自然に対応表から漏れる(手で除外していない)。
+    """
+    subclass_of = _direct_subclass_map(g)
+    axes = {child for child, parents in subclass_of.items() if _AXIS_ROOT in parents}
+
+    def resolve(name: str, seen: frozenset[str]) -> str | None:
+        if name == _AXIS_ROOT:
+            return None
+        if name in axes:
+            return name
+        for parent in subclass_of.get(name, []):
+            if parent in seen:
+                continue  # サイクル防御(このオントロジーには無いはずだが、無限再帰にしない)
+            found = resolve(parent, seen | {parent})
+            if found is not None:
+                return found
+        return None
+
+    candidates = set(subclass_of) | axes
+    type_axes = {name: axis for name in candidates if (axis := resolve(name, frozenset())) is not None}
+    return dict(sorted(type_axes.items()))

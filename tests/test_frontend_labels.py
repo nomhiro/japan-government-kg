@@ -70,6 +70,29 @@ def _write(tmp_path: Path) -> Path:
     return p
 
 
+#: `_type_axes`が多段の`rdfs:subClassOf`を`Entity`まで遡れることを確認する
+#: ための最小限のfixture(`core.yaml`の構造を模したもの。実データではない)。
+#: `Ministry`は`Organization`→`Agent`→`Entity`と2段遡らないと軸に着かない
+#: ——1段しか見ない実装に戻ると`Ministry`だけが対応表から抜ける。
+_AXIS_TTL = """
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ex: <https://jgkg.norr-tech.com/def/core#> .
+
+ex:Entity a owl:Class .
+ex:Agent a owl:Class ;
+    rdfs:subClassOf ex:Entity .
+ex:Work a owl:Class ;
+    rdfs:subClassOf ex:Entity .
+ex:Organization a owl:Class ;
+    rdfs:subClassOf ex:Agent .
+ex:Ministry a owl:Class ;
+    rdfs:subClassOf ex:Organization .
+ex:Law a owl:Class ;
+    rdfs:subClassOf ex:Work .
+"""
+
+
 def test_extract_labels_separates_classes_and_properties(tmp_path):
     labels = extract_labels(_write(tmp_path))
     assert labels["types"] == {"Law": "法令", "Organization": "組織"}
@@ -200,3 +223,86 @@ def test_extract_labels_enum_values_from_real_data_has_exactly_the_two_predicate
     # 代表値。ブリーフの例をそのまま採用した2件(2026-09-05付ブリーフ)
     assert labels["enumValues"]["recipientMatchCategory"]["resolved"] == "法人番号で特定できた"
     assert labels["enumValues"]["unresolved_reason"]["AMBIGUOUS"] == "候補が複数あって決められない"
+
+
+# =============================================================================
+# typeAxes: 型→6軸(またはUnresolvedReference)の対応(裁定B92・E-1)
+# =============================================================================
+
+
+def test_type_axes_yields_nothing_when_the_entity_anchor_is_absent(tmp_path):
+    """`_type_axes`が対応表を手書きしていないことの証明。
+
+    `_TTL`fixtureには`ex:Organization rdfs:subClassOf ex:Agent`があるが、
+    `core#Entity`自体は存在しない。**手書きの対応表(`Organization`→`Agent`
+    等)を`_type_axes`が内部に持っていれば、ここで`{"Organization": "Agent"}`
+    が紛れ込む。** 実際には`Entity`アンカーに到達できないので`typeAxes`は
+    空でなければならない。
+    """
+    labels = extract_labels(_write(tmp_path))
+    assert labels["typeAxes"] == {}
+
+
+def test_type_axes_walks_multiple_hops_to_reach_the_entity_anchor(tmp_path):
+    """`Ministry`は`Organization`(1段)→`Agent`(2段)→`Entity`と2段遡ってようやく軸`Agent`に着く。
+
+    1段しか遡らない実装に戻すと`Ministry`だけが対応表から抜ける
+    (`Organization`は1段で`Agent`に着くので生き残ってしまう——多段の
+    ケースを`Organization`だけでは検出できない。`Ministry`が必要)。
+    `Entity`自身は軸ではない(全軸の親)ので対応表に現れないこと、
+    `Law`も同じ経路(1段)で`Work`に着くことも併せて確認する。
+    """
+    p = tmp_path / "axes.ttl"
+    p.write_text(_AXIS_TTL, encoding="utf-8")
+    labels = extract_labels(p)
+    assert labels["typeAxes"] == {
+        "Agent": "Agent",
+        "Law": "Work",
+        "Ministry": "Agent",
+        "Organization": "Agent",
+        "Work": "Work",
+    }
+    assert "Entity" not in labels["typeAxes"]
+
+
+def test_type_axes_from_real_data_has_exactly_the_fifteen_expected_entries():
+    """実際の生成物(`schema/generated/all.owl.ttl`)に対する`typeAxes`が、
+
+    件数まで含めて一致すること(裁定B82(4b)の`enumValues`テストと同じ方針
+    ——「1件以上」では通さない)。
+
+    **controllerのE-1ブリーフの表をそのまま転記していない。** ブリーフは
+    「何を」軸の基底クラスを`core#Entity`とし所属を`Entity/Work/Law/
+    BudgetProject`の4件としていたが、`rdfs:subClassOf`を自分で(このテストを
+    書くために)遡って確認すると、`Entity`は全軸の親であってどの軸にも
+    属さず、「何を」軸の基底クラスは`core#Work`で所属は`Work/Law/
+    BudgetProject`の3件だった。以下の期待値はこの確認結果を反映する
+    (`Entity`を対応表に含めない)。
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    all_owl = repo_root / "schema" / "generated" / "all.owl.ttl"
+    labels = extract_labels(all_owl)
+
+    assert labels["typeAxes"] == {
+        "AbolishedGovernmentOrgan": "Agent",
+        "Agent": "Agent",
+        "BudgetProject": "Work",
+        "Concept": "Concept",
+        "Event": "Event",
+        "Expenditure": "MonetaryItem",
+        "GovernmentOrgan": "Agent",
+        "Law": "Work",
+        "LawRevision": "Event",
+        "Ministry": "Agent",
+        "MonetaryItem": "MonetaryItem",
+        "Organization": "Agent",
+        "Place": "Place",
+        "UnresolvedReference": "UnresolvedReference",
+        "Work": "Work",
+    }
+    assert len(labels["typeAxes"]) == 15
+    # 列挙型(軸を持たない。ノードの型にはならない)が紛れ込んでいないこと
+    assert "RecipientMatchCategoryEnum" not in labels["typeAxes"]
+    assert "UnresolvedReasonEnum" not in labels["typeAxes"]
+    # Entity(全軸の親。ブリーフの表の誤り)が紛れ込んでいないこと
+    assert "Entity" not in labels["typeAxes"]

@@ -12,12 +12,12 @@
 // 同じ値を複数の名前付きグラフが主張することがある(`models.py`の
 // `AttributeValue`docstring参照)——その場合は値ごとに複数の一次資料リンクを
 // 並べる。
-import type { AttributeValue, EntityDetailResponse, Relationship } from "../api/client";
+import type { EntityDetailResponse, Relationship } from "../api/client";
 import { apiUnavailableReason, entityDetail } from "../api/client";
-import { esc, provenanceHtml, truncationNotice } from "../format";
+import { attributeValueHtml, esc, provenanceHtml, truncationNotice } from "../format";
 import type { GraphController } from "./graph";
 import { renderNeighborhoodGraph } from "./graph";
-import { enumValueLabel, predicateLabel, typeLabel } from "../labels";
+import { predicateLabel, typeLabel } from "../labels";
 import { navigate } from "../router";
 
 function relationshipRow(rel: Relationship, graphs: EntityDetailResponse["graphs"]): string {
@@ -29,30 +29,6 @@ function relationshipRow(rel: Relationship, graphs: EntityDetailResponse["graphs
       <a href="#" class="jgkg-rel-target" data-id-path="${esc(rel.related.id_path)}">${esc(label)}</a>
       <span class="jgkg-muted jgkg-rel-prov">${provenanceHtml(graphs[rel.graph])}</span>
     </li>`;
-}
-
-/**
- * 属性の1つの値(`AttributeValue`)を、値そのものと出典リンクで描く。
- *
- * **`available === false`のときは空リンクを描かない**(`provenanceHtml`が
- * 既に守る。D-5と同じ扱い。裁定B82)。`graphs`が複数あれば
- * (同じ値を複数の名前付きグラフが主張する場合)一次資料リンクを複数並べる。
- *
- * **`pred`(述語のローカル名)を`enumValueLabel`に渡して列挙型の許容値を
- * 日本語に引き当てる**(裁定B82(4b))。列挙型を範囲に持たない述語の値は
- * 表示名が無いので`av.value`がそのまま返る(フォールバックは
- * `enumValueLabel`自身が持つ)。
- */
-function attributeValueHtml(
-  pred: string,
-  av: AttributeValue,
-  graphs: EntityDetailResponse["graphs"],
-): string {
-  const provenances = av.graphs.map((g) => provenanceHtml(graphs[g])).join(" / ");
-  return (
-    `<span class="jgkg-attr-value">${esc(enumValueLabel(pred, av.value))}</span>` +
-    `<span class="jgkg-muted jgkg-attr-prov"> (${provenances})</span>`
-  );
 }
 
 export interface EntityViewController {
@@ -111,7 +87,15 @@ export function renderEntity(container: HTMLElement, idPath: string): EntityView
         </div>`,
       )
       .join("");
+    const totalRelCount = Object.values(entity.relationships).reduce((n, rels) => n + rels.length, 0);
 
+    // **グラフを画面の主役に置く(裁定B92のE-1)。** 以前は「属性表→関係の
+    // 一覧(最大50件)→近傍サブグラフ」の順で、関係が50件あるとグラフに
+    // 到達する前に長いリストを抜ける必要があった。関係の一覧は消さず
+    // (情報としては引き続き必要)、`<details>`で折りたたんでグラフの下に
+    // 置く——依存を増やさないネイティブの折りたたみ(JS不要・キーボードで
+    // 操作可能)。「ここから経路を探す」もグラフに関連する操作なので、
+    // 関係の一覧より前(グラフのすぐ下)に置く。
     container.innerHTML = `
       <p><a href="#/">&larr; 検索に戻る</a></p>
       <span class="jgkg-type-badge">${esc(typeLabel(entity.type))}</span>
@@ -119,15 +103,23 @@ export function renderEntity(container: HTMLElement, idPath: string): EntityView
 
       ${attrRows ? `<table class="jgkg-attr-table">${attrRows}</table>` : ""}
 
-      <h2>関係${truncationNotice(entity.relationships_truncated, entity.relationships_limit, "関係")}</h2>
-      ${relGroups || '<p class="jgkg-muted">関係はありません。</p>'}
+      <h2>グラフで見る</h2>
+      <p class="jgkg-lead">
+        ノードをクリックすると、その場に概要(型・属性・出典)が表示されます。
+        色はオントロジーの6軸(誰が/何を/どこで/いつ/いくらで/何について)を
+        表します(凡例参照)。
+      </p>
+      <div class="jgkg-graph-container"></div>
 
       <p class="jgkg-secondary">
         <button type="button" class="jgkg-find-path-from">ここから経路を探す</button>
       </p>
 
-      <h2>近傍サブグラフ</h2>
-      <div class="jgkg-graph-container"></div>
+      <details class="jgkg-rel-details">
+        <summary>関係の一覧(${totalRelCount}件)</summary>
+        ${truncationNotice(entity.relationships_truncated, entity.relationships_limit, "関係")}
+        ${relGroups || '<p class="jgkg-muted">関係はありません。</p>'}
+      </details>
     `;
 
     container.querySelectorAll<HTMLAnchorElement>(".jgkg-rel-target").forEach((a) => {

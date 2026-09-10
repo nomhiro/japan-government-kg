@@ -1,23 +1,37 @@
 // 近傍サブグラフの描画。グラフ描画にはSigma.js(WebGL)を使う(仕様§9.2:
 // 「Phase 1の規模では性能問題は出ないが、Phase 2以降の拡大を見込んで最初から
 // WebGL系を選ぶ」)。
+//
+// **グラフを画面の主役にする(裁定B92のE-1)。** ノードの色・凡例はオントロジー
+// の6軸(誰が/何を/どこで/いつ/いくらで/何について)+UnresolvedReferenceから
+// 導出する(`../graph-colors.ts`。型→軸の対応自体は`../labels.ts`の
+// `axisForType`が生成物`generated/labels.json`の`typeAxes`——
+// `frontend_labels.py`が`rdfs:subClassOf`を辿って生成——から引く。対応表を
+// ここで手書きしない)。ノードをクリックしても画面を移動せず、その場に
+// 概要(型・軸・属性・出典)を出す——移動は明示的なリンクとして残す。
 import { MultiGraph } from "graphology";
 import Sigma from "sigma";
 import type { EntityDetailResponse, EntityRef, NeighborhoodResponse, Provenance } from "../api/client";
 import { entityDetail, neighborhood } from "../api/client";
 import { NEIGHBORHOOD_DEPTH } from "../api/limits";
-import { esc, provenanceHtml } from "../format";
-import { predicateLabel, typeLabel } from "../labels";
+import { attributeValueHtml, esc, neighborhoodStatusText, provenanceHtml } from "../format";
+import { colorForType, groupByAxis, UNKNOWN_AXIS } from "../graph-colors";
+import { axisForType, predicateLabel, typeLabel } from "../labels";
 import { navigate } from "../router";
+import { planExpansion } from "./graph-merge";
 
-// 型ごとの色。**オントロジーに「色」という概念は無い**ので、これは表示だけの
-// 判断であり導出できない——出現順に固定パレットから割り当てる(型が増えても
-// 色の割り当てルール自体は変えなくていい。ハブ以外は型の種類が少ないので
-// 衝突は実用上問題にならない)。
-const PALETTE = [
-  "#2563eb", "#dc2626", "#059669", "#d97706", "#7c3aed",
-  "#0891b2", "#db2777", "#65a30d", "#4b5563", "#ea580c",
-];
+/**
+ * 辺の太さ(ピクセル)。**見た目だけの値ではない。**
+ *
+ * 元の値(1.5)では`clickEdge`が実質的に一度も発火しなかった——Sigma.jsの
+ * 辺クリック判定(`getEdgeAtPoint`)はダウンサンプリングした専用のpicking
+ * バッファ(`pickingDownSizingRatio`。既定で devicePixelRatio の2倍)で
+ * 色を読むため、1.5px幅の線はその解像度に対して細すぎて picking バッファ上に
+ * 一切乗らない(実ブラウザで`sigma.getEdgeAtPoint(x, y)`を直接呼んで実測:
+ * 1.5でもenableEdgeEvents:trueにしても常にnullで、3以上で確実にヒットする
+ * ようになった)。3にしても見た目の太さはさほど変わらない。
+ */
+const EDGE_SIZE = 3;
 
 /**
  * ノードの座標を決める。**厳密なフォースレイアウトは入れない**
@@ -62,29 +76,20 @@ export interface GraphController {
 }
 
 export function renderNeighborhoodGraph(container: HTMLElement, center: EntityRef): GraphController {
-  // **このビュー(1エンティティの表示)専用のスコープにする。** 以前は
-  // モジュールスコープ(全画面で共有)に置いていたため、別のエンティティへ
-  // 遷移した後も前の画面で見た型の色が凡例に残る欠陥があった(実データで
-  // 発見: 厚生労働省の近傍を見た後に厚生省を見ると、凡例に厚生省の近傍には
-  // 実在しない「予算事業」が残った)。エンティティごとに`renderNeighborhoodGraph`
-  // が呼ばれるたびにこのMapを作り直すことで、凡例が常に「いま表示している
-  // グラフに実在する型」だけを反映する(深さ1→2の再読み込みや、分岐の
-  // 展開では同じMapを使い続けるので、その範囲では色は変わらない)。
-  const typeColorCache = new Map<string, string>();
-  function colorForType(type: string): string {
-    let c = typeColorCache.get(type);
-    if (!c) {
-      c = PALETTE[typeColorCache.size % PALETTE.length]!;
-      typeColorCache.set(type, c);
-    }
-    return c;
-  }
   function addEntityNode(
     graph: MultiGraph,
     ref: EntityRef,
-    opts: { isCenter?: boolean; fanoutTruncated?: boolean } = {},
+    opts: { isCenter?: boolean; fanoutTruncated?: boolean; x?: number; y?: number } = {},
   ): void {
     if (graph.hasNode(ref.id)) return;
+    // **x/yを必ずこの1回の`addNode`呼び出しに含める。** Sigmaは既に
+    // バインド済みのgraphologyグラフへの`addNode`を同期的に見ており、
+    // その時点でx/yが数値でないと例外を投げる(「could not find a valid
+    // position (x, y)」。実ブラウザで実際に踏んだ——展開〔`mergeRelationshipsIntoGraph`〕
+    // がノード追加→辺追加→x/y設定の順で書いていたため、初回読み込みでは
+    // Sigma構築前に`layout()`がx/yを上書きするので隠れていたが、展開時は
+    // Sigmaが既に動いているグラフに対して行うため露見した)。位置が未定の
+    // 呼び出し側(初回読み込み。後で`layout()`が上書きする)は既定の0,0で足りる。
     graph.addNode(ref.id, {
       label: `${ref.label ?? "(表示名なし)"}${opts.fanoutTruncated ? " ⋯" : ""}`,
       size: opts.isCenter ? 12 : 7,
@@ -92,6 +97,8 @@ export function renderNeighborhoodGraph(container: HTMLElement, center: EntityRe
       idPath: ref.id_path,
       entityType: ref.type,
       fanoutTruncated: Boolean(opts.fanoutTruncated),
+      x: opts.x ?? 0,
+      y: opts.y ?? 0,
     });
   }
 
@@ -132,10 +139,41 @@ export function renderNeighborhoodGraph(container: HTMLElement, center: EntityRe
   let sigma: Sigma | undefined;
   let destroyed = false;
   let graphs: Record<string, Provenance> = {};
+  // ノード詳細パネルの非同期取得が、後から来た別のクリックの結果を
+  // 上書きしないためのガード(`showNodeDetail`参照)。
+  let detailRequestId = 0;
 
   function destroySigma(): void {
     sigma?.kill();
     sigma = undefined;
+  }
+
+  /**
+   * 凡例を軸ごとにまとめて描く(裁定B92)。**いま実際にグラフ上にある型
+   * だけ**を対象にする(オントロジー全体の6軸を無条件に列挙して埋めない
+   * ——このグラフに実在しない型を凡例に出すと、以前実データで踏んだ
+   * 「凡例が別画面/存在しない型を持ち越す」欠陥の逆向きの誤りになる)。
+   * ノードの色は`colorForType`(グラフのノード自体と同じ関数)で決めるので、
+   * 凡例の色とノードの色は常に一致する。
+   */
+  function renderLegend(): void {
+    if (!sigma) return;
+    const graph = sigma.getGraph();
+    const presentTypes: string[] = [];
+    graph.forEachNode((_, attrs) => presentTypes.push(attrs.entityType as string));
+    const groups = groupByAxis(presentTypes, axisForType, colorForType);
+    legend.innerHTML = groups
+      .map((g) => {
+        const axisLabel = g.axis === UNKNOWN_AXIS ? "軸不明" : typeLabel(g.axis);
+        const items = g.items
+          .map(
+            (it) =>
+              `<span class="jgkg-legend-item"><span class="jgkg-legend-dot" style="background:${it.color}"></span>${esc(typeLabel(it.type))}</span>`,
+          )
+          .join("");
+        return `<div class="jgkg-legend-group"><span class="jgkg-legend-axis">${esc(axisLabel)}</span>${items}</div>`;
+      })
+      .join("");
   }
 
   async function load(depth: number): Promise<void> {
@@ -160,7 +198,16 @@ export function renderNeighborhoodGraph(container: HTMLElement, center: EntityRe
 
   function buildAndRender(res: NeighborhoodResponse): void {
     const graph = new MultiGraph();
-    addEntityNode(graph, res.center, { isCenter: true });
+    // **中心ノード自身が分岐数の上限に達していることがある**(実データで確認:
+    // `org/6000012070001`=厚生労働省。予算事業50件超のハブで、深さ1でも
+    // `fanout_truncated_nodes`に中心のIDが入る)。中心を無条件に
+    // `fanoutTruncated: false`で追加すると、その事実(⋯マーク・展開ボタン)が
+    // 中心ノードだけ黙って消える——欠陥型10(裁定B77)と同じ「打ち切りが
+    // 黙って消える」の再発になるため、他のノードと同じ判定を通す。
+    addEntityNode(graph, res.center, {
+      isCenter: true,
+      fanoutTruncated: res.fanout_truncated_nodes.includes(res.center.id),
+    });
     for (const n of res.nodes) {
       addEntityNode(graph, n, { fanoutTruncated: res.fanout_truncated_nodes.includes(n.id) });
     }
@@ -172,7 +219,7 @@ export function renderNeighborhoodGraph(container: HTMLElement, center: EntityRe
       graph.addEdge(e.source, e.target, {
         label: predicateLabel(e.predicate),
         color: "#9ca3af",
-        size: 1.5,
+        size: EDGE_SIZE,
         graphKey: e.graph,
       });
     }
@@ -183,32 +230,116 @@ export function renderNeighborhoodGraph(container: HTMLElement, center: EntityRe
     sigma = new Sigma(graph, canvas, {
       renderEdgeLabels: false,
       labelRenderedSizeThreshold: 0,
+      // **既定値(false)のままだと`clickEdge`が一度も発火しない**
+      // (Sigma.jsのsettings.enableEdgeEventsは既定false。`sigma/settings`の
+      // 生成物で実測確認済み)。実ブラウザで辺をクリックしても何も起きない
+      // 欠陥として実際に踏んだ——「参照元(出典)がグラフから辿れることを
+      // 確かめる」(裁定B92のE-1要求4)を満たすため明示的に有効化する。
+      enableEdgeEvents: true,
     });
 
     sigma.on("clickNode", ({ node }) => {
       const attrs = graph.getNodeAttributes(node);
-      if (attrs.fanoutTruncated) {
-        void showExpandPanel(node, attrs.idPath as string, attrs.entityType as string);
-        return;
-      }
-      navigate({ name: "entity", idPath: attrs.idPath as string });
+      void showNodeDetail(node, attrs.idPath as string, Boolean(attrs.fanoutTruncated));
     });
     sigma.on("clickEdge", ({ edge }) => {
       const attrs = graph.getEdgeAttributes(edge);
       const prov = graphs[attrs.graphKey as string];
-      detail.innerHTML = `<p>${provenanceHtml(prov)}</p>`;
+      detail.innerHTML = `<p><strong>${esc(String(attrs.label ?? ""))}</strong></p><p>${provenanceHtml(prov)}</p>`;
     });
 
-    const fanoutCount = res.fanout_truncated_nodes.length;
-    status.textContent =
-      `ノード${res.nodes.length + 1}件・辺${res.edges.length}件` +
-      (res.nodes_truncated ? "(ノード数の上限で一部を省略)" : "") +
-      (res.edges_truncated ? "(エッジ数の上限で一部を省略)" : "") +
-      (fanoutCount > 0 ? `。${fanoutCount}件のノードで分岐数の上限に達しています(⋯マーク。クリックで続きを見られます)` : "");
+    status.textContent = neighborhoodStatusText({
+      nodeCount: res.nodes.length + 1,
+      edgeCount: res.edges.length,
+      nodesTruncated: res.nodes_truncated,
+      edgesTruncated: res.edges_truncated,
+      fanoutTruncatedCount: res.fanout_truncated_nodes.length,
+    });
 
-    legend.innerHTML = Array.from(typeColorCache.entries())
-      .map(([type, color]) => `<span class="jgkg-legend-item"><span class="jgkg-legend-dot" style="background:${color}"></span>${esc(typeLabel(type))}</span>`)
+    renderLegend();
+  }
+
+  /**
+   * ノードをクリックしたときに、その場(`.jgkg-graph-detail`)へ概要を出す
+   * (裁定B92のE-1要求3: 「グラフ上でノードを選ぶと、その場で概要が見える」
+   * ——以前はここで別のエンティティ画面へ`navigate`していた)。
+   *
+   * 出すもの: 型(6軸の表示名も)・表示名・属性(値と出典リンク。`entity.ts`と
+   * 同じ`attributeValueHtml`を使う)・(分岐数の上限に達しているノードだけ)
+   * さらに展開するボタン・そのエンティティの画面へ移動するリンク。
+   *
+   * **追加のAPI経路は使わない**(`/entity/{id_path}`のみ。ブリーフの拘束条件)。
+   */
+  async function showNodeDetail(nodeId: string, idPath: string, fanoutTruncated: boolean): Promise<void> {
+    const requestId = ++detailRequestId;
+    detail.innerHTML = '<p class="jgkg-muted">読み込み中…</p>';
+    let entity: EntityDetailResponse | null;
+    try {
+      entity = await entityDetail(idPath);
+    } catch (e) {
+      if (destroyed || requestId !== detailRequestId) return;
+      detail.innerHTML = `<p class="jgkg-error">取得に失敗しました: ${esc(String(e))}</p>`;
+      return;
+    }
+    if (destroyed || requestId !== detailRequestId) return; // 後続のクリックの結果で既に上書きされている
+    if (!entity) {
+      detail.innerHTML = '<p class="jgkg-muted">このエンティティは見つかりませんでした。</p>';
+      return;
+    }
+    // このノードの属性が主張する出典グラフを、辺クリックが引く`graphs`
+    // マップに合流させる(展開時の`mergeRelationshipsIntoGraph`と同じ扱い)。
+    graphs = { ...graphs, ...entity.graphs };
+
+    const axis = axisForType(entity.type);
+    const axisBadge = axis === undefined ? "" : `<span class="jgkg-muted"> ・ ${esc(typeLabel(axis))}軸</span>`;
+    const color = colorForType(entity.type);
+
+    const attrRows = Object.entries(entity.attributes)
+      .map(
+        ([pred, values]) =>
+          `<tr><th>${esc(predicateLabel(pred))}</th><td>${values
+            .map((v) => attributeValueHtml(pred, v, entity!.graphs))
+            .join("、")}</td></tr>`,
+      )
       .join("");
+
+    // 展開ボタンは「この先にまだ取得していない隣接がある」ノード
+    // (fanoutTruncated)だけに出す——分岐数の上限に達していないノードは
+    // 近傍取得時点で隣接を全て含んでいるので、展開しても新しい辺は増えない。
+    let expandHtml = "";
+    if (fanoutTruncated) {
+      const groupNames = Object.keys(entity.relationships);
+      if (groupNames.length > 0) {
+        const buttons = groupNames
+          .map(
+            (g) =>
+              `<button type="button" class="jgkg-expand-group" data-group="${esc(g)}">${esc(typeLabel(g))}(${entity!.relationships[g]!.length}件)を表示</button>`,
+          )
+          .join(" ");
+        expandHtml = `<p class="jgkg-muted">この先には次の型のノードがあります。表示する型を選んでください:</p><p>${buttons}</p>`;
+      }
+    }
+
+    detail.innerHTML = `
+      <div class="jgkg-node-detail">
+        <p>
+          <span class="jgkg-type-badge" style="border-color:${color};color:${color}">${esc(typeLabel(entity.type))}</span>${axisBadge}
+        </p>
+        <h3>${esc(entity.label ?? "(表示名なし)")}</h3>
+        ${attrRows ? `<table class="jgkg-attr-table">${attrRows}</table>` : '<p class="jgkg-muted">属性はありません。</p>'}
+        ${expandHtml}
+        <p class="jgkg-secondary"><a href="#" class="jgkg-node-detail-open" data-id-path="${esc(idPath)}">&rarr; このエンティティの画面を開く</a></p>
+      </div>`;
+
+    detail.querySelectorAll<HTMLButtonElement>(".jgkg-expand-group").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        mergeRelationshipsIntoGraph(nodeId, entity!.relationships[btn.dataset.group!]!, entity!.graphs);
+      });
+    });
+    detail.querySelector<HTMLAnchorElement>(".jgkg-node-detail-open")?.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      navigate({ name: "entity", idPath });
+    });
   }
 
   /**
@@ -218,39 +349,10 @@ export function renderNeighborhoodGraph(container: HTMLElement, center: EntityRe
    * 返す「型別にグループ化された関係一覧」を取得し、利用者が選んだ
    * グループをこのグラフへ手元でマージするだけで実現する(表示側の
    * 判断であり、API変更は不要という裁定B74の要求どおり)。
+   *
+   * 追加するノード・辺そのものは`planExpansion`(純粋関数)が決める——
+   * ここでは決めたものをSigma/graphologyへ書き込むだけ。
    */
-  async function showExpandPanel(nodeId: string, idPath: string, _type: string): Promise<void> {
-    detail.innerHTML = '<p class="jgkg-muted">この先を確認しています…</p>';
-    let entity: EntityDetailResponse | null;
-    try {
-      entity = await entityDetail(idPath);
-    } catch (e) {
-      detail.innerHTML = `<p class="jgkg-error">取得に失敗しました: ${String(e)}</p>`;
-      return;
-    }
-    if (!entity) {
-      detail.innerHTML = '<p class="jgkg-muted">このエンティティは見つかりませんでした。</p>';
-      return;
-    }
-    const groupNames = Object.keys(entity.relationships);
-    if (groupNames.length === 0) {
-      detail.innerHTML = '<p class="jgkg-muted">展開できる関係がありませんでした。</p>';
-      return;
-    }
-    const buttons = groupNames
-      .map(
-        (g) =>
-          `<button type="button" class="jgkg-expand-group" data-group="${esc(g)}">${esc(typeLabel(g))}(${entity!.relationships[g]!.length}件)を表示</button>`,
-      )
-      .join(" ");
-    detail.innerHTML = `<p>この先には次の型のノードがあります。表示する型を選んでください:</p><p>${buttons}</p>`;
-    detail.querySelectorAll<HTMLButtonElement>(".jgkg-expand-group").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        mergeRelationshipsIntoGraph(nodeId, entity!.relationships[btn.dataset.group!]!, entity!.graphs);
-      });
-    });
-  }
-
   function mergeRelationshipsIntoGraph(
     fromNodeId: string,
     rels: EntityDetailResponse["relationships"][string],
@@ -259,21 +361,24 @@ export function renderNeighborhoodGraph(container: HTMLElement, center: EntityRe
     if (!sigma) return;
     const graph = sigma.getGraph() as MultiGraph;
     graphs = { ...graphs, ...provGraphs };
-    for (const rel of rels) {
-      addEntityNode(graph, rel.related);
-      const [source, target] = rel.direction === "outgoing" ? [fromNodeId, rel.related.id] : [rel.related.id, fromNodeId];
-      graph.addEdge(source, target, {
-        label: predicateLabel(rel.predicate),
+
+    const plan = planExpansion(fromNodeId, rels, new Set(graph.nodes()));
+    // **位置(x/y)をノード追加と同時に決める。** 追加してから後で
+    // `setNodeAttribute`する2段階にすると、Sigmaが既にバインド済みの
+    // グラフでは1段目(位置未定の`addNode`)の時点で例外になる
+    // (`addEntityNode`のコメント参照)。
+    const base = graph.getNodeAttributes(fromNodeId);
+    for (const ref of plan.newNodes) {
+      const jitter = (Math.random() - 0.5) * 4;
+      addEntityNode(graph, ref, { x: (base.x as number) + jitter + 4, y: (base.y as number) + jitter });
+    }
+    for (const e of plan.edges) {
+      graph.addEdge(e.source, e.target, {
+        label: predicateLabel(e.predicate),
         color: "#9ca3af",
-        size: 1.5,
-        graphKey: rel.graph,
+        size: EDGE_SIZE,
+        graphKey: e.graph,
       });
-      if (!graph.hasNodeAttribute(rel.related.id, "x")) {
-        const base = graph.getNodeAttributes(fromNodeId);
-        const jitter = (Math.random() - 0.5) * 4;
-        graph.setNodeAttribute(rel.related.id, "x", (base.x as number) + jitter + 4);
-        graph.setNodeAttribute(rel.related.id, "y", (base.y as number) + jitter);
-      }
     }
     graph.setNodeAttribute(fromNodeId, "fanoutTruncated", false);
     graph.setNodeAttribute(
@@ -281,6 +386,7 @@ export function renderNeighborhoodGraph(container: HTMLElement, center: EntityRe
       "label",
       String(graph.getNodeAttribute(fromNodeId, "label")).replace(/ ⋯$/, ""),
     );
+    renderLegend(); // 展開で新しい型(=新しい軸の項目)が増えることがある
     detail.innerHTML = "";
   }
 

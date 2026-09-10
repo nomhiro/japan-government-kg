@@ -49,6 +49,23 @@
     "unresolved_reason": "特定できなかった理由",
     "unresolved_text": "元の記述"
   },
+  "typeAxes": {
+    "AbolishedGovernmentOrgan": "Agent",
+    "Agent": "Agent",
+    "BudgetProject": "Work",
+    "Concept": "Concept",
+    "Event": "Event",
+    "Expenditure": "MonetaryItem",
+    "GovernmentOrgan": "Agent",
+    "Law": "Work",
+    "LawRevision": "Event",
+    "Ministry": "Agent",
+    "MonetaryItem": "MonetaryItem",
+    "Organization": "Agent",
+    "Place": "Place",
+    "UnresolvedReference": "UnresolvedReference",
+    "Work": "Work"
+  },
   "types": {
     "AbolishedGovernmentOrgan": "廃止された行政機関",
     "BudgetProject": "予算事業",

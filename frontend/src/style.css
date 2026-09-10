@@ -113,10 +113,24 @@ button {
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .jgkg-graph-toolbar { display: flex; align-items: center; gap: 1rem; margin: 0.5rem 0; }
-.jgkg-graph-canvas { width: 100%; height: 26rem; border: 1px solid var(--rule); background: var(--paper); }
-.jgkg-graph-legend { display: flex; gap: 0.75rem; flex-wrap: wrap; margin: 0.5rem 0; font-size: 0.8rem; color: var(--muted); }
+.jgkg-graph-canvas { width: 100%; height: 32rem; border: 1px solid var(--rule); background: var(--paper); }
+
+/* 凡例(裁定B92): 軸ごとに1行(jgkg-legend-group)。軸名(jgkg-legend-axis)は
+   「6軸を色で見えるようにする」ための見出しなので、色の点(jgkg-legend-dot)
+   より目立たせない程度に強調する。 */
+.jgkg-graph-legend { display: flex; flex-direction: column; gap: 0.3rem; margin: 0.5rem 0; font-size: 0.8rem; color: var(--muted); }
+.jgkg-legend-group { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.jgkg-legend-axis { font-weight: 600; color: var(--ink); min-width: 5rem; }
+.jgkg-legend-item { white-space: nowrap; }
 .jgkg-legend-dot { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 50%; margin-right: 0.3rem; }
+
 .jgkg-graph-detail { margin-top: 0.5rem; }
+.jgkg-node-detail { border: 1px solid var(--rule); padding: 0.75rem 1rem; }
+.jgkg-node-detail h3 { margin-top: 0.3rem; }
+.jgkg-node-detail .jgkg-type-badge { border-width: 2px; font-weight: 600; }
+
+.jgkg-rel-details { margin-top: 1.5rem; }
+.jgkg-rel-details summary { cursor: pointer; font-size: 1.15rem; padding: 0.3rem 0; border-bottom: 1px solid var(--rule); }
 
 .jgkg-path-form { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 @media (max-width: 40rem) {

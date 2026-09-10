@@ -1,6 +1,25 @@
-import { describe, expect, it } from "vitest";
-import type { EntityRef, PathResponse, Provenance } from "./api/client";
-import { describePathResult, provenanceHtml, truncationNotice } from "./format";
+import { describe, expect, it, vi } from "vitest";
+import type { AttributeValue, EntityDetailResponse, EntityRef, PathResponse, Provenance } from "./api/client";
+
+// labels.test.tsと同じ理由(このファイルの先頭コメント参照): 表示名がある/
+// 無いときの`attributeValueHtml`の振る舞いを検査したいのであって、いま
+// 実際に何が翻訳済みかを検査したいわけではない。
+vi.mock("./generated/labels.json", () => ({
+  default: {
+    types: {},
+    predicates: {},
+    enumValues: { recipientMatchCategory: { resolved: "法人番号で特定できた" } },
+    typeAxes: {},
+  },
+}));
+
+import {
+  attributeValueHtml,
+  describePathResult,
+  neighborhoodStatusText,
+  provenanceHtml,
+  truncationNotice,
+} from "./format";
 
 const REF: EntityRef = { id: "https://jgkg.norr-tech.com/id/x", id_path: "x", type: "Law", label: "テスト法令" };
 
@@ -130,5 +149,91 @@ describe("provenanceHtml", () => {
     const html = provenanceHtml(AVAILABLE);
     expect(html).toContain(`<a href="${AVAILABLE.source}"`);
     expect(html).toContain(AVAILABLE.fetched_on);
+  });
+});
+
+// =============================================================================
+// neighborhoodStatusText: 近傍グラフのステータス行(裁定B92のE-1)。
+// 打ち切りのフラグが立っているのに文言が出ない状態を作ると落ちるように、
+// フラグの組み合わせごとに厳密な文字列一致で検査する(「1件以上」にしない)。
+// =============================================================================
+
+describe("neighborhoodStatusText", () => {
+  const BASE = { nodeCount: 5, edgeCount: 4, nodesTruncated: false, edgesTruncated: false, fanoutTruncatedCount: 0 };
+
+  it("打ち切りが無いとき、件数だけを出し、通知文は一切出ない", () => {
+    expect(neighborhoodStatusText(BASE)).toBe("ノード5件・辺4件");
+  });
+
+  it("**核心**: nodes_truncatedが真なら、通知文を含めなければならない", () => {
+    const text = neighborhoodStatusText({ ...BASE, nodesTruncated: true });
+    expect(text).toContain("ノード数の上限で一部を省略");
+  });
+
+  it("edges_truncatedが真なら、通知文を含めなければならない", () => {
+    const text = neighborhoodStatusText({ ...BASE, edgesTruncated: true });
+    expect(text).toContain("エッジ数の上限で一部を省略");
+  });
+
+  it("fanoutTruncatedCountが1件以上なら、件数入りの通知文を含めなければならない(件数を厳密に見る)", () => {
+    const text = neighborhoodStatusText({ ...BASE, fanoutTruncatedCount: 3 });
+    expect(text).toContain("3件のノードで分岐数の上限に達しています");
+  });
+
+  it("3種類の打ち切りが同時に真でも、3つの通知文がすべて含まれる(1つに退化しない)", () => {
+    const text = neighborhoodStatusText({
+      nodeCount: 100,
+      edgeCount: 200,
+      nodesTruncated: true,
+      edgesTruncated: true,
+      fanoutTruncatedCount: 7,
+    });
+    expect(text).toBe(
+      "ノード100件・辺200件(ノード数の上限で一部を省略)(エッジ数の上限で一部を省略)" +
+        "。7件のノードで分岐数の上限に達しています(⋯マーク。クリックで続きを見られます)",
+    );
+  });
+});
+
+// =============================================================================
+// attributeValueHtml: 属性値+出典リンク(裁定B82(4a)。グラフのノード詳細
+// パネルと`entity.ts`の両方から使う共通関数になった。裁定B92のE-1)
+// =============================================================================
+
+describe("attributeValueHtml", () => {
+  const GRAPHS: EntityDetailResponse["graphs"] = {
+    g1: { graph: "g1", source: "https://example.test/a", fetched_on: "2026-08-01", license: "PDL1.0", available: true },
+    g2: { graph: "g2", source: "https://example.test/b", fetched_on: "2026-08-02", license: "PDL1.0", available: true },
+  };
+
+  it("値と出典リンクを描く", () => {
+    const av: AttributeValue = { value: "厚生労働省", graphs: ["g1"] };
+    const html = attributeValueHtml("ministry", av, GRAPHS);
+    expect(html).toContain("厚生労働省");
+    expect(html).toContain("https://example.test/a");
+  });
+
+  it("複数のグラフが同じ値を主張するとき、出典リンクを複数並べる", () => {
+    const av: AttributeValue = { value: "厚生労働省", graphs: ["g1", "g2"] };
+    const html = attributeValueHtml("ministry", av, GRAPHS);
+    expect(html).toContain("https://example.test/a");
+    expect(html).toContain("https://example.test/b");
+  });
+
+  it("列挙型の許容値は表示名に置き換える(裁定B82(4b))", () => {
+    const av: AttributeValue = { value: "resolved", graphs: ["g1"] };
+    const html = attributeValueHtml("recipientMatchCategory", av, GRAPHS);
+    expect(html).toContain("法人番号で特定できた");
+    expect(html).not.toContain(">resolved<");
+  });
+
+  it("出典が取れていない(available=false)値は、空リンクを描かない", () => {
+    const graphs: EntityDetailResponse["graphs"] = {
+      g1: { graph: "g1", source: "", fetched_on: "", license: "", available: false },
+    };
+    const av: AttributeValue = { value: "厚生労働省", graphs: ["g1"] };
+    const html = attributeValueHtml("ministry", av, graphs);
+    expect(html).not.toContain("<a ");
+    expect(html).toContain("出典が取れていない");
   });
 });

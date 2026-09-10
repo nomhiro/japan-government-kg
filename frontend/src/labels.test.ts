@@ -10,10 +10,11 @@ vi.mock("./generated/labels.json", () => ({
     types: { Law: "法令" },
     predicates: { basisLaw: "根拠法令" },
     enumValues: { recipientMatchCategory: { resolved: "法人番号で特定できた" } },
+    typeAxes: { Law: "Work", Ministry: "Agent" },
   },
 }));
 
-import { enumValueLabel, predicateLabel, typeLabel } from "./labels";
+import { axisForType, enumValueLabel, predicateLabel, typeLabel } from "./labels";
 
 // =============================================================================
 // 表示名の引き当て(D-5ブリーフ「専門用語を避けた表示名」・裁定B78)
@@ -56,5 +57,24 @@ describe("enumValueLabel", () => {
 
   it("フォールバック: 列挙型を範囲に持たない述語なら値をそのまま返す", () => {
     expect(enumValueLabel("basisLaw", "resolved")).toBe("resolved");
+  });
+});
+
+// =============================================================================
+// axisForType: 型→6軸(またはUnresolvedReference)の対応(裁定B92・E-1)
+// =============================================================================
+
+describe("axisForType", () => {
+  it("生成物(typeAxes)にある型は、その軸のローカル名を返す", () => {
+    expect(axisForType("Law")).toBe("Work");
+    expect(axisForType("Ministry")).toBe("Agent");
+  });
+
+  it("**手書きの対応表を持たない**: 生成物に無い型は`undefined`を返す(別の経路で補わない)", () => {
+    // "BudgetProject"は実際には"Work"軸だが、このテストのモックの
+    // typeAxesには載せていない——もしlabels.tsが独自の対応表を持っていれば
+    // ここで"Work"が返ってしまう。生成物だけが唯一の根拠であることの証明。
+    expect(axisForType("BudgetProject")).toBeUndefined();
+    expect(axisForType("存在しない型")).toBeUndefined();
   });
 });
