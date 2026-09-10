@@ -24,6 +24,7 @@
     "cityName": "市区町村",
     "fiscalYear": "予算年度",
     "houjinBangou": "法人番号",
+    "involves_agent": "関与した主体",
     "jurisdiction": "所管府省",
     "lawId": "法令ID",
     "lawNum": "法令番号",

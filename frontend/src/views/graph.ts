@@ -16,6 +16,7 @@ import { entityDetail, neighborhood } from "../api/client";
 import { NEIGHBORHOOD_DEPTH } from "../api/limits";
 import { attributeValueHtml, esc, neighborhoodStatusText, provenanceHtml } from "../format";
 import { colorForType, groupByAxis, UNKNOWN_AXIS } from "../graph-colors";
+import { readGraphTheme } from "../graph-theme";
 import { axisForType, predicateLabel, typeLabel } from "../labels";
 import { navigate } from "../router";
 import { liveGraphCounts, planExpansion } from "./graph-merge";
@@ -155,6 +156,25 @@ export function renderNeighborhoodGraph(container: HTMLElement, center: EntityRe
   }
 
   /**
+   * OSの配色設定が切り替わったときに、ラベルの色を**その場で**入れ替える
+   * (裁定B95)。`readGraphTheme`はSigmaを組み立てるときに1回だけCSSを読むので、
+   * これが無いと**再読み込みするまで前のテーマの色が残る**——ダークにした
+   * 瞬間に文字が黒のまま消えるのが、まさにユーザーが報告した症状である。
+   *
+   * `matchMedia`の変化を購読する。`destroy`で必ず外す(このビューは
+   * ルート遷移ごとに作り直されるので、外さないと購読が積み上がる)。
+   */
+  const colorSchemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  function applyTheme(): void {
+    if (!sigma) return;
+    const theme = readGraphTheme(getComputedStyle(document.documentElement));
+    sigma.setSetting("labelColor", { color: theme.label });
+    sigma.setSetting("edgeLabelColor", { color: theme.label });
+    sigma.refresh();
+  }
+  colorSchemeQuery.addEventListener("change", applyTheme);
+
+  /**
    * 凡例を軸ごとにまとめて描く(裁定B92)。**いま実際にグラフ上にある型
    * だけ**を対象にする(オントロジー全体の6軸を無条件に列挙して埋めない
    * ——このグラフに実在しない型を凡例に出すと、以前実データで踏んだ
@@ -240,9 +260,16 @@ export function renderNeighborhoodGraph(container: HTMLElement, center: EntityRe
 
     destroySigma();
     canvas.innerHTML = "";
+    // **ラベルの色をCSSのトークンから読む(裁定B95)。**
+    // Sigma.jsはCSSを見ないので、明示しないとノードラベルが既定の黒(`#000`)で
+    // 描かれ、**ダークモードでキャンバスの文字だけが読めなくなる**
+    // ——ユーザーが報告した症状そのもの(`../graph-theme.ts`参照)
+    const theme = readGraphTheme(getComputedStyle(document.documentElement));
     sigma = new Sigma(graph, canvas, {
       renderEdgeLabels: false,
       labelRenderedSizeThreshold: 0,
+      labelColor: { color: theme.label },
+      edgeLabelColor: { color: theme.label },
       // **既定値(false)のままだと`clickEdge`が一度も発火しない**
       // (Sigma.jsのsettings.enableEdgeEventsは既定false。`sigma/settings`の
       // 生成物で実測確認済み)。実ブラウザで辺をクリックしても何も起きない
@@ -430,6 +457,7 @@ export function renderNeighborhoodGraph(container: HTMLElement, center: EntityRe
   return {
     destroy(): void {
       destroyed = true;
+      colorSchemeQuery.removeEventListener("change", applyTheme);
       destroySigma();
     },
   };

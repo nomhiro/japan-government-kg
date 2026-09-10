@@ -164,7 +164,7 @@ class Event(Entity):
          'title': 'いつ(出来事)'})
 
     occurred_on: Optional[date] = Field(default=None, description="""この出来事が起きた日""", json_schema_extra = { "linkml_meta": {'domain_of': ['Event']} })
-    involves_agent: Optional[str] = Field(default=None, description="""この出来事に関与した主体""", json_schema_extra = { "linkml_meta": {'domain_of': ['Event']} })
+    involves_agent: Optional[str] = Field(default=None, title="関与した主体", description="""この出来事に関与した主体""", json_schema_extra = { "linkml_meta": {'domain_of': ['Event']} })
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
 
@@ -351,7 +351,7 @@ class LawRevision(Event):
     amendmentEnforcementDate: Optional[date] = Field(default=None, title="施行日", description="""この改正版の施行日。CQ8(指定時点における版の取得)の基準になる""", json_schema_extra = { "linkml_meta": {'domain_of': ['LawRevision']} })
     revisionStatus: Optional[str] = Field(default=None, title="改正時点の状態", description="""この改正版(LawRevision)時点での状態を表す文字列(e-Gov法令API由来)""", json_schema_extra = { "linkml_meta": {'domain_of': ['LawRevision']} })
     occurred_on: Optional[date] = Field(default=None, description="""この出来事が起きた日""", json_schema_extra = { "linkml_meta": {'domain_of': ['Event']} })
-    involves_agent: Optional[str] = Field(default=None, description="""この出来事に関与した主体""", json_schema_extra = { "linkml_meta": {'domain_of': ['Event']} })
+    involves_agent: Optional[str] = Field(default=None, title="関与した主体", description="""この出来事に関与した主体""", json_schema_extra = { "linkml_meta": {'domain_of': ['Event']} })
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
 

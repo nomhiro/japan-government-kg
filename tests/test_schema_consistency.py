@@ -708,7 +708,32 @@ def test_display_names_cover_exactly_the_api_visible_types_and_predicates():
     # 軸自身(`core#Entity`)は表示面に出ないので対象外
     assert str(entity_iri) not in expected_axes
 
-    expected = expected_predicates | expected_types | expected_axes
+    # **スキーマグラフの辺ラベルになる述語も表示名の対象である(裁定B95)。**
+    # トップ画面が「型と型のつながり」を絵で見せるようになったため、
+    # `owl:Restriction`(`onProperty` + `allValuesFrom`が我々のクラス)で
+    # 表される述語は**辺のラベルとして画面に出る** ——
+    # `involves_agent` が英語のまま出ているのをcontrollerが見つけた。
+    #
+    # **手書きで列挙しない。** LinkMLが出す制約の構造から導出する
+    # (`rdfs:domain`/`rdfs:range` は0件だった——実測。LinkMLは
+    # `owl:Restriction` で表す)。新しい関係を足したら「不足」で落ちる。
+    schema_edge_predicates = set()
+    for cls in owl_classes:
+        for restriction in g.objects(URIRef(cls), RDFS.subClassOf):
+            if isinstance(restriction, URIRef):
+                continue
+            on_property = list(g.objects(restriction, OWL.onProperty))
+            target = list(g.objects(restriction, OWL.allValuesFrom))
+            if not on_property or not target:
+                continue
+            if isinstance(target[0], URIRef) and str(target[0]) in owl_classes:
+                schema_edge_predicates.add(str(on_property[0]))
+    assert len(schema_edge_predicates) >= 8, (
+        f"スキーマグラフの辺になる述語が少なすぎる({len(schema_edge_predicates)}件)"
+        " —— 導出が壊れている疑い"
+    )
+
+    expected = expected_predicates | expected_types | expected_axes | schema_edge_predicates
     missing = expected - tagged
     extra = tagged - expected
     assert not missing and not extra, (

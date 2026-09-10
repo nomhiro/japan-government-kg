@@ -81,6 +81,7 @@
             sh:path <https://jgkg.norr-tech.com/def/core#id> ],
         [ sh:description "この出来事に関与した主体"@ja ;
             sh:maxCount 1 ;
+            sh:name "関与した主体" ;
             sh:nodeKind sh:IRI ;
             sh:order 1 ;
             sh:path <https://jgkg.norr-tech.com/def/core#involves_agent> ] ;

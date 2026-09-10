@@ -365,6 +365,7 @@ skos:prefLabel a owl:DatatypeProperty ;
 
 <https://jgkg.norr-tech.com/def/core#involves_agent> a owl:ObjectProperty ;
     rdfs:label "involves_agent" ;
+    dcterms:title "関与した主体"@ja ;
     rdfs:range <https://jgkg.norr-tech.com/def/core#Agent> ;
     skos:definition "この出来事に関与した主体"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .

@@ -1,0 +1,1009 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ナレッジグラフ探索 UIモック</title>
+<style>
+/* ===== 色のトークン =====
+   **frontend/src/style.css と同じ値をそのまま使う。** モックが独自の色を持つと、
+   レビューで合意した見た目が実装に移らない。
+   3状態に対応する: (1)素の :root = ライト、(2)OSがダークで明示指定が無い、
+   (3)明示指定(このモックのレビュー用トグル / 将来の設定)。
+   色の定義を @media や [data-theme] の中だけに置かない——素の状態で
+   一方のテーマの文字がもう一方の地色に載る事故になる。 */
+:root {
+  --paper: #f7f6f3; --ink: #16191d; --muted: #5c636d; --rule: #dcd8d1;
+  --signal: #8a2b1c; --signal-bg: #f6ece9; --accent: #2563eb;
+  --surface: #ffffff; --surface-2: #efece7;
+  --found: #1f7a5c;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #14161a; --ink: #e7e4de; --muted: #a1a8b2; --rule: #2f343b;
+    --signal: #dd8570; --signal-bg: #2c1d19; --accent: #7ba7f7;
+    --surface: #1b1e23; --surface-2: #22262c;
+    --found: #4fd1a5;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #14161a; --ink: #e7e4de; --muted: #a1a8b2; --rule: #2f343b;
+  --signal: #dd8570; --signal-bg: #2c1d19; --accent: #7ba7f7;
+  --surface: #1b1e23; --surface-2: #22262c;
+  --found: #4fd1a5;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); }
+body {
+  font-family: "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  line-height: 1.7;
+  font-size: 14px;
+}
+a { color: var(--accent); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ===== 上部 ===== */
+.top {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 1rem;
+  padding: 0.7rem 1rem; border-bottom: 1px solid var(--rule);
+  background: var(--surface);
+}
+.top h1 { font-size: 1.05rem; margin: 0; letter-spacing: 0.02em; }
+.top .lead { color: var(--muted); font-size: 0.8rem; margin: 0; }
+.top nav { margin-left: auto; display: flex; gap: 0.2rem; align-items: center; }
+.tab {
+  border: 1px solid var(--rule); background: transparent; border-radius: 3px;
+  padding: 0.25rem 0.7rem; cursor: pointer; font-size: 0.85rem;
+}
+.tab[aria-current="page"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
+/* ===== 操作バー ===== */
+.controls {
+  display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center;
+  padding: 0.7rem 1rem 0.4rem;
+}
+.searchwrap { position: relative; flex: 1 1 20rem; min-width: 0; }
+.searchwrap input {
+  width: 100%; font-size: 1rem; padding: 0.5rem 0.7rem 0.5rem 2rem;
+  border: 1px solid var(--rule); border-radius: 4px;
+  background: var(--surface); color: var(--ink);
+}
+.searchwrap .mag { position: absolute; left: 0.6rem; top: 50%; transform: translateY(-50%); color: var(--muted); }
+.hits { font-size: 0.8rem; color: var(--muted); }
+.hits b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.hits .none { color: var(--signal); }
+
+.seg { display: flex; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 0.4rem 0.8rem; cursor: pointer; font-size: 0.85rem; }
+.seg button + button { border-left: 1px solid var(--rule); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; padding: 0 1rem 0.7rem; border-bottom: 1px solid var(--rule); }
+.chips .lbl { font-size: 0.78rem; color: var(--muted); margin-right: 0.2rem; }
+.chip {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  border: 1px solid var(--rule); border-radius: 999px;
+  padding: 0.15rem 0.6rem 0.15rem 0.45rem; cursor: pointer; font-size: 0.8rem;
+  background: var(--surface);
+}
+.chip[aria-pressed="false"] { opacity: 0.45; text-decoration: line-through; }
+.chip .dot { width: 0.65rem; height: 0.65rem; border-radius: 50%; flex: none; }
+.chip .n { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ===== 本体 ===== */
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) 22rem; }
+@media (max-width: 900px) { .stage { grid-template-columns: minmax(0, 1fr); } }
+
+.canvaswrap { position: relative; border-right: 1px solid var(--rule); min-width: 0; }
+@media (max-width: 900px) { .canvaswrap { border-right: 0; border-bottom: 1px solid var(--rule); } }
+svg.graph { display: block; width: 100%; height: 62vh; min-height: 380px; touch-action: none; cursor: grab; background: var(--paper); }
+svg.graph.dragging { cursor: grabbing; }
+@media (max-width: 900px) { svg.graph { height: 52vh; } }
+
+/* SVGはCSSを読むので fill: var(--ink) が効く。**本番のSigma.js(WebGL)は
+   CSSを読まないため、ラベル色は settings.labelColor で明示する必要がある**
+   ——ダークモードで文字が黒く残っていた原因(frontend/src/graph-theme.ts)。 */
+.node { cursor: pointer; }
+.node circle { stroke: var(--paper); stroke-width: 2; }
+.node text.nm { font-size: 11px; fill: var(--ink); paint-order: stroke; stroke: var(--paper); stroke-width: 3px; stroke-linejoin: round; }
+.node.center circle { stroke: var(--ink); stroke-width: 2.5; }
+.node.sel circle { stroke: var(--accent); stroke-width: 3.5; }
+.node.dim { opacity: 0.3; }
+.node.hit circle { stroke: var(--found); stroke-width: 3.5; }
+.node.off { display: none; }
+.node text.fan { font-size: 10px; fill: var(--muted); stroke: none; }
+.node text.cnt { font-size: 10px; fill: var(--ink); stroke: none; font-variant-numeric: tabular-nums; }
+
+.edge { stroke: var(--muted); stroke-width: 1.6; fill: none; }
+.edge.dim { opacity: 0.18; }
+.edge.on { stroke: var(--accent); stroke-width: 2.8; }
+.edge.off { display: none; }
+.edgehit { stroke: transparent; stroke-width: 14; fill: none; cursor: pointer; }
+.edgelabel { font-size: 10px; fill: var(--muted); paint-order: stroke; stroke: var(--paper); stroke-width: 3px; stroke-linejoin: round; }
+.edgelabel.off { display: none; }
+
+.overlay {
+  position: absolute; left: 0.7rem; bottom: 0.5rem; right: 3.2rem;
+  pointer-events: none; font-size: 0.75rem; color: var(--muted);
+}
+.overlay b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.zoom { position: absolute; right: 0.6rem; top: 0.6rem; display: flex; flex-direction: column; gap: 0.25rem; }
+.zoom button {
+  width: 1.9rem; height: 1.9rem; border: 1px solid var(--rule); background: var(--surface);
+  border-radius: 3px; cursor: pointer; line-height: 1; padding: 0;
+}
+.emptyhint {
+  position: absolute; inset: 0; display: none; place-content: center; text-align: center;
+  padding: 2rem; color: var(--muted); pointer-events: none;
+}
+.emptyhint.show { display: grid; }
+.emptyhint strong { color: var(--ink); }
+
+/* ===== 詳細パネル ===== */
+.detail { padding: 0.9rem 1rem 2rem; min-width: 0; overflow-wrap: anywhere; }
+.detail .placeholder { color: var(--muted); font-size: 0.85rem; }
+.badge {
+  display: inline-block; border: 1px solid currentColor; border-radius: 3px;
+  padding: 0 0.4rem; font-size: 0.75rem;
+}
+.detail h2 { font-size: 0.98rem; margin: 0.45rem 0 0.2rem; line-height: 1.5; }
+.detail table { border-collapse: collapse; width: 100%; font-size: 0.83rem; margin: 0.6rem 0; }
+.detail th, .detail td { text-align: left; vertical-align: top; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--rule); }
+.detail th { width: 8rem; color: var(--muted); font-weight: 600; }
+.detail td.num { font-variant-numeric: tabular-nums; }
+.src { font-size: 0.78rem; color: var(--muted); border-left: 2px solid var(--rule); padding-left: 0.6rem; margin: 0.5rem 0; }
+.src a { overflow-wrap: anywhere; }
+.act { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.8rem; }
+.act button, .act a {
+  border: 1px solid var(--rule); background: var(--surface); border-radius: 3px;
+  padding: 0.3rem 0.6rem; cursor: pointer; font-size: 0.82rem; text-decoration: none;
+  color: inherit;
+}
+.act button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.detail .rel { font-size: 0.82rem; margin: 0.5rem 0 0; }
+.detail .rel li { margin-bottom: 0.1rem; }
+
+/* ===== 凡例 ===== */
+.legend { padding: 0.6rem 1rem; border-top: 1px solid var(--rule); display: flex; flex-wrap: wrap; gap: 0.3rem 1.2rem; font-size: 0.78rem; }
+.legend .grp { display: flex; align-items: center; gap: 0.4rem; }
+.legend .axis { color: var(--muted); }
+.legend .it { display: inline-flex; align-items: center; gap: 0.25rem; }
+.legend .it .dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; }
+
+.notice {
+  border: 1px solid var(--signal); background: var(--signal-bg); color: var(--ink);
+  padding: 0.5rem 0.8rem; font-size: 0.8rem; margin: 0.7rem 1rem 0;
+}
+.modenote { margin: 0.7rem 1rem 0; padding: 0.5rem 0.8rem; font-size: 0.8rem; border: 1px dashed var(--rule); color: var(--muted); }
+.modenote b { color: var(--ink); }
+.mocknote { margin: 1.2rem 1rem 2rem; padding: 0.9rem 1rem; border: 1px solid var(--rule); background: var(--surface-2); font-size: 0.82rem; }
+.mocknote h3 { margin: 0.9rem 0 0.3rem; font-size: 0.85rem; }
+.mocknote h3:first-child { margin-top: 0; }
+.mocknote ul { margin: 0.2rem 0 0.5rem; padding-left: 1.2rem; }
+.mocknote code { background: var(--paper); padding: 0 0.25rem; border-radius: 2px; font-size: 0.95em; }
+.themebtn { border: 1px solid var(--rule); background: var(--surface); border-radius: 3px; padding: 0.25rem 0.6rem; cursor: pointer; font-size: 0.8rem; }
+#edgetable { margin: 0.9rem 1rem 0; overflow-x: auto; }
+#edgetable table { border-collapse: collapse; font-size: 0.8rem; }
+#edgetable caption { text-align: left; color: var(--muted); font-size: 0.8rem; padding-bottom: 0.3rem; }
+#edgetable th, #edgetable td { border-bottom: 1px solid var(--rule); padding: 0.2rem 0.7rem 0.2rem 0; text-align: left; }
+#edgetable td.n { font-variant-numeric: tabular-nums; text-align: right; }
+#edgetable .sw { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 50%; margin-right: 0.3rem; }
+.foot { padding: 0 1rem 3rem; font-size: 0.8rem; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div>
+    <h1>日本政府ナレッジグラフ</h1>
+    <p class="lead">法令・府省・予算事業・支出・法人のつながりを、出典付きで辿れます。</p>
+  </div>
+  <nav>
+    <button class="tab" aria-current="page" type="button">グラフで探す</button>
+    <button class="tab" type="button" data-alert="対話画面は別画面(E-2で実装済み)。このモックの対象外です。">オントロジーに聞く</button>
+    <button class="tab" type="button" data-alert="語彙(オントロジー)の一覧画面。このモックの対象外です。">語彙</button>
+    <button class="themebtn" id="themebtn" type="button" title="レビュー用。本番はOSの設定に従います">テーマ: OS</button>
+  </nav>
+</header>
+
+<div class="controls">
+  <div class="searchwrap">
+    <span class="mag" aria-hidden="true">🔍</span>
+    <input id="q" type="search" placeholder="語を入れるとグラフが絞り込まれます（例: 年金、厚生労働省、給付）" aria-label="グラフを絞り込む">
+  </div>
+  <div class="seg" role="group" aria-label="表示モード">
+    <button type="button" id="mode-data" aria-pressed="true">実データ</button>
+    <button type="button" id="mode-schema" aria-pressed="false">型の地図</button>
+  </div>
+  <span class="hits" id="hits"></span>
+</div>
+
+<div class="chips" id="chips">
+  <span class="lbl">軸で絞る:</span>
+</div>
+
+<p class="modenote" id="modenote"></p>
+
+<div class="stage">
+  <div class="canvaswrap">
+    <svg class="graph" id="svg" role="img" aria-label="エンティティとその関係のグラフ"></svg>
+    <div class="zoom">
+      <button type="button" id="zin" title="拡大" aria-label="拡大">＋</button>
+      <button type="button" id="zout" title="縮小" aria-label="縮小">−</button>
+      <button type="button" id="zfit" title="全体を表示" aria-label="全体を表示">⤢</button>
+    </div>
+    <div class="emptyhint" id="emptyhint"></div>
+    <div class="overlay" id="overlay"></div>
+  </div>
+  <aside class="detail" id="detail" aria-live="polite"></aside>
+</div>
+
+<div class="legend" id="legend"></div>
+
+<!-- グラフの制約についての注記は**グラフの下**に置く。グラフを画面の主役に
+     するのだから、注記で主役を下へ押し出さない。 -->
+<p class="notice" id="notice"></p>
+
+<!-- **絵から消えた情報を文字で補う。** 重なりを避けるためにラベルを隠すので、
+     隠れても関係の全数がここで読める。型の地図モードのときだけ出す。 -->
+<div id="edgetable"></div>
+
+<section class="mocknote">
+  <h3>これは実装前のUIモックです（レビュー用）</h3>
+  <ul>
+    <li><b>表示しているデータは実データです。</b>本番API <code>/neighborhood/budget/2025/2840?depth=2</code> が返した57ノードを、読みやすさのため28ノードに間引いたもの。架空の政府データは1件も入れていません。</li>
+    <li><b>「型の地図」の件数も実測値です。</b><code>data/artifact/2026-08-28-d2-recipient-category-v2/kg.nq</code>（884,053行）を全走査して数えました。<b>実現していない関係は描いていません</b>——型の地図が「取れるはずのデータ」を約束してしまう問題への答えです。</li>
+    <li>描画はモック専用の自前SVG＋簡易フォースレイアウトです。<b>本番はSigma.js（WebGL）</b>で、レイアウトは <code>graphology-layout-forceatlas2</code> を想定しています（現状の同心円配置からの変更点）。</li>
+    <li>ノードのドラッグ・ホイールで拡大縮小・ノードクリック・辺クリック・絞り込み・軸の表示切替は<b>実際に動きます</b>。触って判断してください。</li>
+  </ul>
+  <h3>この設計で答えているつもりの要求</h3>
+  <ul>
+    <li>初期表示が検索窓だけではなく、いきなりグラフである → 読み込み直後にこの断面が出る</li>
+    <li>検索語が一覧ではなくフィルターである → 入力すると一致ノードが緑で強調され、それ以外が薄くなる（画面が別の一覧に切り替わらない）</li>
+    <li>関連性の描画がメイン／ノードクリックで詳細 → 右パネルに型・軸・属性・<b>出典（一次資料URLと取得日）</b>・隣接の内訳が出る</li>
+    <li>ダークモードで読める → 右上の「テーマ」で切り替えて確認できます</li>
+  </ul>
+  <h3>レビューで決めたいこと</h3>
+  <ul>
+    <li>初期表示は「実データの断面」で良いか（もう一案は「型の地図」を初期にする）。<b>どちらを既定にするか</b>。</li>
+    <li>府省のようなハブ（実測: 厚生労働省だけで予算事業が29件はみ出す）を、いま「⋯+29」と省略しているが、これで十分か。</li>
+    <li>絞り込みは「薄くする」方式。<b>一致しないノードを消す方式</b>のほうが良いか。</li>
+    <li>辺のラベルを常時出すか、選択時だけにするか（いまは選択時＋ホバー時のみ）。</li>
+    <li><b>このモックを作って実データで見つかった問題。</b>支出エンティティの表示名（<code>skos:prefLabel</code>）が
+      <b>支払先の法人名そのもの</b>で、隣の法人ノードと同じ文字列が並びます（実測: 28ノード中8件が重複）。
+      モックでは表示側で金額を主ラベルにしましたが、<b>データ層で支出の <code>skos:prefLabel</code> を
+      「金額（支払先）」に変えるほうが正しい</b>かもしれません。どちらで直すか。</li>
+    <li><b>同じくモックで見つかった問題。</b>未解決参照（対応先が特定できなかった記述）は
+      <code>skos:prefLabel</code> を持たないため、<b>いまの本番アプリでは「(表示名なし)」と描かれます</b>。
+      モックでは <code>unresolved_text</code>（元の記述）を表示名にしました——それが
+      「何が特定できなかったのか」を示す唯一の手がかりだからです。</li>
+  </ul>
+</section>
+
+<p class="foot">
+  日本政府ナレッジグラフ（<a href="https://github.com/nomhiro/japan-government-kg">OSS / LOD</a>）のUIモック。
+  データの出典は各ノードの詳細に表示されます。
+</p>
+
+<script src="mock-data.js"></script>
+<script>
+(function () {
+  "use strict";
+  var M = window.JGKG_MOCK;
+  if (!M) {
+    document.getElementById("detail").innerHTML =
+      '<p class="placeholder">mock-data.js が読み込めませんでした（同じフォルダに置いてください）。</p>';
+    return;
+  }
+
+  // ---------- 小道具 ----------
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function trunc(s, n) { return s.length > n ? s.slice(0, n) + "…" : s; }
+  function yen(v) {
+    var n = Number(v);
+    if (!isFinite(n)) return esc(v);
+    return n.toLocaleString("ja-JP") + " 円";
+  }
+  var AXIS_ORDER = ["Agent", "Work", "Place", "Event", "MonetaryItem", "Concept", "UnresolvedReference"];
+  function typeLabel(t) { return M.typeMap.typeLabels[t] || t; }
+  function predLabel(p) { return M.typeMap.predicateLabels[p] || p; }
+
+  // ---------- 状態 ----------
+  var mode = "data";          // "data" | "schema"
+  var query = "";
+  var offAxes = Object.create(null);
+  var selNode = null, selEdge = null, hoverNode = null;
+  var view = { x: 0, y: 0, k: 1 };
+  var nodes = [], edges = [];
+
+  var svg = document.getElementById("svg");
+  var detailEl = document.getElementById("detail");
+  var hitsEl = document.getElementById("hits");
+  var overlayEl = document.getElementById("overlay");
+  var legendEl = document.getElementById("legend");
+  var chipsEl = document.getElementById("chips");
+  var noticeEl = document.getElementById("notice");
+  var modenoteEl = document.getElementById("modenote");
+  var emptyEl = document.getElementById("emptyhint");
+  var edgeTableEl = document.getElementById("edgetable");
+
+  var SVGNS = "http://www.w3.org/2000/svg";
+  function el(name, attrs) {
+    var e = document.createElementNS(SVGNS, name);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  // ---------- グラフの組み立て ----------
+  function buildDataGraph() {
+    var ns = M.instance.nodes.map(function (n) {
+      return {
+        id: n.id, idPath: n.idPath, type: n.type, axis: n.axis, color: n.color,
+        label: n.label, summary: n.summary, isCenter: n.isCenter,
+        // KGが持つ表示名が、表示のために差し替えられている場合の原の値
+        // (支出の skos:prefLabel = 支払先の法人名。詳細パネルで明示する)
+        kgLabel: n.kgLabel, amount: n.amount, unresolvedText: n.unresolvedText,
+        r: n.isCenter ? 13 : 8,
+        fan: (n.type === "Ministry" ? M.instance.hiddenSiblingBudgets : 0),
+        kind: "entity"
+      };
+    });
+    var idx = {};
+    ns.forEach(function (n, i) { idx[n.id] = i; });
+    var es = M.instance.edges.map(function (e) {
+      return { a: idx[e.source], b: idx[e.target], predicate: e.predicate, label: e.label, graph: e.graph, count: 0 };
+    }).filter(function (e) { return e.a !== undefined && e.b !== undefined; });
+    return { nodes: ns, edges: es };
+  }
+
+  function buildSchemaGraph() {
+    // **実現している型だけを描く。** 6軸そのもの(Agent/Work/…)は抽象クラスで
+    // 実体を1件も持たない(実測: typeCountsに現れない)ので、地図に出さない。
+    var counts = M.typeMap.typeCounts;
+    var types = Object.keys(counts);
+    var max = Math.max.apply(null, types.map(function (t) { return counts[t]; }));
+    var ns = types.map(function (t) {
+      var frac = Math.log(counts[t] + 1) / Math.log(max + 1);
+      return {
+        id: t, type: t, axis: M.typeMap.typeAxes[t], color: M.typeMap.colors[t],
+        label: typeLabel(t), summary: counts[t].toLocaleString("ja-JP") + " 件",
+        count: counts[t], r: 9 + frac * 17, fan: 0, kind: "class", isCenter: false
+      };
+    });
+    var idx = {};
+    ns.forEach(function (n, i) { idx[n.id] = i; });
+    var es = M.typeMap.edgeCounts.map(function (e) {
+      return {
+        a: idx[e.from], b: idx[e.to], predicate: e.predicate,
+        label: predLabel(e.predicate), graph: null, count: e.count
+      };
+    }).filter(function (e) { return e.a !== undefined && e.b !== undefined; });
+    return { nodes: ns, edges: es };
+  }
+
+  // ---------- レイアウト ----------
+  // 厳密な物理は要らない。**決定的**であることだけ守る(同じ入力なら同じ絵)。
+  function layout(ns, es, iters, repel) {
+    var i, j, n;
+    for (i = 0; i < ns.length; i++) {
+      var a = (2 * Math.PI * i) / ns.length;
+      ns[i].x = Math.cos(a) * 220 + (i % 3) * 7;
+      ns[i].y = Math.sin(a) * 220 + (i % 5) * 5;
+    }
+    var deg = ns.map(function () { return 0; });
+    es.forEach(function (e) { deg[e.a]++; deg[e.b]++; });
+    // **次数でノードの大きさを変える。** 実データでは府省のようなハブと
+    // 末端の法人が同じ大きさに見え、「どこが結節点か」が絵から分からなかった。
+    // 型の地図モードは件数で大きさを決めているので上書きしない。
+    ns.forEach(function (n, k) {
+      n.deg = deg[k];
+      if (n.kind === "entity" && !n.isCenter) n.r = 7 + Math.min(6, Math.sqrt(deg[k]) * 2.2);
+    });
+    for (var it = 0; it < iters; it++) {
+      var cool = 1 - it / iters;
+      for (i = 0; i < ns.length; i++) {
+        for (j = i + 1; j < ns.length; j++) {
+          var dx = ns[j].x - ns[i].x, dy = ns[j].y - ns[i].y;
+          var d2 = dx * dx + dy * dy;
+          if (d2 < 1) { d2 = 1; dx = (i % 2 ? 1 : -1); dy = 1; }
+          var d = Math.sqrt(d2);
+          // **斥力はラベルの大きさに合わせて決める。** 実ブラウザで見て、
+          // 9000ではラベル(日本語で10文字以上)が重なって読めなかった。
+          var f = repel / d2 * cool;
+          var fx = (f * dx) / d, fy = (f * dy) / d;
+          ns[i].x -= fx; ns[i].y -= fy; ns[j].x += fx; ns[j].y += fy;
+        }
+      }
+      es.forEach(function (e) {
+        var A = ns[e.a], B = ns[e.b];
+        var dx = B.x - A.x, dy = B.y - A.y;
+        var d = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+        // 次数の高いノードから遠ざける(ハブの周りが潰れないように)
+        var rest = 165 + Math.min(deg[e.a], deg[e.b]) * 4;
+        var f = ((d - rest) * 0.045 * cool);
+        var fx = (f * dx) / d, fy = (f * dy) / d;
+        A.x += fx; A.y += fy; B.x -= fx; B.y -= fy;
+      });
+      for (i = 0; i < ns.length; i++) { ns[i].x *= 0.994; ns[i].y *= 0.994; }
+    }
+  }
+
+  function fit() {
+    var box = svg.getBoundingClientRect();
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    nodes.forEach(function (n) {
+      minX = Math.min(minX, n.x); maxX = Math.max(maxX, n.x);
+      minY = Math.min(minY, n.y); maxY = Math.max(maxY, n.y);
+    });
+    var pad = 46;
+    var w = maxX - minX + pad * 2, h = maxY - minY + pad * 2;
+    var k = Math.min(box.width / w, box.height / h);
+    view.k = k;
+    view.x = box.width / 2 - ((minX + maxX) / 2) * k;
+    view.y = box.height / 2 - ((minY + maxY) / 2) * k;
+    applyView();
+  }
+
+  // ---------- 描画 ----------
+  var gRoot, gEdges, gLabels, gNodes;
+  function render() {
+    svg.textContent = "";
+    gRoot = el("g", {});
+    gEdges = el("g", {});
+    gLabels = el("g", {});
+    gNodes = el("g", {});
+    gRoot.appendChild(gEdges); gRoot.appendChild(gLabels); gRoot.appendChild(gNodes);
+    svg.appendChild(gRoot);
+
+    edges.forEach(function (e, i) {
+      var line = el("line", { class: "edge" });
+      var hit = el("line", { class: "edgehit" });
+      hit.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        selEdge = i; selNode = null; paint(); showEdge(e);
+      });
+      e._line = line; e._hit = hit;
+      gEdges.appendChild(line); gEdges.appendChild(hit);
+
+      var t = el("text", { class: "edgelabel off", "text-anchor": "middle" });
+      t.textContent = e.count ? e.label + "（" + e.count.toLocaleString("ja-JP") + "）" : e.label;
+      e._label = t;
+      gLabels.appendChild(t);
+    });
+
+    nodes.forEach(function (n, i) {
+      var g = el("g", { class: "node" });
+      var c = el("circle", { r: n.r, fill: n.color });
+      g.appendChild(c);
+      var t = el("text", { class: "nm", "text-anchor": "middle" });
+      t.textContent = trunc(n.label, n.kind === "class" ? 22 : 16);
+      g.appendChild(t);
+      if (n.kind === "class") {
+        var cn = el("text", { class: "cnt", "text-anchor": "middle" });
+        cn.textContent = n.count.toLocaleString("ja-JP") + " 件";
+        g.appendChild(cn);
+        n._cnt = cn;
+      }
+      if (n.fan) {
+        var f = el("text", { class: "fan", "text-anchor": "middle" });
+        f.textContent = "⋯ 未表示 +" + n.fan;
+        g.appendChild(f);
+        n._fan = f;
+      }
+      g.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        selNode = i; selEdge = null; paint(); showNode(n);
+      });
+      g.addEventListener("mouseenter", function () { hoverNode = i; paint(); });
+      g.addEventListener("mouseleave", function () { hoverNode = null; paint(); });
+      g.addEventListener("pointerdown", startNodeDrag(i));
+      n._g = g; n._c = c; n._t = t;
+      gNodes.appendChild(g);
+    });
+    place();
+    applyView();
+    paint();
+  }
+
+  function place() {
+    edges.forEach(function (e) {
+      var A = nodes[e.a], B = nodes[e.b];
+      e._line.setAttribute("x1", A.x); e._line.setAttribute("y1", A.y);
+      e._line.setAttribute("x2", B.x); e._line.setAttribute("y2", B.y);
+      e._hit.setAttribute("x1", A.x); e._hit.setAttribute("y1", A.y);
+      e._hit.setAttribute("x2", B.x); e._hit.setAttribute("y2", B.y);
+      e._label.setAttribute("x", (A.x + B.x) / 2);
+      e._label.setAttribute("y", (A.y + B.y) / 2 - 3);
+    });
+    nodes.forEach(function (n) {
+      n._g.setAttribute("transform", "translate(" + n.x + "," + n.y + ")");
+      n._t.setAttribute("y", n.r + 12);
+      if (n._cnt) n._cnt.setAttribute("y", n.r + 24);
+      if (n._fan) n._fan.setAttribute("y", -n.r - 6);
+    });
+  }
+
+  function applyView() {
+    gRoot.setAttribute("transform", "translate(" + view.x + "," + view.y + ") scale(" + view.k + ")");
+  }
+
+  function matches(n) {
+    if (!query) return false;
+    var q = query.toLowerCase();
+    return (n.label || "").toLowerCase().indexOf(q) >= 0 ||
+           (n.summary || "").toLowerCase().indexOf(q) >= 0 ||
+           typeLabel(n.type).toLowerCase().indexOf(q) >= 0;
+  }
+  function visible(n) { return !offAxes[n.axis]; }
+
+  function paint() {
+    var hitCount = 0, visCount = 0, visEdges = 0;
+    var neigh = Object.create(null);
+    if (hoverNode !== null || selNode !== null) {
+      var focus = hoverNode !== null ? hoverNode : selNode;
+      neigh[focus] = true;
+      edges.forEach(function (e) {
+        if (e.a === focus) neigh[e.b] = true;
+        if (e.b === focus) neigh[e.a] = true;
+      });
+    }
+    var hasFocus = Object.keys(neigh).length > 0;
+
+    nodes.forEach(function (n, i) {
+      var vis = visible(n);
+      n._g.classList.toggle("off", !vis);
+      if (!vis) return;
+      visCount++;
+      var hit = matches(n);
+      if (hit) hitCount++;
+      n._g.classList.toggle("hit", hit);
+      n._g.classList.toggle("center", !!n.isCenter);
+      n._g.classList.toggle("sel", selNode === i);
+      var dim = (query && !hit) || (hasFocus && !neigh[i]);
+      n._g.classList.toggle("dim", !!dim);
+      // 絞り込み中・注目中は、対象のラベルだけ全文にする
+      n._t.textContent = (hit || selNode === i || hoverNode === i)
+        ? trunc(n.label, 40) : trunc(n.label, n.kind === "class" ? 22 : 16);
+    });
+
+    edges.forEach(function (e, i) {
+      var vis = visible(nodes[e.a]) && visible(nodes[e.b]);
+      e._line.classList.toggle("off", !vis);
+      e._hit.classList.toggle("off", !vis);
+      e._label.classList.toggle("off", true);
+      if (!vis) return;
+      visEdges++;
+      var on = selEdge === i || (hasFocus && neigh[e.a] && neigh[e.b]);
+      e._line.classList.toggle("on", !!on);
+      var dim = (query && !(matches(nodes[e.a]) && matches(nodes[e.b]))) || (hasFocus && !on);
+      e._line.classList.toggle("dim", !!dim && !on);
+      // 辺のラベルは常時出さない(密度が上がると読めなくなる)。
+      // 注目中/選択中/型の地図だけ出す。
+      if (on || mode === "schema") e._label.classList.remove("off");
+    });
+
+    place();
+    layoutLabels();
+
+    if (query) {
+      hitsEl.innerHTML = hitCount
+        ? '「' + esc(query) + '」に一致: <b>' + hitCount + "</b> 件を強調"
+        : '<span class="none">「' + esc(query) + "」に一致するノードはこの範囲にありません</span>";
+    } else {
+      hitsEl.innerHTML = "";
+    }
+    emptyEl.classList.toggle("show", !!query && hitCount === 0);
+    if (query && hitCount === 0) {
+      emptyEl.innerHTML = "<div><strong>この断面には見つかりませんでした。</strong><br>" +
+        "本番ではここでKG全体を検索し、一致したエンティティを中心に据え直します<br>" +
+        "（＝検索は一覧を出すのではなく、<strong>グラフの中心を移す</strong>操作）。</div>";
+    }
+
+    overlayEl.innerHTML = mode === "data"
+      ? "表示中: <b>" + visCount + "</b> ノード / <b>" + visEdges + "</b> 本の関係"
+        + "（実際の近傍は " + M.meta.realNodes + " ノード / " + M.meta.realEdges + " 本。モックのため間引き）"
+      : "表示中: <b>" + visCount + "</b> 型 / <b>" + visEdges + "</b> 種類の関係（KG全体の実測）";
+
+    renderLegend();
+  }
+
+  /**
+   * ラベルの重なりを消す。**これは見た目の調整ではなく可読性の要件である。**
+   * 実ブラウザで見たところ、28ノードでも日本語のラベル（10文字以上）同士が
+   * 重なって、どのノードの名前なのか読めなかった。
+   *
+   * 方針: 優先度の高い順に見て、すでに置いたラベルと矩形が交わるものは隠す。
+   * **必ず出すもの**（中心・選択中・注目中・検索一致）を先に処理して場所を
+   * 確保するので、絞り込みの結果が重なりで消えることはない。
+   * 隠れたラベルはノードにホバーすれば出る。
+   */
+  function mustShowLabel(i) {
+    var n = nodes[i];
+    return !!n.isCenter || selNode === i || hoverNode === i || matches(n);
+  }
+  function layoutLabels() {
+    var order = [];
+    nodes.forEach(function (n, i) { if (visible(n)) order.push(i); });
+    order.sort(function (a, b) {
+      var ma = mustShowLabel(a) ? 1 : 0, mb = mustShowLabel(b) ? 1 : 0;
+      if (ma !== mb) return mb - ma;
+      if (nodes[b].deg !== nodes[a].deg) return nodes[b].deg - nodes[a].deg;
+      return nodes[b].r - nodes[a].r;
+    });
+    var kept = [];
+    order.forEach(function (i) {
+      var t = nodes[i]._t;
+      t.style.display = "";
+      var r;
+      try { r = t.getBoundingClientRect(); } catch (e) { return; }
+      if (!r.width) return;
+      var clash = false;
+      for (var k = 0; k < kept.length; k++) {
+        var o = kept[k];
+        if (!(r.right < o.left - 3 || r.left > o.right + 3 || r.bottom < o.top - 2 || r.top > o.bottom + 2)) {
+          clash = true; break;
+        }
+      }
+      // **一致したラベル同士でも重なりは許さない。** 重なった文字は
+      // 両方とも読めなくなるので、優先度が高い方だけを残す。隠れた側も
+      // ノードの緑のリングと件数表示で「一致した」ことは分かり、
+      // ホバーすれば名前が出る。
+      if (clash) t.style.display = "none";
+      else kept.push(r);
+    });
+
+    // **辺のラベルにも同じ処理を掛ける。** 型の地図モードは13本すべての
+    // ラベルを出すので、実ブラウザでは辺のラベル同士とノード名が重なって
+    // 「所管府省(1,995)」と「根拠法令(5,663)」が判読できなかった。
+    // ノードの名前を先に確定させてから、件数の多い関係を優先して残す。
+    var eorder = [];
+    edges.forEach(function (e, i) {
+      if (!e._label.classList.contains("off")) eorder.push(i);
+    });
+    eorder.sort(function (a, b) { return (edges[b].count || 0) - (edges[a].count || 0); });
+    eorder.forEach(function (i) {
+      var t = edges[i]._label;
+      t.style.display = "";
+      var r;
+      try { r = t.getBoundingClientRect(); } catch (e2) { return; }
+      if (!r.width) return;
+      for (var k = 0; k < kept.length; k++) {
+        var o = kept[k];
+        if (!(r.right < o.left - 3 || r.left > o.right + 3 || r.bottom < o.top - 2 || r.top > o.bottom + 2)) {
+          t.style.display = "none";
+          return;
+        }
+      }
+      kept.push(r);
+    });
+  }
+
+  function renderLegend() {
+    var present = Object.create(null);
+    nodes.forEach(function (n) { if (visible(n)) present[n.type] = n.color; });
+    var byAxis = Object.create(null);
+    Object.keys(present).forEach(function (t) {
+      var ax = (mode === "data" ? (M.typeMap.typeAxes[t] || "unknown") : (M.typeMap.typeAxes[t] || "unknown"));
+      (byAxis[ax] = byAxis[ax] || []).push(t);
+    });
+    var order = Object.keys(byAxis).sort(function (a, b) {
+      return (AXIS_ORDER.indexOf(a) + 1 || 99) - (AXIS_ORDER.indexOf(b) + 1 || 99);
+    });
+    legendEl.innerHTML = order.map(function (ax) {
+      var items = byAxis[ax].sort().map(function (t) {
+        // 軸そのものが唯一の型のときは表示名を2回出さない
+        if (t === ax) return '<span class="it"><span class="dot" style="background:' + present[t] + '"></span></span>';
+        return '<span class="it"><span class="dot" style="background:' + present[t] + '"></span>' + esc(typeLabel(t)) + "</span>";
+      }).join("");
+      var name = ax === "unknown" ? "軸不明" : typeLabel(ax);
+      return '<span class="grp"><span class="axis">' + esc(name) + "</span>" + items + "</span>";
+    }).join("");
+  }
+
+  // ---------- 詳細パネル ----------
+  function provHtml(g) {
+    if (!g) return "";
+    return '<div class="src">出典: <a href="' + esc(g.source) + '" target="_blank" rel="noopener">' + esc(g.source) + "</a><br>" +
+      "取得日 " + esc(g.fetched_on) + " ・ " + esc(g.license) + "</div>";
+  }
+
+  function showNode(n) {
+    if (n.kind === "class") { showClass(n); return; }
+    var d = M.instance.details[n.id];
+    var html = '<p><span class="badge" style="color:' + n.color + '">' + esc(typeLabel(n.type)) +
+      '</span> <span class="placeholder">' + esc(typeLabel(n.axis)) + "軸</span></p>" +
+      "<h2>" + esc(n.label) + "</h2>";
+    if (n.summary) html += '<p class="placeholder">' + esc(n.summary) + "</p>";
+
+    if (d) {
+      var rows = Object.keys(d.attributes).map(function (p) {
+        var vals = d.attributes[p].map(function (v) {
+          var isMoney = p === "budgetAmount" || p === "amount_jpy";
+          return isMoney ? yen(v.value) : esc(v.value);
+        }).join("、");
+        var cls = (p === "budgetAmount" || p === "amount_jpy" || p === "fiscalYear") ? ' class="num"' : "";
+        return "<tr><th>" + esc(predLabel(p)) + "</th><td" + cls + ">" + vals + "</td></tr>";
+      }).join("");
+      if (rows) html += "<table>" + rows + "</table>";
+      var gk = Object.keys(d.graphs);
+      if (gk.length) html += provHtml(d.graphs[gk[0]]);
+      var rel = Object.keys(d.relationships);
+      if (rel.length) {
+        html += '<p class="placeholder">つながっている先:</p><ul class="rel">' + rel.map(function (t) {
+          return "<li>" + esc(typeLabel(t)) + " " + d.relationships[t] + " 件</li>";
+        }).join("") + "</ul>";
+      }
+    }
+
+    if (n.unresolvedText) {
+      html += "<table><tr><th>" + esc(predLabel("unresolved_text")) + "</th><td>" +
+        esc(n.unresolvedText) + "</td></tr></table>";
+    }
+    if (n.kgLabel && n.type === "Expenditure") {
+      html += '<p class="notice" style="margin:0.6rem 0">この支出の表示名は、KGの中では ' +
+        "<b>「" + esc(n.kgLabel) + "」</b>（＝支払先の法人名）です。" +
+        "隣の法人ノードと同じ文字列になり見分けが付かないため、<b>このモックでは金額を主ラベルにしています</b>。" +
+        "どちらを正とするかはレビュー事項です。</p>";
+    } else if (n.kgLabel) {
+      html += '<p class="notice" style="margin:0.6rem 0">この記述には表示名（<code>skos:prefLabel</code>）が' +
+        "<b>ありません</b>。いまの本番アプリは <b>「" + esc(n.kgLabel) +
+        "」</b>と描いています。<b>このモックでは元の記述そのもの</b>を表示名にしています" +
+        "（それが「何が特定できなかったのか」を示す唯一の手がかりなので）。</p>";
+    }
+    if (!d) {
+      // **エンコード済みのidPathをそのまま出さない。** 実データの未解決参照は
+      // id_pathが数百文字のパーセントエンコードになり、パネルがそれだけで埋まった
+      // (実ブラウザで踏んだ)。何を引くかが分かれば足りる。
+      html += '<p class="placeholder">（モックではこのノードの属性を取得していません。' +
+        "本番は <code>/entity/…</code> を1回引いて、中心ノードと同じ形で属性と出典を出します。）</p>";
+    }
+    if (n.fan) {
+      html += '<p class="placeholder">この先にまだ表示していない隣接が <b>' + n.fan +
+        " 件</b>あります（府省のようなハブ）。型を選んで足せます。</p>";
+    }
+    html += '<div class="act">' +
+      '<button type="button" class="primary" data-act="center">このノードを中心にする</button>' +
+      (n.fan ? '<button type="button" data-act="expand">隣接を足す</button>' : "") +
+      '<a href="#" data-act="page">このエンティティの画面へ</a>' +
+      "</div>";
+    detailEl.innerHTML = html;
+    wireActs(n);
+  }
+
+  function showClass(n) {
+    var out = M.typeMap.edgeCounts.filter(function (e) { return e.from === n.type; });
+    var inc = M.typeMap.edgeCounts.filter(function (e) { return e.to === n.type; });
+    var html = '<p><span class="badge" style="color:' + n.color + '">型</span> ' +
+      '<span class="placeholder">' + esc(typeLabel(n.axis)) + "軸</span></p>" +
+      "<h2>" + esc(typeLabel(n.type)) + "</h2>" +
+      '<p>このKGに <b>' + n.count.toLocaleString("ja-JP") + " 件</b>あります。</p>";
+    function list(arr, dir) {
+      if (!arr.length) return "";
+      return '<p class="placeholder">' + dir + ":</p><ul class=\"rel\">" + arr.map(function (e) {
+        var other = dir === "ここから出る関係" ? e.to : e.from;
+        var p = predLabel(e.predicate), t = typeLabel(other);
+        // **関係の表示名と相手の型の表示名が同じときは2回出さない**(裁定B93と同型)。
+        // 実データで「予算事業 → 予算事業 73,919本」と出た(述語 project の表示名が
+        // 「予算事業」で、相手の型も「予算事業」)。
+        var head = p === t ? "" : esc(p) + " ";
+        return "<li>" + head + "→ " + esc(t) +
+          " <span class=\"placeholder\">" + e.count.toLocaleString("ja-JP") + " 本</span></li>";
+      }).join("") + "</ul>";
+    }
+    html += list(out, "ここから出る関係") + list(inc, "ここに入る関係");
+    if (!out.length && !inc.length) {
+      html += '<p class="notice" style="margin:0.6rem 0">この型は<b>関係を1本も持ちません</b>' +
+        "（実測）。文字列としてのIDだけで他とつながっているため、グラフ上では孤立します。</p>";
+    }
+    html += '<div class="act"><button type="button" class="primary" data-act="todata">この型の実データを見る</button></div>';
+    detailEl.innerHTML = html;
+    wireActs(n);
+  }
+
+  function showEdge(e) {
+    var A = nodes[e.a], B = nodes[e.b];
+    var html = '<p><span class="badge">関係</span></p><h2>' + esc(e.label) + "</h2>";
+    if (e.count) {
+      html += "<p>" + esc(typeLabel(A.type)) + " から " + esc(typeLabel(B.type)) +
+        " へ、このKGに <b>" + e.count.toLocaleString("ja-JP") + " 本</b>あります。</p>";
+    } else {
+      html += "<table><tr><th>元</th><td>" + esc(A.label) + "</td></tr>" +
+        "<tr><th>先</th><td>" + esc(B.label) + "</td></tr></table>";
+      var g = M.instance.graphs[e.graph];
+      html += provHtml(g) ||
+        '<p class="placeholder">この関係の出典グラフが取得できませんでした。</p>';
+    }
+    detailEl.innerHTML = html;
+  }
+
+  function wireActs(n) {
+    var btns = detailEl.querySelectorAll("[data-act]");
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].addEventListener("click", function (ev) {
+        ev.preventDefault();
+        var act = this.getAttribute("data-act");
+        if (act === "todata") { setMode("data"); return; }
+        alert("モックのためここまでです。\n本番の動作: " + ({
+          center: "このノードを中心に /neighborhood を引き直し、グラフを組み替えます。",
+          expand: "/entity を引き、選んだ型の隣接だけをいまのグラフに合流させます（既存の planExpansion）。",
+          page: "そのエンティティの単独画面（#/entity/…）へ移動します。"
+        }[act] || act));
+      });
+    }
+  }
+
+  function clearDetail() {
+    detailEl.innerHTML = '<p class="placeholder">ノードか関係の線をクリックすると、ここに ' +
+      "<b>型・軸・属性・出典（一次資料のURLと取得日）</b>が出ます。<br><br>" +
+      "ノードはドラッグで動かせます。ホイールで拡大縮小、背景のドラッグで移動。</p>";
+  }
+
+  // ---------- 操作 ----------
+  function setMode(m) {
+    mode = m;
+    document.getElementById("mode-data").setAttribute("aria-pressed", String(m === "data"));
+    document.getElementById("mode-schema").setAttribute("aria-pressed", String(m === "schema"));
+    var g = m === "data" ? buildDataGraph() : buildSchemaGraph();
+    nodes = g.nodes; edges = g.edges;
+    // 型の地図は9ノードだがラベルが長い(「対応先が特定できなかった記述」)ので
+    // 斥力を強くする。実データ側は28ノードで実測した値。
+    layout(nodes, edges, m === "data" ? 420 : 500, m === "data" ? 26000 : 60000);
+    selNode = selEdge = hoverNode = null;
+    buildChips();
+    render();
+    fit();
+    clearDetail();
+    if (m === "data") {
+      modenoteEl.innerHTML = "いま出ているのは <b>実際のデータ</b>（予算事業「企業年金等の健全な育成に必要な経費」の周辺）です。" +
+        "語を入れると<b>この絵が絞り込まれます</b>。ノードをクリックすると右に詳細と出典が出ます。";
+      noticeEl.style.display = "";
+      noticeEl.innerHTML = "改正記録（法令の改正版・実測 9,550 件）は、このKGでは<b>関係を1本も持ちません</b>" +
+        "（法令IDという文字列だけで結びついています）。そのためグラフには現れません。";
+    } else {
+      modenoteEl.innerHTML = "これは <b>型の地図</b>です——<b>個々のデータではありません</b>。" +
+        "線と件数は <b>実際に存在する関係だけ</b>（884,053行を数えた実測値）。" +
+        "存在しない関係は描いていないので、ここに見える線はすべて実際に辿れます。";
+      noticeEl.style.display = "none";
+    }
+    renderEdgeTable();
+  }
+
+  /**
+   * 実在する関係の全数を表で出す(型の地図モードのみ)。
+   * 絵の側は重なりを避けてラベルを隠すので、**隠れた関係がここで必ず読める**。
+   * 件数は884,053行を数えた実測値であり、ここで作った値ではない。
+   */
+  function renderEdgeTable() {
+    if (mode !== "schema") { edgeTableEl.innerHTML = ""; return; }
+    var C = M.typeMap.colors;
+    var rows = M.typeMap.edgeCounts.map(function (e) {
+      var p = predLabel(e.predicate), tl = typeLabel(e.to);
+      return "<tr><td><span class=\"sw\" style=\"background:" + C[e.from] + "\"></span>" +
+        esc(typeLabel(e.from)) + "</td><td>" + esc(p === tl ? "→" : p + " →") +
+        "</td><td><span class=\"sw\" style=\"background:" + C[e.to] + "\"></span>" +
+        esc(tl) + "</td><td class=\"n\">" + e.count.toLocaleString("ja-JP") + " 本</td></tr>";
+    }).join("");
+    edgeTableEl.innerHTML = "<table><caption>このKGに実在する関係は <b>" +
+      M.typeMap.edgeCounts.length + " 種類</b>です（" + M.typeMap.artifact +
+      " を全走査した実測値。絵でラベルが隠れているものもここに全部あります）。</caption>" +
+      "<tbody>" + rows + "</tbody></table>";
+  }
+
+  function buildChips() {
+    var perAxis = Object.create(null);
+    nodes.forEach(function (n) { perAxis[n.axis] = (perAxis[n.axis] || 0) + 1; });
+    var axes = Object.keys(perAxis).sort(function (a, b) {
+      return (AXIS_ORDER.indexOf(a) + 1 || 99) - (AXIS_ORDER.indexOf(b) + 1 || 99);
+    });
+    chipsEl.innerHTML = '<span class="lbl">軸で絞る:</span>' + axes.map(function (ax) {
+      var color = nodes.filter(function (n) { return n.axis === ax; })[0].color;
+      return '<button class="chip" type="button" data-axis="' + esc(ax) + '" aria-pressed="' +
+        (offAxes[ax] ? "false" : "true") + '">' +
+        '<span class="dot" style="background:' + color + '"></span>' + esc(typeLabel(ax)) +
+        ' <span class="n">' + perAxis[ax] + "</span></button>";
+    }).join("");
+    var cs = chipsEl.querySelectorAll(".chip");
+    for (var i = 0; i < cs.length; i++) {
+      cs[i].addEventListener("click", function () {
+        var ax = this.getAttribute("data-axis");
+        offAxes[ax] = !offAxes[ax];
+        this.setAttribute("aria-pressed", String(!offAxes[ax]));
+        paint();
+      });
+    }
+  }
+
+  document.getElementById("q").addEventListener("input", function () {
+    query = this.value.trim();
+    paint();
+  });
+  document.getElementById("mode-data").addEventListener("click", function () { setMode("data"); });
+  document.getElementById("mode-schema").addEventListener("click", function () { setMode("schema"); });
+  document.getElementById("zin").addEventListener("click", function () { zoomAt(1.25); });
+  document.getElementById("zout").addEventListener("click", function () { zoomAt(0.8); });
+  document.getElementById("zfit").addEventListener("click", function () { fit(); });
+
+  function zoomAt(f, cx, cy) {
+    var box = svg.getBoundingClientRect();
+    cx = cx === undefined ? box.width / 2 : cx;
+    cy = cy === undefined ? box.height / 2 : cy;
+    var k2 = Math.max(0.15, Math.min(6, view.k * f));
+    var r = k2 / view.k;
+    view.x = cx - (cx - view.x) * r;
+    view.y = cy - (cy - view.y) * r;
+    view.k = k2;
+    applyView();
+  }
+  svg.addEventListener("wheel", function (ev) {
+    ev.preventDefault();
+    var box = svg.getBoundingClientRect();
+    zoomAt(ev.deltaY < 0 ? 1.12 : 0.89, ev.clientX - box.left, ev.clientY - box.top);
+  }, { passive: false });
+
+  var panning = null;
+  svg.addEventListener("pointerdown", function (ev) {
+    if (ev.target !== svg) return;
+    panning = { x: ev.clientX, y: ev.clientY, vx: view.x, vy: view.y };
+    svg.classList.add("dragging");
+    svg.setPointerCapture(ev.pointerId);
+    selNode = selEdge = null; paint(); clearDetail();
+  });
+  svg.addEventListener("pointermove", function (ev) {
+    if (!panning) return;
+    view.x = panning.vx + (ev.clientX - panning.x);
+    view.y = panning.vy + (ev.clientY - panning.y);
+    applyView();
+  });
+  svg.addEventListener("pointerup", function () { panning = null; svg.classList.remove("dragging"); });
+
+  function startNodeDrag(i) {
+    return function (ev) {
+      ev.stopPropagation();
+      var n = nodes[i];
+      var start = { x: ev.clientX, y: ev.clientY, nx: n.x, ny: n.y };
+      var moved = false;
+      function move(e2) {
+        moved = true;
+        n.x = start.nx + (e2.clientX - start.x) / view.k;
+        n.y = start.ny + (e2.clientY - start.y) / view.k;
+        place();
+      }
+      function up() {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        if (!moved) { selNode = i; selEdge = null; paint(); showNode(n); }
+      }
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    };
+  }
+
+  // レビュー用のテーマ切替(本番はOSの設定に従うだけ。ここは見比べるため)
+  var themes = ["OS", "light", "dark"];
+  var ti = 0;
+  document.getElementById("themebtn").addEventListener("click", function () {
+    ti = (ti + 1) % themes.length;
+    var t = themes[ti];
+    if (t === "OS") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", t);
+    this.textContent = "テーマ: " + (t === "OS" ? "OS" : t === "light" ? "ライト" : "ダーク");
+  });
+
+  var alertTabs = document.querySelectorAll("[data-alert]");
+  for (var i = 0; i < alertTabs.length; i++) {
+    alertTabs[i].addEventListener("click", function () { alert(this.getAttribute("data-alert")); });
+  }
+
+  window.addEventListener("resize", function () { fit(); });
+
+  setMode("data");
+})();
+</script>
+</body>
+</html>

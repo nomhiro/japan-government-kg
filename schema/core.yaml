@@ -49,6 +49,7 @@ slots:
     description: この記述が真である期間の終わり
     range: date
   involves_agent:
+    title: 関与した主体
     description: この出来事に関与した主体
     range: Agent
   amount_jpy:
