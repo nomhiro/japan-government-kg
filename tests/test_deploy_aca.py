@@ -67,6 +67,7 @@ def test_required_parameters_have_no_default_value() -> None:
         "acrName",
         "imageTag",
         "acrPullIdentityId",  # 裁定B91でユーザー割り当てIDに変えたときに増えた
+        "chatManagedIdentityClientId",  # E-2(裁定B92)。チャットのマネージドID(クライアントID)
     }
     assert required <= set(params), f"必須パラメータが足りない: {required - set(params)}"
 
@@ -131,6 +132,31 @@ def test_api_container_points_at_localhost_fuseki() -> None:
     api = next(c for c in containers if c["name"] == "api")
     env = {e["name"]: e["value"] for e in api.get("env", []) if "value" in e}
     assert env.get("JGKG_SPARQL_ENDPOINT") == "http://localhost:3030/kg/sparql"
+
+
+def test_api_container_has_chat_env_vars_wired_from_the_parameter() -> None:
+    """E-2(裁定B92)。`AZURE_CLIENT_ID`はパラメータ参照(直書きの実IDにしない)。
+
+    `docker-compose.serve.yml`にも同名の環境変数を足している——
+    片方だけだと部分適用(再発欠陥3。task-E2-brief.md)。
+    """
+    app = _container_app()
+    containers = app["properties"]["template"]["containers"]
+    api = next(c for c in containers if c["name"] == "api")
+    env = {e["name"]: e.get("value") for e in api.get("env", [])}
+    assert env.get("AZURE_CLIENT_ID") == "[parameters('chatManagedIdentityClientId')]", (
+        "AZURE_CLIENT_IDが実在しそうな値を直書きしている、またはパラメータ参照になっていない"
+    )
+    assert env.get("JGKG_AOAI_ENDPOINT") == "https://aif-jgkg.cognitiveservices.azure.com"
+    assert env.get("JGKG_AOAI_DEPLOYMENT") == "gpt-5.6-luna"
+    assert env.get("JGKG_AOAI_API_VERSION")
+
+    # **資格情報ではないことの直接確認**: このパラメータの説明文にGUID自体
+    # (実在するクライアントID)を書いていないこと。値は`az`で都度取得する運用
+    text = TEMPLATE_PATH.read_text(encoding="utf-8")
+    assert "d1fa2256-34a4-4682-ab91-3428d025dafe" not in text, (
+        "実在するクライアントIDをテンプレートに直書きしている"
+    )
 
 
 def test_registry_pull_uses_managed_identity_not_a_credential() -> None:

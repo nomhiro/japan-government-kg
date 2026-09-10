@@ -49,6 +49,47 @@ class Settings(BaseSettings):
     # "localhost:3030"を既に許可済み)
     sparql_endpoint: str = "http://localhost:3030/kg/sparql"
 
+    # =========================================================================
+    # E-2(裁定B92): オントロジーをAgenticに調査するチャット。
+    # =========================================================================
+    #
+    # **エンドポイント・配備名・API版は資格情報ではない**(公開リポジトリに
+    # 書いてよい識別子。キー自体は無く、認証はazure-identityの
+    # `DefaultAzureCredential`がマネージドID/`az login`セッションから取る)。
+    # controllerが実測済みの値(task-E2-brief.md)をそのまま既定にする——
+    # `base_uri`と同じ「実行時の設定というより、この資源の同一性」という位置づけ
+    # ではあるが、こちらはデプロイ先ごとに差し替えても生成物に焼き込まれる
+    # 値ではないため、`.env`での上書きを禁じる理由は無い。
+    aoai_endpoint: str = "https://aif-jgkg.cognitiveservices.azure.com"
+    aoai_deployment: str = "gpt-5.6-luna"
+    #: 2026-09-11実測(このタスク自身): Chat Completions + `tools` + このモデルは
+    #: このAPI版でHTTP 200・`finish_reason="tool_calls"`が返る(公式ドキュメントは
+    #: 「gpt-5.6系はChat Completions+関数ツールを`reasoning_effort=none`無しでは
+    #: 拒否する」と書いているが、この配備・このAPI版では実測がそれと異なった——
+    #: 実測を優先する。E-2報告に検証の詳細を書く)。
+    aoai_api_version: str = "2024-10-21"
+
+    # **裁定B92裁定3: 費用の上限を構造で縛る。値は全てここから読む(直書きしない)。**
+    #: 1リクエストあたりの道具呼び出し回数の上限(既定6回程度、の「程度」は
+    #: ブリーフの言葉であり、6をそのまま既定にした——法令→府省→事業→支出→法人の
+    #: 縦スライス(4ホップ)を辿るのに`get_neighborhood`/`find_path`を数回、
+    #: `get_ontology`で語彙を1〜2回引く、という想定の調査に足りる回数として)。
+    chat_tool_call_limit: int = 6
+    #: 1回のChat Completions呼び出りに許す`max_completion_tokens`(推論トークン込み)。
+    #: 2026-09-11実測: 5文字の応答に`reasoning_tokens: 6`(トリビアルな道具呼び出し1件)。
+    #: 実際のオントロジー調査(このタスクの手動確認)では発話の長さに応じて
+    #: 増える——安全マージンを取った値(実測はE-2報告に書く。ここに転記しない)。
+    chat_max_completion_tokens: int = 8000
+    #: IPごとの分あたりレート制限。**根拠が無い**(実測に基づく値ではない)——
+    #: 人間が1分に叩けるであろう回数の常識的な上限として置いた構造的な判断
+    #: (`deploy/aca.json`のfusekiCpu等と同じ「実測していないことを明記する」作法)。
+    chat_rate_limit_per_minute: int = 5
+    #: 1日あたりのトークン上限(プロセス内カウンタ。**`maxReplicas=1`前提**
+    #: ——裁定B92裁定3(4)。レプリカが増えるとこの上限はレプリカ数倍に緩む)。
+    #: **根拠が無い**。月400〜480訪問規模のデモに対する構造的な当て推量であり、
+    #: 実測して調整すること。
+    chat_daily_token_budget: int = 500_000
+
     @field_validator("base_uri")
     @classmethod
     def strip_trailing_slash(cls, v: str) -> str:

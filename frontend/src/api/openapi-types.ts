@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Chat */
+        post: operations["chat_chat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/entity/{entity_id}": {
         parameters: {
             query?: never;
@@ -95,6 +112,65 @@ export interface components {
             graphs: string[];
             /** Value */
             value: string;
+        };
+        /**
+         * ChatMessage
+         * @description クライアントが送る会話履歴の1件(仕様§6.3: サーバは履歴を保存しない)。
+         */
+        ChatMessage: {
+            /** Content */
+            content: string;
+            /** Role */
+            role: string;
+        };
+        /** ChatRequest */
+        ChatRequest: {
+            /**
+             * History
+             * @default []
+             */
+            history: components["schemas"]["ChatMessage"][];
+            /** Message */
+            message: string;
+        };
+        /** ChatResponse */
+        ChatResponse: {
+            /** Answer */
+            answer: string;
+            /** Graphs */
+            graphs: {
+                [key: string]: components["schemas"]["Provenance"];
+            };
+            /** Sources */
+            sources: components["schemas"]["ChatSource"][];
+            /** Tool Call Limit */
+            tool_call_limit: number;
+            /** Tool Call Limit Reached */
+            tool_call_limit_reached: boolean;
+            /** Tool Calls */
+            tool_calls: components["schemas"]["ToolCallLogEntry"][];
+            /** Truncated */
+            truncated: boolean;
+        };
+        /**
+         * ChatSource
+         * @description 回答の根拠として実際に道具が返したエンティティ1件(裁定B92裁定2(2))。
+         *
+         *     **LLMの発言からではなく、道具の戻り値から`chat_tools.SourceCollector`が
+         *     機械的に組み立てる。** 道具が0件を返した実行では、この一覧は必ず空になる
+         *     ——空にならない実行があれば捏造(`tests/test_api_chat.py`の壊し確認)。
+         */
+        ChatSource: {
+            /** Graphs */
+            graphs: string[];
+            /** Id */
+            id: string;
+            /** Id Path */
+            id_path: string;
+            /** Label */
+            label: string | null;
+            /** Type */
+            type: string;
         };
         /** EntityDetailResponse */
         EntityDetailResponse: {
@@ -302,6 +378,20 @@ export interface components {
             /** Truncated */
             truncated: boolean;
         };
+        /**
+         * ToolCallLogEntry
+         * @description 道具呼び出し1件の監査記録(裁定B92裁定2(3): 調査の過程を監査できる)。
+         */
+        ToolCallLogEntry: {
+            /** Arguments */
+            arguments: {
+                [key: string]: string | number;
+            };
+            /** Result Count */
+            result_count: number;
+            /** Tool */
+            tool: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -324,6 +414,39 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    chat_chat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     entity_detail_entity__entity_id__get: {
         parameters: {
             query?: {

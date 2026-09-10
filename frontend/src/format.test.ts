@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AttributeValue, EntityDetailResponse, EntityRef, PathResponse, Provenance } from "./api/client";
+import type {
+  AttributeValue,
+  ChatResponse,
+  ChatSource,
+  EntityDetailResponse,
+  EntityRef,
+  PathResponse,
+  Provenance,
+} from "./api/client";
 
 // labels.test.tsと同じ理由(このファイルの先頭コメント参照): 表示名がある/
 // 無いときの`attributeValueHtml`の振る舞いを検査したいのであって、いま
@@ -15,9 +23,11 @@ vi.mock("./generated/labels.json", () => ({
 
 import {
   attributeValueHtml,
+  chatSourceHtml,
   describePathResult,
   neighborhoodStatusText,
   provenanceHtml,
+  toolCallLogEntryHtml,
   truncationNotice,
 } from "./format";
 
@@ -235,5 +245,49 @@ describe("attributeValueHtml", () => {
     const html = attributeValueHtml("ministry", av, graphs);
     expect(html).not.toContain("<a ");
     expect(html).toContain("出典が取れていない");
+  });
+});
+
+// =============================================================================
+// chatSourceHtml / toolCallLogEntryHtml: チャット(E-2。裁定B92)の出典と
+// 道具呼び出し履歴の描画。捏造しない(裁定2)ことをここでも直接検査する。
+// =============================================================================
+
+describe("chatSourceHtml", () => {
+  const GRAPHS: ChatResponse["graphs"] = {
+    g1: { graph: "g1", source: "https://example.test/a", fetched_on: "2026-08-01", license: "PDL1.0", available: true },
+  };
+
+  it("graphsが空(searchだけを使った参照)のとき、空リンクを描かず出典なしと明示する", () => {
+    const source: ChatSource = { id: "x", id_path: "x", type: "Ministry", label: "厚生労働省", graphs: [] };
+    const html = chatSourceHtml(source, {});
+    expect(html).not.toContain("<a ");
+    expect(html).toContain("出典が取れていない");
+    expect(html).toContain("厚生労働省");
+  });
+
+  it("graphsが1件以上あるとき、一次資料へのリンクを描く", () => {
+    const source: ChatSource = { id: "x", id_path: "x", type: "Ministry", label: "厚生労働省", graphs: ["g1"] };
+    const html = chatSourceHtml(source, GRAPHS);
+    expect(html).toContain('<a href="https://example.test/a"');
+  });
+
+  it("labelが無いとき「(表示名なし)」と表示する(空文字を描かない)", () => {
+    const source: ChatSource = { id: "x", id_path: "x", type: "Law", label: null, graphs: [] };
+    expect(chatSourceHtml(source, {})).toContain("(表示名なし)");
+  });
+});
+
+describe("toolCallLogEntryHtml", () => {
+  it("道具名・引数・件数を含む", () => {
+    const html = toolCallLogEntryHtml({ tool: "search_entities", arguments: { q: "厚生労働省", limit: 20 }, result_count: 2 });
+    expect(html).toContain("search_entities");
+    expect(html).toContain("厚生労働省");
+    expect(html).toContain("2件");
+  });
+
+  it("**核心**: 件数0のときも0件と正確に表示する(1件以上に丸めない)", () => {
+    const html = toolCallLogEntryHtml({ tool: "get_entity", arguments: { id_path: "x" }, result_count: 0 });
+    expect(html).toContain("0件");
   });
 });

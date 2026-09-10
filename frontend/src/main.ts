@@ -1,5 +1,6 @@
 import "./style.css";
 import { onRouteChange } from "./router";
+import { renderChat } from "./views/chat";
 import { renderEntity } from "./views/entity";
 import type { EntityViewController } from "./views/entity";
 import { renderPath } from "./views/path";
@@ -27,6 +28,9 @@ onRouteChange((route) => {
       break;
     case "path":
       renderPath(app, route.from, route.to);
+      break;
+    case "chat":
+      renderChat(app);
       break;
   }
 });

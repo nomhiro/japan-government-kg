@@ -112,6 +112,12 @@ ALLOWED_EXTERNAL_HOSTS: frozenset[str] = frozenset({
     # このIPに変更した)。`192.0.2.1`はRFC 5737 TEST-NET-1(文書用に予約され、
     # 経路が実在しない)——`example.com`より安全側でもある
     "192.0.2.1",
+    # E-2(裁定B92): チャットが呼ぶAzure AI FoundryのエンドポイントとADトークンの
+    # スコープ。資格情報ではない(キーは無い。認証はazure-identityが管理IDか
+    # `az login`セッションから取る)——`config.py`の`aoai_endpoint`既定値と
+    # `llm.py`のトークンスコープに現れる
+    "aif-jgkg.cognitiveservices.azure.com",
+    "cognitiveservices.azure.com",
 })
 
 # 絶対IRIの抜き出し。Turtleの `<...>`、YAMLの素の値、Pythonの文字列リテラル、

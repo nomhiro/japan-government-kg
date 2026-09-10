@@ -1,8 +1,13 @@
 """FastAPI app本体。SPARQLを外に出さず、用途別のエンドポイントだけを公開する(仕様§9.1)。
 
-**SPARQLを受け取る経路を作らない。** `/search`・`/entity/{id}`以外のルートは
-無い——D-3ブリーフが明示的に禁じている「公開SPARQL」をここに作り込まない
-ことを、ルート定義がこの2本だけであることそのもので示す。
+**SPARQLを直接受け取る経路を作らない。** `/search`・`/entity/{id}`・
+`/neighborhood/{id}`・`/path`(仕様§9.1が定める4用途)に加えて、
+E-2(裁定B92)で`/chat`を足した——`/chat`もSPARQLをクライアントから
+受け取らない。LLMに渡す道具(`chat_tools.py`)は境界付きの既存4関数+
+`get_ontology`(ファイル読み取り)に限られ、任意のSPARQLをLLM自身にも
+書かせない(裁定B92裁定1)。**ルートの集合はこの5本で閉じている**
+——`tests/test_api_app.py`の`test_no_route_accepts_a_raw_sparql_query`が
+この集合を固定する。
 
 **`create_app()`が唯一の入口。** `client`を1回だけ束縛してappを作る
 (`kgclient.KGClient`のdocstring参照)。ルートも起動時の温め処理
@@ -10,18 +15,34 @@
 clientを作る設計にすると、温め処理だけが本物のFusekiへ接続しようとして
 テスト(`tests/conftest.py`のネットワーク遮断)に引っかかる、という
 食い違いが起きる(advisorレビューで指摘され、この形に決めた)。
+
+**`chat_model`は省略できる(既定`None`)。** `/chat`以外の既存4ルートを
+検証するテスト(`test_api_app.py`・`test_api_graph.py`等)は、チャット機能に
+関心が無い——`chat_model`を渡さないと`/chat`は503(チャットは設定されて
+いない)を返すだけで、他のルートの挙動には影響しない。
 """
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from urllib.parse import unquote
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from jgkg.api.chat import (
+    ChatService,
+    DailyTokenBudget,
+    DailyTokenBudgetExceeded,
+    RateLimiter,
+    RateLimitExceeded,
+)
 from jgkg.api.kgclient import KGClient, RemoteKGClient
+from jgkg.api.llm import ChatModel
 from jgkg.api.models import (
+    ChatRequest,
+    ChatResponse,
     EntityDetailResponse,
     NeighborhoodResponse,
     PathResponse,
@@ -55,13 +76,39 @@ from jgkg.api.warmup import warm_up
 from jgkg.config import get_settings
 
 
-def create_app(client: KGClient, base_uri: str | None = None) -> FastAPI:
+def create_app(
+    client: KGClient,
+    base_uri: str | None = None,
+    *,
+    chat_model: ChatModel | None = None,
+    generated_dir: Path | None = None,
+) -> FastAPI:
     """`client`(本番=`RemoteKGClient`、テスト=`RdflibKGClient`)を束縛してappを作る。
 
     `base_uri`を省略すると`get_settings().base_uri`(設定の既定値)を使う——
     `emit.py`/`queries.py`と同じ、ベースURIを直書きしない経路。
+
+    `chat_model`(E-2。裁定B92)を省略すると`/chat`は503を返す
+    (このモジュールdocstring参照)。`generated_dir`を省略すると
+    `Path("schema/generated")`(`pipeline.py`の`SHAPES_DIR`と同じ既定)。
     """
     resolved_base_uri = base_uri or get_settings().base_uri
+    resolved_generated_dir = generated_dir or Path("schema/generated")
+    settings = get_settings()
+    chat_service = (
+        ChatService(
+            kg_client=client,
+            base_uri=resolved_base_uri,
+            generated_dir=resolved_generated_dir,
+            chat_model=chat_model,
+            tool_call_limit=settings.chat_tool_call_limit,
+            max_completion_tokens=settings.chat_max_completion_tokens,
+            rate_limiter=RateLimiter(settings.chat_rate_limit_per_minute),
+            daily_budget=DailyTokenBudget(settings.chat_daily_token_budget),
+        )
+        if chat_model is not None
+        else None
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -84,10 +131,20 @@ def create_app(client: KGClient, base_uri: str | None = None) -> FastAPI:
     # 配備先が決まる前に必要になる(このアプリがデプロイされた別オリジンから
     # APIを呼ぶため)——D-5の表示層が実際に機能するための追加であり、
     # 「表示だけを作る」の範囲を超える判断としてD-5報告に明記する。
+    #
+    # **`POST`を許可リストに足す(E-2。裁定B92)。** `/chat`はJSON本文の
+    # POSTであり、`Content-Type: application/json`は「単純リクエスト」に
+    # 該当しないため、ブラウザは実際のリクエストの前にpreflight(`OPTIONS`)
+    # を送る——`allow_methods`が`["GET"]`のままだと、preflightの応答に
+    # `POST`が含まれず、ブラウザが実リクエスト自体を送らずに握りつぶす。
+    # **実ブラウザでチャット画面から送信ボタンを押して初めて発覚した**
+    # (コンソールに`CORS policy`エラー。裁定B93の教訓——「描画された」は
+    # 「動く」ではない。自動テストは`fastapi.testclient`を使い、実ブラウザの
+    # CORS preflightを経由しないため、この欠陥を検出できない)。
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
-        allow_methods=["GET"],
+        allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
 
@@ -232,6 +289,22 @@ def create_app(client: KGClient, base_uri: str | None = None) -> FastAPI:
             )
         return result
 
+    @app.post("/chat", response_model=ChatResponse)
+    def chat(chat_request: ChatRequest, http_request: Request) -> ChatResponse:
+        # **会話履歴を保存しない**(仕様§6.3。`ChatRequest.history`は
+        # クライアントが送ってきたものをそのまま使い、サーバの状態に残さない)
+        if chat_service is None:
+            raise HTTPException(
+                status_code=503, detail="チャットは設定されていない(chat_modelが未設定)"
+            )
+        client_ip = http_request.client.host if http_request.client else "unknown"
+        try:
+            return chat_service.handle_chat(chat_request, client_ip)
+        except RateLimitExceeded as e:
+            raise HTTPException(status_code=429, detail=str(e)) from e
+        except DailyTokenBudgetExceeded as e:
+            raise HTTPException(status_code=429, detail=str(e)) from e
+
     return app
 
 
@@ -242,7 +315,19 @@ def create_production_app() -> FastAPI:
     **モジュールレベルの`app = ...`を置かない**——importした時点でクライアントが
     生成されるのを避け、実際に起動されるまで何も作らない(D-6の起動経路が
     確定するまで、importの副作用を持たせない判断)。
+
+    **`AzureFoundryChatModel`もここで初めて組み立てる。** `llm.py`のimportは
+    遅延させている(`azure-identity`は`AzureFoundryChatModel.__init__`が
+    必要になった時点でだけimportする)ため、このモジュール自体をimportする
+    だけでは`azure-identity`の有無を問わない——`scripts/export-openapi.py`
+    (`app.openapi()`だけを呼ぶ。ネットワーク不要)が言う「起動しない」性質を
+    ここでも保つ。
     """
+    from jgkg.api.llm import AzureFoundryChatModel
+
     settings = get_settings()
     client = RemoteKGClient(settings.sparql_endpoint)
-    return create_app(client, base_uri=settings.base_uri)
+    chat_model = AzureFoundryChatModel(
+        settings.aoai_endpoint, settings.aoai_deployment, settings.aoai_api_version
+    )
+    return create_app(client, base_uri=settings.base_uri, chat_model=chat_model)

@@ -5,8 +5,8 @@
 // 「無い」と描くのは、このプロジェクトが繰り返し最も重い欠陥として扱って
 // きた「報告が嘘をつく」型そのもの——DOM組み立てから分離した純粋関数にして、
 // `format.test.ts`で「文言の選択」だけを直接検査できるようにしてある。
-import type { AttributeValue, EntityDetailResponse, PathResponse, Provenance } from "./api/client";
-import { enumValueLabel } from "./labels";
+import type { AttributeValue, ChatResponse, ChatSource, EntityDetailResponse, PathResponse, Provenance } from "./api/client";
+import { enumValueLabel, typeLabel } from "./labels";
 
 export function esc(s: string): string {
   return s
@@ -122,4 +122,43 @@ export function describePathResult(res: PathResponse): PathResultDescription {
   if (res.depth_limited) reasons.push(`探索の深さ上限(${res.max_depth})に達しました`);
   if (res.fanout_truncated) reasons.push("分岐数の上限で一部の経路を切り落としました");
   return { kind: "not-found-inconclusive", reasons };
+}
+
+/**
+ * チャット(E-2。裁定B92)の出典1件を描く。
+ *
+ * **`source.graphs`が空なら、出典なしと明示する(空リンクを描かない)。**
+ * `provenanceHtml(undefined)`が既に守る規則をそのまま使う——`search_entities`
+ * だけを使った回答は出典グラフを持たない(`queries.py`の`SearchHit`参照)ので、
+ * この経路は実際に起こる(捏造ではなく、道具の限界を正直に表す)。
+ * 複数のグラフがあれば(`get_entity`の関係のように)一次資料リンクを複数並べる
+ * ——`attributeValueHtml`と同じ形。
+ */
+export function chatSourceHtml(source: ChatSource, graphs: ChatResponse["graphs"]): string {
+  const provenances =
+    source.graphs.length > 0
+      ? source.graphs.map((g) => provenanceHtml(graphs[g])).join(" / ")
+      : provenanceHtml(undefined);
+  return (
+    `<span class="jgkg-type-badge">${esc(typeLabel(source.type))}</span>` +
+    `<span class="jgkg-chat-source-label">${esc(source.label ?? "(表示名なし)")}</span>` +
+    `<span class="jgkg-muted jgkg-chat-source-prov"> (${provenances})</span>`
+  );
+}
+
+/**
+ * 道具呼び出し履歴1件(裁定B92裁定2(3): 調査の過程を監査できる)。
+ *
+ * 引数はJSONで表示する(道具ごとに引数の形が違うため、専用の整形を型ごとに
+ * 作らない——監査目的の生の記録として見せれば十分)。
+ */
+export function toolCallLogEntryHtml(entry: ChatResponse["tool_calls"][number]): string {
+  const args = Object.entries(entry.arguments)
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join(", ");
+  return (
+    `<code class="jgkg-tool-name">${esc(entry.tool)}</code>` +
+    `<span class="jgkg-muted">(${esc(args)})</span>` +
+    ` → ${entry.result_count}件`
+  );
 }

@@ -13,6 +13,10 @@ export type GraphEdge = components["schemas"]["GraphEdge"];
 export type Provenance = components["schemas"]["Provenance"];
 export type PathResponse = components["schemas"]["PathResponse"];
 export type Relationship = components["schemas"]["Relationship"];
+export type ChatMessage = components["schemas"]["ChatMessage"];
+export type ChatResponse = components["schemas"]["ChatResponse"];
+export type ChatSource = components["schemas"]["ChatSource"];
+export type ToolCallLogEntry = components["schemas"]["ToolCallLogEntry"];
 
 // **APIの本番URLを直書きしない(base_uriと同じ規律。D-5ブリーフ)。**
 // ビルド時の設定値にする——D-6b(配備先)が未決なため、既定はローカルの
@@ -173,4 +177,38 @@ export async function findPath(
     if (e instanceof ApiError && e.status === 404) return null;
     throw e;
   }
+}
+
+/**
+ * チャット(E-2。裁定B92)。**履歴をサーバに保存しない**(仕様§6.3)ので、
+ * 直前までの会話を毎回`history`として送る——他のGETエンドポイントと違い
+ * POST + JSON本文なので、`getJson`(GET専用)を流用せずここに書く。
+ *
+ * **429(裁定B92裁定3: レート制限/日次トークン予算)を特別扱いする。**
+ * `detail`に人間向けの正直な文言(「本日の利用上限に達しました」等)が
+ * 入っているので、それをそのまま`ApiError.message`にする——`getJson`の
+ * 汎用メッセージ(`APIが${status}を返しました`)に潰さない。
+ */
+export async function chat(message: string, history: ChatMessage[] = []): Promise<ChatResponse> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, history }),
+    });
+  } catch (e) {
+    throw new ApiError(0, `APIに接続できません(${API_BASE})。(${String(e)})`);
+  }
+  if (!res.ok) {
+    let detail = `APIが${res.status}を返しました`;
+    try {
+      const body = (await res.json()) as { detail?: string };
+      if (typeof body.detail === "string" && body.detail) detail = body.detail;
+    } catch {
+      // 本文がJSONでなければ既定の文言のまま
+    }
+    throw new ApiError(res.status, detail);
+  }
+  return (await res.json()) as ChatResponse;
 }

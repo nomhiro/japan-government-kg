@@ -84,6 +84,12 @@
       "metadata": {
         "description": "ACRからイメージをpullするための**ユーザー割り当て**マネージドIDのリソースID(/subscriptions/.../userAssignedIdentities/<name>)。**システム割り当てではなくユーザー割り当てにする理由(裁定B91)**: システム割り当てIDはContainer Appを作成した後にしか存在しないため、同じARM操作の中で走るイメージのpullがAcrPull無しで失敗する——2026-09-06に実際にそうなり、デプロイは Failed で終わった(その後ロールを付けて起こすと動いたが、ARMリソースの宣言状態は Failed のままで構成が定着せず、数日後に空の抜け殻になった)。**IDを先に作ってAcrPullを付けてから配備すれば1回で成功する。** 資格情報は依然として一切書かない。"
       }
+    },
+    "chatManagedIdentityClientId": {
+      "type": "string",
+      "metadata": {
+        "description": "E-2(裁定B92)。チャットがAzure AI Foundry(`gpt-5.6-luna`)を呼ぶときに`DefaultAzureCredential`へ渡す**ユーザー割り当てマネージドIDのクライアントID**(GUID。リソースIDではない)。**資格情報ではない**——クライアントIDだけでは何も認証できず、実際にそのマネージドIDが対象Container Appに割り当てられ`Cognitive Services OpenAI User`ロールを持っていることが要る(それを保証するのはこのテンプレートの外。docs/deploy-aca.md参照)。**既定値を置かない理由は`acrPullIdentityId`と同じ**(実在しそうな値を書くと他人の環境を指したまま通ってしまう)。2026-09-11時点のこのプロジェクトの実際の値では、この識別子は`acrPullIdentityId`が指すのと**同じマネージドID**(`id-jgkg-acrpull`)のクライアントIDである——ACR pull用に作った1つのユーザー割り当てIDに、後からCognitive Services OpenAI Userロールも足して使い回している(新しいIDを作っていない)。ただしこのテンプレート自身はその一致を強制しない(2つの別々のマネージドIDを使う配備も構造上は妨げない)。値は`az identity show --ids <acrPullIdentityIdの値> --query clientId -o tsv`で取れる。"
+      }
     }
   },
   "variables": {
@@ -137,6 +143,22 @@
                 {
                   "name": "JGKG_SPARQL_ENDPOINT",
                   "value": "http://localhost:3030/kg/sparql"
+                },
+                {
+                  "name": "AZURE_CLIENT_ID",
+                  "value": "[parameters('chatManagedIdentityClientId')]"
+                },
+                {
+                  "name": "JGKG_AOAI_ENDPOINT",
+                  "value": "https://aif-jgkg.cognitiveservices.azure.com"
+                },
+                {
+                  "name": "JGKG_AOAI_DEPLOYMENT",
+                  "value": "gpt-5.6-luna"
+                },
+                {
+                  "name": "JGKG_AOAI_API_VERSION",
+                  "value": "2024-10-21"
                 }
               ],
               "resources": {

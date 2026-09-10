@@ -338,3 +338,72 @@ class EntityDetailResponse(_Envelope):
     relationships_limit: int
     #: **黙って切らない**(SearchResponse.truncatedと同じ理由)
     relationships_truncated: bool
+
+
+# =============================================================================
+# チャット(E-2。裁定B92): オントロジーをAgenticに調査して答える
+# =============================================================================
+
+
+class ChatMessage(_Envelope):
+    """クライアントが送る会話履歴の1件(仕様§6.3: サーバは履歴を保存しない)。"""
+
+    #: "user" または "assistant"。道具呼び出しの内部状態はクライアントに
+    #: 持たせない(サーバ内部の実装詳細を外部契約に漏らさない)
+    role: str
+    content: str
+
+
+class ChatRequest(_Envelope):
+    message: str
+    #: 直前までの会話(このリクエストの`message`は含まない)。空でよい
+    history: list[ChatMessage] = []
+
+
+class ToolCallLogEntry(_Envelope):
+    """道具呼び出し1件の監査記録(裁定B92裁定2(3): 調査の過程を監査できる)。"""
+
+    tool: str
+    arguments: dict[str, str | int]
+    #: 道具が返した主要項目の件数(`search_entities`はヒット数、`get_entity`は
+    #: 見つかれば1・見つからなければ0、等——`chat_tools.py`の各`_run_*`参照)。
+    #: **「1件以上」ではなく実数を持つ**(空虚な検査にしないためのブリーフの要求)。
+    result_count: int
+
+
+class ChatSource(_Envelope):
+    """回答の根拠として実際に道具が返したエンティティ1件(裁定B92裁定2(2))。
+
+    **LLMの発言からではなく、道具の戻り値から`chat_tools.SourceCollector`が
+    機械的に組み立てる。** 道具が0件を返した実行では、この一覧は必ず空になる
+    ——空にならない実行があれば捏造(`tests/test_api_chat.py`の壊し確認)。
+    """
+
+    id: str
+    id_path: str
+    type: str
+    label: str | None
+    #: `ChatResponse.graphs`のキーの一覧(`AttributeValue.graphs`と同じ規約)。
+    #: 空なら「この道具は出典グラフを返さない」(`search_entities`はこの形——
+    #: `queries.py`の`SearchHit`に出典が無いため)。フロントエンドは
+    #: `provenanceHtml`と同じ「空なら出典が取れていないと明示する」規則で描く。
+    graphs: list[str]
+
+
+class ChatResponse(_Envelope):
+    answer: str
+    sources: list[ChatSource]
+    #: `ChatSource.graphs`が参照するグラフのキー→出典。`EntityDetailResponse.graphs`
+    #: と同じ正規化(同じグラフを複数エンティティが指しても複製しない)
+    graphs: dict[str, Provenance]
+    #: **調査の過程そのもの**(裁定B92裁定2(3))。順序は実行順
+    tool_calls: list[ToolCallLogEntry]
+    #: 採用された上限(裁定B92裁定3(1))。`config.Settings.chat_tool_call_limit`から読む
+    tool_call_limit: int
+    #: **上限に達した(黙って打ち切らない)。** LLMの発言に依存せず、
+    #: ループ側のカウンタで構造的に立てる真偽値(`chat.py`)
+    tool_call_limit_reached: bool
+    #: **モデルの出力トークン上限で回答が途中で切れた**(`finish_reason="length"`)。
+    #: 推論モデルは推論トークンも同じ上限を消費するため、道具呼び出しの
+    #: 上限とは別にこれが起きうる(task-E2-brief.mdの実測注意)
+    truncated: bool

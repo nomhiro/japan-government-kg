@@ -411,6 +411,10 @@ def test_no_route_accepts_a_raw_sparql_query(app_and_spy):
         "/entity/{entity_id}",
         "/neighborhood/{entity_id}",
         "/path",
+        # E-2(裁定B92)。/chatはSPARQLを受け取らない——LLMに渡す道具
+        # (chat_tools.py)自体がこの4関数+get_ontology(ファイル読み取り)に
+        # 限られ、任意のSPARQLをLLMにも書かせない
+        "/chat",
     }, paths
 
     # SPARQL(やその断片)を受け取る名前のパラメータが1つも無いこと。
@@ -445,6 +449,41 @@ def test_cors_is_open_for_get_requests(app_and_spy):
         resp = tc.get("/search", params={"q": "厚生労働省"}, headers={"Origin": "https://jgkg.norr-tech.com"})
     assert resp.status_code == 200, resp.text
     assert resp.headers.get("access-control-allow-origin") == "*"
+
+
+def test_cors_preflight_allows_post_for_chat() -> None:
+    """E-2(裁定B92)の実欠陥の再発防止。
+
+    `/chat`はJSON本文のPOSTで、ブラウザは実リクエストの前に`OPTIONS`
+    (preflight)を送る——実ブラウザでチャット画面から送信ボタンを押して
+    初めて発覚した(`allow_methods=["GET"]`のままだったため、preflightの
+    応答に`POST`が含まれず、実リクエスト自体がブロックされていた。
+    `fastapi.testclient.TestClient`は既定でこのpreflightの往復を経由しない
+    ため、`test_cors_is_open_for_get_requests`はこの欠陥を検出できなかった)。
+
+    ここではブラウザが送るpreflightそのもの
+    (`OPTIONS` + `Access-Control-Request-Method`)を`TestClient`で模して、
+    応答が`POST`を許可することを直接検査する。**chat_modelを渡さなくても
+    CORSの応答はミドルウェア層で決まる**(ルートハンドラより手前)ので、
+    503を返す構成でも検査できる。
+    """
+    from rdflib import Dataset
+
+    from jgkg.api.kgclient import RdflibKGClient
+
+    app = create_app(RdflibKGClient(Dataset()), base_uri=BASE)
+    with TestClient(app) as tc:
+        resp = tc.options(
+            "/chat",
+            headers={
+                "Origin": "https://jgkg.norr-tech.com",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+    assert resp.status_code == 200, resp.text
+    allowed = resp.headers.get("access-control-allow-methods", "")
+    assert "POST" in allowed, f"preflightの応答がPOSTを許可していない: {allowed!r}"
 
 
 # =============================================================================

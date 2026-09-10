@@ -66,6 +66,21 @@ services:
       # 検証が目的であり、ACAの実際の到達性モデルの再現ではない——D-6b-2
       # (実配備)ではここを `http://localhost:3030/kg/sparql` に変える
       - JGKG_SPARQL_ENDPOINT=http://serve-fuseki:3030/kg/sparql
+      # E-2(裁定B92)。`deploy/aca.json`と対で足す(片方だけだと部分適用。
+      # 再発欠陥3)——ただし**この構成では実際には認証が通らない**:
+      # `AZURE_CLIENT_ID`だけでは`DefaultAzureCredential`の
+      # `ManagedIdentityCredential`は起動できず(このcomposeのコンテナは
+      # ACAのマネージドID環境でもなければ、開発機の`az login`セッションも
+      # マウントしていない)、チャットのLLM呼び出しは認証エラーになる。
+      # **この提供用スタックの検証点は「索引をイメージ層に焼いた
+      # 自己完結イメージが動くこと」であり、チャット機能の実動作確認は
+      # `uv run uvicorn jgkg.api.app:create_production_app --factory`
+      # (開発機の`az login`セッションをそのまま使える)で行う——
+      # task-E2-report.mdの手動確認がそちら
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID:-}
+      - JGKG_AOAI_ENDPOINT=${JGKG_AOAI_ENDPOINT:-https://aif-jgkg.cognitiveservices.azure.com}
+      - JGKG_AOAI_DEPLOYMENT=${JGKG_AOAI_DEPLOYMENT:-gpt-5.6-luna}
+      - JGKG_AOAI_API_VERSION=${JGKG_AOAI_API_VERSION:-2024-10-21}
     depends_on:
       serve-fuseki:
         condition: service_healthy

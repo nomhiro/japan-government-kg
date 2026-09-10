@@ -139,3 +139,30 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .jgkg-path-found { color: #059669; }
 .jgkg-path-not-found { color: var(--signal); }
 .jgkg-path-inconclusive { color: var(--muted); }
+
+/* チャット(E-2。裁定B92) */
+.jgkg-chat-log { display: flex; flex-direction: column; gap: 0.75rem; margin: 1rem 0; max-height: 65vh; overflow-y: auto; }
+.jgkg-chat-turn { max-width: 90%; }
+.jgkg-chat-user { align-self: flex-end; margin-left: auto; }
+.jgkg-chat-assistant { align-self: flex-start; }
+.jgkg-chat-bubble {
+  padding: 0.6rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid var(--rule);
+  white-space: pre-wrap;
+}
+.jgkg-chat-user .jgkg-chat-bubble { background: var(--accent); color: #fff; border-color: var(--accent); }
+.jgkg-chat-assistant .jgkg-chat-bubble { background: var(--paper); }
+.jgkg-chat-sources { margin-top: 0.4rem; font-size: 0.85rem; }
+.jgkg-chat-sources h4 { margin: 0.3rem 0; font-size: 0.85rem; color: var(--muted); font-weight: 600; }
+.jgkg-chat-sources ul { list-style: none; padding: 0; margin: 0; }
+.jgkg-chat-sources li { padding: 0.2rem 0; border-bottom: 1px solid var(--rule); }
+.jgkg-chat-source-label { font-weight: 600; }
+.jgkg-chat-source-prov { display: block; }
+.jgkg-chat-tool-log { margin-top: 0.4rem; font-size: 0.8rem; }
+.jgkg-chat-tool-log summary { cursor: pointer; color: var(--muted); }
+.jgkg-chat-tool-log ul { list-style: none; padding: 0; margin: 0.3rem 0; }
+.jgkg-chat-tool-log li { padding: 0.15rem 0; }
+.jgkg-tool-name { font-weight: 600; }
+.jgkg-chat-form { display: flex; gap: 0.5rem; }
+.jgkg-chat-input { flex: 1; font: inherit; padding: 0.6rem 0.8rem; border: 1px solid var(--rule); border-radius: 4px; background: var(--paper); color: var(--ink); }

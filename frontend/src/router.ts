@@ -22,7 +22,8 @@
 export type Route =
   | { name: "search"; q: string }
   | { name: "entity"; idPath: string }
-  | { name: "path"; from?: string; to?: string };
+  | { name: "path"; from?: string; to?: string }
+  | { name: "chat" };
 
 function parseQuery(qs: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -59,6 +60,9 @@ export function parseHash(hash: string): Route {
     const q = parseQuery(queryPart);
     return { name: "path", from: q.from, to: q.to };
   }
+  if (segments[0] === "chat") {
+    return { name: "chat" };
+  }
   const q = parseQuery(queryPart);
   return { name: "search", q: q.q ?? "" };
 }
@@ -71,6 +75,8 @@ export function routeToHash(route: Route): string {
       return `#/entity/${route.idPath}`;
     case "path":
       return `#/path?${buildQuery({ from: route.from, to: route.to })}`;
+    case "chat":
+      return "#/chat";
   }
 }
 

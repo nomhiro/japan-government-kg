@@ -24,6 +24,12 @@ export function renderSearch(container: HTMLElement, initialQuery: string): void
   // を指したまま焼き込まれ、検索は打つたびに必ず失敗する——「動くもの」に
   // 見える入力欄を置いて実は毎回失敗するのは、このプロジェクトが繰り返し
   // 重い欠陥として扱ってきた「報告が嘘をつく」の体験版になる。
+  // E-2(裁定B92)。チャットも同じAPIに依存するので、トップの入口自体は
+  // APIの配備状態にかかわらず常に出す——押した先の`#/chat`が同じ
+  // `apiUnavailableReason()`の判定で正直な告知を出す(entity.ts/graph.tsと
+  // 同じ「失敗するとわかっている取得を試みない」を、画面をまたいでも保つ)
+  const _CHAT_LINK = '<a href="#/chat">オントロジーに質問する(チャット)</a>';
+
   const unavailable = apiUnavailableReason();
   if (unavailable) {
     container.innerHTML = `
@@ -31,6 +37,7 @@ export function renderSearch(container: HTMLElement, initialQuery: string): void
         <h1>日本政府ナレッジグラフ</h1>
         <p class="jgkg-notice">データ検索は準備中です。${esc(unavailable)}</p>
         <nav class="jgkg-primary-links">
+          <p>${_CHAT_LINK}</p>
           <p>${_VOCAB_LINK}</p>
           <p>${_RELEASES_LINK}</p>
         </nav>
@@ -46,6 +53,7 @@ export function renderSearch(container: HTMLElement, initialQuery: string): void
       <input type="search" class="jgkg-search-box" placeholder="例: 厚生労働省、年金、令和6年度の予算事業"
              value="${esc(initialQuery)}" autofocus>
       <div class="jgkg-search-results" aria-live="polite"></div>
+      <p class="jgkg-secondary">${_CHAT_LINK}</p>
       <footer class="jgkg-secondary">
         ${_VOCAB_LINK} ・ ${_RELEASES_LINK}
       </footer>
