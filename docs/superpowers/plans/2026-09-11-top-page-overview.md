@@ -25,7 +25,16 @@
   `tests/test_api_warmup.py`が既にこの形なので、同じやり方に倣う。
 - **裁定B102: 実行時に読むファイルはAPIイメージにCOPYされていなければならない。**
   `tests/test_api_image_contents.py`を拡張して守る。コンテナを起動せず静的に検査する。
-- **裁定B78/B88: `dcterms:title @ja`が表示名の唯一の出所。** フロントで表示名を合成しない。
+- **表示名の出所は2つある。混同しない(Task 1の実測で判明。計画の当初の記述は誤りだった)。**
+  - **語彙**(クラス・プロパティ・列挙型の許容値)の表示名 = **`dcterms:title @ja`**。
+    裁定B78(`/def/`配下68項目)と裁定B88(列挙値8件)が言っているのはこちらである
+  - **インスタンス**(府省・法人・法令・事業)の表示名 = **`skos:prefLabel`**。
+    実測: `?m a org:Ministry` は `skos:prefLabel` を40件持ち、
+    **`dcterms:title` は1件も持たない**。`warmup.py`も検索が
+    `skos:prefLabel`を読むと書いている
+  - **当初この節は「`dcterms:title @ja`が表示名の唯一の出所」と書いていた。
+    これはB78/B88の射程を「すべての表示名」に一般化した誤りである。**
+  - どちらの場合も**フロントで表示名を合成しない**(この部分は正しい)
 - **生成物はコミットする。** API変更後に `bash scripts/generate-frontend-types.sh` を実行し、
   `frontend/openapi.json` と `frontend/src/api/openapi-types.ts` を一緒にコミットする。
 - **CIと同じコマンドでlintする: `uv run ruff check src tests scripts`。**
@@ -927,8 +936,10 @@ bash scripts/build-serve-images.sh release 2026-09-11-flow-and-history
 curl -s http://localhost:8055/overview | head -c 400
 ```
 
-**起動時間が伸びていることを測る**(裁定B103は約4秒の増加を見込んでいる。
-**実測して記録する** ——見込みを実測として書かない)。
+**起動時間が伸びていることを測る。** 裁定B103の実測では、`/overview`が
+走らせる7本の合計は**再起動直後7.282秒・ウォーム2.772秒**である。
+D-6b-1の「起動→APIの最初の200まで10.938秒」に足すと約18秒の見込みだが、
+**これは足し算であって実測ではない。実際に測って記録すること。**
 
 - [ ] **Step 3: 本番へ配備し、`provisioningState: Succeeded` を確認する(裁定B91)**
 
