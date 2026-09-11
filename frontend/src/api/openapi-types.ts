@@ -464,6 +464,8 @@ export interface components {
             recipient_identification: components["schemas"]["RecipientIdentification"][];
             /** Request And Initial */
             request_and_initial: components["schemas"]["RequestAndInitial"][];
+            /** Request Exactly Granted */
+            request_exactly_granted: components["schemas"]["RequestExactlyGranted"][];
             /** Sources */
             sources: {
                 [key: string]: string;
@@ -586,6 +588,25 @@ export interface components {
             record_count: number;
             /** Requested */
             requested: number;
+        };
+        /**
+         * RequestExactlyGranted
+         * @description CQ20の1行。**要求額がそのまま付いた事業の件数。**
+         *
+         *     `exact_matches / projects_in_both_years`が「事業ごとに見た一致率」で、
+         *     実データでは3〜4割である。**CQ16の「全体では96.9〜99.4%」と並べて
+         *     初めて正しく読める** ——全体の割合だけを出すと「ほぼ満額」と誤読される。
+         *
+         *     `projects_in_both_years`は**両方の年度に存在する事業だけ**の件数
+         *     (新規・廃止事業は分母から落ちる。CQ20のヘッダ参照)。
+         */
+        RequestExactlyGranted: {
+            /** Exact Matches */
+            exact_matches: number;
+            /** Projects In Both Years */
+            projects_in_both_years: number;
+            /** Request Fiscal Year */
+            request_fiscal_year: number;
         };
         /**
          * SearchHit
