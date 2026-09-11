@@ -1,0 +1,18 @@
+# CQ17: 支払先はどこまで特定できているか。照合区分ごとの金額と件数(裁定B103)
+#
+# **`amount_jpy`は`core:`名前空間である**(`budget:`ではない。実測で確認)。
+# 間違えると0件が返り、しかもエラーにならない——「支払先の特定は0件」と
+# いう嘘の答えが画面に出る。
+#
+# 区分の意味は`schema/budget.yaml`の`RecipientMatchCategory`を参照。
+# **表示名は列挙値に付いた`dcterms:title @ja`から取る**(裁定B88)ので、
+# ここでは区分のIRIをそのまま返す——表示名の解決は呼び出し側の仕事。
+PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
+PREFIX core: <https://jgkg.norr-tech.com/def/core#>
+SELECT ?category (SUM(?amount) AS ?totalAmount) (COUNT(?e) AS ?expenditureCount)
+WHERE {
+  ?e budget:recipientMatchCategory ?category ;
+     core:amount_jpy ?amount .
+}
+GROUP BY ?category
+ORDER BY DESC(?totalAmount)

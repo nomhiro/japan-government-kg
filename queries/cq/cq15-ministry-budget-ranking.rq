@@ -1,0 +1,34 @@
+# CQ15: 全府省を予算額順に並べるとどうなるか。年度ごとに(裁定B103)
+#
+# **CQ2との違い。** CQ2は `<.../id/org/6000012070001>`(厚生労働省)に固定した
+# 例示であり「この府省は」という問いに答える。CQ15は「**全府省を並べると**」
+# という別の問いで、トップページ第1層が最初に見せる図の出所になる。
+#
+# **表示名は`skos:prefLabel`から取る(修正ラウンド。ブリーフ原案は
+# `dcterms:title`だったが、実測すると全行で未束縛になった)。**
+# 裁定B78/B88の`dcterms:title @ja`は**オントロジー側の語彙(クラス・スロット・
+# 列挙値)の表示名**であり(裁定B78「アプリが表示するクラスとスロットに
+# title:を足す」参照)、`org:Ministry`のような**インスタンス**の表示名では
+# ない。府省インスタンスの表示名は`skos:prefLabel`である
+# (`queries/cq/cq02-ministry-budget-by-year.rq`・`p0-02-ministry-list.rq`・
+# `src/jgkg/api/queries.py`の`_SEARCHABLE_TYPES`・`warmup.py`が既に
+# この述語で運用している)。CQ17の列挙値(RecipientMatchCategory)の
+# `dcterms:title`とは異なる層である——混同しないこと。
+#
+# `OPTIONAL`にしてあるのは、表示名の無い府省があってもその行を落とさない
+# ためである——落とすと合計が静かに減る(その府省の予算が消える)。
+#
+# **`?y`でもGROUP BYする。** `budget:fiscalYear`はレビューシートの年度であり、
+# 実データでは5,794事業すべてが2025だが(裁定B99)、年度を固定で書き込むと
+# 来年のデータで黙って壊れる。
+PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+SELECT ?ministry ?name ?y (SUM(?a) AS ?totalBudget) (COUNT(DISTINCT ?p) AS ?projectCount)
+WHERE {
+  ?p budget:ministry ?ministry ;
+     budget:fiscalYear ?y ;
+     budget:budgetAmount ?a .
+  OPTIONAL { ?ministry skos:prefLabel ?name }
+}
+GROUP BY ?ministry ?name ?y
+ORDER BY DESC(?totalBudget)

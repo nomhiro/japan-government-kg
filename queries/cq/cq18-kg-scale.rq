@@ -1,0 +1,15 @@
+# CQ18: このKGには何が何件入っているか。型ごとに(裁定B103)
+#
+# **`GRAPH`句を使わない。** rdflibのfixtureは`Dataset(default_union=True)`、
+# Jena側は`tdb2:unionDefaultGraph true`なので、既存CQ1〜CQ14と同じく
+# 素のパターンで名前付きグラフ全体を見る。
+#
+# **`?type`を絞らない。** 「6軸のうちどれ」のような絞りを入れると、
+# 型が増えたときに黙って落ちる。全部返して、表示側が並べ方を決める。
+PREFIX core: <https://jgkg.norr-tech.com/def/core#>
+SELECT ?type (COUNT(?s) AS ?instanceCount)
+WHERE {
+  ?s a ?type .
+}
+GROUP BY ?type
+ORDER BY DESC(?instanceCount)

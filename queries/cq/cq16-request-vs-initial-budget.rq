@@ -1,0 +1,21 @@
+# CQ16: 要求した額と、実際に付いた当初予算はどれだけ違うか。年度ごとに(裁定B103)
+#
+# **年度のずれに注意。** `budget:nextYearRequest`は「その年度の記録が持つ
+# **翌年度の**要求額」である。したがって年度Yの`nextYearRequest`と
+# 対応するのは**年度Y+1の`initialBudget`**であり、同じ行の`initialBudget`
+# ではない。実データでは96.9〜99.4%で対応する(裁定B99の実測)。
+# **このクエリは両方を同じ行に並べて返すだけで、対応付けはしない**
+# ——ずらす判断を表示側に委ねる。ここで勝手にずらすと、
+# 「この行の2つの数字は何なのか」が読めなくなる。
+#
+# **controllerは一度この列を「集計行すべてで空」と誤記録した**(裁定B99の訂正)。
+# 実際は23,036件すべて非空で、`'45013000.0'`のような小数表記だった。
+PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
+SELECT ?y (SUM(?req) AS ?requested) (SUM(?init) AS ?initial) (COUNT(?a) AS ?recordCount)
+WHERE {
+  ?a budget:budgetFiscalYear ?y ;
+     budget:nextYearRequest ?req ;
+     budget:initialBudget ?init .
+}
+GROUP BY ?y
+ORDER BY ?y

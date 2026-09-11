@@ -48,13 +48,50 @@ fixtureの構築は`tests/phase1_fixture.py`(実在値の出典はそのdocstrin
 | CQ12 | 国が自ら支払った額は、年度ごとにいくらか(B97。**B20が「対象外」にした問いへの答え**) | `cq12-government-paid-total.rq` |
 | CQ13 | 同じお金が複数の段に記録されている事業はどれか。国が支払った段はどれか(B97) | `cq13-money-passing-through-stages.rq` |
 | CQ14 | 国の予算はいくら付いて、いくら使われたか。年度ごとに増えたのか減ったのか(B99。**この製品が今まで答えられなかった問い**) | `cq14-budget-and-execution-by-year.rq` |
+| CQ15 | 全府省を予算額順に並べるとどうなるか。年度ごとに(B103。**トップページ第1層が最初に見せる図の出所**) | `cq15-ministry-budget-ranking.rq` |
+| CQ16 | 要求した額と、実際に付いた当初予算はどれだけ違うか。年度ごとに(B103) | `cq16-request-vs-initial-budget.rq` |
+| CQ17 | 支払先はどこまで特定できているか。照合区分ごとの金額と件数(B103) | `cq17-recipient-identification.rq` |
+| CQ18 | このKGには何が何件入っているか。型ごとに(B103) | `cq18-kg-scale.rq` |
 
 CQ6・CQ9・CQ10は「データの欠けと鮮度そのものを問える」ことを要求している
 (P0-3〜5と同じ設計思想。§Phase 0の説明を参照)。
 
 固有名(URI・法令ID)を直接クエリに焼き込むのはCQ1・CQ3・CQ4・CQ7・CQ8
 (「あるXの」型)。CQ2は所管府省を焼き込む(骨子どおり)。CQ5・CQ6・CQ9・CQ10・
-CQ11・CQ12・CQ13・CQ14は一般形(全件を返し、テスト側が特定の行にフィルタして確認する)。
+CQ11・CQ12・CQ13・CQ14・CQ15・CQ16・CQ17・CQ18は一般形(全件を返し、
+テスト側が特定の行にフィルタして確認する)。
+
+### CQ15〜CQ18: 裁定B103(トップページ第1層はCQの答えを表示する)
+
+**この4本は既存CQの言い換えではない。** 裁定B103(`docs/decision-log.md`)は
+「第1層に出す数字は`queries/cq/*.rq`の答えそのものでなければならない」と
+決めた——`overview.py`に手書きのSPARQLを置かず、画面用の別集計経路も作らない。
+既存CQ12・CQ13・CQ14はこの用途にそのまま使えたが、**全府省の比較・
+要求額と当初予算の乖離・支払先特定の進捗・KGの規模**という4つの問いには
+まだ答えられなかったため、この4本を新設した。
+
+- **CQ15とCQ2の違い**: CQ2は厚生労働省(`.../id/org/6000012070001`)に固定した
+  「この府省は」という例示。CQ15は「全府省を並べると」という別の問いで、
+  複数府省を横断してランキングできることが正のコントロールになる。
+- **CQ16は年度をずらさない**: `nextYearRequest`(年度Yの記録が持つ翌年度の
+  要求額)と対応するのは年度Y+1の`initialBudget`だが、クエリ自身は両方を
+  同じ行に並べて返すだけで対応付けはしない(表示側の仕事)。
+- **CQ17は`core:amount_jpy`を読む**(`budget:`ではない)。間違えると
+  エラーにならず0件になり、「支払先の特定は0件」という嘘が画面に出る。
+- **CQ18は`?type`を絞らない**。型が増えても黙って落ちない全件クエリ。
+
+**修正ラウンド(task-1-report.md参照。実装がStep 5の実測で発見)**:
+CQ15のブリーフ原案は表示名を`dcterms:title`から取っていたが、実測すると
+全行で未束縛だった——`dcterms:title`(裁定B78/B88)は**オントロジー語彙
+(クラス・スロット・列挙値)の表示名**であり、`org:Ministry`のような
+**インスタンス**の表示名ではない。府省インスタンスの表示名は
+`skos:prefLabel`(CQ2・P0-2・`_SEARCHABLE_TYPES`と同じ述語)であり、
+CQ15のクエリはこれに修正済み。また、CQ15の正のコントロール
+(2府省以上)自体がfixture側で検証できていなかった(全RsRowが
+`ministry_name="厚生労働省"`のみを使っていたため)——`phase1_fixture.py`に
+`PROJECT_MINISTRY_RANKING_DEMO`(内閣府。既存のorg:Ministryをそのまま
+再利用し、支出・annual_budgetsは持たせない)を追加して初めて検証できる
+ようになった。
 
 **CQ13を「あるXの」型にしなかったのは意図的である。** 事業を固定すると、
 fixtureは架空の事業ID(999901〜)を使い実データは実在のIDを使うため、
@@ -77,6 +114,10 @@ fixtureは架空の事業ID(999901〜)を使い実データは実在のIDを使�
 | CQ9 | 厚生労働省令=resolved、旧厚生省令=unresolved_old_or_obsolete_ministry(OLD_MINISTRY)、ダミー機関規則=unresolved_other(NO_CANDIDATE) |
 | CQ10 | houjin-bangou/egov-law/rs-system/egov-law-data=取得日2026-08-01、ministry-codes=記録日2026-08-23 |
 | CQ11 | (fixture実演用の架空法令)を発令した「厚生省」は既に廃止されており、現在の後継は「厚生労働省」 |
+| CQ15 | 厚生労働省: 2025年度=113,000,000円(3事業)・2024年度=50,000,000円(1事業)。内閣府: 2025年度=20,000,000円(1事業) |
+| CQ16 | 2024年度: 要求100,000,000円/当初90,000,000円(1件)。2025年度: 要求110,000,000円/当初100,000,000円(1件) |
+| CQ17 | resolved=9,525,000円(7件)・unresolved=500,000円(1件)・bundled=200,000円(1件)・sentinel_or_nonexistent_houjin_bangou=100,000円(1件) |
+| CQ18 | GovernmentOrgan=40・Ministry=40・Expenditure=10・BudgetProject=5・Law=4・UnresolvedReference=3・LawRevision=3・ExpenditureBlock=3・AnnualBudget=2・Organization=1・AbolishedGovernmentOrgan=1・IndirectCost=1 |
 
 ### 実在値の根拠(B-S3。CQ1/CQ7/CQ8/CQ9で使う法令アンカー)
 

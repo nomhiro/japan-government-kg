@@ -89,6 +89,16 @@ ABOLISHED_KOUSEISHO_ABOLITION_DATE = "2001-01-06"
 WOLFSTYLE_BANGOU = "3010001137944"
 WOLFSTYLE_NAME = "株式会社ウルフスタイル"
 
+# CQ15実演用(タスク1: task-1-brief.md): 「全府省を並べる」ことを検証するには
+# budget:ministryが2つ以上の異なる府省を指す必要がある——それまでの全RsRowが
+# ministry_name="厚生労働省"しか使っていなかった(CQ2が1府省固定の例示である
+# ことの裏返り)。houjin_bangou_sample.csv(41行。pipeline.run経由で既に
+# org:Ministryとしてemitされ、skos:prefLabel="内閣府"を持つことを実測確認済み
+# ——emit済みの実在組織を再利用するだけなので、org側の新規emitは不要)の2行目
+# 「内閣府」をそのまま使う(架空の府省を作らない)
+NAIKAKUFU_BANGOU = "2000012010019"
+NAIKAKUFU_NAME = "内閣府"
+
 # task-9-review.md指摘5: CQ9の分類境界(unresolved_other)側に正のコントロールが
 # 無かった(OLD_MINISTRY側しか無く、クエリのIFを丸ごと定数に置き換えても
 # テストがPASSしてしまう)。NO_CANDIDATE(警報。抽出段の誤りを疑うべき)の
@@ -108,6 +118,7 @@ PROJECT_CORE = "999901"  # 厚生労働省・FY2025・basisLaw有・支出3件(�
 PROJECT_MULTI_YEAR = "999902"  # 厚生労働省・FY2024・WOLFSTYLEへの2件目の支出(CQ3の年度別確認用)
 PROJECT_ROLE_DEMO = "999903"  # B20実演用。役割による二重計上を最小構成で示す
 PROJECT_FLOW_DEMO = "999904"  # 裁定B97実演用。段(ブロック)・入口フラグ・出どころ・間接経費
+PROJECT_MINISTRY_RANKING_DEMO = "999905"  # CQ15実演用。内閣府・FY2025・支出/annual_budgetsなし(他CQへの副作用を避ける)
 
 ROGUE_REVISION_URI = URIRef(
     "https://jgkg.norr-tech.com/id/law/TEST-ROGUE-REVISION-NO-LAWID"
@@ -271,12 +282,19 @@ def _law_records_and_jurisdictions() -> tuple[list[LawRecord], dict[str, Jurisdi
 
 
 def build_budget_result() -> rs.BuildResult:
-    """budget側(3事業・7支出)を本番の`rs.build_projects`経由で組み立てる。
+    """budget側(5事業・10支出)を本番の`rs.build_projects`経由で組み立てる。
 
     手組みの`ExpenditureRecord`を直接作らない(advisorレビュー指摘)。センチネル・
     束ね・未解決の分類が実際に本番コードパス(`resolve_recipient`)を通ることを
     CQ6の前提にする — Task 7の`BuildStats`計数とCQ6の4分類が食い違えば、
     どちらかが壊れている証拠になる。
+
+    **この「5事業・10支出」という数はこの関数の変更履歴とともに動く**
+    (直近: task-1-brief.mdがPROJECT_MINISTRY_RANKING_DEMOを追加。支出は
+    増えていない)。CQ17のテスト(test_competency_questions_phase1.py)が
+    かつて「支出は4件のはず」と手書きしていたが、これはPROJECT_CORE
+    (4件)だけを見た誤った仮定だった——実際はCQ17がプロジェクトを
+    絞らない全件クエリなので、この関数が持つ全支出(10件)が答えになる。
     """
     ministry_ref = {
         "厚生労働省": [
@@ -285,7 +303,17 @@ def build_budget_result() -> rs.BuildResult:
                 houjin_bangou=KOUSEIROUDOU_BANGOU,
                 name="厚生労働省",
             )
-        ]
+        ],
+        # CQ15実演用(モジュールdocstring・PROJECT_MINISTRY_RANKING_DEMO参照)。
+        # houjin_bangou_sample.csvが既にpipeline.run経由でorg:Ministryとして
+        # emitしている実在の府省(内閣府)を指すだけで、新しい組織は作らない
+        NAIKAKUFU_NAME: [
+            Ministry(
+                uri=f"https://jgkg.norr-tech.com/id/org/{NAIKAKUFU_BANGOU}",
+                houjin_bangou=NAIKAKUFU_BANGOU,
+                name=NAIKAKUFU_NAME,
+            )
+        ],
     }
     laws_by_id = {
         OLD_KOUSEISHO_LAW_ID: LawRecord(
@@ -512,6 +540,20 @@ def build_budget_result() -> rs.BuildResult:
             indirect_costs=(
                 rs.IndirectCostLine(item="デモ講師謝金", amount=7_000),
             ),
+        ),
+        # PROJECT_MINISTRY_RANKING_DEMO: CQ15実演用(task-1-brief.md)。
+        # **これまでの全RsRowがministry_name="厚生労働省"だった**——CQ15の
+        # 「全府省を並べる」という問い自体が、fixture側では1府省しか
+        # 検証できていなかった(Step 5の実測で判明。CQ2が1府省固定の例示
+        # であることの裏返り)。基本情報・法令・支出・annual_budgetsは
+        # このデモの範囲外なので全て既定値(空)のままにする——他のCQ
+        # (CQ3/4/6/12/13/14/16/17)の既存の期待値に影響しない
+        rs.RsRow(
+            project_id=PROJECT_MINISTRY_RANKING_DEMO,
+            fiscal_year="2025",
+            project_name="(架空)府省間ランキング実演事業",
+            ministry_name=NAIKAKUFU_NAME,
+            budget_amount=20_000_000,
         ),
     ]
 
