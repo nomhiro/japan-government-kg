@@ -176,13 +176,20 @@ CQ16(年度ごとの合計)だけを見ると「要求の96.9〜99.4%が付い�
   ?nextYear)`を前置すると3.617秒(3.7倍速)で答えは同一だった
   (controller実測。後置FILTERはJenaに交差積を作らせてから捨てさせる)。
   起動時に1回払う費用(裁定B103)なので、この差が設計に効く。
-- **既知の限界(fixture)**: fixtureで「両方の年度に記録がある事業」は
-  PROJECT_CORE(CQ14/CQ16と同じ事業)1件だけで、たまたま完全一致
-  (2024年度要求100,000,000円=2025年度当初100,000,000円)である。
-  **不一致の事業がfixtureに無い**ため、`SUM(IF(?req = ?nextInitial, 1,
-  0))`を`1`に変える変異(全件を一致として数える)を、既存のfixtureに対する
-  テストは検出できない(実際に壊して確認した。`tests/test_competency_
-  questions_phase1.py`の該当テストdocstring・task-2b-report.md参照)。
+- **訂正(team-lead裁定を受けた修正)。** 当初のfixtureは「両方の年度に
+  記録がある事業」がPROJECT_CORE(CQ14/CQ16と同じ事業)1件だけで、
+  たまたま完全一致(2024年度要求100,000,000円=2025年度当初100,000,000円)
+  だった——**不一致の事業が無く**、`SUM(IF(?req = ?nextInitial, 1, 0))`を
+  `1`に変える変異(全件を一致として数える)を検出できなかった。
+  **これはCQ18のGRAPH・CQ15のOPTIONALの「見送り」とは理由が違う**
+  (それらは人工的な重複トリプルの注入が必要だった)——CQ20が測ろうと
+  している軸そのもの(要求額と当初予算の事業ごとの一致率。実データでは
+  3〜4割)を、fixtureが「要求はそのまま通る」という現実に無い世界でしか
+  表現していなかったため、**PROJECT_COREに2026年度(不一致)を追加した**
+  (`tests/phase1_fixture.py`。恒等式は保ち、架空の事業は新設していない)。
+  以降、CQ20は2024年度(一致)・2025年度(不一致)の2行を返し、この変異を
+  実際に検出できる(`tests/test_competency_questions_phase1.py`の該当
+  テスト・task-2b-report.md参照)。
 
 ### 答えの例(fixtureに対して実行した結果)
 
@@ -201,13 +208,13 @@ CQ16(年度ごとの合計)だけを見ると「要求の96.9〜99.4%が付い�
 | CQ11 | (fixture実演用の架空法令)を発令した「厚生省」は既に廃止されており、現在の後継は「厚生労働省」 |
 | CQ12 | 2025年度: 国が自ら支払った額=1,007,000円(2件。入口ブロックA 1,000,000円+間接経費7,000円)。2024年度は入口ブロックを持たないため現れない |
 | CQ13 | ブロックB(1,000,000円)がブロックAを出どころに持つ=同じ資金の重複段。`paidByGovernment`はBについて偽 |
-| CQ14 | 2024年度: 当初90,000,000円+補正5,000,000円+繰越3,000,000円+予備費2,000,000円=現額100,000,000円/執行80,000,000円。2025年度: 当初100,000,000円=現額100,000,000円/執行0円(未執行) |
+| CQ14 | 2024年度: 当初90,000,000円+補正5,000,000円+繰越3,000,000円+予備費2,000,000円=現額100,000,000円/執行80,000,000円。2025年度: 当初100,000,000円=現額100,000,000円/執行0円(未執行)。2026年度: 当初95,000,000円=現額95,000,000円/執行0円(未執行。CQ20実演のため追加) |
 | CQ15 | 厚生労働省: 2025年度=113,000,000円(3事業)・2024年度=50,000,000円(1事業)。内閣府: 2025年度=20,000,000円(1事業) |
 | CQ16 | 2024年度: 要求100,000,000円/当初90,000,000円(1件)。2025年度: 要求110,000,000円/当初100,000,000円(1件) |
 | CQ17 | resolved=9,525,000円(7件)・unresolved=500,000円(1件)・bundled=200,000円(1件)・sentinel_or_nonexistent_houjin_bangou=100,000円(1件) |
-| CQ18 | GovernmentOrgan=40・Ministry=40・Expenditure=10・BudgetProject=5・Law=4・UnresolvedReference=3・LawRevision=3・ExpenditureBlock=3・AnnualBudget=2・Organization=1・AbolishedGovernmentOrgan=1・IndirectCost=1 |
+| CQ18 | GovernmentOrgan=40・Ministry=40・Expenditure=10・BudgetProject=5・Law=4・UnresolvedReference=3・LawRevision=3・ExpenditureBlock=3・AnnualBudget=3(CQ20実演のため2026年度分を追加し2→3)・Organization=1・AbolishedGovernmentOrgan=1・IndirectCost=1 |
 | CQ19 | 2025年度: naiveSum=2,500,000円(ブロックA+B+C)/entryOnly=1,000,000円(ブロックAのみ)/blockCount=3。**CQ12(1,007,000円=entryOnly+間接経費)とは別の値**である |
-| CQ20 | 2024年度: projectsInBothYears=1・exactMatches=1(PROJECT_COREの要求100,000,000円=2025年度当初100,000,000円)。2025年度は2026年度の記録が無いため現れない |
+| CQ20 | 2024年度: projectsInBothYears=1・exactMatches=1(要求100,000,000円=2025年度当初100,000,000円)。2025年度: projectsInBothYears=1・exactMatches=0(要求110,000,000円≠2026年度当初95,000,000円。不一致の実演) |
 
 ### 実在値の根拠(B-S3。CQ1/CQ7/CQ8/CQ9で使う法令アンカー)
 

@@ -390,7 +390,9 @@ def build_budget_result() -> rs.BuildResult:
             #   2024年度: 90 + 5 + 3 + 2 = 100(現額) / 執行80 / 翌年度繰越10
             #             → 翌年度要求額100(これが2025年度の当初予算になった)
             #   2025年度: 100 + 0 + 0 + 0 = 100(現額) / **執行0(未執行)**
-            #             → 翌年度要求額110
+            #             → 翌年度要求額110(これは2026年度の当初予算とは
+            #             **一致しない**。下記2026年度参照——CQ20の実演)
+            #   2026年度: 95 + 0 + 0 + 0 = 95(現額) / 執行0(未執行・翌年度要求は無し)
             #
             # **執行額0を入れているのは意図的である。** 実データでは
             # レビューシート年度(最新)の執行額が5,794事業すべて0であり
@@ -399,7 +401,20 @@ def build_budget_result() -> rs.BuildResult:
             #
             # **2025年度のinitialBudgetはbudget_amount(100,000,000)と一致させる。**
             # パイプラインの検査(`budgetAmount == シート年度のinitialBudget`)が
-            # 成立することをfixtureでも保つ —— ずらすとリリースゲートが止まる。
+            # 成立することをfixtureでも保つ —— ずらすとリリースゲートが止まる
+            # (この検査はレビューシート年度=2025だけを見るので、2026年度を
+            # 追加してもこの不変条件には触れない)。
+            #
+            # **2026年度(CQ20実演。task-2b-report.md参照)。** team-lead裁定:
+            # CQ20が測ろうとしている軸(要求額と当初予算の事業ごとの一致率、
+            # 実データでは3〜4割)を、いままでのfixtureは「完全一致する
+            # 世界」でしか表現していなかった——2025年度の翌年度要求額
+            # (110,000,000)に対し、2026年度の当初予算を意図的に**別の値**
+            # (95,000,000)にすることで、**不一致のペア**を作る。
+            # 恒等式(95+0+0+0=95)は保つ。翌年度要求額は持たせない
+            # (2027年度のデータが無いため——`next_year_request`が
+            # `None`の列はそのまま欠損として扱われ、CQ16/CQ20の
+            # 「?a budget:nextYearRequest ?req」には束縛されない)。
             annual_budgets=(
                 rs.AnnualBudgetLine(
                     budget_fiscal_year="2024",
@@ -422,6 +437,17 @@ def build_budget_result() -> rs.BuildResult:
                     executed_amount=0,
                     carried_over_to_next_year=0,
                     next_year_request=110_000_000,
+                ),
+                rs.AnnualBudgetLine(
+                    budget_fiscal_year="2026",
+                    initial_budget=95_000_000,
+                    supplementary_budget=0,
+                    carried_over_from_previous_year=0,
+                    reserve_fund=0,
+                    total_budget_available=95_000_000,
+                    executed_amount=0,
+                    carried_over_to_next_year=0,
+                    next_year_request=None,
                 ),
             ),
         ),

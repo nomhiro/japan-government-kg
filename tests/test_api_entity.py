@@ -353,8 +353,13 @@ def test_entity_detail_relationships_not_truncated_when_limit_is_generous(client
     # 裁定B99でPROJECT_COREに年度ごとの予算(AnnualBudget)2件が入ったため、
     # 入ってくる関係が4→6に増えた。**この数はfixtureの形を固定する意図的な
     # 値**なので、増えたら「なぜ増えたか」を確認してから更新する
-    # (放置してよい失敗ではない)
-    assert total == 8, detail.relationships  # outgoing 2 + incoming 6
+    # (放置してよい失敗ではない)。
+    #
+    # **訂正(Task 2b追記。CQ20実演のため2026年度分のAnnualBudgetを1件
+    # 追加した——team-lead裁定。tests/phase1_fixture.pyのPROJECT_CORE・
+    # task-2b-report.md参照)。** 入ってくる関係が6→7に増え、合計8→9に
+    # なった。ここが実際に動いた(放置せず確認済み)。
+    assert total == 9, detail.relationships  # outgoing 2 + incoming 7
 
 
 def test_entity_detail_relationships_truncate_with_a_small_limit(client):

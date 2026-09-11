@@ -648,12 +648,14 @@ def test_cq14_returns_one_row_per_budget_year_with_the_breakdown(kg):
     """1事業が複数年度の記録を持ち、**予算年度ごとに1行**返ること。
     4つの内訳が恒等式(当初+補正+繰越+予備費=現額)を満たすこと。
 
-    fixtureのPROJECT_COREは2年度を持つ:
+    fixtureのPROJECT_COREは3年度を持つ(2026年度はCQ20実演——不一致の
+    年度ペアを作るためteam-lead裁定で追加。task-2b-report.md参照):
       2024: 90 + 5 + 3 + 2 = 100(現額) / 執行80
       2025: 100 + 0 + 0 + 0 = 100(現額) / 執行0(未執行)
+      2026: 95 + 0 + 0 + 0 = 95(現額) / 執行0(未執行)
 
     何があれば落ちるか:
-    - `budgetFiscalYear`でGROUP BYしなくなると2年度が1行に潰れる
+    - `budgetFiscalYear`でGROUP BYしなくなると3年度が1行に潰れる
     - `fiscalYear`(シート年度)と`budgetFiscalYear`(対象年度)を同じスロットに
       統合すると、2024年度の行が消える(シート年度は2025しか無いため)
     - 内訳のどれかを必須にし忘れて0件になる
@@ -666,10 +668,11 @@ def test_cq14_returns_one_row_per_budget_year_with_the_breakdown(kg):
         by_year[int(budget_year)] = (
             int(init), int(supp), int(carried_in), int(reserve), int(avail), int(executed), int(count)
         )
-    assert sorted(by_year) == [2024, 2025], by_year
+    assert sorted(by_year) == [2024, 2025, 2026], by_year
     assert by_year[2024] == (90_000_000, 5_000_000, 3_000_000, 2_000_000, 100_000_000, 80_000_000, 1)
     assert by_year[2025] == (100_000_000, 0, 0, 0, 100_000_000, 0, 1)
-    # 恒等式が両年度で成立する(CQが返す値そのもので確かめる)
+    assert by_year[2026] == (95_000_000, 0, 0, 0, 95_000_000, 0, 1)
+    # 恒等式が全年度で成立する(CQが返す値そのもので確かめる)
     for y, v in by_year.items():
         assert v[0] + v[1] + v[2] + v[3] == v[4], f"{y}年度の恒等式が崩れている: {v}"
 
@@ -875,7 +878,9 @@ def test_cq18_counts_instances_across_named_graphs(kg):
         "UnresolvedReference": 3,
         "LawRevision": 3,
         "ExpenditureBlock": 3,
-        "AnnualBudget": 2,
+        # CQ20実演のため2026年度分を1件追加した(team-lead裁定。
+        # task-2b-report.md参照)ので2→3件になった。
+        "AnnualBudget": 3,
         "Organization": 1,
         "AbolishedGovernmentOrgan": 1,
         "IndirectCost": 1,
@@ -972,31 +977,37 @@ def test_cq19_entry_only_differs_from_cq12_government_paid_total(kg):
 
 
 def test_cq20_counts_the_project_present_in_both_years_and_its_exact_match(kg):
-    """fixtureのPROJECT_CORE(CQ14/CQ16と同じ事業)に対し、2024年度の
-    `nextYearRequest`(100,000,000円)と2025年度の`initialBudget`
-    (100,000,000円)が一致する1件だけが返ること。
+    """fixtureのPROJECT_CORE(CQ14/CQ16と同じ事業)に対し、
+    **一致する年度ペアと一致しない年度ペアの両方**が正しく数えられること。
 
-    fixtureで`annual_budgets`を持つ事業はPROJECT_COREだけで、かつ
-    2026年度の記録を持つ事業がどこにも無いため、**2025年度の行は
-    現れない**(次年度の記録が無く`projectsInBothYears`の分母に入らない)。
+    - 2024年度: `nextYearRequest`(100,000,000円)と2025年度の
+      `initialBudget`(100,000,000円)が**一致**する
+    - 2025年度: `nextYearRequest`(110,000,000円)と2026年度の
+      `initialBudget`(95,000,000円)が**一致しない**
+      (2026年度分は不一致の年度ペアを作るために追加した。team-lead裁定。
+      `tests/phase1_fixture.py`のPROJECT_CORE・task-2b-report.md参照)
 
-    何があれば落ちるか:
+    2026年度は`nextYearRequest`を持たないため、2026年度自身が
+    `requestYear`になる行は現れない(次の年度=2027の記録も無い)。
+
+    何があれば落ちるか(いずれも実際に壊して確認した。task-2b-report.md参照):
+    - `SUM(IF(?req = ?nextInitial, 1, 0))`を`SUM(1)`(全件を一致として
+      数える)に変えると、2025年度のexactMatchesが0から1に変わって
+      `by_year[2025] == (1, 0)`が崩れる(**2026年度追加前は、一致する
+      事業しかfixtureに無くこの変異を検出できなかった**——この壊し
+      確認が通るようになったこと自体が、今回のfixture修正の目的である)
     - `BIND(?requestYear + 1 AS ?nextYear)`を外し同一年度で比べる実装に
-      戻すと、2024年度がexactMatches=0(100,000,000≠90,000,000)、
-      2025年度も現れる(100,000,000の記録が同一年度に無いため0件)ようになり、
-      `sorted(by_year) == [2024]`が崩れる
-    - `budget:project`での結合を外すと、両方の年度に記録がある事業の
-      判定自体ができなくなる(このfixtureでは`AnnualBudget`を持つ事業が
-      1件しかないため値としては変わらないが、構文上`?project`が未束縛に
-      なり`COUNT(?project)`が0になる——このテスト自身は検出するが、
-      「別の事業と誤って結合する」ケースはこのfixtureでは検証できない。
-      下のテストのdocstring「既知の限界」参照)
+      戻すと、年度の集合(`{2024, 2025}`)自体は変わらないが、2024年度の
+      `exactMatches`が1から0に変わる(同一年度のnextYearRequest
+      100,000,000円とinitialBudget 90,000,000円は一致しないため)——
+      `by_year[2024] == (1, 1)`が崩れる
     """
     rows = _query(kg, "cq20-request-exactly-granted.rq")
     assert rows, "CQ20に答えられない"
     by_year = {int(y): (int(both), int(exact)) for y, both, exact in rows}
-    assert sorted(by_year) == [2024], by_year
+    assert sorted(by_year) == [2024, 2025], by_year
     assert by_year[2024] == (1, 1), by_year
+    assert by_year[2025] == (1, 0), by_year
 
 
 def test_cq20_matches_the_independent_count_from_budget_result_annual_budgets(kg, budget_result):
@@ -1006,16 +1017,17 @@ def test_cq20_matches_the_independent_count_from_budget_result_annual_budgets(kg
     ——CQ19の`test_cq19_entry_only_matches_the_independent_sum_from_
     budget_result_blocks`と同型の正のコントロール。
 
-    **既知の限界(捕まえられないことを実際に確認した。壊し確認は
-    task-2b-report.md参照)。** fixtureで「両方の年度に記録がある事業」は
-    1件だけで、その1件がたまたま完全一致(2024年度要求100,000,000円=
-    2025年度当初100,000,000円)である。そのため`SUM(IF(?req =
-    ?nextInitial, 1, 0))`を`SUM(1)`(全件を一致として数える)に変える変異は、
-    この独立経路との突き合わせを含めてもなお**検出できない**——変異後も
-    `exactMatches`は`projectsInBothYears`と同じ1のままで、独立経路が
-    導く「一致した件数」も同じく1だからである。不一致の事業をfixtureに
-    追加すれば検出できるようになるはずだが、`tests/phase1_fixture.py`は
-    このタスクの変更対象外(team-lead裁定)のため見送る。
+    **訂正(team-lead裁定を受けた修正)。** この関数の前の版は「fixtureに
+    不一致の事業が無いため、`SUM(IF(?req = ?nextInitial, 1, 0))`を
+    `SUM(1)`に変える変異を検出できない」という既知の限界を書いていた。
+    team-leadの指摘(CQ18/CQ15と違い、これは人工的な汚染ではなく
+    **現実の側の普通の姿**——要求が満額通らない事業——をfixtureに
+    入れることだという指摘)を受けて`tests/phase1_fixture.py`の
+    PROJECT_COREに2026年度(不一致)を追加した結果、**この独立経路の
+    突き合わせが実際にその変異を検出できるようになった**
+    (2025年度: 独立経路が導くexact=0に対し、変異後のCQ20は1を返すため
+    不一致になる。壊し確認は`test_cq20_counts_the_project_present_in_
+    both_years_and_its_exact_match`のdocstring・task-2b-report.md参照)。
     """
     rows = _query(kg, "cq20-request-exactly-granted.rq")
     cq20 = {int(y): (int(both), int(exact)) for y, both, exact in rows}
