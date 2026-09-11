@@ -41,6 +41,10 @@ COPY src ./src
 # **コンテナという別の環境を一度も見ていなかった**(再発欠陥9)。
 # `.dockerignore`は`schema/`を除外していないのでそのまま送られる。
 COPY schema/generated ./schema/generated
+# **CQファイルを焼く(裁定B103)。`/overview`が起動時に実行時に読む。**
+# 裁定B102で`schema/generated`を焼き忘れて本番のチャットが壊れたのと
+# 同じ穴なので、`tests/test_api_image_contents.py`が両方を見る。
+COPY queries ./queries
 RUN pip install --no-cache-dir --disable-pip-version-check .
 
 ARG GIT_COMMIT=""

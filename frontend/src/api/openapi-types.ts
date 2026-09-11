@@ -55,6 +55,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Overview
+         * @description トップページ第1層(裁定B103)。起動時に1回計算した値を返すだけ
+         *     ——リクエストごとにCQを走らせない(`overview.py`のモジュール
+         *     docstring参照)。
+         *
+         *     `app.state.overview`が`None`なら**503**を返す。`/chat`が
+         *     `chat_model`未設定のときに503を返すのと同じ作法(このモジュール
+         *     docstring参照)——起動時の集約に失敗しても、他のエンドポイントの
+         *     起動を妨げない設計の裏返しである。
+         */
+        get: operations["overview_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/path": {
         parameters: {
             query?: never;
@@ -112,6 +139,28 @@ export interface components {
             graphs: string[];
             /** Value */
             value: string;
+        };
+        /**
+         * BudgetAndExecution
+         * @description CQ14の1行。ある予算年度の内訳と執行。
+         */
+        BudgetAndExecution: {
+            /** Budget Fiscal Year */
+            budget_fiscal_year: number;
+            /** Carried Over From Previous Year */
+            carried_over_from_previous_year: number;
+            /** Executed Amount */
+            executed_amount: number;
+            /** Initial Budget */
+            initial_budget: number;
+            /** Project Count */
+            project_count: number;
+            /** Reserve Fund */
+            reserve_fund: number;
+            /** Supplementary Budget */
+            supplementary_budget: number;
+            /** Total Budget Available */
+            total_budget_available: number;
         };
         /**
          * ChatMessage
@@ -242,6 +291,20 @@ export interface components {
             type: string;
         };
         /**
+         * GovernmentPaidTotal
+         * @description CQ12の1行。**これは下限であり、両方向に誤差がある** ——
+         *     `queries/cq/cq12-government-paid-total.rq`のヘッダに理由と上限
+         *     (63,863,635,000円=0.050%)がある。画面に「正確な総額」と書いてはいけない。
+         */
+        GovernmentPaidTotal: {
+            /** Fiscal Year */
+            fiscal_year: number;
+            /** Government Paid */
+            government_paid: number;
+            /** Item Count */
+            item_count: number;
+        };
+        /**
          * GraphEdge
          * @description 近傍サブグラフ・パス探索の辺1本。
          *
@@ -265,6 +328,44 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * MinistryBudget
+         * @description CQ15の1行。府省1つの、ある年度の予算額と事業数。
+         */
+        MinistryBudget: {
+            /** Fiscal Year */
+            fiscal_year: number;
+            /** Id */
+            id: string;
+            /** Id Path */
+            id_path: string;
+            /** Label */
+            label: string | null;
+            /** Project Count */
+            project_count: number;
+            /** Total Budget */
+            total_budget: number;
+        };
+        /**
+         * MoneyThroughStage
+         * @description CQ13の1行。同じ金額が複数の段に現れる事業。足すと二重計上になる。
+         */
+        MoneyThroughStage: {
+            /** Amount */
+            amount: number;
+            /** Block Id */
+            block_id: string;
+            /** Block Name */
+            block_name: string | null;
+            /** Paid By Government */
+            paid_by_government: boolean;
+            /** Project Name */
+            project_name: string;
+            /** Source Id */
+            source_id: string | null;
+            /** Source Name */
+            source_name: string | null;
         };
         /**
          * NeighborhoodResponse
@@ -302,6 +403,38 @@ export interface components {
             nodes: components["schemas"]["EntityRef"][];
             /** Nodes Truncated */
             nodes_truncated: boolean;
+        };
+        /**
+         * OverviewResponse
+         * @description トップページ第1層が必要とするものすべて(裁定B103)。
+         *
+         *     **この応答の数字はすべて`queries/cq/*.rq`の答えである。**
+         *     画面用の別集計は存在しない——`overview.py`に手書きのSPARQLは無い。
+         *
+         *     `computed_at`は**このプロセスが起動時に計算した時刻**であり、
+         *     KGの鮮度ではない。KGの鮮度はCQ10(`release_freshness`)が答える。
+         */
+        OverviewResponse: {
+            /** Budget And Execution */
+            budget_and_execution: components["schemas"]["BudgetAndExecution"][];
+            /** Computed At */
+            computed_at: string;
+            /** Government Paid */
+            government_paid: components["schemas"]["GovernmentPaidTotal"][];
+            /** Ministries */
+            ministries: components["schemas"]["MinistryBudget"][];
+            /** Money Through Stages */
+            money_through_stages: components["schemas"]["MoneyThroughStage"][];
+            /** Recipient Identification */
+            recipient_identification: components["schemas"]["RecipientIdentification"][];
+            /** Request And Initial */
+            request_and_initial: components["schemas"]["RequestAndInitial"][];
+            /** Sources */
+            sources: {
+                [key: string]: string;
+            };
+            /** Type Counts */
+            type_counts: components["schemas"]["TypeCount"][];
         };
         /**
          * PathResponse
@@ -367,6 +500,30 @@ export interface components {
             source: string;
         };
         /**
+         * RecipientIdentification
+         * @description CQ17の1行。照合区分ごとの金額と件数。
+         *
+         *     **`label`を持たない。表示名はAPIからは出せない。**
+         *     `?category`は型なしの文字列リテラル(`resolved`等)であり、その日本語の
+         *     表示名(裁定B88の`dcterms:title @ja`)は**トリプルストアに入っていない**
+         *     ——`schema/generated/*.owl.ttl`はAPIイメージの`/chat`用の静的ファイルで、
+         *     名前付きグラフはソース別のデータグラフだけである。SPARQLで
+         *     `?category dcterms:title ?label`を引くと**0件**になる
+         *     (`queries/cq/cq17-recipient-identification.rq`のヘッダに実測と理由がある)。
+         *
+         *     表示名はフロントエンドが`labels.ts`の
+         *     `enumValueLabel("recipientMatchCategory", category)`で引く
+         *     ——ビルド時に書き出した`labels.json`の`enumValues`が出所である。
+         */
+        RecipientIdentification: {
+            /** Category */
+            category: string;
+            /** Expenditure Count */
+            expenditure_count: number;
+            /** Total Amount */
+            total_amount: number;
+        };
+        /**
          * Relationship
          * @description エンティティ詳細の関係1件。
          */
@@ -378,6 +535,22 @@ export interface components {
             /** Predicate */
             predicate: string;
             related: components["schemas"]["EntityRef"];
+        };
+        /**
+         * RequestAndInitial
+         * @description CQ16の1行。**年度のずれは解消していない** ——
+         *     年度Yの`requested`に対応するのは年度Y+1の`initial`である
+         *     (CQ16のヘッダ参照)。対応付けは表示側で行う。
+         */
+        RequestAndInitial: {
+            /** Budget Fiscal Year */
+            budget_fiscal_year: number;
+            /** Initial */
+            initial: number;
+            /** Record Count */
+            record_count: number;
+            /** Requested */
+            requested: number;
         };
         /**
          * SearchHit
@@ -419,6 +592,23 @@ export interface components {
             result_count: number;
             /** Tool */
             tool: string;
+        };
+        /**
+         * TypeCount
+         * @description CQ18の1行。
+         *
+         *     **`label`を持たない**(`RecipientIdentification`と同じ理由)。
+         *     型の表示名はフロントエンドが`labels.ts`の`typeLabel(localName)`で引く
+         *     (`labels.json`の`types`。18件)。
+         *
+         *     `type`は完全IRIで返す。ローカル名(`#`の後ろ)への切り出しは
+         *     **表示側で行う** ——`labels.ts`のキーがローカル名だからである。
+         */
+        TypeCount: {
+            /** Instance Count */
+            instance_count: number;
+            /** Type */
+            type: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -545,6 +735,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    overview_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverviewResponse"];
                 };
             };
         };

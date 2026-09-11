@@ -435,3 +435,126 @@ class ChatResponse(_Envelope):
     #: 推論モデルは推論トークンも同じ上限を消費するため、道具呼び出しの
     #: 上限とは別にこれが起きうる(task-E2-brief.mdの実測注意)
     truncated: bool
+
+
+# =============================================================================
+# トップページ第1層(F-2。裁定B103): CQ12・CQ13・CQ15〜CQ18の答えをそのまま返す
+# =============================================================================
+
+
+class GovernmentPaidTotal(_Envelope):
+    """CQ12の1行。**これは下限であり、両方向に誤差がある** ——
+    `queries/cq/cq12-government-paid-total.rq`のヘッダに理由と上限
+    (63,863,635,000円=0.050%)がある。画面に「正確な総額」と書いてはいけない。"""
+
+    fiscal_year: int
+    government_paid: int
+    item_count: int
+
+
+class MoneyThroughStage(_Envelope):
+    """CQ13の1行。同じ金額が複数の段に現れる事業。足すと二重計上になる。"""
+
+    project_name: str
+    block_id: str
+    block_name: str | None
+    paid_by_government: bool
+    amount: int
+    source_id: str | None
+    source_name: str | None
+
+
+class MinistryBudget(_Envelope):
+    """CQ15の1行。府省1つの、ある年度の予算額と事業数。"""
+
+    id: str
+    id_path: str
+    #: 表示名(`dcterms:title @ja`)。**無いことがある** ——
+    #: CQ15が`OPTIONAL`で取るため。フロントで合成しない(裁定B78/B88)。
+    label: str | None
+    fiscal_year: int
+    total_budget: int
+    project_count: int
+
+
+class BudgetAndExecution(_Envelope):
+    """CQ14の1行。ある予算年度の内訳と執行。"""
+
+    budget_fiscal_year: int
+    initial_budget: int
+    supplementary_budget: int
+    carried_over_from_previous_year: int
+    reserve_fund: int
+    total_budget_available: int
+    executed_amount: int
+    project_count: int
+
+
+class RequestAndInitial(_Envelope):
+    """CQ16の1行。**年度のずれは解消していない** ——
+    年度Yの`requested`に対応するのは年度Y+1の`initial`である
+    (CQ16のヘッダ参照)。対応付けは表示側で行う。"""
+
+    budget_fiscal_year: int
+    requested: int
+    initial: int
+    record_count: int
+
+
+class RecipientIdentification(_Envelope):
+    """CQ17の1行。照合区分ごとの金額と件数。
+
+    **`label`を持たない。表示名はAPIからは出せない。**
+    `?category`は型なしの文字列リテラル(`resolved`等)であり、その日本語の
+    表示名(裁定B88の`dcterms:title @ja`)は**トリプルストアに入っていない**
+    ——`schema/generated/*.owl.ttl`はAPIイメージの`/chat`用の静的ファイルで、
+    名前付きグラフはソース別のデータグラフだけである。SPARQLで
+    `?category dcterms:title ?label`を引くと**0件**になる
+    (`queries/cq/cq17-recipient-identification.rq`のヘッダに実測と理由がある)。
+
+    表示名はフロントエンドが`labels.ts`の
+    `enumValueLabel("recipientMatchCategory", category)`で引く
+    ——ビルド時に書き出した`labels.json`の`enumValues`が出所である。
+    """
+
+    category: str
+    total_amount: int
+    expenditure_count: int
+
+
+class TypeCount(_Envelope):
+    """CQ18の1行。
+
+    **`label`を持たない**(`RecipientIdentification`と同じ理由)。
+    型の表示名はフロントエンドが`labels.ts`の`typeLabel(localName)`で引く
+    (`labels.json`の`types`。18件)。
+
+    `type`は完全IRIで返す。ローカル名(`#`の後ろ)への切り出しは
+    **表示側で行う** ——`labels.ts`のキーがローカル名だからである。
+    """
+
+    type: str
+    instance_count: int
+
+
+class OverviewResponse(_Envelope):
+    """トップページ第1層が必要とするものすべて(裁定B103)。
+
+    **この応答の数字はすべて`queries/cq/*.rq`の答えである。**
+    画面用の別集計は存在しない——`overview.py`に手書きのSPARQLは無い。
+
+    `computed_at`は**このプロセスが起動時に計算した時刻**であり、
+    KGの鮮度ではない。KGの鮮度はCQ10(`release_freshness`)が答える。
+    """
+
+    computed_at: str
+    #: 各項目がどのCQから来たかの対応。**画面に出す**ため
+    #: (原則1: アプリは検証装置。利用者が出所のCQを辿れる)
+    sources: dict[str, str]
+    ministries: list[MinistryBudget]
+    budget_and_execution: list[BudgetAndExecution]
+    request_and_initial: list[RequestAndInitial]
+    recipient_identification: list[RecipientIdentification]
+    type_counts: list[TypeCount]
+    government_paid: list[GovernmentPaidTotal]
+    money_through_stages: list[MoneyThroughStage]

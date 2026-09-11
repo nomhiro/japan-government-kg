@@ -24,6 +24,56 @@
         "title": "AttributeValue",
         "type": "object"
       },
+      "BudgetAndExecution": {
+        "additionalProperties": false,
+        "description": "CQ14の1行。ある予算年度の内訳と執行。",
+        "properties": {
+          "budget_fiscal_year": {
+            "title": "Budget Fiscal Year",
+            "type": "integer"
+          },
+          "carried_over_from_previous_year": {
+            "title": "Carried Over From Previous Year",
+            "type": "integer"
+          },
+          "executed_amount": {
+            "title": "Executed Amount",
+            "type": "integer"
+          },
+          "initial_budget": {
+            "title": "Initial Budget",
+            "type": "integer"
+          },
+          "project_count": {
+            "title": "Project Count",
+            "type": "integer"
+          },
+          "reserve_fund": {
+            "title": "Reserve Fund",
+            "type": "integer"
+          },
+          "supplementary_budget": {
+            "title": "Supplementary Budget",
+            "type": "integer"
+          },
+          "total_budget_available": {
+            "title": "Total Budget Available",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "budget_fiscal_year",
+          "initial_budget",
+          "supplementary_budget",
+          "carried_over_from_previous_year",
+          "reserve_fund",
+          "total_budget_available",
+          "executed_amount",
+          "project_count"
+        ],
+        "title": "BudgetAndExecution",
+        "type": "object"
+      },
       "ChatMessage": {
         "additionalProperties": false,
         "description": "クライアントが送る会話履歴の1件(仕様§6.3: サーバは履歴を保存しない)。",
@@ -305,6 +355,31 @@
         "title": "EntityRef",
         "type": "object"
       },
+      "GovernmentPaidTotal": {
+        "additionalProperties": false,
+        "description": "CQ12の1行。**これは下限であり、両方向に誤差がある** ——\n`queries/cq/cq12-government-paid-total.rq`のヘッダに理由と上限\n(63,863,635,000円=0.050%)がある。画面に「正確な総額」と書いてはいけない。",
+        "properties": {
+          "fiscal_year": {
+            "title": "Fiscal Year",
+            "type": "integer"
+          },
+          "government_paid": {
+            "title": "Government Paid",
+            "type": "integer"
+          },
+          "item_count": {
+            "title": "Item Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fiscal_year",
+          "government_paid",
+          "item_count"
+        ],
+        "title": "GovernmentPaidTotal",
+        "type": "object"
+      },
       "GraphEdge": {
         "additionalProperties": false,
         "description": "近傍サブグラフ・パス探索の辺1本。\n\n**`Relationship`と別の型にする理由**: `Relationship`は「あるエンティティ\nから見た関係」なので`direction`(自分が主語か目的語か)を持つ。\nサブグラフの辺は**特定の視点を持たない**ので、代わりに`source`/`target`\n(どちらも完全IRI)で向きを表す。`direction`を流用すると「誰から見た\n向きなのか」が応答から読めなくなる。",
@@ -346,6 +421,119 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "MinistryBudget": {
+        "additionalProperties": false,
+        "description": "CQ15の1行。府省1つの、ある年度の予算額と事業数。",
+        "properties": {
+          "fiscal_year": {
+            "title": "Fiscal Year",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "id_path": {
+            "title": "Id Path",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "project_count": {
+            "title": "Project Count",
+            "type": "integer"
+          },
+          "total_budget": {
+            "title": "Total Budget",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "id_path",
+          "label",
+          "fiscal_year",
+          "total_budget",
+          "project_count"
+        ],
+        "title": "MinistryBudget",
+        "type": "object"
+      },
+      "MoneyThroughStage": {
+        "additionalProperties": false,
+        "description": "CQ13の1行。同じ金額が複数の段に現れる事業。足すと二重計上になる。",
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "integer"
+          },
+          "block_id": {
+            "title": "Block Id",
+            "type": "string"
+          },
+          "block_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Name"
+          },
+          "paid_by_government": {
+            "title": "Paid By Government",
+            "type": "boolean"
+          },
+          "project_name": {
+            "title": "Project Name",
+            "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Name"
+          }
+        },
+        "required": [
+          "project_name",
+          "block_id",
+          "block_name",
+          "paid_by_government",
+          "amount",
+          "source_id",
+          "source_name"
+        ],
+        "title": "MoneyThroughStage",
         "type": "object"
       },
       "NeighborhoodResponse": {
@@ -422,6 +610,85 @@
           "fanout_truncated_nodes"
         ],
         "title": "NeighborhoodResponse",
+        "type": "object"
+      },
+      "OverviewResponse": {
+        "additionalProperties": false,
+        "description": "トップページ第1層が必要とするものすべて(裁定B103)。\n\n**この応答の数字はすべて`queries/cq/*.rq`の答えである。**\n画面用の別集計は存在しない——`overview.py`に手書きのSPARQLは無い。\n\n`computed_at`は**このプロセスが起動時に計算した時刻**であり、\nKGの鮮度ではない。KGの鮮度はCQ10(`release_freshness`)が答える。",
+        "properties": {
+          "budget_and_execution": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetAndExecution"
+            },
+            "title": "Budget And Execution",
+            "type": "array"
+          },
+          "computed_at": {
+            "title": "Computed At",
+            "type": "string"
+          },
+          "government_paid": {
+            "items": {
+              "$ref": "#/components/schemas/GovernmentPaidTotal"
+            },
+            "title": "Government Paid",
+            "type": "array"
+          },
+          "ministries": {
+            "items": {
+              "$ref": "#/components/schemas/MinistryBudget"
+            },
+            "title": "Ministries",
+            "type": "array"
+          },
+          "money_through_stages": {
+            "items": {
+              "$ref": "#/components/schemas/MoneyThroughStage"
+            },
+            "title": "Money Through Stages",
+            "type": "array"
+          },
+          "recipient_identification": {
+            "items": {
+              "$ref": "#/components/schemas/RecipientIdentification"
+            },
+            "title": "Recipient Identification",
+            "type": "array"
+          },
+          "request_and_initial": {
+            "items": {
+              "$ref": "#/components/schemas/RequestAndInitial"
+            },
+            "title": "Request And Initial",
+            "type": "array"
+          },
+          "sources": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "object"
+          },
+          "type_counts": {
+            "items": {
+              "$ref": "#/components/schemas/TypeCount"
+            },
+            "title": "Type Counts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "computed_at",
+          "sources",
+          "ministries",
+          "budget_and_execution",
+          "request_and_initial",
+          "recipient_identification",
+          "type_counts",
+          "government_paid",
+          "money_through_stages"
+        ],
+        "title": "OverviewResponse",
         "type": "object"
       },
       "PathResponse": {
@@ -556,6 +823,31 @@
         "title": "Provenance",
         "type": "object"
       },
+      "RecipientIdentification": {
+        "additionalProperties": false,
+        "description": "CQ17の1行。照合区分ごとの金額と件数。\n\n**`label`を持たない。表示名はAPIからは出せない。**\n`?category`は型なしの文字列リテラル(`resolved`等)であり、その日本語の\n表示名(裁定B88の`dcterms:title @ja`)は**トリプルストアに入っていない**\n——`schema/generated/*.owl.ttl`はAPIイメージの`/chat`用の静的ファイルで、\n名前付きグラフはソース別のデータグラフだけである。SPARQLで\n`?category dcterms:title ?label`を引くと**0件**になる\n(`queries/cq/cq17-recipient-identification.rq`のヘッダに実測と理由がある)。\n\n表示名はフロントエンドが`labels.ts`の\n`enumValueLabel(\"recipientMatchCategory\", category)`で引く\n——ビルド時に書き出した`labels.json`の`enumValues`が出所である。",
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "expenditure_count": {
+            "title": "Expenditure Count",
+            "type": "integer"
+          },
+          "total_amount": {
+            "title": "Total Amount",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "category",
+          "total_amount",
+          "expenditure_count"
+        ],
+        "title": "RecipientIdentification",
+        "type": "object"
+      },
       "Relationship": {
         "additionalProperties": false,
         "description": "エンティティ詳細の関係1件。",
@@ -583,6 +875,36 @@
           "graph"
         ],
         "title": "Relationship",
+        "type": "object"
+      },
+      "RequestAndInitial": {
+        "additionalProperties": false,
+        "description": "CQ16の1行。**年度のずれは解消していない** ——\n年度Yの`requested`に対応するのは年度Y+1の`initial`である\n(CQ16のヘッダ参照)。対応付けは表示側で行う。",
+        "properties": {
+          "budget_fiscal_year": {
+            "title": "Budget Fiscal Year",
+            "type": "integer"
+          },
+          "initial": {
+            "title": "Initial",
+            "type": "integer"
+          },
+          "record_count": {
+            "title": "Record Count",
+            "type": "integer"
+          },
+          "requested": {
+            "title": "Requested",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "budget_fiscal_year",
+          "requested",
+          "initial",
+          "record_count"
+        ],
+        "title": "RequestAndInitial",
         "type": "object"
       },
       "SearchHit": {
@@ -699,6 +1021,26 @@
           "result_count"
         ],
         "title": "ToolCallLogEntry",
+        "type": "object"
+      },
+      "TypeCount": {
+        "additionalProperties": false,
+        "description": "CQ18の1行。\n\n**`label`を持たない**(`RecipientIdentification`と同じ理由)。\n型の表示名はフロントエンドが`labels.ts`の`typeLabel(localName)`で引く\n(`labels.json`の`types`。18件)。\n\n`type`は完全IRIで返す。ローカル名(`#`の後ろ)への切り出しは\n**表示側で行う** ——`labels.ts`のキーがローカル名だからである。",
+        "properties": {
+          "instance_count": {
+            "title": "Instance Count",
+            "type": "integer"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "instance_count"
+        ],
+        "title": "TypeCount",
         "type": "object"
       },
       "ValidationError": {
@@ -933,6 +1275,25 @@
           }
         },
         "summary": "Neighborhood"
+      }
+    },
+    "/overview": {
+      "get": {
+        "description": "トップページ第1層(裁定B103)。起動時に1回計算した値を返すだけ\n——リクエストごとにCQを走らせない(`overview.py`のモジュール\ndocstring参照)。\n\n`app.state.overview`が`None`なら**503**を返す。`/chat`が\n`chat_model`未設定のときに503を返すのと同じ作法(このモジュール\ndocstring参照)——起動時の集約に失敗しても、他のエンドポイントの\n起動を妨げない設計の裏返しである。",
+        "operationId": "overview_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Overview"
       }
     },
     "/path": {

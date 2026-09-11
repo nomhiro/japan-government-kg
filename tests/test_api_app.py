@@ -162,6 +162,45 @@ def test_warm_up_end_to_end_against_the_rdflib_fixture_succeeds(kg):
 
 
 # =============================================================================
+# 第1層の集約(裁定B103)が起動時に1回計算され、/overviewがそれを返すこと
+# =============================================================================
+
+
+def test_get_overview_returns_the_startup_aggregation(app_and_spy):
+    """`create_app`のlifespanへの結線自体を、HTTP経由で確認する。
+
+    `build_overview`自身が実データに対して正しく組み立てられることは
+    `tests/test_api_overview.py`の結合テストが別に見ている——ここでは
+    「起動時に計算された値が`/overview`から実際に返る」という結線を見る。
+    """
+    app, _ = app_and_spy
+    with TestClient(app) as tc:
+        resp = tc.get("/overview")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["ministries"], "CQ15の行が1件も無い"
+    assert body["sources"]["ministries"] == "cq15-ministry-budget-ranking.rq"
+
+
+class _AlwaysFailsClient:
+    """起動時の集約が失敗する状況を作るためのスパイ。"""
+
+    def query(self, sparql: str):
+        raise RuntimeError("SPARQLエンドポイントに接続できない(テスト用の故意の失敗)")
+
+
+def test_get_overview_returns_503_when_startup_aggregation_failed():
+    """壊し確認: `build_overview`が起動時に失敗しても起動自体は続き
+    (`warm_up`と同じ方針)、`/overview`は503を返す——`/chat`が
+    `chat_model`未設定のときに503を返すのと同じ作法。
+    """
+    app = create_app(_AlwaysFailsClient(), base_uri=BASE)
+    with TestClient(app) as tc:
+        resp = tc.get("/overview")
+    assert resp.status_code == 503, resp.text
+
+
+# =============================================================================
 # ルーティング(検索・エンティティ詳細)
 # =============================================================================
 
@@ -422,6 +461,10 @@ def test_no_route_accepts_a_raw_sparql_query(app_and_spy):
         # (chat_tools.py)自体がこの4関数+get_ontology(ファイル読み取り)に
         # 限られ、任意のSPARQLをLLMにも書かせない
         "/chat",
+        # F-2(裁定B103)。/overviewはSPARQLを受け取らない——起動時に
+        # `queries/cq/*.rq`から計算済みの値を返すだけで、パラメータを
+        # 1つも持たない(下の`param_names`検査参照)
+        "/overview",
     }, paths
 
     # SPARQL(やその断片)を受け取る名前のパラメータが1つも無いこと。

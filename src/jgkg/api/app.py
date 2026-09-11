@@ -23,6 +23,7 @@ clientを作る設計にすると、温め処理だけが本物のFusekiへ接�
 """
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -45,9 +46,11 @@ from jgkg.api.models import (
     ChatResponse,
     EntityDetailResponse,
     NeighborhoodResponse,
+    OverviewResponse,
     PathResponse,
     SearchResponse,
 )
+from jgkg.api.overview import build_overview
 from jgkg.api.queries import (
     ENTITY_RELATIONSHIPS_DEFAULT_LIMIT,
     ENTITY_RELATIONSHIPS_MAX_LIMIT,
@@ -75,6 +78,8 @@ from jgkg.api.queries import (
 from jgkg.api.warmup import warm_up
 from jgkg.config import get_settings
 
+logger = logging.getLogger(__name__)
+
 
 def create_app(
     client: KGClient,
@@ -82,6 +87,7 @@ def create_app(
     *,
     chat_model: ChatModel | None = None,
     generated_dir: Path | None = None,
+    queries_dir: Path | None = None,
 ) -> FastAPI:
     """`client`(本番=`RemoteKGClient`、テスト=`RdflibKGClient`)を束縛してappを作る。
 
@@ -91,9 +97,14 @@ def create_app(
     `chat_model`(E-2。裁定B92)を省略すると`/chat`は503を返す
     (このモジュールdocstring参照)。`generated_dir`を省略すると
     `Path("schema/generated")`(`pipeline.py`の`SHAPES_DIR`と同じ既定)。
+
+    `queries_dir`(F-2。裁定B103)を省略すると`Path("queries/cq")`
+    (`scripts/run_cq.py`の`DEFAULT_QUERY_DIR`・既存CQテストの`CQ_DIR`と
+    同じ既定)。`/overview`が起動時に読むCQファイルの場所である。
     """
     resolved_base_uri = base_uri or get_settings().base_uri
     resolved_generated_dir = generated_dir or Path("schema/generated")
+    resolved_queries_dir = queries_dir or Path("queries/cq")
     settings = get_settings()
     chat_service = (
         ChatService(
@@ -115,6 +126,15 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # 裁定B55対策。失敗しても起動は続ける(warmup.pyのdocstring参照)
         warm_up(client, resolved_base_uri)
+        # **第1層の集約を起動時に1回だけ計算する(裁定B103)。**
+        # 索引が温まった後の方が速いので`warm_up`の後に呼ぶ。
+        # 失敗しても起動は続ける——`/overview`が503を返すだけで、
+        # 検索やエンティティ表示は影響を受けない。
+        try:
+            app.state.overview = build_overview(client, resolved_base_uri, resolved_queries_dir)
+        except Exception:
+            logger.exception("第1層の集約に失敗した。/overview は503を返す")
+            app.state.overview = None
         yield
 
     app = FastAPI(title="Japan Government KG API", lifespan=lifespan)
@@ -148,6 +168,23 @@ def create_app(
         allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
+
+    @app.get("/overview", response_model=OverviewResponse)
+    def overview() -> OverviewResponse:
+        """トップページ第1層(裁定B103)。起動時に1回計算した値を返すだけ
+        ——リクエストごとにCQを走らせない(`overview.py`のモジュール
+        docstring参照)。
+
+        `app.state.overview`が`None`なら**503**を返す。`/chat`が
+        `chat_model`未設定のときに503を返すのと同じ作法(このモジュール
+        docstring参照)——起動時の集約に失敗しても、他のエンドポイントの
+        起動を妨げない設計の裏返しである。
+        """
+        if app.state.overview is None:
+            raise HTTPException(
+                status_code=503, detail="第1層の集約に失敗した(起動時のログ参照)"
+            )
+        return app.state.overview
 
     @app.get("/search", response_model=SearchResponse)
     def search(
