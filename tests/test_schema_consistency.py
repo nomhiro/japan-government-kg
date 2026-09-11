@@ -622,12 +622,33 @@ _NS_CALL_RE = re.compile(r'ns\["([a-z]+)"\]\["([A-Za-z_]+)"\]')
 _EMITTED_BUT_NOT_OWN_PROPERTY = frozenset({"core#label"})
 
 
+def _dynamic_predicate_names() -> set[str]:
+    """**述語名を動的に組み立てている箇所**が書く述語のローカルIRI。
+
+    `_NS_CALL_RE` はリテラルの `ns["mod"]["name"]` しか拾えない。
+    `emit.py` が `ns["budget"][predicate]`(ループ変数)で書く箇所は
+    **正規表現の視野から完全に外れる** —— 実際に裁定B99で
+    `AnnualBudget` の金額8件がそうなり、日本語の表示名が無いまま
+    テストが緑になった(controllerが手書き一覧を導出に切り替えた直後に踏んだ)。
+
+    そこで**emit側にモジュール定数として出させ、ここでは値として読む**
+    (ソースの形に依存しない)。新しく動的な箇所が増えたら、ここに足す。
+    """
+    from jgkg.rdf import emit
+
+    return {f"budget#{name}" for name in emit.ANNUAL_BUDGET_AMOUNT_PREDICATES}
+
+
 def _predicates_written_by_emit() -> set[str]:
-    """`emit.py` が書く述語のローカルIRI(`<module>#<name>`)。クラス名は除く。"""
+    """`emit.py` が書く述語のローカルIRI(`<module>#<name>`)。クラス名は除く。
+
+    リテラルの呼び出し(正規表現)と、**動的に組み立てる箇所(定数から)**の和。
+    """
     src = _EMIT_PY.read_text(encoding="utf-8")
     found = {f"{mod}#{name}" for mod, name in _NS_CALL_RE.findall(src)}
     # 先頭大文字は rdf:type の目的語(クラス)なので述語ではない
-    return {x for x in found if not x.split("#", 1)[1][0].isupper()}
+    literal = {x for x in found if not x.split("#", 1)[1][0].isupper()}
+    return literal | _dynamic_predicate_names()
 
 
 def test_display_names_cover_exactly_the_api_visible_types_and_predicates():
@@ -679,7 +700,15 @@ def test_display_names_cover_exactly_the_api_visible_types_and_predicates():
 
     # **emit.pyが書く述語を導出し、オントロジーが自分で宣言しているものだけに絞る。**
     written = _predicates_written_by_emit()
-    assert len(written) >= 35, (
+    # **定数に出した述語が、本当にemit.pyのループで使われていることを確かめる。**
+    # 定数だけ増やしてループを更新し忘れると、テストは「titleがある」と
+    # 満足するのに実際には書かれない —— 空虚な検査になる。
+    emit_source = _EMIT_PY.read_text(encoding="utf-8")
+    assert "ANNUAL_BUDGET_AMOUNT_PREDICATES," in emit_source, (
+        "emit.pyがANNUAL_BUDGET_AMOUNT_PREDICATESをループで使っていない"
+        " —— 定数と実際に書かれる述語が食い違っている疑い"
+    )
+    assert len(written) >= 43, (
         f"emit.pyから拾えた述語が少なすぎる({len(written)}件) —— "
         "正規表現(_NS_CALL_RE)が壊れている疑い。手書き一覧をやめた代償として、"
         "ここが黙って空になるとテスト全体が空虚になる"

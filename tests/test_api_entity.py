@@ -350,7 +350,11 @@ def test_entity_detail_relationships_not_truncated_when_limit_is_generous(client
     assert detail is not None
     assert detail.relationships_truncated is False
     total = sum(len(v) for v in detail.relationships.values())
-    assert total == 6, detail.relationships  # outgoing 2 + incoming 4
+    # 裁定B99でPROJECT_COREに年度ごとの予算(AnnualBudget)2件が入ったため、
+    # 入ってくる関係が4→6に増えた。**この数はfixtureの形を固定する意図的な
+    # 値**なので、増えたら「なぜ増えたか」を確認してから更新する
+    # (放置してよい失敗ではない)
+    assert total == 8, detail.relationships  # outgoing 2 + incoming 6
 
 
 def test_entity_detail_relationships_truncate_with_a_small_limit(client):

@@ -515,7 +515,7 @@ class AnnualBudget(MonetaryItem):
         = totalBudgetAvailable
 
     ビルド時に検査する。この恒等式が、2021年度の「当初予算107.1兆円に 対し執行額128.1兆円」という一見異常な並びを説明する(実際の分母は 150.2兆円、執行率85.3%)。
-    **翌年度要求額(RSの[22])はモデル化しない** —— 集計行23,036件すべてで 空だった(実測)。列は存在するが値が無い。
+    **翌年度要求額(RSの[22])もモデル化する(`nextYearRequest`)。** controllerは当初これを「集計行23,036件すべてで空」と記録していたが、 **それは誤りだった** —— 実際は23,036件すべてが非空で、 `'45013000.0'` のような小数表記を取る(このファイルで唯一の形)。 controllerの測定スクリプトが`.isdigit()`で判定していたため、 **値のある列を「空」と誤認していた**(実装者の指摘で訂正)。 空なのは明細行側の列41「翌年度要求額」の方である。
     """
     linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/budget',
          'slot_usage': {'fiscalYear': {'description': 'この記録が載っている**レビューシート自体の年度**。 '
@@ -551,6 +551,10 @@ class AnnualBudget(MonetaryItem):
 **この列は資金の流れ(ExpenditureBlock)の計算に一切使っていないため、 独立した検証のオラクルになる(裁定B98)。** 実測: FY2024の執行額 128,407,860,724,145円に対し、CQ12(入口ブロック+間接経費)が98.83%、 構造からの推論を含めると100.086%で一致した。裁定B20が挙げた 「比が正確に2.0/3.0になる245事業」のうち243事業が比1.0に直った。
 **レビューシート年度(2025)の執行額は0である**(まだ執行されていない。 実測: 5,794事業すべて)。欠損ではなく「その時点でまだ無い」。""", json_schema_extra = { "linkml_meta": {'domain_of': ['AnnualBudget']} })
     carriedOverToNextYear: Optional[int] = Field(default=None, title="翌年度への繰越し", description="""翌年度へ繰り越した額(合計)。RSの[21]翌年度への繰越し(合計）。 ある年度の`carriedOverToNextYear`は、次の年度の `carriedOverFromPreviousYear`と対応するはずだが、**事業単位では 一致を仮定しない**(事業の分割・統合・終了があるため)。""", json_schema_extra = { "linkml_meta": {'domain_of': ['AnnualBudget']} })
+    nextYearRequest: Optional[int] = Field(default=None, title="翌年度要求額", description="""翌年度について要求した額(合計)。RSの[22]翌年度要求額（合計）。 **この列だけが小数表記を取る**(`'45013000.0'`)。値そのものは 全件が整数(実測: 23,036件すべてで小数部0)なので`integer`で持つ。 `transform.rs.normalize_amount`が末尾の`.0`を落とす実装になっており (Task 7の時点でこの形が記録されていた)、取り込み側の対応は済んでいる。
+**これが答えられるようにする問い**: 「いくら要求して、いくら付いたか」。 年度Yの`nextYearRequest`は年度Y+1の`initialBudget`と対応する。 実測(両年度に存在する事業に限る):
+| | 要求 | 実際に付いた当初予算 | 比 | |---|---:|---:|---:| | 2021→2022 | 111.3兆 | 107.8兆 | 96.9% | | 2022→2023 | 112.3兆 | 111.5兆 | 99.2% | | 2023→2024 | 122.1兆 | 120.8兆 | 98.9% | | 2024→2025 | 123.5兆 | 122.8兆 | 99.4% |
+**事業単位では一致を仮定しない**(完全一致は年度あたり1,243〜2,307件で、 両年度にある事業の3〜4割)。事業の分割・統合・査定があるため。""", json_schema_extra = { "linkml_meta": {'domain_of': ['AnnualBudget']} })
     amount_jpy: Optional[int] = Field(default=None, title="金額(円)", description="""金額(円)""", json_schema_extra = { "linkml_meta": {'domain_of': ['MonetaryItem']} })
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })

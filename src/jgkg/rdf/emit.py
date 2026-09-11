@@ -17,6 +17,7 @@ from jgkg.transform.ministry import Ministry, UnmatchedMinistry
 from jgkg.transform.ministry_succession import AbolishedMinistryRecord
 from jgkg.transform.organization import Organization
 from jgkg.transform.rs import (
+    AnnualBudgetRecord,
     BudgetProjectRecord,
     ExpenditureBlockRecord,
     ExpenditureRecord,
@@ -25,6 +26,7 @@ from jgkg.transform.rs import (
 )
 from jgkg.uris import (
     abolished_organ_uri,
+    annual_budget_uri,
     budget_uri,
     expenditure_block_uri,
     expenditure_uri,
@@ -38,6 +40,28 @@ from jgkg.uris import (
     unresolved_jurisdiction_uri,
     unresolved_ministry_uri,
     unresolved_recipient_uri,
+)
+
+#: `AnnualBudget` が書く金額系の述語(裁定B99)。
+#:
+#: **モジュール定数にしているのは、検査から見えるようにするためである。**
+#: `tests/test_schema_consistency.py` の表示名の被覆テストは、emitが書く述語を
+#: `ns["budget"]["…"]` というリテラルの呼び出しから集める。ここをループ変数
+#: (`ns["budget"][predicate]`)だけで書くと**8件がまるごと検査の視野から外れ、
+#: 日本語の表示名が無いまま通ってしまう** —— controllerが手書き一覧を導出に
+#: 切り替えた直後に実際に踏んだ。定数にしておけばテスト側が値として読める。
+#:
+#: **新しく述語名を動的に組み立てる箇所を足すときは、同じように定数へ出し、
+#: テスト側の `_dynamic_predicate_names()` に加えること。**
+ANNUAL_BUDGET_AMOUNT_PREDICATES: tuple[str, ...] = (
+    "initialBudget",
+    "supplementaryBudget",
+    "carriedOverFromPreviousYear",
+    "reserveFund",
+    "totalBudgetAvailable",
+    "executedAmount",
+    "carriedOverToNextYear",
+    "nextYearRequest",
 )
 
 
@@ -273,6 +297,7 @@ def emit_budget(
     recorded_on: datetime.date | None = None,
     blocks: Iterable[ExpenditureBlockRecord] = (),
     indirect_costs: Iterable[IndirectCostRecord] = (),
+    annual_budgets: Iterable[AnnualBudgetRecord] = (),
 ) -> Dataset:
     """`rs.build_projects` の出力を `budget:BudgetProject` / `budget:Expenditure`
 
@@ -294,6 +319,10 @@ def emit_budget(
     (payee_payment_block_connection)を渡していない呼び出し元(既存のテスト等)を
     壊さないため。`projects`/`expenditures`と同じ名前付きグラフに入れる
     (同じ一次資料の同じ取得日から作る事実であり、置換の単位も同じ)。
+
+    **`annual_budgets`(裁定B99)も既定が空**で、同じ名前付きグラフに入れる
+    (2-1という同じ一次資料の同じ取得日から作る事実。`projects`の
+    `budgetAmount`とまったく同じ列から来る)。
     """
     ns = _ns()
     ds, data = _new_dataset(source_id, fetched_on, sha256, recorded_on)
@@ -388,6 +417,62 @@ def emit_budget(
         # parse側で済んでいる
         for note in block.flow_notes:
             data.add((s, ns["budget"]["flowNote"], Literal(note)))
+
+    # =========================================================================
+    # 裁定B99: 年度ごとの予算と執行。BudgetProjectの`budgetAmount`だけでは
+    # 「増えた・減った」に答えられず、執行額を比べるべき分母(歳出予算現額)も
+    # 無い(schema/budget.yaml の AnnualBudget 参照)
+    # =========================================================================
+    for annual in annual_budgets:
+        s = URIRef(
+            annual_budget_uri(
+                annual.fiscal_year, annual.project_id, annual.budget_fiscal_year
+            )
+        )
+        data.add((s, RDF.type, ns["budget"]["AnnualBudget"]))
+        data.add(
+            (
+                s,
+                ns["budget"]["project"],
+                URIRef(budget_uri(annual.fiscal_year, annual.project_id)),
+            )
+        )
+        data.add((s, ns["budget"]["fiscalYear"], Literal(int(annual.fiscal_year))))
+        data.add(
+            (s, ns["budget"]["budgetFiscalYear"], Literal(int(annual.budget_fiscal_year)))
+        )
+        # **`skos:prefLabel`は付けない。** この記録に固有の名前は一次データに
+        # 無い(`ExpenditureBlock`はブロック名を持つが、こちらは持たない)。
+        # 「2025年度 ○○事業」のような文字列を合成すると、出典の無い事実を
+        # KGに入れることになる(原則7)。表示は事業名と予算年度から作る
+        #
+        # **`core:amount_jpy`も付けない。** 名前の付いた金額が8つあるので、
+        # そのうち1つを汎用スロットに載せると`SUM(?amount_jpy)`の意味が
+        # また変わる(schema/budget.yaml の AnnualBudget docstring)
+        #
+        # **値がある分だけ書く。0は有効な値**なので`is not None`で判定する
+        # (`budgetAmount`と同じ判断。実測: レビューシート年度2025の執行額は
+        # 5,794事業すべて0 —— 欠損ではなく「まだ執行されていない」)。
+        # 欠損を0として書くと、その区別がグラフ上から消える
+        # 一次データの`nextYearRequest`は小数表記(`'45013000.0'`)だが、
+        # ここに来る時点で`normalize_amount`がintにしている。
+        # **`Literal(float)`を書くとSHACLの`sh:datatype xsd:integer`に違反する。**
+        for predicate, value in zip(
+            ANNUAL_BUDGET_AMOUNT_PREDICATES,
+            (
+                annual.initial_budget,
+                annual.supplementary_budget,
+                annual.carried_over_from_previous_year,
+                annual.reserve_fund,
+                annual.total_budget_available,
+                annual.executed_amount,
+                annual.carried_over_to_next_year,
+                annual.next_year_request,
+            ),
+            strict=True,
+        ):
+            if value is not None:
+                data.add((s, ns["budget"][predicate], Literal(value)))
 
     for cost in indirect_costs:
         s = URIRef(indirect_cost_uri(cost.fiscal_year, cost.project_id, cost.item))

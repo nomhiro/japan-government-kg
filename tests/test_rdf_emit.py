@@ -1214,3 +1214,263 @@ def test_emit_budget_a_dangling_in_block_is_caught_by_the_reference_integrity_ga
     violations = validate.check_reference_integrity(ds, Path("schema/generated"))
     paths = {str(v.path) for v in violations}
     assert "https://jgkg.norr-tech.com/def/budget#inBlock" in paths, violations
+
+
+# =============================================================================
+# emit_budget: 年度ごとの予算と執行(裁定B99)
+#
+# 実データ由来の実例(R45。2026-08-23取得の2-1から引用): project_id=828
+# 「危険物事故防止対策の推進」のFY2024(予備費等が-400,000円という負値)と
+# FY2025(レビューシート年度。執行額0)
+# =============================================================================
+
+
+def _annual_budget(**overrides) -> rs.AnnualBudgetRecord:
+    defaults = {
+        "project_id": "828", "fiscal_year": "2025", "budget_fiscal_year": "2024",
+        "initial_budget": 97_130_000, "supplementary_budget": 14_194_000,
+        "carried_over_from_previous_year": 12_980_000, "reserve_fund": -400_000,
+        "total_budget_available": 123_904_000, "executed_amount": 97_738_000,
+        "carried_over_to_next_year": 7_594_000, "next_year_request": 109_861_000,
+    }
+    defaults.update(overrides)
+    return rs.AnnualBudgetRecord(**defaults)
+
+
+def test_emit_budget_writes_the_annual_budget_with_all_eight_amounts():
+    """型・事業・2つの年度・8つの金額が出ること(負値も含む)。
+
+    何があれば落ちるか: どのトリプル1本を落としてもここで落ちる。
+    `budgetFiscalYear`を`fiscalYear`と同じ値で書く実装(2つの年度の混同)なら
+    2024が2025になって落ちる。金額を非負と仮定する実装なら予備費等で落ちる。
+    """
+    ds = emit.emit_budget([], [], [], "rs-system", DAY, annual_budgets=[_annual_budget()])
+
+    s = URIRef(uris.annual_budget_uri("2025", "828", "2024"))
+    budget = emit.NS["budget"]
+    assert (s, RDF.type, budget["AnnualBudget"]) in ds
+    assert (s, budget["project"], URIRef(uris.budget_uri("2025", "828"))) in ds
+    assert (s, budget["fiscalYear"], Literal(2025)) in ds
+    assert (s, budget["budgetFiscalYear"], Literal(2024)) in ds
+    assert (s, budget["initialBudget"], Literal(97_130_000)) in ds
+    assert (s, budget["supplementaryBudget"], Literal(14_194_000)) in ds
+    assert (s, budget["carriedOverFromPreviousYear"], Literal(12_980_000)) in ds
+    assert (s, budget["reserveFund"], Literal(-400_000)) in ds
+    assert (s, budget["totalBudgetAvailable"], Literal(123_904_000)) in ds
+    assert (s, budget["executedAmount"], Literal(97_738_000)) in ds
+    assert (s, budget["carriedOverToNextYear"], Literal(7_594_000)) in ds
+    # 一次データは`'109861000.0'`という小数表記だが、intとして出ること
+    # (`Literal(float)`はSHACLの`sh:datatype xsd:integer`に違反する)
+    assert (s, budget["nextYearRequest"], Literal(109_861_000)) in ds
+    assert list(ds.objects(s, budget["nextYearRequest"])) == [Literal(109_861_000)]
+
+
+def test_emit_budget_keeps_budget_amount_and_initial_budget_as_different_predicates():
+    """BudgetProjectの`budgetAmount`とAnnualBudgetの`initialBudget`が
+
+    **別の述語・別の主語**として出ること(裁定B99)。
+
+    何があれば落ちるか: 同じ列から来るからと1つの述語に統合する実装だと、
+    `SUM(?budgetAmount)`が粒度をまたいで二重に数える —— 実データでは
+    BudgetProjectが5,794件・AnnualBudgetが23,036件あり、合計が4倍に膨らむ。
+    ここでは同じ値(95,667,000円)が2つの主語に別の述語で載り、
+    **`budgetAmount`がAnnualBudget側に、`initialBudget`がBudgetProject側に
+    出ていないこと**を両方向で縛る。
+    """
+    project = _project(project_id="828", fiscal_year="2025", budget_amount=95_667_000)
+    annual = _annual_budget(
+        budget_fiscal_year="2025", initial_budget=95_667_000,
+        supplementary_budget=40_150_000, carried_over_from_previous_year=7_594_000,
+        reserve_fund=0, total_budget_available=143_411_000, executed_amount=0,
+        carried_over_to_next_year=0, next_year_request=136_095_000,
+    )
+    ds = emit.emit_budget([project], [], [], "rs-system", DAY, annual_budgets=[annual])
+
+    budget = emit.NS["budget"]
+    project_uri = URIRef(uris.budget_uri("2025", "828"))
+    annual_uri = URIRef(uris.annual_budget_uri("2025", "828", "2025"))
+    assert project_uri != annual_uri
+    assert list(ds.objects(project_uri, budget["budgetAmount"])) == [Literal(95_667_000)]
+    assert list(ds.objects(annual_uri, budget["initialBudget"])) == [Literal(95_667_000)]
+    # 述語が入れ替わっていないこと(統合された実装の検出)
+    assert list(ds.objects(annual_uri, budget["budgetAmount"])) == []
+    assert list(ds.objects(project_uri, budget["initialBudget"])) == []
+
+
+def test_emit_budget_omits_the_annual_budget_amounts_that_are_missing():
+    """欠損している項目の述語を**書かない**こと(記録自体は落とさない)。
+
+    何があれば落ちるか: `Literal(None)`を書く実装だと、KGに"None"という文字列
+    リテラルが実在してしまう(裁定B12のministry_codeと同じ最悪の形)。
+    欠損を0として書く実装でも落ちる —— 「調べたら0だった」年度
+    (レビューシート年度の執行額0。実測5,794事業全件)と区別できなくなる。
+    """
+    annual = _annual_budget(
+        supplementary_budget=None, carried_over_from_previous_year=None,
+        reserve_fund=None, total_budget_available=None, carried_over_to_next_year=None,
+        next_year_request=None,
+    )
+    ds = emit.emit_budget([], [], [], "rs-system", DAY, annual_budgets=[annual])
+
+    s = URIRef(uris.annual_budget_uri("2025", "828", "2024"))
+    budget = emit.NS["budget"]
+    assert (s, RDF.type, budget["AnnualBudget"]) in ds
+    assert (s, budget["initialBudget"], Literal(97_130_000)) in ds
+    for predicate in (
+        "supplementaryBudget", "carriedOverFromPreviousYear", "reserveFund",
+        "totalBudgetAvailable", "carriedOverToNextYear", "nextYearRequest",
+    ):
+        assert list(ds.objects(s, budget[predicate])) == [], predicate
+
+
+def test_emit_budget_writes_a_zero_executed_amount_instead_of_treating_it_as_absent():
+    """執行額0が述語として出ること(欠損と区別する)。
+
+    **実測でレビューシート年度(2025)の執行額は5,794事業すべて0**である。
+    何があれば落ちるか: `if annual.executed_amount:`のような真偽値チェックだと
+    最新年度の執行額が1本も出ず、「まだ執行されていない」が「調べていない」に
+    化ける(budgetAmount・ブロック金額に同じテストがある。判定形を揃える)。
+    """
+    annual = _annual_budget(
+        budget_fiscal_year="2025", initial_budget=0, supplementary_budget=0,
+        carried_over_from_previous_year=0, reserve_fund=0, total_budget_available=0,
+        executed_amount=0, carried_over_to_next_year=0, next_year_request=0,
+    )
+    ds = emit.emit_budget([], [], [], "rs-system", DAY, annual_budgets=[annual])
+
+    s = URIRef(uris.annual_budget_uri("2025", "828", "2025"))
+    budget = emit.NS["budget"]
+    assert (s, budget["executedAmount"], Literal(0)) in ds
+    assert (s, budget["initialBudget"], Literal(0)) in ds
+    assert (s, budget["totalBudgetAvailable"], Literal(0)) in ds
+    # 翌年度要求額0は実測3,838件(集計行23,036件のうち)。端のケースではない
+    assert (s, budget["nextYearRequest"], Literal(0)) in ds
+
+
+def test_emit_budget_gives_the_annual_budget_neither_a_label_nor_a_generic_amount():
+    """AnnualBudgetに`skos:prefLabel`と`core:amount_jpy`を付けないこと。
+
+    ラベル: この記録に固有の名前は一次データに無い(`ExpenditureBlock`は
+    ブロック名を持つが、こちらは持たない)。「2024年度 危険物事故防止対策の
+    推進」のような文字列を合成すると、出典の無い事実をKGに入れる(原則7)。
+
+    `core:amount_jpy`: 名前の付いた金額が8つあるので、そのうち1つを汎用
+    スロットに載せると`SUM(?amount_jpy)`の意味がまた変わる
+    (`ExpenditureBlock`のdocstringが書いた「3粒度に載る」危険をこれ以上
+    広げない。schema/budget.yaml の AnnualBudget 参照)。
+
+    何があれば落ちるか: 親切心でラベルを合成した、あるいは
+    `MonetaryItem`を継承しているからと`amount_jpy`にどれか1つを載せた実装。
+    """
+    ds = emit.emit_budget([], [], [], "rs-system", DAY, annual_budgets=[_annual_budget()])
+
+    s = URIRef(uris.annual_budget_uri("2025", "828", "2024"))
+    assert list(ds.objects(s, SKOS.prefLabel)) == []
+    assert list(ds.objects(s, emit.NS["core"]["amount_jpy"])) == []
+
+
+def test_emit_budget_writes_one_annual_budget_per_year_of_the_same_project():
+    """同じ事業の5年度分が5つの別ノードになり、それぞれ自分の年度を持つこと。
+
+    何があれば落ちるか: URIが予算年度を鍵にしていない実装だと5件が1ノードに
+    潰れ、`initialBudget`が5つ載って閉じたシェイプ(sh:maxCount 1)に違反する。
+    """
+    history = {
+        "2021": (95_000_000, 118_000_000, 99_000_000),
+        "2022": (85_000_000, 129_000_000, 77_000_000),
+        "2023": (85_394_000, 128_251_000, 96_455_000),
+        "2024": (97_130_000, 123_904_000, 97_738_000),
+        "2025": (95_667_000, 143_411_000, 0),
+    }
+    annual_budgets = [
+        _annual_budget(
+            budget_fiscal_year=year, initial_budget=initial,
+            total_budget_available=total, executed_amount=executed,
+        )
+        for year, (initial, total, executed) in history.items()
+    ]
+    ds = emit.emit_budget([], [], [], "rs-system", DAY, annual_budgets=annual_budgets)
+
+    budget = emit.NS["budget"]
+    subjects = set(ds.subjects(RDF.type, budget["AnnualBudget"]))
+    assert len(subjects) == 5
+    for year, (initial, _total, _executed) in history.items():
+        s = URIRef(uris.annual_budget_uri("2025", "828", year))
+        assert list(ds.objects(s, budget["budgetFiscalYear"])) == [Literal(int(year))]
+        assert list(ds.objects(s, budget["initialBudget"])) == [Literal(initial)]
+
+
+def test_emit_budget_puts_annual_budgets_in_the_same_named_graph():
+    """AnnualBudgetが事業と**同じ名前付きグラフ**に入ること。
+
+    2-1という同じ一次資料の同じ取得日から作る事実であり、置換の単位も同じ。
+    何があれば落ちるか: 別グラフに入れる実装だと`budget:project`がグラフを
+    跨ぎ、rs-systemグラフだけを差し替えたときに片方が取り残される。
+    """
+    expected = URIRef(uris.graph_uri("rs-system", DAY))
+    ds = emit.emit_budget(
+        [_project(project_id="828")], [], [], "rs-system", DAY,
+        annual_budgets=[_annual_budget()],
+    )
+    s = URIRef(uris.annual_budget_uri("2025", "828", "2024"))
+    assert _graph_ids(ds, (s, RDF.type, None, None)) == {expected}
+    assert _graph_ids(ds, (s, emit.NS["budget"]["project"], None, None)) == {expected}
+
+
+def test_emit_budget_with_annual_budgets_conforms_to_shacl():
+    """5年度分を含むデータセットがSHACLを通ること。
+
+    何があれば落ちるか: 閉じたシェイプに無い述語を書いた、integerのはずの
+    金額にlangタグを付けた、必須(project/fiscalYear/budgetFiscalYear)を
+    落としたのいずれでも不合格になる。**上の個別テストが述語名だけを見て
+    いるのに対し、ここはスキーマ側の制約(datatype/maxCount/closed)を
+    実際のpyshaclで通す。**
+    """
+    from jgkg import validate
+
+    project = _project(
+        project_id="828", project_name="危険物事故防止対策の推進", budget_amount=95_667_000
+    )
+    annual_budgets = [
+        _annual_budget(),
+        _annual_budget(
+            budget_fiscal_year="2025", initial_budget=95_667_000,
+            supplementary_budget=40_150_000, carried_over_from_previous_year=7_594_000,
+            reserve_fund=0, total_budget_available=143_411_000, executed_amount=0,
+            carried_over_to_next_year=0, next_year_request=136_095_000,
+        ),
+        # 金額8項目のうち6つが欠損している記録も同じシェイプを通ること
+        _annual_budget(
+            budget_fiscal_year="2023", supplementary_budget=None,
+            carried_over_from_previous_year=None, reserve_fund=None,
+            total_budget_available=None, carried_over_to_next_year=None,
+            next_year_request=None,
+        ),
+    ]
+    ds = emit.emit_budget(
+        [project], [], [], "rs-system", DAY, sha256="deadbeef",
+        annual_budgets=annual_budgets,
+    )
+
+    results = validate.validate_dataset(ds, Path("schema/generated"))
+    failing = [r for r in results if not r.conforms]
+    assert not failing, f"SHACL違反: {[r.report_text for r in failing]}"
+
+
+def test_emit_budget_a_dangling_annual_budget_project_is_caught_by_the_reference_gate():
+    """壊し確認: 存在しない事業を指す`budget:project`が参照整合ゲートに拾われること。
+
+    AnnualBudgetは`budget:project`以外にグラフを跨ぐ参照を持たないので、
+    **この1本が参照整合ゲート(裁定B4)の検査対象に入っていること**が、
+    予算履歴が宙に浮いたまま出荷されないことの唯一の保証である。
+
+    何があれば落ちるか: `budget:project`がreference-classes.jsonから外れた
+    場合、違反が0件になってここが落ちる。
+    """
+    from jgkg import validate
+
+    ds = emit.emit_budget([], [], [], "rs-system", DAY, annual_budgets=[_annual_budget()])
+
+    violations = validate.check_reference_integrity(ds, Path("schema/generated"))
+    paths = {str(v.path) for v in violations}
+    assert "https://jgkg.norr-tech.com/def/budget#project" in paths, violations

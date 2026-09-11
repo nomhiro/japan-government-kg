@@ -1883,3 +1883,383 @@ def test_build_projects_counts_an_expenditure_whose_block_cannot_be_assembled(tm
     result = rs.build_projects(rows, {}, {}, {})
     assert [e.block_id for e in result.expenditures] == ["A", None]
     assert result.stats.expenditures_block_unknown == 1
+
+
+# =============================================================================
+# 年度ごとの予算と執行(裁定B99)
+#
+# 実データ由来の実例(R45。2026-08-23取得の2-1から引用): project_id=828
+# 「危険物事故防止対策の推進」。直近5年度分すべてを持ち、**FY2024の予備費等が
+# -400,000円という負値**で、FY2023→FY2024・FY2024→FY2025の繰越しが
+# 実際に連鎖している(翌年度への繰越し == 次年度の前年度からの繰越し)。
+# レビューシート年度(2025)の執行額は0(まだ執行されていない)
+# =============================================================================
+
+#: 828の5年度分(予算年度 → (当初, 補正, 前年度繰越, 予備費等, 歳出予算現額,
+#: 執行額, 翌年度繰越, 翌年度要求額))。**実データそのまま**
+KIKENBUTSU_HISTORY = {
+    "2021": (95_000_000, 0, 23_000_000, 0, 118_000_000, 99_000_000, 0, 85_000_000),
+    "2022": (85_000_000, 44_000_000, 0, 0, 129_000_000, 77_000_000, 29_877_000, 25_259_000),
+    "2023": (
+        85_394_000, 12_980_000, 29_877_000, 0, 128_251_000, 96_455_000, 12_980_000, 110_110_000
+    ),
+    "2024": (
+        97_130_000, 14_194_000, 12_980_000, -400_000, 123_904_000, 97_738_000, 7_594_000,
+        109_861_000,
+    ),
+    "2025": (95_667_000, 40_150_000, 7_594_000, 0, 143_411_000, 0, 0, 136_095_000),
+}
+
+
+def _write_budget_history_files(
+    tmp_path: Path, budget_rows: list[list[str]], *, project_id: str = "828"
+) -> dict[str, Path]:
+    """必須4ファイルをtmp_pathに書き、budget_summaryだけに中身を持たせる。
+
+    `_write_five_files`(資金の流れ用)と同じ作法で、こちらは予算履歴を見るので
+    支出先・法令を空にする。project_summaryは1事業(事業年度2025)だけ持つ。
+    """
+    from jgkg.transform import rs_columns
+
+    project_spec = rs_columns.RS_FILES["project_summary"]
+    _write_csv(
+        tmp_path / "project_summary.csv",
+        project_spec.full_header,
+        [_full_row(project_spec, {
+            "project_id": project_id, "fiscal_year": "2025",
+            "project_name": "危険物事故防止対策の推進", "ministry_name": "総務省",
+        })],
+    )
+    _write_csv(
+        tmp_path / "budget_summary.csv",
+        rs_columns.RS_FILES["budget_summary"].full_header,
+        budget_rows,
+    )
+    _write_csv(
+        tmp_path / "law.csv",
+        rs_columns.RS_FILES["policy_measure_laws_and_regulations"].full_header,
+        [],
+    )
+    _write_csv(
+        tmp_path / "payee.csv",
+        rs_columns.RS_FILES["payee_payment_information"].full_header,
+        [],
+    )
+    return {
+        "project_summary": tmp_path / "project_summary.csv",
+        "budget_summary": tmp_path / "budget_summary.csv",
+        "policy_measure_laws_and_regulations": tmp_path / "law.csv",
+        "payee_payment_information": tmp_path / "payee.csv",
+    }
+
+
+def _budget_row(values: dict) -> list[str]:
+    from jgkg.transform import rs_columns
+
+    return _full_row(rs_columns.RS_FILES["budget_summary"], values)
+
+
+def _history_rows(
+    history: dict[str, tuple[int, ...]], *, project_id: str = "828"
+) -> list[list[str]]:
+    """`KIKENBUTSU_HISTORY` の形から集計行を作る(列の並びは実データと同じ)。
+
+    **[22]翌年度要求額だけは `'85000000.0'` という小数表記で書く** ——
+    実データの集計行23,036件すべてがこの形を取る(このファイルで唯一)。
+    他の列と同じ整数表記にすると、fixtureだけが現実より易しい形になり、
+    数字判定を自前で書いた実装がここを通ってしまう(rs_columns.py 検証13の
+    訂正が記録している実際の事故がそれである)。
+    """
+    return [
+        _budget_row({
+            "project_id": project_id, "fiscal_year": "2025",
+            "budget_fiscal_year": budget_fiscal_year,
+            "budget_amount": str(initial),
+            "supplementary_budget": str(supplementary),
+            "carried_over_from_previous_year": str(carried_in),
+            "reserve_fund": str(reserve),
+            "total_budget_available": str(total),
+            "executed_amount": str(executed),
+            "carried_over_to_next_year": str(carried_out),
+            "next_year_request": f"{next_year_request}.0",
+        })
+        for budget_fiscal_year, (
+            initial, supplementary, carried_in, reserve, total, executed, carried_out,
+            next_year_request,
+        ) in history.items()
+    ]
+
+
+def test_parse_rs_gives_one_project_an_annual_budget_for_every_year_in_the_sheet(
+    tmp_path: Path,
+):
+    """1事業が**年度ごとに別の**AnnualBudgetを持つこと(実測: 3,574事業が5年度分)。
+
+    何があれば落ちるか: レビューシート年度の1件だけを取る実装(=このクラスを
+    作る前の`budget_amount`だけの状態)なら1件しか出ずに落ちる。5年度分を
+    1件に畳んでしまう実装でも落ちる —— **「増えた・減った」に答えるには
+    年度ごとに別の記録である必要がある**。
+    """
+    paths = _write_budget_history_files(tmp_path, _history_rows(KIKENBUTSU_HISTORY))
+    rows = list(rs.parse_rs(paths))
+    assert len(rows) == 1
+    annual = rows[0].annual_budgets
+    assert [a.budget_fiscal_year for a in annual] == ["2021", "2022", "2023", "2024", "2025"]
+    assert [a.initial_budget for a in annual] == [
+        95_000_000, 85_000_000, 85_394_000, 97_130_000, 95_667_000
+    ]
+    # レビューシート年度の1件は`budget_amount`と同じ値(同じ列・同じ行から来る)
+    assert rows[0].budget_amount == 95_667_000
+
+
+def test_parse_rs_derives_the_year_set_from_the_data_not_from_a_hardcoded_range(
+    tmp_path: Path,
+):
+    """年度の集合がデータ側の[13]予算年度から導出されること。
+
+    何があれば落ちるか: 「2021〜2025」を定数で持つ実装だと、(a)1年度分しか
+    配られていない事業(実測554事業)で存在しない4年度分を作ろうとし、
+    (b)将来RSが6年度分を配ったときに最新年度を黙って捨てる。ここでは
+    **2026年度を含み2021年度を含まない**集合を渡して両方を縛る。
+    """
+    history = {
+        "2024": KIKENBUTSU_HISTORY["2024"],
+        "2026": (100_000_000, 0, 0, 0, 100_000_000, 0, 0, 0),
+    }
+    paths = _write_budget_history_files(tmp_path, _history_rows(history))
+    rows = list(rs.parse_rs(paths))
+    assert [a.budget_fiscal_year for a in rows[0].annual_budgets] == ["2024", "2026"]
+
+
+def test_parse_rs_keeps_a_zero_executed_amount_instead_of_dropping_it(tmp_path: Path):
+    """レビューシート年度の執行額0が**欠損ではなく0として**残ること。
+
+    何があれば落ちるか: `if executed:`や`or None`で判定する実装だと0がNoneに
+    化け、emit側で述語ごと消える。**実測でレビューシート年度(2025)の執行額は
+    5,794事業すべて0**なので、これを欠損として落とすと最新年度の執行額が
+    「調べていない」と区別できなくなる(§8.2「欠損を0と混同しない」の逆向き)。
+    予備費等0(2025)と翌年度への繰越し0も同じ理由で縛る。
+    """
+    paths = _write_budget_history_files(tmp_path, _history_rows(KIKENBUTSU_HISTORY))
+    rows = list(rs.parse_rs(paths))
+    latest = rows[0].annual_budgets[-1]
+    assert latest.budget_fiscal_year == "2025"
+    assert latest.executed_amount == 0
+    assert latest.reserve_fund == 0
+    assert latest.carried_over_to_next_year == 0
+
+
+def test_parse_rs_keeps_negative_amounts_verbatim(tmp_path: Path):
+    """減額(負値)がそのまま残ること。
+
+    何があれば落ちるか: 金額を非負と仮定して`abs()`や0クリップをかける実装だと
+    828のFY2024の予備費等-400,000円が符号を失い、**恒等式
+    (当初+補正+前年度繰越+予備費等=歳出予算現額)が成立しなくなる** ——
+    97,130,000+14,194,000+12,980,000-400,000=123,904,000。実測では
+    補正予算589件・予備費等825件・繰越し各1件が負値を取る。
+    """
+    paths = _write_budget_history_files(tmp_path, _history_rows(KIKENBUTSU_HISTORY))
+    row = next(iter(rs.parse_rs(paths)))
+    annual = {a.budget_fiscal_year: a for a in row.annual_budgets}
+    fy2024 = annual["2024"]
+    assert fy2024.reserve_fund == -400_000
+    assert (
+        fy2024.initial_budget
+        + fy2024.supplementary_budget
+        + fy2024.carried_over_from_previous_year
+        + fy2024.reserve_fund
+        == fy2024.total_budget_available
+    )
+
+
+def test_parse_rs_reads_annual_budgets_from_the_aggregate_row_not_the_detail_rows(
+    tmp_path: Path,
+):
+    """明細行(会計区分ごとの行。[14]当初予算（合計）が空)を集計行と混同しないこと。
+
+    何があれば落ちるか: 「その予算年度の行」を無条件に採る実装だと、明細行を
+    拾って8項目すべてがNoneのAnnualBudgetを作る(実測: 全47,100行のうち
+    24,064行が明細行)。選択規則は`rs_columns.find_budget_aggregate_row`に
+    1箇所だけ在るべきもので、ここはそれを使っていることを縛る。
+    """
+    rows_csv = _history_rows({"2024": KIKENBUTSU_HISTORY["2024"]})
+    # 実データと同じ形の明細行([14]〜[22]がすべて空)
+    rows_csv.append(_budget_row({
+        "project_id": "828", "fiscal_year": "2025", "budget_fiscal_year": "2024",
+    }))
+    paths = _write_budget_history_files(tmp_path, rows_csv)
+    rows = list(rs.parse_rs(paths))
+    assert len(rows[0].annual_budgets) == 1
+    assert rows[0].annual_budgets[0].initial_budget == 97_130_000
+
+
+def test_parse_rs_counts_a_year_whose_aggregate_row_is_missing_instead_of_dropping_it(
+    tmp_path: Path,
+):
+    """集計行が無い予算年度を黙って捨てず、parse段階で数えること。
+
+    何があれば落ちるか: `continue`だけして数えない実装だと、予算履歴が丸ごと
+    欠けたリリースが「AnnualBudget 0件」として正常に見える(実測では
+    23,036組すべてが集計行をちょうど1件持つので、この数が0でなくなること
+    自体が配布形態の変化の合図である)。
+    """
+    rows_csv = _history_rows({"2024": KIKENBUTSU_HISTORY["2024"]})
+    # 2023年度は明細行しか無い(集計行が存在しない)
+    rows_csv.append(_budget_row({
+        "project_id": "828", "fiscal_year": "2025", "budget_fiscal_year": "2023",
+    }))
+    paths = _write_budget_history_files(tmp_path, rows_csv)
+    stats = rs.RsParseStats()
+    rows = list(rs.parse_rs(paths, stats=stats))
+    assert [a.budget_fiscal_year for a in rows[0].annual_budgets] == ["2024"]
+    assert stats.budget_summary_years_without_aggregate_row == 1
+
+
+def test_parse_rs_represents_a_missing_amount_column_as_none_not_zero(tmp_path: Path):
+    """金額8項目のうち空欄のものが`None`になること(0にしない)。
+
+    何があれば落ちるか: 空文字を0として読む実装だと、欠損が合計に0円として
+    混ざり「調べたら0だった」と区別できなくなる。実データの集計行では
+    8列すべてが全件非空(rs_columns.py 検証13)なので、この経路は現時点の
+    実データには現れない —— だからこそテストで縛る。
+    """
+    row = _budget_row({
+        "project_id": "828", "fiscal_year": "2025", "budget_fiscal_year": "2024",
+        "budget_amount": "97130000", "executed_amount": "97738000",
+    })
+    paths = _write_budget_history_files(tmp_path, [row])
+    annual = next(iter(rs.parse_rs(paths))).annual_budgets[0]
+    assert annual.initial_budget == 97_130_000
+    assert annual.executed_amount == 97_738_000
+    assert annual.supplementary_budget is None
+    assert annual.carried_over_from_previous_year is None
+    assert annual.reserve_fund is None
+    assert annual.total_budget_available is None
+    assert annual.carried_over_to_next_year is None
+    assert annual.next_year_request is None
+
+
+def test_parse_rs_gives_an_annual_budget_for_a_year_the_budget_project_does_not_cover():
+    """事業年度の集計行が無い事業(`budget_amount`がNone)でも、別年度の
+
+    AnnualBudgetは作られること(共有fixtureのproject_id=159は2023年度分だけを
+    持つ)。**これがこのクラスを足した理由そのもの**である —— BudgetProjectの
+    `budgetAmount`が答えられない年度について、AnnualBudgetが答える。
+    """
+    rows = {r.project_id: r for r in rs.parse_rs(_full_fixture_paths())}
+    assert rows["159"].budget_amount is None
+    assert [
+        (a.budget_fiscal_year, a.initial_budget, a.executed_amount)
+        for a in rows["159"].annual_budgets
+    ] == [("2023", 10_041_533_000, 9_130_510_658)]
+
+
+def test_build_projects_counts_annual_budgets_and_keeps_the_two_years_apart():
+    """`BuildStats`が件数を持ち、`AnnualBudgetRecord`が2つの年度を別々に持つこと。
+
+    何があれば落ちるか: `budget_fiscal_year`を`fiscal_year`で上書きする実装
+    (=2つの年度を混同する)だと、159の記録が「2025年のシートが2025年度に
+    ついて言っている」ことになり、`budgetAmount`との突き合わせ検査
+    (`pipeline._annual_budget_project_amount_mismatches`)が誤って発火する。
+    """
+    rows = list(rs.parse_rs(_full_fixture_paths()))
+    result = rs.build_projects(rows, MINISTRY_REF, LAWS_BY_ID, LAWS_BY_TITLE)
+    assert result.stats.annual_budgets_seen == len(result.annual_budgets) == 3
+    by_project = {a.project_id: a for a in result.annual_budgets}
+    assert by_project["159"].fiscal_year == "2025"
+    assert by_project["159"].budget_fiscal_year == "2023"
+    assert by_project["828"].fiscal_year == by_project["828"].budget_fiscal_year == "2025"
+
+
+def test_build_projects_leaves_annual_budgets_empty_for_a_directly_built_row():
+    """`RsRow`を直接組み立てる呼び出し元(tests/phase1_fixture.py等)では空のまま
+
+    通ること(既定値を持つ理由)。`blocks`/`indirect_costs`と同じ扱い。
+    """
+    result = rs.build_projects([_row()], MINISTRY_REF, LAWS_BY_ID, LAWS_BY_TITLE)
+    assert result.annual_budgets == ()
+    assert result.stats.annual_budgets_seen == 0
+
+
+def test_parse_rs_reads_the_next_year_request_despite_its_decimal_form(tmp_path: Path):
+    """[22]翌年度要求額の小数表記(`'45013000.0'`)が45013000として取り込まれること。
+
+    実データ(project_id=1「内閣人事局経費（研修事業）」のFY2021)そのままの値。
+    **集計行23,036件すべてがこの形を取り、このファイルで小数表記の列はここだけ**
+    である。
+
+    何があれば落ちるか: `str.isdigit()`のような自前の数字判定でこの列を読む
+    実装だと、値のある行が全件「空」に見えて`None`になる ——
+    **それが実際に起きて、この列は一度「集計行23,036件すべてで空」と記録され
+    モデル化の対象外にされていた**(rs_columns.py 検証13の訂正)。
+    `int()`に素で渡す実装なら`ValueError`で落ちる。正しい経路は
+    `normalize_amount`(末尾の`.0`を落とす実装がTask 7の時点からある)。
+    """
+    row = _budget_row({
+        "project_id": "1", "fiscal_year": "2025", "budget_fiscal_year": "2021",
+        "budget_amount": "29457000", "supplementary_budget": "0",
+        "carried_over_from_previous_year": "0", "reserve_fund": "0",
+        "total_budget_available": "29457000", "executed_amount": "23771000",
+        "carried_over_to_next_year": "0", "next_year_request": "45013000.0",
+    })
+    paths = _write_budget_history_files(tmp_path, [row], project_id="1")
+    annual = next(iter(rs.parse_rs(paths))).annual_budgets[0]
+    assert annual.next_year_request == 45013000
+    assert isinstance(annual.next_year_request, int)
+
+
+def test_parse_rs_reads_a_zero_next_year_request_as_zero_not_missing(tmp_path: Path):
+    """`'0.0'`が**0として**取り込まれること(`None`にしない)。
+
+    ゼロ要求は端のケースではなく主流である —— 実測で集計行23,036件のうち
+    **3,838件が`'0.0'`**(残り19,198件が非ゼロ)。
+
+    何があれば落ちるか: `.0`を落とした後の`'0'`を空と同じ扱いにする実装、
+    あるいは`float(s) or None`のような書き方だと0がNoneに化け、
+    「要求しなかった」が「調べていない」と区別できなくなる。
+    """
+    row = _budget_row({
+        "project_id": "4", "fiscal_year": "2025", "budget_fiscal_year": "2021",
+        "budget_amount": "29457000", "next_year_request": "0.0",
+    })
+    paths = _write_budget_history_files(tmp_path, [row], project_id="4")
+    annual = next(iter(rs.parse_rs(paths))).annual_budgets[0]
+    assert annual.next_year_request == 0
+
+
+def test_parse_rs_next_year_request_lines_up_with_the_following_years_initial_budget(
+    tmp_path: Path,
+):
+    """年度Yの翌年度要求額と年度Y+1の当初予算が**同じ事業の別ノードから引ける**こと。
+
+    これが`nextYearRequest`をモデル化する理由そのもの ——「いくら要求して、
+    いくら付いたか」。828では FY2021 に85,000,000円を要求して FY2022 の
+    当初予算が85,000,000円(比1.00)、FY2022 に25,259,000円を要求して
+    FY2023 が85,394,000円(比3.38)である。**一致を仮定しない**
+    (`carriedOverToNextYear`と同じ理由: 事業の分割・統合・終了がある)。
+
+    何があれば落ちるか: 翌年度要求額を年度Y+1のノードに載せる実装(1年
+    ずらして持たせる)だと、この対応が取れなくなる。
+    """
+    paths = _write_budget_history_files(tmp_path, _history_rows(KIKENBUTSU_HISTORY))
+    annual = {a.budget_fiscal_year: a for a in next(iter(rs.parse_rs(paths))).annual_budgets}
+    assert annual["2021"].next_year_request == 85_000_000
+    assert annual["2022"].initial_budget == 85_000_000
+    assert annual["2022"].next_year_request == 25_259_000
+    assert annual["2023"].initial_budget == 85_394_000
+
+
+def test_build_projects_carries_the_next_year_request_onto_the_record(tmp_path: Path):
+    """`AnnualBudgetRecord`が翌年度要求額を持つこと(emitの入力)。
+
+    何があれば落ちるか: `AnnualBudgetLine`では読めているのに
+    `build_projects`の転記を忘れた実装だと、parse層のテストは緑のまま
+    RDFにだけ出ない(資金の流れのブロックで同型の欠陥を踏んだ経路)。
+    """
+    paths = _write_budget_history_files(tmp_path, _history_rows(KIKENBUTSU_HISTORY))
+    result = rs.build_projects(
+        list(rs.parse_rs(paths)), MINISTRY_REF, LAWS_BY_ID, LAWS_BY_TITLE
+    )
+    by_year = {a.budget_fiscal_year: a for a in result.annual_budgets}
+    assert by_year["2024"].next_year_request == 109_861_000
+    assert by_year["2025"].next_year_request == 136_095_000

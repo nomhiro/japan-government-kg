@@ -1825,3 +1825,301 @@ def test_run_reports_the_money_flow_fields_as_none_when_rs_system_is_not_include
     assert report.budget_blocks_paid_by_government is None
     assert report.budget_indirect_costs is None
     assert report.budget_expenditures_block_unknown is None
+
+
+# =============================================================================
+# 裁定B99: 年度ごとの予算と執行(budget:AnnualBudget)の結線
+#
+# 実データ由来の実例(R45。2026-08-23取得の2-1から引用): project_id=828
+# 「危険物事故防止対策の推進」の5年度分。FY2024の予備費等が-400,000円という
+# 負値で、FY2024→FY2025の繰越し(7,594,000円)が実際に連鎖している
+# =============================================================================
+
+#: 予算年度 → (当初, 補正, 前年度繰越, 予備費等, 歳出予算現額, 執行額, 翌年度繰越,
+#: 翌年度要求額)
+KIKENBUTSU_HISTORY = {
+    "2021": (95_000_000, 0, 23_000_000, 0, 118_000_000, 99_000_000, 0, 85_000_000),
+    "2022": (85_000_000, 44_000_000, 0, 0, 129_000_000, 77_000_000, 29_877_000, 25_259_000),
+    "2023": (
+        85_394_000, 12_980_000, 29_877_000, 0, 128_251_000, 96_455_000, 12_980_000, 110_110_000
+    ),
+    "2024": (
+        97_130_000, 14_194_000, 12_980_000, -400_000, 123_904_000, 97_738_000, 7_594_000,
+        109_861_000,
+    ),
+    "2025": (95_667_000, 40_150_000, 7_594_000, 0, 143_411_000, 0, 0, 136_095_000),
+}
+
+
+def _budget_history_rows(history: dict[str, tuple[int, ...]]) -> list[list[str]]:
+    """**[22]翌年度要求額だけは小数表記(`'85000000.0'`)で書く** ——
+
+    実データの集計行23,036件すべてがこの形を取る(このファイルで唯一)。
+    整数表記にするとfixtureだけが現実より易しくなる
+    (tests/test_transform_rs.py の `_history_rows` と同じ理由)。
+    """
+    return [
+        _rs_row_for("budget_summary", {
+            "project_id": "828", "fiscal_year": "2025",
+            "budget_fiscal_year": budget_fiscal_year,
+            "budget_amount": str(initial),
+            "supplementary_budget": str(supplementary),
+            "carried_over_from_previous_year": str(carried_in),
+            "reserve_fund": str(reserve),
+            "total_budget_available": str(total),
+            "executed_amount": str(executed),
+            "carried_over_to_next_year": str(carried_out),
+            "next_year_request": f"{next_year_request}.0",
+        })
+        for budget_fiscal_year, (
+            initial, supplementary, carried_in, reserve, total, executed, carried_out,
+            next_year_request,
+        ) in history.items()
+    ]
+
+
+def _rs_budget_history_groups(
+    history: dict[str, tuple[int, ...]] | None = None,
+) -> dict[str, list[list[str]]]:
+    """1事業の予算履歴だけを持つ最小のrs-systemスナップショット。
+
+    支出先は1件だけ置く(0件でも通るが、`budget_expenditures`が0のリリースが
+    他の理由で落ちていないことを同時に見たいため)。
+    """
+    return {
+        "project_summary": [
+            _rs_row_for("project_summary", {
+                "project_id": "828", "fiscal_year": "2025",
+                "project_name": "危険物事故防止対策の推進", "ministry_name": "総務省",
+            }),
+        ],
+        "budget_summary": _budget_history_rows(history or KIKENBUTSU_HISTORY),
+        "policy_measure_laws_and_regulations": [],
+        "payee_payment_information": [
+            _rs_row_for("payee_payment_information", {
+                "project_id": "828", "block_number": "A",
+                "recipient_name": "株式会社ウルフスタイル",
+                "recipient_houjin_bangou": WOLFSTYLE_BANGOU,
+                "expenditure_amount": "3025000", "recipient_other_flag": "FALSE",
+            }),
+        ],
+    }
+
+
+def test_run_wires_the_annual_budgets_into_the_rs_system_graph(houjin_with_a_company, tmp_path):
+    """5年度分のAnnualBudgetがrs-systemグラフに入り、件数がPipelineReportに
+
+    載ること(裁定B99)。
+
+    何があれば落ちるか: `emit_budget`に`annual_budgets`を渡していない、
+    report結線を忘れた、予算年度をURIの鍵にしていない(5件が1件に潰れる)
+    のいずれでも落ちる。**参照整合違反が0であることも同時に見る** ——
+    `budget:project`はグラフを跨ぐ参照の検査対象なので、事業URIを作り損なうと
+    ここで違反が出る。
+    """
+    from jgkg import uris
+
+    _save_rs_snapshot(DAY, _rs_budget_history_groups())
+
+    report = pipeline.run(
+        {"houjin-bangou": DAY, "rs-system": DAY}, tmp_path / "out",
+        include_all_corporations=True,
+    )
+
+    assert report.reference_violations == [], report.reference_violations
+    assert report.report_graph_mismatches == [], report.report_graph_mismatches
+    # 事業は1件だが、その事業についての予算の記録は5件ある
+    assert report.budget_projects == 1
+    assert report.budget_annual_budgets == 5
+    assert report.budget_annual_budget_years_without_aggregate_row == 0
+    # 恒等式・不変条件の検査が**空振りしていない**こと
+    assert report.budget_annual_budget_identity_checked == 5
+    assert report.budget_annual_budget_project_amount_checked == 1
+
+    kg = Dataset(default_union=True)
+    kg.parse(tmp_path / "out" / "kg.nq", format="nquads")
+    graph = URIRef(uris.graph_uri("rs-system", DAY))
+    budget = URIRef("https://jgkg.norr-tech.com/def/budget#")
+
+    for year, (
+        initial, _supp, _carried_in, _reserve, total, executed, _carried_out, next_request,
+    ) in KIKENBUTSU_HISTORY.items():
+        s = URIRef(uris.annual_budget_uri("2025", "828", year))
+        assert (s, RDF.type, URIRef(f"{budget}AnnualBudget"), graph) in kg
+        assert (s, URIRef(f"{budget}budgetFiscalYear"), Literal(int(year)), graph) in kg
+        assert (s, URIRef(f"{budget}fiscalYear"), Literal(2025), graph) in kg
+        assert (s, URIRef(f"{budget}initialBudget"), Literal(initial), graph) in kg
+        assert (s, URIRef(f"{budget}totalBudgetAvailable"), Literal(total), graph) in kg
+        assert (s, URIRef(f"{budget}executedAmount"), Literal(executed), graph) in kg
+        # 一次データは小数表記(`'85000000.0'`)。kg.nqにはintとして載ること
+        assert (s, URIRef(f"{budget}nextYearRequest"), Literal(next_request), graph) in kg
+        assert (
+            s, URIRef(f"{budget}project"), URIRef(uris.budget_uri("2025", "828")), graph
+        ) in kg
+
+    # **「増えた・減った」に答えられること** —— これがこのクラスを足した理由。
+    # 当初予算は2021→2025で+667,000円だが、歳出予算現額では+25,411,000円で
+    # あり、当初予算だけを見ると増減を読み違える
+    initial_by_year = {
+        int(o): int(next(kg.objects(s, URIRef(f"{budget}initialBudget"))))
+        for s, _p, o in kg.triples((None, URIRef(f"{budget}budgetFiscalYear"), None))
+    }
+    assert initial_by_year[2025] - initial_by_year[2021] == 667_000
+    # レビューシート年度の執行額0が**トリプルとして存在する**こと(欠損ではない)
+    latest = URIRef(uris.annual_budget_uri("2025", "828", "2025"))
+    assert list(kg.objects(latest, URIRef(f"{budget}executedAmount"))) == [Literal(0)]
+
+
+def test_run_stops_the_release_when_the_annual_budget_identity_is_broken(
+    houjin_with_a_company, tmp_path,
+):
+    """壊し確認: 歳出予算現額を1円ずらしたリリースが、リリースゲートで止まること。
+
+    実測では集計行23,036件すべてがこの恒等式を差0円で満たす(rs_columns.py
+    検証13)ので、崩れたときに疑うべきは一次データではなく**取り込みの列の
+    取り違え**である。
+
+    何があれば落ちるか: `_annual_budget_identity_mismatches`を
+    `report_graph_mismatches`に合流させていない実装だと、壊れたリリースが
+    そのまま通る(隔離もされない —— SHACLは1件ずつの型と個数しか見ないので、
+    5つの金額の間の関係は検出できない)。
+    """
+    broken = dict(KIKENBUTSU_HISTORY)
+    (
+        initial, supplementary, carried_in, reserve, total, executed, carried_out,
+        next_year_request,
+    ) = broken["2024"]
+    broken["2024"] = (
+        initial, supplementary, carried_in, reserve, total + 1, executed, carried_out,
+        next_year_request,
+    )
+    _save_rs_snapshot(DAY, _rs_budget_history_groups(broken))
+
+    report = pipeline.run(
+        {"houjin-bangou": DAY, "rs-system": DAY}, tmp_path / "out",
+        include_all_corporations=True,
+    )
+
+    assert len(report.report_graph_mismatches) == 1, report.report_graph_mismatches
+    assert "123904001" in report.report_graph_mismatches[0]
+    # SHACLでは検出できない(型も個数も正しい)ことを併せて示す
+    assert report.graphs_quarantined == 0
+    with pytest.raises(pipeline.QuarantineNotEmptyError):
+        pipeline.enforce_release_gate(report)
+
+
+def test_run_stops_the_release_when_the_budget_amount_and_initial_budget_disagree(
+    houjin_with_a_company, tmp_path,
+):
+    """壊し確認: BudgetProjectの予算額とレビューシート年度の当初予算が食い違うと
+
+    リリースゲートで止まること(裁定B99の不変条件)。
+
+    一次データでは両者は同じ列の同じ行から来るので、実データで食い違いは
+    起こらない(実測: 5,794事業すべてで一致)。**壊すには経路を1つだけ
+    差し替える必要がある** —— ここでは`_current_year_budget_amount`だけを
+    1円ずれた値を返すように差し替え、`_annual_budgets_for`は素のままにする。
+    この2つが常に同じ値になることは検査でしか示せない(同じ述語に統合すると
+    粒度をまたいだ二重計上になるため、統合してはならない)。
+
+    何があれば落ちるか: 突き合わせを`AnnualBudget`側の`fiscalYear`で行う実装
+    (=「同じシートの記述である」ことしか確かめない)だと、年度の対応付けの
+    取り違えを見逃す。
+    """
+    from jgkg.transform import rs as rs_mod
+
+    _save_rs_snapshot(DAY, _rs_budget_history_groups())
+
+    original = rs_mod._current_year_budget_amount
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            rs_mod, "_current_year_budget_amount",
+            lambda rows, fiscal_year: (
+                None if (v := original(rows, fiscal_year)) is None else v + 1
+            ),
+        )
+        report = pipeline.run(
+            {"houjin-bangou": DAY, "rs-system": DAY}, tmp_path / "out",
+            include_all_corporations=True,
+        )
+
+    assert len(report.report_graph_mismatches) == 1, report.report_graph_mismatches
+    assert "95667001" in report.report_graph_mismatches[0]
+    assert "95667000" in report.report_graph_mismatches[0]
+    assert report.budget_annual_budget_project_amount_checked == 1
+    with pytest.raises(pipeline.QuarantineNotEmptyError):
+        pipeline.enforce_release_gate(report)
+
+
+def test_annual_budget_checks_say_how_many_records_they_actually_examined():
+    """恒等式・不変条件の検査が「見た件数」を返すこと。
+
+    どちらの検査も**比べる相手が無い記録を対象外にする**ので、列を丸ごと
+    落とした取り込みでは**違反0件のまま静かに空振りする**。件数を返さないと
+    「壊れていない」と「見ていない」が区別できない(欠陥型4)。
+
+    何があれば落ちるか: 8項目のうち歳出予算現額を書かない取り込みを再現すると
+    違反は0件のままだが、**検査できた件数も0件になる** —— この値を
+    リリース記録に載せない実装だと、その空振りが誰にも見えない。
+    """
+    import datetime
+
+    from jgkg.rdf import emit
+    from jgkg.transform import rs as rs_mod
+
+    def _annual(**overrides) -> rs_mod.AnnualBudgetRecord:
+        defaults = {
+            "project_id": "828", "fiscal_year": "2025", "budget_fiscal_year": "2024",
+            "initial_budget": 97_130_000, "supplementary_budget": 14_194_000,
+            "carried_over_from_previous_year": 12_980_000, "reserve_fund": -400_000,
+            "total_budget_available": 123_904_000, "executed_amount": 97_738_000,
+            "carried_over_to_next_year": 7_594_000, "next_year_request": 109_861_000,
+        }
+        defaults.update(overrides)
+        return rs_mod.AnnualBudgetRecord(**defaults)
+
+    day = datetime.date(2026, 8, 23)
+    complete = emit.emit_budget(
+        [], [], [], "rs-system", day, annual_budgets=[_annual()]
+    )
+    mismatches, checked = pipeline._annual_budget_identity_mismatches(complete)
+    assert (mismatches, checked) == ([], 1)
+
+    # 歳出予算現額の列を落とした取り込み: 違反0件だが検査もできていない
+    without_total = emit.emit_budget(
+        [], [], [], "rs-system", day, annual_budgets=[_annual(total_budget_available=None)]
+    )
+    mismatches, checked = pipeline._annual_budget_identity_mismatches(without_total)
+    assert (mismatches, checked) == ([], 0)
+
+    # AnnualBudgetを1件も作らない取り込みでも、突き合わせは空振りするだけ
+    no_annual = emit.emit_budget(
+        [
+            rs_mod.BudgetProjectRecord(
+                project_id="828", fiscal_year="2025",
+                project_name="危険物事故防止対策の推進",
+                ministry_houjin_bangou=None, budget_amount=95_667_000, basis_law_ids=(),
+            )
+        ],
+        [], [], "rs-system", day,
+    )
+    mismatches, checked = pipeline._annual_budget_project_amount_mismatches(no_annual)
+    assert (mismatches, checked) == ([], 0)
+
+
+def test_run_reports_the_annual_budget_fields_as_none_when_rs_system_is_not_included(
+    seeded_lake, tmp_path,
+):
+    """rs-systemを含まないリリースでは年度ごとの予算のフィールドも`None`であること
+
+    (task-10-review.md要修正2と同じ規則: 未実行はNone、実行して0件は0)。
+
+    何があれば落ちるか: 既定値を0にする実装だと、rs-systemを含まない
+    リリースが「予算履歴を0件測った」と主張する。
+    """
+    report = pipeline.run(FETCHED, tmp_path / "out")  # houjin-bangouのみ
+
+    assert report.budget_annual_budgets is None
+    assert report.budget_annual_budget_years_without_aggregate_row is None
+    assert report.budget_annual_budget_identity_checked is None
+    assert report.budget_annual_budget_project_amount_checked is None

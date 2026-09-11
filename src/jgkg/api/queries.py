@@ -77,6 +77,9 @@ ENTITY_RELATIONSHIPS_MAX_LIMIT = 200
 #:   利用者を混乱させる。**辿れる必要はあるが、検索の入口である必要はない**
 #: - IndirectCostも除外する。`skos:prefLabel`は「講師謝金」「委員等旅費」等の
 #:   費目名で、2,432件が同じような短い語で埋まる(名前を持つ「物」ではない)
+#: - **AnnualBudgetも除外する**(裁定B99)。`skos:prefLabel`を**そもそも持たない**
+#:   ——「2025年度のシートが2023年度について言っていること」という記録に
+#:   固有の名前は無い。UnresolvedReferenceと同じ理由でそもそも一致しない
 _SEARCHABLE_TYPES: tuple[str, ...] = (
     "org:Organization",
     "org:GovernmentOrgan",
@@ -111,6 +114,9 @@ _TYPE_SPECIFICITY: tuple[str, ...] = (
     # (`_TYPE_AND_LABEL_PREDICATES`)で動くので、データが入れば自動で辿れる
     "ExpenditureBlock",
     "IndirectCost",
+    # 裁定B99で追加。年度ごとの予算と執行の記録。**検索対象には入れない**
+    # (表示名を持たない)が、`/entity`で辿れる必要があるためここには入れる
+    "AnnualBudget",
     "BudgetProject",
     "UnresolvedReference",
 )

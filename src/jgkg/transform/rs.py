@@ -222,6 +222,50 @@ class IndirectCostLine:
 
 
 @dataclass(frozen=True)
+class AnnualBudgetLine:
+    """1つの予算事業の、1つの会計年度についての予算と執行(裁定B99)。
+
+    **budget_summaryは1シートに直近5年度分の予算履歴を束ねて持っている**
+    (実測2026-09-11: 47,100行の予算年度の分布は2021:7,180 / 2022:7,683 /
+    2023:9,915 / 2024:10,614 / 2025:11,708行)。`RsRow.budget_amount` は
+    そのうちレビューシート年度の1行しか見ないため、**「増えた・減った」に
+    答えられない** —— そのために既にあった履歴を捨てていた。
+
+    金額8項目すべてが `int | None` なのは**欠損を0と混同しない**ため
+    (§8.2)。実データの集計行では8列すべてが全件非空(rs_columns.py
+    検証13)なので`None`は現時点で現れないが、型が欠損を表現できなければ
+    将来の欠損が0として静かに合計に混ざる。
+
+    **`next_year_request` の一次データは小数表記である**(`'45013000.0'`。
+    この列だけがそう)。`normalize_amount` が末尾の `.0` を落とすので
+    他の列と同じ経路で読める —— **自前で数字判定を書くとこの列が全件
+    「空」に見える**(rs_columns.py 検証13の訂正が記録している実際の事故)。
+    小数部が0でない値は実測23,036件で0件なので、intにして情報は失わない。
+
+    **`initial_budget` は `RsRow.budget_amount` と同じ列(列14)から来る。**
+    レビューシート年度については両者が同じ値になる —— どちらも
+    `rs_columns.find_budget_aggregate_row` が選ぶ同じ行を読むためである
+    (schema/budget.yaml `initialBudget` の不変条件。pipelineがビルド時に
+    グラフ上で検査する)。**それでも別スロットにする**のは粒度が違うから
+    (BudgetProjectの5,794件と、AnnualBudgetの23,036件を同じ述語に載せると
+    `SUM`が二重に数える)。
+
+    **金額は負値を取り得る**(実測: 補正予算589件・予備費等825件・
+    前年度からの繰越しと翌年度への繰越しが各1件。減額補正等)。
+    """
+
+    budget_fiscal_year: str
+    initial_budget: int | None
+    supplementary_budget: int | None
+    carried_over_from_previous_year: int | None
+    reserve_fund: int | None
+    total_budget_available: int | None
+    executed_amount: int | None
+    carried_over_to_next_year: int | None
+    next_year_request: int | None
+
+
+@dataclass(frozen=True)
 class RsRow:
     """1つの(project_id, fiscal_year)についての、4ファイルを結合した中間表現。
 
@@ -260,6 +304,13 @@ class RsRow:
     # 区別できないと、資金の流れが丸ごと抜けたリリースが黙って通る
     blocks: tuple[ExpenditureBlockLine, ...] = ()
     indirect_costs: tuple[IndirectCostLine, ...] = ()
+    # 裁定B99: この事業についてbudget_summaryが語るすべての会計年度
+    # (レビューシート年度を含む)。`budget_amount`が見る1年度分の上位集合で、
+    # **年度の集合はデータから導出する**(`_annual_budgets_for`)。
+    # 既定を空にするのは、budget_summaryを空にしているfixture・
+    # `RsRow`を直接組み立てる呼び出し元(tests/phase1_fixture.py)を
+    # 壊さないため(blocks/indirect_costsと同じ理由)
+    annual_budgets: tuple[AnnualBudgetLine, ...] = ()
 
 
 # =============================================================================
@@ -314,6 +365,16 @@ class RsParseStats:
     payee_rows_block: int = 0
     payee_rows_contract_detail: int = 0
     project_summary_duplicate_rows: int = 0
+
+    # 裁定B99: budget_summaryに行はあるのに、その予算年度の集計行
+    # ([14]当初予算（合計）が非空の行)が1件も無かった(予算事業ID, 予算年度)の
+    # 組の数。**AnnualBudgetを1件作らずに捨てた数**である。実測(2026-09-11)は
+    # 0件 —— 23,036組すべてが集計行をちょうど1件持つ(rs_columns.py 検証13)
+    # —— だが、黙って捨てると将来この前提が崩れたときに予算履歴の欠落が
+    # 誰にも見えなくなる(欠陥型4。`payee_rows_missing_amount`と同じ立場で、
+    # `RsRow.annual_budgets`は「その年度が無い」ことを表現できないため
+    # parse段階でしか数えられない)
+    budget_summary_years_without_aggregate_row: int = 0
 
     # =========================================================================
     # 裁定B97: payee_payment_block_connection(5-2)。**このファイルは任意
@@ -433,6 +494,69 @@ def _prior_year_executed_amount(
         return None
     idx_executed = rs_columns.RS_FILES["budget_summary"].col["executed_amount"]
     return normalize_amount(row[idx_executed])
+
+
+def _annual_budgets_for(
+    rows_for_project: list[list[str]], stats: RsParseStats
+) -> tuple[AnnualBudgetLine, ...]:
+    """この事業についてbudget_summaryが語るすべての会計年度分を取る(裁定B99)。
+
+    **年度の集合をハードコードしない。** 「2021〜2025」と書く代わりに、
+    その事業の行に現れる[13]予算年度の集合から導出する —— 将来RSが6年度分を
+    配れば自動で増え、1年度分しか持たない事業(実測554事業)でも同じ経路で
+    通る(実測の年度数分布: 5年3,574 / 4年234 / 3年812 / 2年620 / 1年554、
+    計5,794事業・23,036件)。
+
+    **集計行の選択規則は書かない。** `_current_year_budget_amount` と同じ
+    `rs_columns.find_budget_aggregate_row(..., allow_missing=True)` を年度ごとに
+    呼ぶだけの薄いラッパーである(規則の複製が将来ドリフトすることを避ける
+    ため、規則はrs_columns.pyの1箇所に集約されている。同関数のdocstring)。
+
+    年度の順序は昇順で固定する —— URIは年度から決まるので出力の同一性には
+    影響しないが、件数だけを見る検算で行順に依存しないようにする。
+
+    **集計行が1件も無い年度は作らない**(その年度について当初予算も歳出予算
+    現額も分からないので、金額8項目すべてが`None`のノードになる)。ただし黙って
+    落とさず`stats.budget_summary_years_without_aggregate_row`に数える ——
+    実測では(予算事業ID, 予算年度)23,036組すべてが集計行をちょうど1件持ち
+    0件の組は存在しない(rs_columns.py 検証13)ので、この数が0でなくなったら
+    それ自体が配布形態の変化の合図である。
+    """
+    spec = rs_columns.RS_FILES["budget_summary"]
+    idx_fy = spec.col["budget_fiscal_year"]
+
+    out: list[AnnualBudgetLine] = []
+    for budget_fiscal_year in sorted({row[idx_fy] for row in rows_for_project}):
+        row = rs_columns.find_budget_aggregate_row(
+            rows_for_project, budget_fiscal_year, allow_missing=True
+        )
+        if row is None:
+            stats.budget_summary_years_without_aggregate_row += 1
+            continue
+        out.append(
+            AnnualBudgetLine(
+                budget_fiscal_year=budget_fiscal_year,
+                initial_budget=normalize_amount(row[spec.col["budget_amount"]]),
+                supplementary_budget=normalize_amount(row[spec.col["supplementary_budget"]]),
+                carried_over_from_previous_year=normalize_amount(
+                    row[spec.col["carried_over_from_previous_year"]]
+                ),
+                reserve_fund=normalize_amount(row[spec.col["reserve_fund"]]),
+                total_budget_available=normalize_amount(
+                    row[spec.col["total_budget_available"]]
+                ),
+                executed_amount=normalize_amount(row[spec.col["executed_amount"]]),
+                carried_over_to_next_year=normalize_amount(
+                    row[spec.col["carried_over_to_next_year"]]
+                ),
+                # **この列だけが小数表記(`'45013000.0'`)。** 他の8列と同じ
+                # `normalize_amount`に通すのが正しい扱いで、末尾の`.0`は
+                # そこで落ちる(同関数のdocstringにTask 7時点からの実例
+                # `'50617000.0'`がある)
+                next_year_request=normalize_amount(row[spec.col["next_year_request"]]),
+            )
+        )
+    return tuple(out)
 
 
 def _basis_law_citations_for(rows_for_project: list[list[str]]) -> tuple[BasisLawCitation, ...]:
@@ -864,6 +988,7 @@ def parse_rs(
             ministry_name=ministry_name,
             budget_amount=_current_year_budget_amount(rows_for_project, fiscal_year),
             prior_year_executed_amount=_prior_year_executed_amount(rows_for_project, fiscal_year),
+            annual_budgets=_annual_budgets_for(rows_for_project, st),
             basis_law_citations=_basis_law_citations_for(law_by_pid.get(pid, [])),
             expenditures=_expenditures_for(payee_rows, st),
             # ブロックは5-2が無ければ組み立てない(5-1だけでは入口フラグ・
@@ -1098,6 +1223,14 @@ class BuildStats:
     # だが、黙って落とすと将来この前提が崩れたときに「段が付いていない支出」の
     # 存在が誰にも見えなくなる(欠陥型4)
     expenditures_block_unknown: int = 0
+    # =========================================================================
+    # 裁定B99: 年度ごとの予算と執行。実測(2026-09-11)は23,036件
+    # (=5,794事業の予算年度の総数。1事業あたり1〜5年度)。
+    # **`projects_seen`と同じ桁ではない** —— 事業数(5,794)の約4倍になるのが
+    # 正常であり、5,794付近なら「レビューシート年度の1件しか取っていない」
+    # (=このクラスを作った理由が消えている)合図である
+    # =========================================================================
+    annual_budgets_seen: int = 0
 
 
 @dataclass(frozen=True)
@@ -1186,6 +1319,35 @@ class IndirectCostRecord:
 
 
 @dataclass(frozen=True)
+class AnnualBudgetRecord:
+    """`budget:AnnualBudget` としてemitする1件(裁定B99)。
+
+    `ExpenditureBlockRecord`/`IndirectCostRecord` と同じく、解決の判断は
+    `build_projects` が済ませてありemitはこれを書くだけにする。ここには
+    解決すべき参照が無い(`project` は同じ事業のURIだけを指す)ので、
+    `AnnualBudgetLine` に (project_id, fiscal_year) を添えた形そのままになる。
+
+    **`fiscal_year` と `budget_fiscal_year` は別物である。** 前者は
+    この記録が載っているレビューシート自体の年度(実測では全件2025)、
+    後者は語られている会計年度(2021〜2025)。同一性は
+    (fiscal_year, project_id, budget_fiscal_year)の組で決まる
+    (`uris.annual_budget_uri`)。
+    """
+
+    project_id: str
+    fiscal_year: str
+    budget_fiscal_year: str
+    initial_budget: int | None
+    supplementary_budget: int | None
+    carried_over_from_previous_year: int | None
+    reserve_fund: int | None
+    total_budget_available: int | None
+    executed_amount: int | None
+    carried_over_to_next_year: int | None
+    next_year_request: int | None
+
+
+@dataclass(frozen=True)
 class UnresolvedBudgetReference:
     """emit_budgetがcore:UnresolvedReferenceを立てるための最小限の情報。
 
@@ -1211,6 +1373,9 @@ class BuildResult:
     # 両方とも空になる(RsRow側で空になっているため)
     blocks: tuple[ExpenditureBlockRecord, ...] = ()
     indirect_costs: tuple[IndirectCostRecord, ...] = ()
+    # 裁定B99。budget_summaryを空にしている呼び出し元(fixture)や、`RsRow`を
+    # 直接組み立てる呼び出し元では空になる(`RsRow.annual_budgets`が空のため)
+    annual_budgets: tuple[AnnualBudgetRecord, ...] = ()
 
 
 def build_projects(
@@ -1251,6 +1416,7 @@ def build_projects(
     unresolved: list[UnresolvedBudgetReference] = []
     blocks: list[ExpenditureBlockRecord] = []
     indirect_costs: list[IndirectCostRecord] = []
+    annual_budgets: list[AnnualBudgetRecord] = []
 
     for row in rows:
         stats.projects_seen += 1
@@ -1346,6 +1512,29 @@ def build_projects(
                 )
             )
 
+        # 裁定B99: 年度ごとの予算と執行。ブロックと同じく解決を要しない
+        # (`project`が指すのは自分と同じ事業のURIだけ)。年度の重複除去は
+        # `_annual_budgets_for`が年度の集合から組み立てる時点で済んでいる
+        # ——URIの鍵が(年度, 事業, 予算年度)なので、同じ予算年度が2件来ると
+        # 1ノードが`initialBudget`を2つ持って閉じたシェイプに違反する
+        for annual in row.annual_budgets:
+            stats.annual_budgets_seen += 1
+            annual_budgets.append(
+                AnnualBudgetRecord(
+                    project_id=row.project_id,
+                    fiscal_year=row.fiscal_year,
+                    budget_fiscal_year=annual.budget_fiscal_year,
+                    initial_budget=annual.initial_budget,
+                    supplementary_budget=annual.supplementary_budget,
+                    carried_over_from_previous_year=annual.carried_over_from_previous_year,
+                    reserve_fund=annual.reserve_fund,
+                    total_budget_available=annual.total_budget_available,
+                    executed_amount=annual.executed_amount,
+                    carried_over_to_next_year=annual.carried_over_to_next_year,
+                    next_year_request=annual.next_year_request,
+                )
+            )
+
         for seq, line in enumerate(row.expenditures):
             stats.expenditures_seen += 1
             if line.is_bundled:
@@ -1428,6 +1617,7 @@ def build_projects(
         stats=stats,
         blocks=tuple(blocks),
         indirect_costs=tuple(indirect_costs),
+        annual_budgets=tuple(annual_budgets),
     )
 
 
@@ -1435,6 +1625,8 @@ __all__ = [
     "OPTIONAL_GROUPS",
     "REQUIRED_GROUPS",
     "SENTINEL_HOUJIN_BANGOU",
+    "AnnualBudgetLine",
+    "AnnualBudgetRecord",
     "BasisLawCitation",
     "BudgetProjectRecord",
     "BuildResult",

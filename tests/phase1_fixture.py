@@ -356,6 +356,46 @@ def build_budget_result() -> rs.BuildResult:
                     is_bundled=False, amount=100_000, role="",
                 ),
             ),
+            # 裁定B99の実演。**1事業が複数年度の記録を持つ**ことと、
+            # 恒等式(当初+補正+繰越+予備費=現額)が成立することを最小構成で示す。
+            #
+            #   2024年度: 90 + 5 + 3 + 2 = 100(現額) / 執行80 / 翌年度繰越10
+            #             → 翌年度要求額100(これが2025年度の当初予算になった)
+            #   2025年度: 100 + 0 + 0 + 0 = 100(現額) / **執行0(未執行)**
+            #             → 翌年度要求額110
+            #
+            # **執行額0を入れているのは意図的である。** 実データでは
+            # レビューシート年度(最新)の執行額が5,794事業すべて0であり
+            # (まだ執行されていない)、これを「欠損」として落とす実装だと
+            # その年度のAnnualBudgetが片端から壊れる。0は有効な値である。
+            #
+            # **2025年度のinitialBudgetはbudget_amount(100,000,000)と一致させる。**
+            # パイプラインの検査(`budgetAmount == シート年度のinitialBudget`)が
+            # 成立することをfixtureでも保つ —— ずらすとリリースゲートが止まる。
+            annual_budgets=(
+                rs.AnnualBudgetLine(
+                    budget_fiscal_year="2024",
+                    initial_budget=90_000_000,
+                    supplementary_budget=5_000_000,
+                    carried_over_from_previous_year=3_000_000,
+                    reserve_fund=2_000_000,
+                    total_budget_available=100_000_000,
+                    executed_amount=80_000_000,
+                    carried_over_to_next_year=10_000_000,
+                    next_year_request=100_000_000,
+                ),
+                rs.AnnualBudgetLine(
+                    budget_fiscal_year="2025",
+                    initial_budget=100_000_000,
+                    supplementary_budget=0,
+                    carried_over_from_previous_year=0,
+                    reserve_fund=0,
+                    total_budget_available=100_000_000,
+                    executed_amount=0,
+                    carried_over_to_next_year=0,
+                    next_year_request=110_000_000,
+                ),
+            ),
         ),
         # PROJECT_MULTI_YEAR: WOLFSTYLEへの2件目の支出(別事業・別年度)。
         # CQ3「年度別に並べられるか」の正のコントロール(2行以上で初めて
@@ -541,6 +581,7 @@ def build_dataset(out_dir: Path) -> Dataset:
             # (実際にここで踏んだ)。CQ12のテストがその状態を検出する。
             blocks=budget_result.blocks,
             indirect_costs=budget_result.indirect_costs,
+            annual_budgets=budget_result.annual_budgets,
         ),
     )
 

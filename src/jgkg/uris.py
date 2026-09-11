@@ -134,6 +134,27 @@ def expenditure_block_uri(fiscal_year: str, project_id: str, block_id: str) -> s
     return f"{budget_uri(fiscal_year, project_id)}/block/{quote(block_id, safe='')}"
 
 
+def annual_budget_uri(fiscal_year: str, project_id: str, budget_fiscal_year: str) -> str:
+    """`budget:AnnualBudget`(ある会計年度の予算と執行)のURI。裁定B99。
+
+    鍵は**予算年度**(`budget_fiscal_year`。RSの[13]予算年度)であり、
+    `fiscal_year`(レビューシート自体の年度)とは別物である —— 2025年の
+    シートは2021〜2025について語るので、この2つは一致しないのが普通。
+    両方をURIの材料にするのは、将来2026年のシートが配られたときに
+    「2026年のシートが言う2025年度」と「2025年のシートが言う2025年度」が
+    別ノードになるようにするため(同じ年度についての記述が改訂されても
+    どちらのシートの主張かが残る。`budget_uri`が事業年度を含めるのと同じ立場)。
+
+    `/annual/` を挟むのは `expenditure_uri`(`{budget_uri}/{seq}`)との衝突を
+    避けるため —— 予算年度は常にASCII数字なので、パスを分けないと
+    `.../2025/1/2021` が支出の連番2021番と区別できなくなる
+    (`expenditure_block_uri` が `/block/` を挟むのと同じ理由)。
+    """
+    if not budget_fiscal_year:
+        raise ValueError("budget_fiscal_year が空である")
+    return f"{budget_uri(fiscal_year, project_id)}/annual/{quote(budget_fiscal_year, safe='')}"
+
+
 def indirect_cost_uri(fiscal_year: str, project_id: str, item: str) -> str:
     """`budget:IndirectCost`(国自らが支出する間接経費)のURI。裁定B97。
 

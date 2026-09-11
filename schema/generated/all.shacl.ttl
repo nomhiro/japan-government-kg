@@ -16,7 +16,7 @@
     = totalBudgetAvailable\r
 \r
 ビルド時に検査する。この恒等式が、2021年度の「当初予算107.1兆円に 対し執行額128.1兆円」という一見異常な並びを説明する(実際の分母は 150.2兆円、執行率85.3%)。\r
-**翌年度要求額(RSの[22])はモデル化しない** —— 集計行23,036件すべてで 空だった(実測)。列は存在するが値が無い。""" ;
+**翌年度要求額(RSの[22])もモデル化する(`nextYearRequest`)。** controllerは当初これを「集計行23,036件すべてで空」と記録していたが、 **それは誤りだった** —— 実際は23,036件すべてが非空で、 `'45013000.0'` のような小数表記を取る(このファイルで唯一の形)。 controllerの測定スクリプトが`.isdigit()`で判定していたため、 **値のある列を「空」と誤認していた**(実装者の指摘で訂正)。 空なのは明細行側の列41「翌年度要求額」の方である。""" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
     sh:property [ sh:datatype xsd:integer ;
@@ -26,19 +26,29 @@
             sh:nodeKind sh:Literal ;
             sh:order 4 ;
             sh:path <https://jgkg.norr-tech.com/def/budget#supplementaryBudget> ],
-        [ sh:datatype rdf:langString ;
-            sh:description "人間が読む名称"@ja ;
+        [ sh:datatype xsd:integer ;
+            sh:description """翌年度について要求した額(合計)。RSの[22]翌年度要求額（合計）。 **この列だけが小数表記を取る**(`'45013000.0'`)。値そのものは 全件が整数(実測: 23,036件すべてで小数部0)なので`integer`で持つ。 `transform.rs.normalize_amount`が末尾の`.0`を落とす実装になっており (Task 7の時点でこの形が記録されていた)、取り込み側の対応は済んでいる。\r
+**これが答えられるようにする問い**: 「いくら要求して、いくら付いたか」。 年度Yの`nextYearRequest`は年度Y+1の`initialBudget`と対応する。 実測(両年度に存在する事業に限る):\r
+| | 要求 | 実際に付いた当初予算 | 比 | |---|---:|---:|---:| | 2021→2022 | 111.3兆 | 107.8兆 | 96.9% | | 2022→2023 | 112.3兆 | 111.5兆 | 99.2% | | 2023→2024 | 122.1兆 | 120.8兆 | 98.9% | | 2024→2025 | 123.5兆 | 122.8兆 | 99.4% |\r
+**事業単位では一致を仮定しない**(完全一致は年度あたり1,243〜2,307件で、 両年度にある事業の3〜4割)。事業の分割・統合・査定があるため。"""@ja ;
             sh:maxCount 1 ;
+            sh:name "翌年度要求額" ;
             sh:nodeKind sh:Literal ;
-            sh:order 12 ;
-            sh:path skos:prefLabel ],
+            sh:order 10 ;
+            sh:path <https://jgkg.norr-tech.com/def/budget#nextYearRequest> ],
         [ sh:datatype xsd:integer ;
             sh:description "金額(円)"@ja ;
             sh:maxCount 1 ;
             sh:name "金額(円)" ;
             sh:nodeKind sh:Literal ;
-            sh:order 10 ;
+            sh:order 11 ;
             sh:path <https://jgkg.norr-tech.com/def/core#amount_jpy> ],
+        [ sh:datatype rdf:langString ;
+            sh:description "人間が読む名称"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 13 ;
+            sh:path skos:prefLabel ],
         [ sh:datatype xsd:integer ;
             sh:description """その年度に実際に使える額の合計(歳出予算現額)。RSの[18]計（歳出予算現額合計）。\r
 **執行額を比べるべき分母はこれであり、当初予算ではない(裁定B99)。** 実測(2026-09-11、5年度すべて)で次の恒等式が**差0円で成立する**:\r
@@ -51,11 +61,6 @@
             sh:nodeKind sh:Literal ;
             sh:order 7 ;
             sh:path <https://jgkg.norr-tech.com/def/budget#totalBudgetAvailable> ],
-        [ sh:description "このリソースのURI"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:IRI ;
-            sh:order 11 ;
-            sh:path <https://jgkg.norr-tech.com/def/core#id> ],
         [ sh:datatype xsd:integer ;
             sh:description "翌年度へ繰り越した額(合計)。RSの[21]翌年度への繰越し(合計）。 ある年度の`carriedOverToNextYear`は、次の年度の `carriedOverFromPreviousYear`と対応するはずだが、**事業単位では 一致を仮定しない**(事業の分割・統合・終了があるため)。"@ja ;
             sh:maxCount 1 ;
@@ -71,6 +76,11 @@
             sh:nodeKind sh:Literal ;
             sh:order 2 ;
             sh:path <https://jgkg.norr-tech.com/def/budget#budgetFiscalYear> ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 12 ;
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ],
         [ sh:datatype xsd:integer ;
             sh:description """その年度に実際に執行された額(合計)。RSの[19]執行額（合計）。\r
 **この列は資金の流れ(ExpenditureBlock)の計算に一切使っていないため、 独立した検証のオラクルになる(裁定B98)。** 実測: FY2024の執行額 128,407,860,724,145円に対し、CQ12(入口ブロック+間接経費)が98.83%、 構造からの推論を含めると100.086%で一致した。裁定B20が挙げた 「比が正確に2.0/3.0になる245事業」のうち243事業が比1.0に直った。\r
@@ -416,7 +426,7 @@
 <https://jgkg.norr-tech.com/def/core#Entity> a sh:NodeShape ;
     rdfs:comment "本KGが扱うすべての事物の基底" ;
     sh:closed false ;
-    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/budget#basisLaw> <https://jgkg.norr-tech.com/def/budget#blockId> <https://jgkg.norr-tech.com/def/budget#budgetAmount> <https://jgkg.norr-tech.com/def/budget#budgetFiscalYear> <https://jgkg.norr-tech.com/def/budget#carriedOverFromPreviousYear> <https://jgkg.norr-tech.com/def/budget#carriedOverToNextYear> <https://jgkg.norr-tech.com/def/budget#executedAmount> <https://jgkg.norr-tech.com/def/budget#fiscalYear> <https://jgkg.norr-tech.com/def/budget#flowNote> <https://jgkg.norr-tech.com/def/budget#fundedBy> <https://jgkg.norr-tech.com/def/budget#inBlock> <https://jgkg.norr-tech.com/def/budget#initialBudget> <https://jgkg.norr-tech.com/def/budget#ministry> <https://jgkg.norr-tech.com/def/budget#paidByGovernment> <https://jgkg.norr-tech.com/def/budget#payeeCount> <https://jgkg.norr-tech.com/def/budget#payeeLabel> <https://jgkg.norr-tech.com/def/budget#project> <https://jgkg.norr-tech.com/def/budget#projectId> <https://jgkg.norr-tech.com/def/budget#projectName> <https://jgkg.norr-tech.com/def/budget#recipient> <https://jgkg.norr-tech.com/def/budget#recipientMatchCategory> <https://jgkg.norr-tech.com/def/budget#reserveFund> <https://jgkg.norr-tech.com/def/budget#role> <https://jgkg.norr-tech.com/def/budget#supplementaryBudget> <https://jgkg.norr-tech.com/def/budget#totalBudgetAvailable> <https://jgkg.norr-tech.com/def/core#amount_jpy> <https://jgkg.norr-tech.com/def/core#involves_agent> <https://jgkg.norr-tech.com/def/core#occurred_on> <https://jgkg.norr-tech.com/def/core#unresolvedFor> <https://jgkg.norr-tech.com/def/core#unresolved_key> <https://jgkg.norr-tech.com/def/core#unresolved_reason> <https://jgkg.norr-tech.com/def/core#unresolved_text> <https://jgkg.norr-tech.com/def/law#abbrev> <https://jgkg.norr-tech.com/def/law#amendmentEnforcementDate> <https://jgkg.norr-tech.com/def/law#amendmentLawNum> <https://jgkg.norr-tech.com/def/law#jurisdiction> <https://jgkg.norr-tech.com/def/law#lawId> <https://jgkg.norr-tech.com/def/law#lawNum> <https://jgkg.norr-tech.com/def/law#lawNumType> <https://jgkg.norr-tech.com/def/law#lawTitle> <https://jgkg.norr-tech.com/def/law#promulgationDate> <https://jgkg.norr-tech.com/def/law#repealStatus> <https://jgkg.norr-tech.com/def/law#revisionStatus> <https://jgkg.norr-tech.com/def/org#abolitionDate> <https://jgkg.norr-tech.com/def/org#cityName> <https://jgkg.norr-tech.com/def/org#houjinBangou> <https://jgkg.norr-tech.com/def/org#ministryCode> <https://jgkg.norr-tech.com/def/org#organizationKindCode> <https://jgkg.norr-tech.com/def/org#prefectureName> <https://jgkg.norr-tech.com/def/org#succeededBy> ) ;
+    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/budget#basisLaw> <https://jgkg.norr-tech.com/def/budget#blockId> <https://jgkg.norr-tech.com/def/budget#budgetAmount> <https://jgkg.norr-tech.com/def/budget#budgetFiscalYear> <https://jgkg.norr-tech.com/def/budget#carriedOverFromPreviousYear> <https://jgkg.norr-tech.com/def/budget#carriedOverToNextYear> <https://jgkg.norr-tech.com/def/budget#executedAmount> <https://jgkg.norr-tech.com/def/budget#fiscalYear> <https://jgkg.norr-tech.com/def/budget#flowNote> <https://jgkg.norr-tech.com/def/budget#fundedBy> <https://jgkg.norr-tech.com/def/budget#inBlock> <https://jgkg.norr-tech.com/def/budget#initialBudget> <https://jgkg.norr-tech.com/def/budget#ministry> <https://jgkg.norr-tech.com/def/budget#nextYearRequest> <https://jgkg.norr-tech.com/def/budget#paidByGovernment> <https://jgkg.norr-tech.com/def/budget#payeeCount> <https://jgkg.norr-tech.com/def/budget#payeeLabel> <https://jgkg.norr-tech.com/def/budget#project> <https://jgkg.norr-tech.com/def/budget#projectId> <https://jgkg.norr-tech.com/def/budget#projectName> <https://jgkg.norr-tech.com/def/budget#recipient> <https://jgkg.norr-tech.com/def/budget#recipientMatchCategory> <https://jgkg.norr-tech.com/def/budget#reserveFund> <https://jgkg.norr-tech.com/def/budget#role> <https://jgkg.norr-tech.com/def/budget#supplementaryBudget> <https://jgkg.norr-tech.com/def/budget#totalBudgetAvailable> <https://jgkg.norr-tech.com/def/core#amount_jpy> <https://jgkg.norr-tech.com/def/core#involves_agent> <https://jgkg.norr-tech.com/def/core#occurred_on> <https://jgkg.norr-tech.com/def/core#unresolvedFor> <https://jgkg.norr-tech.com/def/core#unresolved_key> <https://jgkg.norr-tech.com/def/core#unresolved_reason> <https://jgkg.norr-tech.com/def/core#unresolved_text> <https://jgkg.norr-tech.com/def/law#abbrev> <https://jgkg.norr-tech.com/def/law#amendmentEnforcementDate> <https://jgkg.norr-tech.com/def/law#amendmentLawNum> <https://jgkg.norr-tech.com/def/law#jurisdiction> <https://jgkg.norr-tech.com/def/law#lawId> <https://jgkg.norr-tech.com/def/law#lawNum> <https://jgkg.norr-tech.com/def/law#lawNumType> <https://jgkg.norr-tech.com/def/law#lawTitle> <https://jgkg.norr-tech.com/def/law#promulgationDate> <https://jgkg.norr-tech.com/def/law#repealStatus> <https://jgkg.norr-tech.com/def/law#revisionStatus> <https://jgkg.norr-tech.com/def/org#abolitionDate> <https://jgkg.norr-tech.com/def/org#cityName> <https://jgkg.norr-tech.com/def/org#houjinBangou> <https://jgkg.norr-tech.com/def/org#ministryCode> <https://jgkg.norr-tech.com/def/org#organizationKindCode> <https://jgkg.norr-tech.com/def/org#prefectureName> <https://jgkg.norr-tech.com/def/org#succeededBy> ) ;
     sh:property [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
@@ -464,7 +474,7 @@
     rdfs:label "いくらで(金額)" ;
     rdfs:comment "「いくらで」の軸。予算科目・支出の上位" ;
     sh:closed true ;
-    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/budget#blockId> <https://jgkg.norr-tech.com/def/budget#budgetFiscalYear> <https://jgkg.norr-tech.com/def/budget#carriedOverFromPreviousYear> <https://jgkg.norr-tech.com/def/budget#carriedOverToNextYear> <https://jgkg.norr-tech.com/def/budget#executedAmount> <https://jgkg.norr-tech.com/def/budget#fiscalYear> <https://jgkg.norr-tech.com/def/budget#flowNote> <https://jgkg.norr-tech.com/def/budget#fundedBy> <https://jgkg.norr-tech.com/def/budget#inBlock> <https://jgkg.norr-tech.com/def/budget#initialBudget> <https://jgkg.norr-tech.com/def/budget#paidByGovernment> <https://jgkg.norr-tech.com/def/budget#payeeCount> <https://jgkg.norr-tech.com/def/budget#payeeLabel> <https://jgkg.norr-tech.com/def/budget#project> <https://jgkg.norr-tech.com/def/budget#recipient> <https://jgkg.norr-tech.com/def/budget#recipientMatchCategory> <https://jgkg.norr-tech.com/def/budget#reserveFund> <https://jgkg.norr-tech.com/def/budget#role> <https://jgkg.norr-tech.com/def/budget#supplementaryBudget> <https://jgkg.norr-tech.com/def/budget#totalBudgetAvailable> ) ;
+    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/budget#blockId> <https://jgkg.norr-tech.com/def/budget#budgetFiscalYear> <https://jgkg.norr-tech.com/def/budget#carriedOverFromPreviousYear> <https://jgkg.norr-tech.com/def/budget#carriedOverToNextYear> <https://jgkg.norr-tech.com/def/budget#executedAmount> <https://jgkg.norr-tech.com/def/budget#fiscalYear> <https://jgkg.norr-tech.com/def/budget#flowNote> <https://jgkg.norr-tech.com/def/budget#fundedBy> <https://jgkg.norr-tech.com/def/budget#inBlock> <https://jgkg.norr-tech.com/def/budget#initialBudget> <https://jgkg.norr-tech.com/def/budget#nextYearRequest> <https://jgkg.norr-tech.com/def/budget#paidByGovernment> <https://jgkg.norr-tech.com/def/budget#payeeCount> <https://jgkg.norr-tech.com/def/budget#payeeLabel> <https://jgkg.norr-tech.com/def/budget#project> <https://jgkg.norr-tech.com/def/budget#recipient> <https://jgkg.norr-tech.com/def/budget#recipientMatchCategory> <https://jgkg.norr-tech.com/def/budget#reserveFund> <https://jgkg.norr-tech.com/def/budget#role> <https://jgkg.norr-tech.com/def/budget#supplementaryBudget> <https://jgkg.norr-tech.com/def/budget#totalBudgetAvailable> ) ;
     sh:property [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;

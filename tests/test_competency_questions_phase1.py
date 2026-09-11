@@ -637,3 +637,120 @@ def test_cq13_reports_whether_the_stage_was_paid_by_government(kg):
     assert "B" in flags, flags
     assert flags["B"] is not None, "paidByGovernmentが未束縛(偽のとき出していない疑い)"
     assert bool(flags["B"].toPython()) is False, flags["B"]
+
+
+# =============================================================================
+# CQ14: 国の予算はいくら付いて、いくら使われたか。年度ごとに(裁定B99)
+# =============================================================================
+
+
+def test_cq14_returns_one_row_per_budget_year_with_the_breakdown(kg):
+    """1事業が複数年度の記録を持ち、**予算年度ごとに1行**返ること。
+    4つの内訳が恒等式(当初+補正+繰越+予備費=現額)を満たすこと。
+
+    fixtureのPROJECT_COREは2年度を持つ:
+      2024: 90 + 5 + 3 + 2 = 100(現額) / 執行80
+      2025: 100 + 0 + 0 + 0 = 100(現額) / 執行0(未執行)
+
+    何があれば落ちるか:
+    - `budgetFiscalYear`でGROUP BYしなくなると2年度が1行に潰れる
+    - `fiscalYear`(シート年度)と`budgetFiscalYear`(対象年度)を同じスロットに
+      統合すると、2024年度の行が消える(シート年度は2025しか無いため)
+    - 内訳のどれかを必須にし忘れて0件になる
+    """
+    rows = _query(kg, "cq14-budget-and-execution-by-year.rq")
+    assert rows, "CQ14に答えられない"
+    by_year = {}
+    for sheet, budget_year, init, supp, carried_in, reserve, avail, executed, count in rows:
+        assert int(sheet) == 2025, f"fixtureのシート年度は2025のみ: {sheet}"
+        by_year[int(budget_year)] = (
+            int(init), int(supp), int(carried_in), int(reserve), int(avail), int(executed), int(count)
+        )
+    assert sorted(by_year) == [2024, 2025], by_year
+    assert by_year[2024] == (90_000_000, 5_000_000, 3_000_000, 2_000_000, 100_000_000, 80_000_000, 1)
+    assert by_year[2025] == (100_000_000, 0, 0, 0, 100_000_000, 0, 1)
+    # 恒等式が両年度で成立する(CQが返す値そのもので確かめる)
+    for y, v in by_year.items():
+        assert v[0] + v[1] + v[2] + v[3] == v[4], f"{y}年度の恒等式が崩れている: {v}"
+
+
+def test_cq14_keeps_the_sheet_year_row_whose_executed_amount_is_zero(kg):
+    """**執行額0の年度を落とさない**こと。
+
+    実データではレビューシート年度(最新)の執行額が5,794事業すべて0である
+    (まだ執行されていない。裁定B99)。`budget:executedAmount`を
+    「値があるときだけ書く」実装で**0を欠損として扱うと、最新年度の行が
+    まるごと消える** —— つまり「今年の予算はいくらか」に答えられなくなる。
+
+    何があれば落ちるか: emit側が`if value:`(0を偽と見る)で判定するように
+    戻ると、2025年度の行がCQ14から消えてこのテストが落ちる。
+    """
+    rows = _query(kg, "cq14-budget-and-execution-by-year.rq")
+    years = {int(budget_year): int(executed) for _s, budget_year, *rest in rows
+             for executed in [rest[5]]}
+    assert 2025 in years, f"執行額0の年度が落ちている: {sorted(years)}"
+    assert years[2025] == 0, years
+
+
+def test_cq14_initial_budget_of_the_sheet_year_matches_the_project_budget_amount(kg):
+    """`budgetAmount`(BudgetProject)と`initialBudget`(AnnualBudget)が
+    **別の述語として存在し、シート年度については同じ値**であること。
+
+    同じ述語に統合すると`SUM(?budgetAmount)`が粒度をまたいで二重に数える
+    (実データでは5,794件 対 23,036件。schema/budget.yamlの`initialBudget`の
+    docstring参照)。**別述語であることと、値が一致することの両方**を
+    ここで固定する。
+
+    何があれば落ちるか: `initialBudget`を`budgetAmount`に統合すると、
+    このクエリのどちらかの束縛が消えて0行になる。値をずらすと不一致で落ちる。
+    """
+    rows = list(kg.query("""
+        PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
+        SELECT ?project ?budgetAmount ?initialBudget WHERE {
+          ?project budget:budgetAmount ?budgetAmount ;
+                   budget:fiscalYear ?sheetYear .
+          ?annual budget:project ?project ;
+                  budget:budgetFiscalYear ?sheetYear ;
+                  budget:initialBudget ?initialBudget .
+        }
+    """))
+    assert rows, "budgetAmountとinitialBudgetを突き合わせられない"
+    for project, budget_amount, initial_budget in rows:
+        assert int(budget_amount) == int(initial_budget), (
+            f"{project} のbudgetAmount({int(budget_amount)})とシート年度の"
+            f"initialBudget({int(initial_budget)})が食い違っている"
+        )
+
+
+def test_cq14_next_year_request_is_readable_and_is_not_the_initial_budget(kg):
+    """`nextYearRequest`(翌年度要求額)が読めること。**当初予算とは別の値**
+    であること。
+
+    **controllerはこの列を「集計行すべてで空」と誤って記録していた**
+    (裁定B99の訂正) —— 測定スクリプトが`.isdigit()`で判定していたため、
+    `'45013000.0'`という小数表記を「空」と誤認した。実際は23,036件すべてが
+    非空である。実データでは年度Yの要求額が年度Y+1の当初予算とおおむね
+    対応する(96.9〜99.4%)。
+
+    何があれば落ちるか: 取り込みが小数表記を欠損として落とすと0行になる
+    (`transform.rs.normalize_amount`が末尾の`.0`を落とす実装に依存している)。
+    """
+    rows = list(kg.query("""
+        PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
+        SELECT ?budgetYear ?request ?initial WHERE {
+          ?annual budget:budgetFiscalYear ?budgetYear ;
+                  budget:nextYearRequest ?request ;
+                  budget:initialBudget ?initial .
+        }
+        ORDER BY ?budgetYear
+    """))
+    assert rows, "nextYearRequestが読めない(取り込みが小数表記を落としている疑い)"
+    by_year = {int(y): (int(req), int(init)) for y, req, init in rows}
+    assert sorted(by_year) == [2024, 2025], by_year
+    # fixtureは「2024年度に100を要求し、2025年度に当初100が付いた」形にしてある
+    assert by_year[2024][0] == 100_000_000, by_year
+    assert by_year[2025][1] == 100_000_000, by_year
+    # 要求額と当初予算が別の値であること(同じスロットに潰れていない)
+    assert by_year[2025][0] != by_year[2025][1], (
+        f"2025年度の要求額と当初予算が同じ値になっている: {by_year[2025]}"
+    )

@@ -338,6 +338,31 @@ class PipelineReport(BaseModel):
     # かった件数(`budget:inBlock`を張らなかった支出)。実測0件
     budget_expenditures_block_unknown: int | None = None
 
+    # =========================================================================
+    # 裁定B99: 年度ごとの予算と執行(budget:AnnualBudget)。
+    # 実測(2026-09-11): 23,036件(=5,794事業の予算年度の総数)。
+    # **事業数(5,794)付近の値はこの機能が働いていない合図である** ——
+    # レビューシート年度の1件しか取れていないことを意味する。
+    # 他のbudget_*と同じく、rs-system未結線/据え置きなら`None`。
+    #
+    # `budget_annual_budget_years_without_aggregate_row` は「budget_summaryに
+    # 行はあるのに集計行が無かった予算年度」の数で、**AnnualBudgetを作らずに
+    # 捨てた数**である(実測0件。rs_columns.py 検証13)。0件を「作らなくて
+    # 良かった」と「作り損なった」に分ける唯一の手がかり
+    # =========================================================================
+    budget_annual_budgets: int | None = None
+    budget_annual_budget_years_without_aggregate_row: int | None = None
+    # 恒等式・不変条件の検査が**実際に見た件数**(kg.nq自身から数える)。
+    # 違反0件が「壊れていない」なのか「1件も見ていない」なのかを区別する
+    # 唯一の手がかりで、どちらの検査も「比べる相手が無い記録は対象外」に
+    # するため、列を丸ごと落とした取り込みでは空振りし得る
+    # (`_annual_budget_identity_mismatches`のdocstring)。実測はどちらも
+    # 23,036 / 5,794。**`clean`から測るので、carry-overで据え置かれた
+    # rs-systemグラフについても値が入る**(件数系のbudget_*がNoneになる
+    # のと違う。B54が"in fetched_on"で判定するのと同じ理由)
+    budget_annual_budget_identity_checked: int | None = None
+    budget_annual_budget_project_amount_checked: int | None = None
+
 
 class QuarantineNotEmptyError(RuntimeError):
     """隔離が発生した状態でリリースしようとした。"""
@@ -1026,6 +1051,143 @@ def _expenditure_block_amount_mismatches(clean: Dataset) -> list[str]:
             )
     return mismatches
 
+
+def _annual_budget_identity_mismatches(clean: Dataset) -> tuple[list[str], int]:
+    """裁定B99: `budget:AnnualBudget` の5つの金額が、一次データが持つ恒等式
+
+        initialBudget + supplementaryBudget
+          + carriedOverFromPreviousYear + reserveFund
+        = totalBudgetAvailable
+
+    を満たすことを検査する。**実測(2026-09-11)で集計行23,036件すべてが
+    差0円で満たす**(違反0件。rs_columns.py 検証13)ので、列を1つ取り違えた
+    取り込み(例: 予備費等の列を1つ隣にずらす)はここで必ず崩れる。
+
+    `_expenditure_block_amount_mismatches`(B97)と同じ思想で置いている:
+    明示した値を明示した値自身で検査するのではなく、**独立に運ばれてきた
+    5つの値**(RSの列14〜18)の間の関係を検査する。
+
+    **5つのうち1つでも欠けている記録は対象外**(比べる相手が無い。ブロックの
+    金額検査が金額を持たないブロックを外すのと同じ)。ただしそれは
+    「列を丸ごと落とした取り込み」でもこの検査が**静かに空振りする**という
+    ことなので、**実際に検査できた件数を第2の戻り値で返し、
+    `PipelineReport.budget_annual_budget_identity_checked`に載せる**
+    (欠陥型4。23,036件を取り込んだリリースでこの値が0なら、
+    違反0件は「壊れていない」ではなく「見ていない」を意味する)。
+
+    返り値の1つ目が空でなければ `report_graph_mismatches` に合流させ、
+    `enforce_release_gate` が同じゲートで止める。
+    """
+    query = """
+    PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
+    SELECT ?annual ?initial ?supplementary ?carriedIn ?reserve ?total WHERE {
+      ?annual a budget:AnnualBudget ;
+              budget:initialBudget ?initial ;
+              budget:supplementaryBudget ?supplementary ;
+              budget:carriedOverFromPreviousYear ?carriedIn ;
+              budget:reserveFund ?reserve ;
+              budget:totalBudgetAvailable ?total .
+    }
+    """
+    mismatches: list[str] = []
+    checked = 0
+    for annual, initial, supplementary, carried_in, reserve, total in clean.query(query):
+        checked += 1
+        parts = (int(initial), int(supplementary), int(carried_in), int(reserve))
+        if sum(parts) != int(total):
+            mismatches.append(
+                f"budget:AnnualBudget {annual} の当初予算{parts[0]}円+補正予算"
+                f"{parts[1]}円+前年度からの繰越し{parts[2]}円+予備費等{parts[3]}円"
+                f"={sum(parts)}円だが、歳出予算現額は{int(total)}円"
+                "(裁定B99の恒等式が崩れている —— 一次データでは集計行"
+                "23,036件全件で差0円なので、列を取り違えた疑いが強い)"
+            )
+    return mismatches, checked
+
+
+def _annual_budget_project_amount_mismatches(clean: Dataset) -> tuple[list[str], int]:
+    """裁定B99: `budget:BudgetProject` の `budgetAmount` が、同じ事業の
+
+    **レビューシート年度の** `budget:AnnualBudget` の `initialBudget` に
+    等しいことを検査する(schema/budget.yaml `initialBudget` の不変条件)。
+
+    両者はRSの同じ列14から来るが、**運ばれてくる経路が別である** ——
+    `budgetAmount`は`rs._current_year_budget_amount`が事業年度1つだけを
+    引いた値で、`initialBudget`は`rs._annual_budgets_for`が年度の集合から
+    導出した値である。年度の対応付けを取り違える取り込み(例: 予算年度の
+    代わりに事業年度で鍵を作る、`sorted`の先頭を採る)はここで崩れる。
+    **この2つを同じ述語に統合してはならない**(粒度をまたいだ二重計上。
+    `initialBudget`のdocstring)ので、等しいことは検査で示すしかない。
+
+    突き合わせの鍵は`BudgetProject`の`fiscalYear`と`AnnualBudget`の
+    `budgetFiscalYear`で、**`AnnualBudget`側の`fiscalYear`は使わない** ——
+    そちらを使うと「同じシートの記述である」ことしか確かめられず、
+    「シート年度についての行を選べているか」が抜ける。
+
+    **対応する`AnnualBudget`が無い事業は対象外**にする(比べる相手が無い)。
+    これは`RsRow`を直接組み立てる呼び出し元(tests/phase1_fixture.py)が
+    `annual_budgets`を持たないまま`budget_amount`を持つ形を許すためでもある。
+    `_annual_budget_identity_mismatches`と同じ理由で**検査できた件数を
+    第2の戻り値で返す**(実測では5,794事業すべてが対象になる —— 全事業が
+    2025年度の集計行を持つ)。
+
+    **突き合わせは2つの星型クエリ+Python側の結合で行う。** 年度を共有変数
+    にした1本のBGP(`?project budget:fiscalYear ?y . ?annual
+    budget:budgetFiscalYear ?y`)はrdflibでは実データ規模に耐えない ——
+    年度が5種しかないため、どちらかを先に束縛した時点で相手側の候補が
+    数千件になり、実測で**1,071秒**かかった(同じ規模の星型クエリである
+    `_annual_budget_identity_mismatches`は2秒)。主語ごとに閉じた
+    星型クエリ2本なら索引が効き、結合の順序をrdflibの最適化器に委ねない。
+    **グラフを跨ぐ突き合わせを新たに足す人はここを読むこと** —— 1本のBGPで
+    書けても18分になる。主語ごとに閉じたクエリに割り、結合はPythonで書く。
+    """
+    # 検査1本につきクエリ2本。**どちらも主語(?project / ?annual)に閉じた
+    # 星型**で、共有変数での結合をSPARQLに書かない(上のdocstring: 年度を
+    # 共有変数にした1本のBGPは実測1,071秒、こちらは1.9秒)
+    projects_query = """
+    PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
+    SELECT ?project ?fiscalYear ?budgetAmount WHERE {
+      ?project a budget:BudgetProject ;
+               budget:fiscalYear ?fiscalYear ;
+               budget:budgetAmount ?budgetAmount .
+    }
+    """
+    annual_query = """
+    PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
+    SELECT ?project ?budgetFiscalYear ?initialBudget WHERE {
+      ?annual a budget:AnnualBudget ;
+              budget:project ?project ;
+              budget:budgetFiscalYear ?budgetFiscalYear ;
+              budget:initialBudget ?initialBudget .
+    }
+    """
+    # 同じ(事業, 予算年度)に複数の当初予算が現れることは無い(URIの鍵が
+    # (シート年度, 事業, 予算年度)なので1ノードに収束し、`sh:maxCount 1`が
+    # 2つ目を弾く)。それでも集合で持つのは、**もし現れたらそれ自体が
+    # 不整合である**ことを下のループで報告できるようにするため
+    initial_by_key: dict[tuple[str, int], set[int]] = {}
+    for project, budget_fiscal_year, initial in clean.query(annual_query):
+        initial_by_key.setdefault((str(project), int(budget_fiscal_year)), set()).add(
+            int(initial)
+        )
+
+    mismatches: list[str] = []
+    checked = 0
+    for project, fiscal_year, budget_amount in clean.query(projects_query):
+        initials = initial_by_key.get((str(project), int(fiscal_year)))
+        if not initials:
+            continue
+        checked += 1
+        if initials != {int(budget_amount)}:
+            mismatches.append(
+                f"budget:BudgetProject {project} の予算額が{int(budget_amount)}円だが、"
+                f"同じ事業のレビューシート年度のbudget:AnnualBudgetの当初予算は"
+                f"{sorted(initials)}円(裁定B99の不変条件が崩れている —— どちらも"
+                "RSの同じ列から来るので、年度の対応付けを取り違えた疑いが強い)"
+            )
+    return mismatches, checked
+
+
 def run(
     fetched_on: Mapping[str, datetime.date],
     out_dir: Path,
@@ -1568,6 +1730,7 @@ def run(
     budget_unresolved_all: tuple[rs_mod.UnresolvedBudgetReference, ...] = ()
     budget_blocks_all: tuple[rs_mod.ExpenditureBlockRecord, ...] = ()
     budget_indirect_costs_all: tuple[rs_mod.IndirectCostRecord, ...] = ()
+    budget_annual_budgets_all: tuple[rs_mod.AnnualBudgetRecord, ...] = ()
     budget_stats = rs_mod.BuildStats()
 
     if "rs-system" in fetched_on:
@@ -1631,6 +1794,7 @@ def run(
             budget_unresolved_all = budget_result.unresolved
             budget_blocks_all = budget_result.blocks
             budget_indirect_costs_all = budget_result.indirect_costs
+            budget_annual_budgets_all = budget_result.annual_budgets
             budget_stats = budget_result.stats
 
     # 裁定B24(6): 「合計≒執行額」の比の分布を観測として計算する(ゲートには
@@ -1717,6 +1881,7 @@ def run(
                 sha256=rs_snapshot_sha256s,
                 blocks=budget_blocks_all,
                 indirect_costs=budget_indirect_costs_all,
+                annual_budgets=budget_annual_budgets_all,
             ),
         )
 
@@ -1899,6 +2064,8 @@ def run(
     # (C-4のリリース再構築で発見。docs/measurements-phase1.md参照)。
     # 参照整合ゲート(型は合っている)では検出できない(数が食い違うだけ)
     report_graph_mismatches: list[str] = []
+    annual_budget_identity_checked: int | None = None
+    annual_budget_project_amount_checked: int | None = None
     if egov_law_ran:
         law_jurisdiction_pred = URIRef(f"{settings.base_uri}/def/law#jurisdiction")
         abolished_organ_class = URIRef(f"{settings.base_uri}/def/org#AbolishedGovernmentOrgan")
@@ -1925,6 +2092,18 @@ def run(
         # 裁定B97: ブロックの金額 == 所属する支出の金額の総和(一次データが
         # 19,125ブロック全件で満たす関係。取り違えを捕まえる)
         report_graph_mismatches.extend(_expenditure_block_amount_mismatches(clean))
+        # 裁定B99: 年度ごとの予算と執行の恒等式(当初+補正+繰越+予備費=
+        # 歳出予算現額)と、BudgetProjectの予算額 == レビューシート年度の
+        # AnnualBudgetの当初予算。どちらも実測で全件成立する関係なので、
+        # 崩れたらそれは一次データではなく取り込みが壊れている
+        identity_mismatches, annual_budget_identity_checked = (
+            _annual_budget_identity_mismatches(clean)
+        )
+        report_graph_mismatches.extend(identity_mismatches)
+        project_amount_mismatches, annual_budget_project_amount_checked = (
+            _annual_budget_project_amount_mismatches(clean)
+        )
+        report_graph_mismatches.extend(project_amount_mismatches)
 
     return PipelineReport(
         # リリース名は**成果物ディレクトリのbasename**(Ruling B31)。
@@ -2038,6 +2217,15 @@ def run(
         budget_expenditures_block_unknown=(
             budget_stats.expenditures_block_unknown if rs_resolution_ran else None
         ),
+        # 裁定B99: 年度ごとの予算と執行
+        budget_annual_budgets=budget_stats.annual_budgets_seen if rs_resolution_ran else None,
+        budget_annual_budget_years_without_aggregate_row=(
+            rs_parse_stats.budget_summary_years_without_aggregate_row
+            if rs_resolution_ran
+            else None
+        ),
+        budget_annual_budget_identity_checked=annual_budget_identity_checked,
+        budget_annual_budget_project_amount_checked=annual_budget_project_amount_checked,
     )
 
 

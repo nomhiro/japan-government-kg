@@ -271,3 +271,63 @@ def test_block_and_indirect_cost_uris_reject_empty_keys():
         uris.expenditure_block_uri("", "1", "A")
     with pytest.raises(ValueError):
         uris.indirect_cost_uri("2025", "", "講師謝金")
+
+
+# =============================================================================
+# 年度ごとの予算と執行(裁定B99)
+# =============================================================================
+
+
+def test_annual_budget_uri_is_keyed_by_the_budget_fiscal_year():
+    """予算年度(RSの[13])がURIに入ること。
+
+    何があれば落ちるか: レビューシート年度だけを鍵にする実装だと、1つの
+    シートが語る5年度分(2021〜2025)が同じURIに潰れ、1ノードが
+    `initialBudget`を5つ持って閉じたシェイプに違反する。
+    """
+    assert (
+        uris.annual_budget_uri("2025", "1", "2021")
+        == f"{TEST_BASE}/id/budget/2025/1/annual/2021"
+    )
+
+
+def test_annual_budget_uri_distinguishes_every_year_of_the_same_sheet():
+    """同じ事業の5年度分が5つの別ノードになること(実測: 3,574事業が5年度分持つ)。"""
+    years = ("2021", "2022", "2023", "2024", "2025")
+    assert len({uris.annual_budget_uri("2025", "1", y) for y in years}) == 5
+
+
+def test_annual_budget_uri_separates_the_sheet_year_from_the_budget_year():
+    """レビューシート年度と予算年度が**両方**鍵になること。
+
+    何があれば落ちるか: 予算年度だけを鍵にすると、将来2026年のシートが
+    配られたとき「2026年のシートが言う2025年度」が「2025年のシートが言う
+    2025年度」を上書きし、どちらのシートの主張かが消える。
+    """
+    assert uris.annual_budget_uri("2026", "1", "2025") != uris.annual_budget_uri(
+        "2025", "1", "2025"
+    )
+    assert uris.annual_budget_uri("2025", "1", "2025") != uris.annual_budget_uri(
+        "2025", "2", "2025"
+    )
+
+
+def test_annual_budget_uri_does_not_collide_with_an_expenditure_uri():
+    """支出(連番)と年度ごとの予算(`/annual/`配下)のURI空間が交わらないこと。
+
+    何があれば落ちるか: `/annual/`を挟まず予算年度を直付けする実装だと、
+    予算年度は常にASCII数字なので `.../2025/1/2021` が支出の連番2021番と
+    同じURIになる(`expenditure_block_uri`が`/block/`を挟むのと同じ危険)。
+    """
+    annual_uris = {uris.annual_budget_uri("2025", "1", y) for y in ("2021", "2025")}
+    expenditure_uris = {uris.expenditure_uri("2025", "1", s) for s in (2021, 2025)}
+    assert not (annual_uris & expenditure_uris)
+
+
+def test_annual_budget_uri_rejects_empty_keys():
+    with pytest.raises(ValueError):
+        uris.annual_budget_uri("2025", "1", "")
+    with pytest.raises(ValueError):
+        uris.annual_budget_uri("2025", "", "2021")
+    with pytest.raises(ValueError):
+        uris.annual_budget_uri("", "1", "2021")

@@ -265,7 +265,7 @@ def test_type_axes_walks_multiple_hops_to_reach_the_entity_anchor(tmp_path):
     assert "Entity" not in labels["typeAxes"]
 
 
-def test_type_axes_from_real_data_has_exactly_the_seventeen_expected_entries():
+def test_type_axes_from_real_data_has_exactly_the_eighteen_expected_entries():
     """実際の生成物(`schema/generated/all.owl.ttl`)に対する`typeAxes`が、
 
     件数まで含めて一致すること(裁定B82(4b)の`enumValues`テストと同じ方針
@@ -286,6 +286,9 @@ def test_type_axes_from_real_data_has_exactly_the_seventeen_expected_entries():
     assert labels["typeAxes"] == {
         "AbolishedGovernmentOrgan": "Agent",
         "Agent": "Agent",
+        # 裁定B99で追加。年度ごとの予算と執行。**金額についての記録**なので
+        # 「いくらで」軸(出来事ではない —— 時点ではなく会計年度を持つ)
+        "AnnualBudget": "MonetaryItem",
         "BudgetProject": "Work",
         "Concept": "Concept",
         "Event": "Event",
@@ -305,7 +308,7 @@ def test_type_axes_from_real_data_has_exactly_the_seventeen_expected_entries():
         "UnresolvedReference": "UnresolvedReference",
         "Work": "Work",
     }
-    assert len(labels["typeAxes"]) == 17
+    assert len(labels["typeAxes"]) == 18
     # 列挙型(軸を持たない。ノードの型にはならない)が紛れ込んでいないこと
     assert "RecipientMatchCategoryEnum" not in labels["typeAxes"]
     assert "UnresolvedReasonEnum" not in labels["typeAxes"]
