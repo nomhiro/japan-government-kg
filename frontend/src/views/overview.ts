@@ -12,21 +12,33 @@
 // 作法。`views/graph-merge.ts`と同じ分離——純粋な計算は`overview-format.ts`
 // に切り出し、そちらを`overview-format.test.ts`で検査する)。DOMの動作は
 // 実ブラウザで確認する(裁定B93: 「描画された」は「動く」ではない)。
-import type { BudgetAndExecution, MinistryBudget, OverviewResponse } from "../api/client";
+import type {
+  BudgetAndExecution,
+  MinistryBudget,
+  MoneyThroughStage,
+  OverviewResponse,
+  RecipientIdentification,
+} from "../api/client";
 import { fetchOverview } from "../api/client";
 import { esc, formatAmountFull, formatAmountRounded } from "../format";
-import { typeLabel } from "../labels";
+import { enumValueLabel, typeLabel } from "../labels";
 import { navigate } from "../router";
 import {
   OVERVIEW_UNAVAILABLE_TEXT,
   barWidthPercent,
   distinctSheetYears,
+  exactMatchRatioPercent,
   historyRowYearLabel,
   historySheetYearNote,
   latestFiscalYear,
   ministriesForFiscalYear,
   ministryDisplayName,
   mostRecentRow,
+  percentRangeText,
+  recipientCountForCategory,
+  recipientTotalAmount,
+  requestGrantedPercent,
+  requestVsGrantedRows,
   scaleExcludingTopNote,
   sourceCitation,
   sumMinistryBudgets,
@@ -84,6 +96,20 @@ function renderContent(root: HTMLElement, data: OverviewResponse): void {
       <h2>予算はいくら付いて、いくら使われたか(5年分)</h2>
       ${sourceCitationHtml(data.sources, "budget_and_execution")}
       <div class="jgkg-ov-history">${renderHistory(data.budget_and_execution)}</div>
+
+      <h2>いくら要求して、いくら付いたか</h2>
+      ${sourceCitationHtml(data.sources, "request_and_initial", "request_exactly_granted")}
+      <div class="jgkg-ov-request">${renderRequestVsGranted(data.request_and_initial, data.request_exactly_granted)}</div>
+
+      <h2>国が自ら支払った額${esc(yearSuffix)}</h2>
+      ${sourceCitationHtml(data.sources, "naive_sum_vs_entry_only", "government_paid")}
+      ${renderSpending(data.naive_sum_vs_entry_only, data.government_paid, fiscalYear)}
+      ${sourceCitationHtml(data.sources, "money_through_stages")}
+      ${renderMoneyThroughStageExample(data.money_through_stages)}
+
+      <h2>支払先はどこまで特定できているか</h2>
+      ${sourceCitationHtml(data.sources, "recipient_identification")}
+      <div class="jgkg-ov-match">${renderRecipientMatch(data.recipient_identification)}</div>
     </section>
   `;
 
@@ -357,5 +383,220 @@ function renderHistory(rows: BudgetAndExecution[]): string {
     </table>
     <p class="jgkg-ov-sub">帯の全体が<b>歳出予算現額</b>(その年度に実際に使える額)、塗った部分が<b>執行額</b>、縦線が<b>当初予算</b>の位置です。当初予算より使える額が大きいのは、<b>補正予算・前年度からの繰越し・予備費</b>が加わるためです。ただし、これらは事業ごとに見ると<b>負になることもあります</b>(必ず増えるとは限りません)。${notYetExecutedNote}</p>
     <p class="jgkg-ov-sub">${esc(historySheetYearNote(sheetYears))}</p>
+  `;
+}
+
+/**
+ * 「いくら要求して、いくら付いたか」(裁定B99。CQ16+CQ20)。
+ *
+ * **年度のずれ(年度Yの要求 → 年度Y+1の当初予算)は`requestVsGrantedRows`
+ * (overview-format.ts)が解消済み**——ここでは対応済みの行をそのまま描く。
+ * このファイルで年度をずらす計算をやり直さない(ずれの対応付け自体の
+ * 正しさは`overview-format.test.ts`が固定する。トップページ第1層ブリーフ
+ * Task4 Step1)。
+ *
+ * **「全体では要求の◯%が付いている」も「事業ごとの完全一致は◯%程度」も
+ * データから範囲を導出する。** モックは実測時点の値を「96.9〜99.4%」
+ * 「3〜4割」と文中に書き込んでいたが、それは手書きの契約ではなく測定値
+ * なので、この画面では書き込まない(controller補足3)。**完全一致率を
+ * 併記するのは、全体の割合だけを出すと「ほぼ満額」に誤読されるため**
+ * (CQ20を足した理由そのもの。両方の年度に存在する事業だけを数えている
+ * ことも明示する)。
+ */
+function renderRequestVsGranted(
+  requestAndInitial: OverviewResponse["request_and_initial"],
+  requestExactlyGranted: OverviewResponse["request_exactly_granted"],
+): string {
+  const rows = requestVsGrantedRows(requestAndInitial, requestExactlyGranted);
+  if (rows.length === 0) {
+    return '<p class="jgkg-muted">要求額と当初予算の対応データがありません。</p>';
+  }
+
+  const trs = rows
+    .map((r) => {
+      const pct = requestGrantedPercent(r);
+      // **`barWidthPercent`で0〜100%にクランプする**(既存の帯グラフと同じ
+      // 判断の使い回し。新しいクランプ処理をここに書き直さない)。
+      const widthPct = pct !== null ? barWidthPercent(pct, 100) : 0;
+      const pctText = pct !== null ? `${pct.toFixed(1)}%` : "—";
+      const matchText =
+        r.exactMatches !== null && r.projectsInBothYears !== null
+          ? `${r.exactMatches.toLocaleString("ja-JP")} / ${r.projectsInBothYears.toLocaleString("ja-JP")}`
+          : "—";
+      return `
+        <tr>
+          <th>${r.requestYear}年度に要求 → ${r.grantedYear}年度に付いた</th>
+          <td class="jgkg-ov-track-cell">
+            <span class="jgkg-ov-track" style="width:100%">
+              <span class="jgkg-ov-fill" style="width:${widthPct.toFixed(2)}%"></span>
+            </span>
+          </td>
+          <td class="jgkg-ov-num" title="${esc(formatAmountFull(r.requested))}">${esc(formatAmountRounded(r.requested))}</td>
+          <td class="jgkg-ov-num" title="${esc(formatAmountFull(r.initial))}">${esc(formatAmountRounded(r.initial))}</td>
+          <td class="jgkg-ov-num">${pctText}</td>
+          <td class="jgkg-ov-num">${matchText}</td>
+        </tr>`;
+    })
+    .join("");
+
+  // **範囲(◯〜◯%)は行ごとの%から導出する**(手書きの固定範囲にしない)。
+  const overallPercents = rows.map(requestGrantedPercent).filter((p): p is number => p !== null);
+  const matchPercents = rows.map(exactMatchRatioPercent).filter((p): p is number => p !== null);
+  const overallRange = percentRangeText(overallPercents);
+  const matchRange = percentRangeText(matchPercents);
+
+  const summary =
+    overallRange !== null
+      ? `<p class="jgkg-ov-sub">全体では要求の<b>${esc(overallRange)}</b>が付いています。` +
+        (matchRange !== null
+          ? `ただし<b>事業ごとに見ると額が完全一致した事業は${esc(matchRange)}程度</b>なので、` +
+            "「ほぼ満額」と読むのは全体の話に限ります(両方の年度に存在する事業だけを数えています)。</p>"
+          : "</p>")
+      : "";
+
+  return `
+    <table class="jgkg-ov-request-table">
+      <thead><tr><th></th><th></th><th>要求額</th><th>付いた当初予算</th><th>割合</th><th>額が完全一致した事業</th></tr></thead>
+      <tbody>${trs}</tbody>
+    </table>
+    ${summary}
+  `;
+}
+
+/**
+ * 「国が自ら支払った額」(裁定B97。CQ19+CQ12)。
+ *
+ * **出す数字は3つだけ(controllerの裁定): `naiveSum`・`entryOnly`
+ * (CQ19)・`governmentPaid`(CQ12=entryOnly+間接経費)。** モックの
+ * `inferredTotal`・`depths`・`mismatchExample`等は出さない——それらは
+ * 測定ではなく裁定B97の調査過程で得た**推論**であり、KGに問えば出る値
+ * ではない。公開のトップページに推論を数字として並べると、測定と推論の
+ * 区別が読者から見えなくなる(`docs/decision-log.md`裁定B103の追記)。
+ *
+ * **この額は下限であり、両方向に誤差がある**(`cq12-government-paid-total.rq`
+ * のヘッダに実測がある: 入口の印が付いていない事業が32件で下振れ・
+ * 国からの支払いと他の段からの流入が混在するブロックが9件あり最大
+ * 63,863,635,000円(0.050%)過大になりうる)。**「正確な総額」とは書かない。**
+ * 詳しい経緯は画面から`docs/decision-log.md`の裁定B97へ辿れるようにする
+ * (`inferredTotal`等の推論の記録はここにある)。
+ *
+ * `naiveRow`/`paidRow`が指定した年度に無ければ、その部分の主張を出さない
+ * (欠損を既定値に落とさない。`government_paid[0]`のようなフォールバックは
+ * 作らない)。
+ */
+function renderSpending(
+  naiveSumVsEntryOnly: OverviewResponse["naive_sum_vs_entry_only"],
+  governmentPaid: OverviewResponse["government_paid"],
+  fiscalYear: number | null,
+): string {
+  const naiveRow = fiscalYear !== null ? naiveSumVsEntryOnly.find((r) => r.fiscal_year === fiscalYear) : undefined;
+  const paidRow = fiscalYear !== null ? governmentPaid.find((r) => r.fiscal_year === fiscalYear) : undefined;
+
+  if (!paidRow) {
+    return '<p class="jgkg-muted">国が自ら支払った額のデータがありません。</p>';
+  }
+
+  const lede =
+    `<p class="jgkg-ov-lede"><b>${esc(formatAmountRounded(paidRow.government_paid))}</b>` +
+    '<span class="jgkg-ov-sub" style="display:inline"> ——国が自ら支払った額(下限)</span></p>';
+  const facts =
+    '<p class="jgkg-ov-facts">' +
+    `<span title="正確には ${esc(formatAmountFull(paidRow.government_paid))}">正確には <b>${esc(formatAmountFull(paidRow.government_paid))}</b></span>` +
+    `<span>${paidRow.item_count.toLocaleString("ja-JP")}件</span>` +
+    "</p>";
+
+  const naiveText = naiveRow
+    ? `<p class="jgkg-ov-sub">支出の記録を素朴に全部足すと<b>${esc(formatAmountRounded(naiveRow.naive_sum))}</b>になりますが、それは<b>同じお金を数えた分だけ多い</b>数字です。国自身が支払った段(担当組織からの支出)だけを取ると<b>${esc(formatAmountRounded(paidRow.government_paid))}</b>で、差の<b>${esc(formatAmountRounded(naiveRow.naive_sum - paidRow.government_paid))}</b>が重複でした。</p>`
+    : "";
+
+  const caveat =
+    '<p class="jgkg-ov-sub">この額は<b>下限であり、両方向に誤差があります</b>。一次データで「国自身が支払った」印が付いていない事業が32件あり、この額には含めていません(構造から推論で補うこともできますが、それは一次データの主張ではないため入れていません)。反対に、国からの支払いと他の段からの資金が混在するブロックが9件あり、内訳が一次データに無いため<b>最大63,863,635,000円(入口合計の0.050%)過大になりえます</b>——どちらの向きが大きいかは分かりません。<b>「正確な総額」ではありません。</b></p>' +
+    '<p class="jgkg-ov-sub">この数字の限界についての詳しい経緯は docs/decision-log.md の裁定B97にあります。</p>';
+
+  return lede + facts + naiveText + caveat;
+}
+
+/**
+ * 「同じお金が複数の段に記録されている例」(CQ13の1件目。裁定B97)。
+ *
+ * **事業を手で選ばない。** `money_through_stages[0]`
+ * (`ORDER BY DESC(?amount)`が返す先頭行)をそのまま描く——モックの
+ * `flowDiagram`/`dupExample`のために新しいCQを足す必要は無い
+ * (`docs/decision-log.md`裁定B103の追記「flowDiagramとdupExampleに
+ * 新しいCQは要らない」)。
+ *
+ * **このAPIの行に無い情報は書かない。** モックのSVG図は`payees`
+ * (支払先数)・`role`(役割の自由記述)を使っていたが、`MoneyThroughStage`
+ * はそれらを持たない(実際に返るのは事業名・段の名前・金額・出どころ・
+ * 国が支払った段かどうかの5項目だけ)——実データに無い数字を画面のために
+ * 作らない。
+ */
+function renderMoneyThroughStageExample(rows: MoneyThroughStage[]): string {
+  const row = rows[0];
+  if (!row) return "";
+
+  const blockLabel = row.block_name ? `「${esc(row.block_name)}」` : `ブロック${esc(row.block_id)}`;
+  const sourceLabel = row.source_name
+    ? `「${esc(row.source_name)}」`
+    : row.source_id
+      ? `ブロック${esc(row.source_id)}`
+      : "前の段";
+  const paidNote = row.paid_by_government
+    ? "この段は国からの支払いとしても記録されているため、上の「国が自ら支払った額」にはこの金額が含まれています(国からの支払いと他の段からの資金が混在するブロックの1つです)。"
+    : "この段は前の段から資金を受け取った段であり、上の「国が自ら支払った額」にはこの金額を含めていません(足すと二重計上になります)。";
+
+  return `
+    <div class="jgkg-ov-example">
+      <p class="jgkg-ov-sub"><b>同じお金が複数の段に記録されている例</b>(CQ13の1件目)。</p>
+      <p>事業「${esc(row.project_name)}」では、${sourceLabel}の段から${blockLabel}の段に、同じ<b>${esc(formatAmountFull(row.amount))}</b>が記録されています。</p>
+      <p class="jgkg-ov-sub">${paidNote}</p>
+    </div>
+  `;
+}
+
+/**
+ * 「支払先はどこまで特定できているか」(CQ17)。
+ *
+ * **区分の表示名は手で書かない。** `enumValueLabel("recipientMatchCategory",
+ * category)`(`labels.ts`)で引く——APIは`label`を返さない
+ * (`RecipientIdentification`のdocstring参照。SPARQLでは辿れない。
+ * トップページ第1層ブリーフTask4 Step3)。**割合・「特定できなかった件数」
+ * もデータから導出する**(モックの手書きLABELS対応表・固定の件数文言を
+ * 廃止)。
+ */
+function renderRecipientMatch(rows: RecipientIdentification[]): string {
+  if (rows.length === 0) {
+    return '<p class="jgkg-muted">支払先の照合区分のデータがありません。</p>';
+  }
+  const total = recipientTotalAmount(rows);
+  const unresolvedCount = recipientCountForCategory(rows, "unresolved");
+
+  const trs = rows
+    .map((r) => {
+      const label = enumValueLabel("recipientMatchCategory", r.category);
+      const pctText = total > 0 ? `${((r.total_amount / total) * 100).toFixed(1)}%` : "—";
+      // **「法人番号で特定できた」行だけを視覚的に強調する**(モックの判断を
+      // そのまま持ってくる)。強調は区分の生の値(`resolved`)で分岐する
+      // だけで、表示名を手で書き直しているわけではない。
+      const cls = r.category === "resolved" ? ' class="jgkg-ov-match-good"' : "";
+      return `
+        <tr>
+          <td${cls}>${esc(label)}</td>
+          <td class="jgkg-ov-num" title="${esc(formatAmountFull(r.total_amount))}">${pctText}</td>
+          <td class="jgkg-ov-num">${r.expenditure_count.toLocaleString("ja-JP")}件</td>
+        </tr>`;
+    })
+    .join("");
+
+  const unresolvedNote =
+    unresolvedCount !== null
+      ? `<b>名前から法人を特定できなかったのは${unresolvedCount.toLocaleString("ja-JP")}件だけ</b>です。`
+      : "";
+
+  return `
+    <table class="jgkg-ov-match-table">
+      <tbody>${trs}</tbody>
+    </table>
+    <p class="jgkg-ov-sub">割合は金額です。お金の行き先が個人まで辿れないのは、<b>一次データがそう作られているから</b>です——年金受給者や求職者は個人であり、少額の支払先は政府が「その他」としてまとめて公表しています。${unresolvedNote}</p>
   `;
 }

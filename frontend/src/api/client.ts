@@ -22,6 +22,11 @@ export type MinistryBudget = components["schemas"]["MinistryBudget"];
 export type BudgetAndExecution = components["schemas"]["BudgetAndExecution"];
 export type TypeCount = components["schemas"]["TypeCount"];
 export type GovernmentPaidTotal = components["schemas"]["GovernmentPaidTotal"];
+export type RequestAndInitial = components["schemas"]["RequestAndInitial"];
+export type RequestExactlyGranted = components["schemas"]["RequestExactlyGranted"];
+export type NaiveSumVsEntryOnly = components["schemas"]["NaiveSumVsEntryOnly"];
+export type MoneyThroughStage = components["schemas"]["MoneyThroughStage"];
+export type RecipientIdentification = components["schemas"]["RecipientIdentification"];
 
 // **APIの本番URLを直書きしない(base_uriと同じ規律。D-5ブリーフ)。**
 // ビルド時の設定値にする——D-6b(配備先)が未決なため、既定はローカルの

@@ -1,11 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { computeApiUnavailableReason } from "../api/client";
-import type { BudgetAndExecution, MinistryBudget, TypeCount } from "../api/client";
+import type {
+  BudgetAndExecution,
+  MinistryBudget,
+  RecipientIdentification,
+  RequestAndInitial,
+  RequestExactlyGranted,
+  TypeCount,
+} from "../api/client";
 import {
   OVERVIEW_UNAVAILABLE_TEXT,
   barWidthPercent,
   cqNumberFromFilename,
   distinctSheetYears,
+  exactMatchRatioPercent,
   historyRowYearLabel,
   historySheetYearNote,
   latestFiscalYear,
@@ -13,6 +21,11 @@ import {
   ministriesForFiscalYear,
   ministryDisplayName,
   mostRecentRow,
+  percentRangeText,
+  recipientCountForCategory,
+  recipientTotalAmount,
+  requestGrantedPercent,
+  requestVsGrantedRows,
   scaleExcludingTopNote,
   sourceCitation,
   sumMinistryBudgets,
@@ -43,6 +56,35 @@ function budgetRow(overrides: Partial<BudgetAndExecution> = {}): BudgetAndExecut
     total_budget_available: 150_228_316_691_494,
     executed_amount: 128_147_462_147_862,
     project_count: 3575,
+    ...overrides,
+  };
+}
+
+function requestAndInitialRow(overrides: Partial<RequestAndInitial> = {}): RequestAndInitial {
+  return {
+    budget_fiscal_year: 2021,
+    requested: 111_300_000_000_000,
+    initial: 999_999_999_999, // **わざと「この行自身のinitial」を要求額と対応しない値にする**
+    // ——`requestVsGrantedRows`が誤って同じ行のinitialを使えばテストで検出できる。
+    record_count: 23_036,
+    ...overrides,
+  };
+}
+
+function requestExactlyGrantedRow(overrides: Partial<RequestExactlyGranted> = {}): RequestExactlyGranted {
+  return {
+    request_fiscal_year: 2021,
+    exact_matches: 1293,
+    projects_in_both_years: 3574,
+    ...overrides,
+  };
+}
+
+function recipientRow(overrides: Partial<RecipientIdentification> = {}): RecipientIdentification {
+  return {
+    category: "resolved",
+    total_amount: 57_500_000_000_000,
+    expenditure_count: 56_607,
     ...overrides,
   };
 }
@@ -394,6 +436,162 @@ describe("mostRecentRow", () => {
 
   it("1行も無ければundefined", () => {
     expect(mostRecentRow([])).toBeUndefined();
+  });
+});
+
+// =============================================================================
+// requestVsGrantedRows: CQ16(年度をずらさない)+CQ20(年度Yの完全一致件数)から
+// 「年度Yの要求 → 年度Y+1の当初予算」の対応付けを作る(トップページ第1層
+// ブリーフTask4 Step1)。**核心はこの「ずらし」を間違えないこと**——
+// 間違えると「要求より多く付いた」ように見える。
+// =============================================================================
+
+describe("requestVsGrantedRows", () => {
+  it("**核心**: 年度Yのrequestedを、年度Yのinitialではなく年度Y+1のinitialと対応付ける", () => {
+    const rows = [
+      requestAndInitialRow({ budget_fiscal_year: 2021, requested: 111_300_000_000_000, initial: 1 }),
+      requestAndInitialRow({ budget_fiscal_year: 2022, requested: 2, initial: 107_100_000_000_000 }),
+    ];
+    const out = requestVsGrantedRows(rows, []);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({
+      requestYear: 2021,
+      grantedYear: 2022,
+      requested: 111_300_000_000_000,
+      initial: 107_100_000_000_000, // 2022年度行のinitial(2021年度行自身のinitial=1ではない)
+    });
+  });
+
+  it("年度が配列の並び順(降順・隙間あり)で渡されても対応がずれない", () => {
+    // 意図的に降順で渡す。2023年度だけ次年度(2024)の行が無いので出ない。
+    const rows = [
+      requestAndInitialRow({ budget_fiscal_year: 2023, requested: 30, initial: 999 }),
+      requestAndInitialRow({ budget_fiscal_year: 2020, requested: 10, initial: 999 }),
+      requestAndInitialRow({ budget_fiscal_year: 2021, requested: 20, initial: 100 }),
+      requestAndInitialRow({ budget_fiscal_year: 2022, requested: 30, initial: 200 }),
+    ];
+    const out = requestVsGrantedRows(rows, []);
+    // 出力はrequestYear昇順。
+    expect(out.map((r) => r.requestYear)).toEqual([2020, 2021, 2022]);
+    expect(out[0]).toMatchObject({ requestYear: 2020, initial: 100 }); // 2021年度行のinitial
+    expect(out[1]).toMatchObject({ requestYear: 2021, initial: 200 }); // 2022年度行のinitial
+    expect(out[2]).toMatchObject({ requestYear: 2022, initial: 999 }); // 2023年度行のinitial
+  });
+
+  it("翌年度の行が無ければ、その年度は出さない(欠損を0や自分の行の値に落とさない)", () => {
+    const out = requestVsGrantedRows([requestAndInitialRow({ budget_fiscal_year: 2025 })], []);
+    expect(out).toEqual([]);
+  });
+
+  it("対応するCQ20の行があればexactMatches/projectsInBothYearsを添える", () => {
+    const rows = [
+      requestAndInitialRow({ budget_fiscal_year: 2021 }),
+      requestAndInitialRow({ budget_fiscal_year: 2022 }),
+    ];
+    const granted = [requestExactlyGrantedRow({ request_fiscal_year: 2021, exact_matches: 1293, projects_in_both_years: 3574 })];
+    const out = requestVsGrantedRows(rows, granted);
+    expect(out[0]).toMatchObject({ exactMatches: 1293, projectsInBothYears: 3574 });
+  });
+
+  it("**核心**: 対応するCQ20の行が無ければnull(0という偽の確定値を入れない)", () => {
+    const rows = [
+      requestAndInitialRow({ budget_fiscal_year: 2021 }),
+      requestAndInitialRow({ budget_fiscal_year: 2022 }),
+    ];
+    const out = requestVsGrantedRows(rows, []);
+    expect(out[0]).toMatchObject({ exactMatches: null, projectsInBothYears: null });
+  });
+});
+
+describe("requestGrantedPercent", () => {
+  it("当初予算/要求額を%で返す", () => {
+    const row = requestVsGrantedRows(
+      [
+        requestAndInitialRow({ budget_fiscal_year: 2021, requested: 111_300_000_000_000 }),
+        requestAndInitialRow({ budget_fiscal_year: 2022, initial: 107_100_000_000_000 }),
+      ],
+      [],
+    )[0]!;
+    expect(requestGrantedPercent(row)).toBeCloseTo(96.2, 1);
+  });
+
+  it("要求額が0以下なら計算できないのでnull", () => {
+    const row = requestVsGrantedRows(
+      [requestAndInitialRow({ budget_fiscal_year: 2021, requested: 0 }), requestAndInitialRow({ budget_fiscal_year: 2022 })],
+      [],
+    )[0]!;
+    expect(requestGrantedPercent(row)).toBeNull();
+  });
+});
+
+describe("exactMatchRatioPercent", () => {
+  it("exact_matches/projects_in_both_yearsを%で返す", () => {
+    const row = requestVsGrantedRows(
+      [requestAndInitialRow({ budget_fiscal_year: 2021 }), requestAndInitialRow({ budget_fiscal_year: 2022 })],
+      [requestExactlyGrantedRow({ request_fiscal_year: 2021, exact_matches: 1293, projects_in_both_years: 3574 })],
+    )[0]!;
+    expect(exactMatchRatioPercent(row)).toBeCloseTo(36.2, 1);
+  });
+
+  it("CQ20の行が無ければnull", () => {
+    const row = requestVsGrantedRows(
+      [requestAndInitialRow({ budget_fiscal_year: 2021 }), requestAndInitialRow({ budget_fiscal_year: 2022 })],
+      [],
+    )[0]!;
+    expect(exactMatchRatioPercent(row)).toBeNull();
+  });
+});
+
+describe("percentRangeText", () => {
+  it("複数の値があれば最小〜最大を「96.9〜99.4%」の形にする", () => {
+    expect(percentRangeText([96.9, 99.4, 98.1])).toBe("96.9〜99.4%");
+  });
+
+  it("**核心**: 全て同じ値(または1件)なら範囲(〜)にせず単一の%にする", () => {
+    expect(percentRangeText([96.9])).toBe("96.9%");
+    expect(percentRangeText([50, 50])).toBe("50.0%");
+  });
+
+  it("空配列ならnull", () => {
+    expect(percentRangeText([])).toBeNull();
+  });
+});
+
+// =============================================================================
+// recipientTotalAmount / recipientCountForCategory: CQ17の4区分から
+// 合計・件数を導出する(手書きの対応表を作らない。Step3)。
+// =============================================================================
+
+describe("recipientTotalAmount", () => {
+  it("4区分の金額を合計する(排他的な分割なので合計してよい)", () => {
+    const rows = [
+      recipientRow({ category: "resolved", total_amount: 57_500_000_000_000 }),
+      recipientRow({ category: "bundled", total_amount: 93_000_000_000_000 }),
+    ];
+    expect(recipientTotalAmount(rows)).toBe(150_500_000_000_000);
+  });
+
+  it("空配列なら0", () => {
+    expect(recipientTotalAmount([])).toBe(0);
+  });
+});
+
+describe("recipientCountForCategory", () => {
+  const ROWS: RecipientIdentification[] = [
+    recipientRow({ category: "resolved", expenditure_count: 56_607 }),
+    recipientRow({ category: "unresolved", expenditure_count: 42 }),
+  ];
+
+  it("一致する区分の件数を返す", () => {
+    expect(recipientCountForCategory(ROWS, "unresolved")).toBe(42);
+  });
+
+  it("**核心**: 一致する区分が無ければ0ではなくnull(欠損を既定値に落とさない)", () => {
+    expect(recipientCountForCategory(ROWS, "sentinel_or_nonexistent_houjin_bangou")).toBeNull();
+  });
+
+  it("空配列でもnull", () => {
+    expect(recipientCountForCategory([], "resolved")).toBeNull();
   });
 });
 

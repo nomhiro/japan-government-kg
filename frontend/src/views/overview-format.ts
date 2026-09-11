@@ -4,7 +4,14 @@
 // DOMを書く関数はテストできない。ここに置く関数はどれも`document`/`window`を
 // 参照しない。
 
-import type { BudgetAndExecution, MinistryBudget, TypeCount } from "../api/client";
+import type {
+  BudgetAndExecution,
+  MinistryBudget,
+  RecipientIdentification,
+  RequestAndInitial,
+  RequestExactlyGranted,
+  TypeCount,
+} from "../api/client";
 import { formatAmountRounded } from "../format";
 
 /**
@@ -287,4 +294,136 @@ export function mostRecentRow(rows: BudgetAndExecution[]): BudgetAndExecution | 
     if (!best || r.budget_fiscal_year > best.budget_fiscal_year) return r;
     return best;
   }, undefined);
+}
+
+/**
+ * 「いくら要求して、いくら付いたか」の1行(表示用に対応付け済み)。
+ *
+ * `requestVsGrantedRows`が組み立てる。年度のずれの対応付けは
+ * `requestYear`(=`RequestAndInitial.budget_fiscal_year`)と
+ * `grantedYear`(=`requestYear + 1`)の両方を保持することで、
+ * 呼び出し側(DOMを書く側)が「どの年度の要求が、どの年度の当初予算と
+ * 対応しているか」を書き間違えないようにする。
+ */
+export interface RequestVsGrantedRow {
+  /** 要求した年度(=`RequestAndInitial.budget_fiscal_year`) */
+  requestYear: number;
+  /** 付いた当初予算の年度(=`requestYear + 1`。CQ16のヘッダ参照) */
+  grantedYear: number;
+  /** `requestYear`の要求額 */
+  requested: number;
+  /** `grantedYear`の当初予算(`requestYear`の行の`initial`ではない) */
+  initial: number;
+  /** `requestYear`の`RequestAndInitial.record_count`(参考値) */
+  recordCount: number;
+  /** `requestYear`のCQ20行から。無ければ`null`(欠損を0に落とさない) */
+  exactMatches: number | null;
+  /** `requestYear`のCQ20行から。無ければ`null` */
+  projectsInBothYears: number | null;
+}
+
+/**
+ * `request_and_initial`(CQ16)と`request_exactly_granted`(CQ20)から、
+ * 「年度Yの要求 → 年度Y+1の当初予算」という表示用の対応付けを組み立てる。
+ *
+ * **CQ16は年度をずらさずに返す**(`RequestAndInitial`のdocstring参照)。
+ * `nextYearRequest`(=このAPIの`requested`)は「その年度の記録が持つ
+ * 翌年度の要求額」なので、比べる相手は**年度Y+1の`initial`**であり、
+ * 同じ行の`initial`ではない——ここを間違えると「要求より多く付いた」ように
+ * 見える(トップページ第1層ブリーフStep1)。
+ *
+ * **年度で引く(配列の並び順や添字を信じない)。** `requestAndInitial`を
+ * `budget_fiscal_year`をキーにした`Map`にしてから`year + 1`で引くことで、
+ * 入力が入れ替わっていても・欠番があっても正しく対応する
+ * (`mostRecentRow`と同じ「並び順を信じない」方針)。
+ *
+ * **年度Y+1の行が無ければ、その年度Yは出さない**(欠損を0や同じ行の値に
+ * 落とさない)。`exactMatches`/`projectsInBothYears`も同様に、対応する
+ * CQ20の行が無ければ`null`(手書きの0を入れない)。
+ *
+ * 返す行は`requestYear`昇順。
+ */
+export function requestVsGrantedRows(
+  requestAndInitial: RequestAndInitial[],
+  exactlyGranted: RequestExactlyGranted[],
+): RequestVsGrantedRow[] {
+  const initialByYear = new Map(requestAndInitial.map((r) => [r.budget_fiscal_year, r.initial]));
+  const matchByYear = new Map(exactlyGranted.map((r) => [r.request_fiscal_year, r]));
+
+  const out: RequestVsGrantedRow[] = [];
+  for (const row of requestAndInitial) {
+    const grantedYear = row.budget_fiscal_year + 1;
+    const initial = initialByYear.get(grantedYear);
+    if (initial === undefined) continue;
+    const match = matchByYear.get(row.budget_fiscal_year);
+    out.push({
+      requestYear: row.budget_fiscal_year,
+      grantedYear,
+      requested: row.requested,
+      initial,
+      recordCount: row.record_count,
+      exactMatches: match ? match.exact_matches : null,
+      projectsInBothYears: match ? match.projects_in_both_years : null,
+    });
+  }
+  return out.sort((a, b) => a.requestYear - b.requestYear);
+}
+
+/**
+ * `row`の「要求額に対して当初予算が何%付いたか」。**分母(要求額)が0以下
+ * (=計算できない)なら`null`**(`topMinistryDominancePhrase`と同じ方針。
+ * 0%という誤った確定値を出さない)。
+ */
+export function requestGrantedPercent(row: RequestVsGrantedRow): number | null {
+  if (!(row.requested > 0)) return null;
+  return (row.initial / row.requested) * 100;
+}
+
+/**
+ * `row`の「両方の年度に存在する事業のうち、額が完全一致した事業の割合」
+ * (CQ20)。CQ20の行が無い(`exactMatches`/`projectsInBothYears`が`null`)、
+ * または分母が0以下なら`null`。
+ */
+export function exactMatchRatioPercent(row: RequestVsGrantedRow): number | null {
+  if (row.exactMatches === null || row.projectsInBothYears === null) return null;
+  if (!(row.projectsInBothYears > 0)) return null;
+  return (row.exactMatches / row.projectsInBothYears) * 100;
+}
+
+/**
+ * 複数の%値を「96.9〜99.4%」のような範囲表記にする。**モックは固定の
+ * 範囲文言(「96.9〜99.4%」「3〜4割」)を書いていたが、これは特定の実測時点の
+ * 値の手書きである**——年度が増えれば範囲も変わるので、この画面は
+ * `request_and_initial`/`request_exactly_granted`の全行から範囲を導出する
+ * (controller補足3「測定値は導出する」)。
+ *
+ * 全ての値が同じ(または1件しかない)なら範囲ではなく単一の%を返す。
+ * 非有限値(`requestGrantedPercent`等が`null`を返した行)は呼び出し側で
+ * 除いてから渡すこと——この関数は空配列なら`null`を返す。
+ */
+export function percentRangeText(percents: number[], digits = 1): string | null {
+  if (percents.length === 0) return null;
+  const min = Math.min(...percents).toFixed(digits);
+  const max = Math.max(...percents).toFixed(digits);
+  return min === max ? `${min}%` : `${min}〜${max}%`;
+}
+
+/**
+ * `recipient_identification`(CQ17)の4区分を合計した金額。**合計してよい
+ * 理由**: この4区分は同じ集合(`?e budget:recipientMatchCategory ?category`
+ * を持つ`Expenditure`)を排他的に分割したものであり(`GROUP BY ?category`)、
+ * 重複が無い(`sumMinistryBudgets`と同じ「合計してよい条件」)。
+ */
+export function recipientTotalAmount(rows: RecipientIdentification[]): number {
+  return rows.reduce((sum, r) => sum + r.total_amount, 0);
+}
+
+/**
+ * `rows`から指定した`category`(裸の区分名。`resolved`等)の件数を引く。
+ * **`typeInstanceCount`と同じ方針**: 見つからなければ0ではなく`null`
+ * (区分が実データから消えた場合に0件と偽って言わない)。
+ */
+export function recipientCountForCategory(rows: RecipientIdentification[], category: string): number | null {
+  const row = rows.find((r) => r.category === category);
+  return row ? row.expenditure_count : null;
 }

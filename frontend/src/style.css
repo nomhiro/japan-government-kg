@@ -232,3 +232,32 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .jgkg-ov-track { position: relative; display: block; height: 0.85rem; background: var(--surface-2); border-radius: 2px; }
 .jgkg-ov-fill { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
 .jgkg-ov-tick { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); }
+
+/* 「いくら要求して、いくら付いたか」(裁定B99。CQ16+CQ20)。表の骨格は
+   5年分の表(jgkg-ov-history-table)と同じ形なので、th/td等の基本装飾は
+   共有セレクタでまとめる(既存の表のクラス名・DOMは変えない)。 */
+.jgkg-ov-request { overflow-x: auto; }
+.jgkg-ov-request-table,
+.jgkg-ov-history-table { border-collapse: collapse; font-size: 0.84rem; width: 100%; min-width: 32rem; }
+.jgkg-ov-request-table th, .jgkg-ov-request-table td,
+.jgkg-ov-history-table th, .jgkg-ov-history-table td { border-bottom: 1px solid var(--rule); padding: 0.3rem 0.5rem 0.3rem 0; text-align: left; }
+.jgkg-ov-request-table thead th,
+.jgkg-ov-history-table thead th { color: var(--muted); font-weight: 600; font-size: 0.78rem; text-align: right; }
+.jgkg-ov-request-table thead th:first-child, .jgkg-ov-request-table thead th:nth-child(2),
+.jgkg-ov-history-table thead th:first-child, .jgkg-ov-history-table thead th:nth-child(2) { text-align: left; }
+.jgkg-ov-request-table tbody th,
+.jgkg-ov-history-table tbody th { white-space: nowrap; font-weight: 600; }
+.jgkg-ov-track-cell { width: 22%; min-width: 6rem; }
+
+/* 「国が自ら支払った額」の実例(CQ13の1件目)。モックの`.ex`と同じ
+   囲み枠(レビュー済みの見た目をそのまま使う)。 */
+.jgkg-ov-example { border: 1px solid var(--rule); border-radius: 3px; padding: 0.6rem 0.9rem; margin: 0.5rem 0; background: var(--surface-2); }
+.jgkg-ov-example p { margin: 0 0 0.4rem; }
+.jgkg-ov-example p:last-child { margin-bottom: 0; }
+
+/* 「支払先はどこまで特定できているか」(CQ17)。 */
+.jgkg-ov-match-table { border-collapse: collapse; width: 100%; font-size: 0.84rem; }
+.jgkg-ov-match-table td { border-bottom: 1px solid var(--rule); padding: 0.3rem 0.5rem 0.3rem 0; text-align: left; }
+/* 「法人番号で特定できた」行の強調。`.jgkg-path-found`と同じ緑を使う
+   (このプロジェクトの「見つかった」系の色を1色に揃える)。 */
+.jgkg-ov-match-good { color: #059669; font-weight: 600; }
