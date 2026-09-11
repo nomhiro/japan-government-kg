@@ -490,17 +490,18 @@ svg.graph.dragging { cursor: grabbing; }
 
   // ---------- グラフの組み立て ----------
   function buildDataGraph() {
+    // **データの項目を1つずつ写さない。** 以前ここでフィールドを列挙して
+    // いたため、データに項目を足すたびに写し忘れて詳細パネルが壊れた
+    // (`kgLabel`で1回、`payeeCount`/`paidByGovernment`で1回。同じ欠陥の
+    // 2回目)。**全部写してから描画用の項目を足す**形にすれば、
+    // データ側の追加で壊れない。
     var ns = M.instance.nodes.map(function (n) {
-      return {
-        id: n.id, idPath: n.idPath, type: n.type, axis: n.axis, color: n.color,
-        label: n.label, summary: n.summary, isCenter: n.isCenter,
-        // KGが持つ表示名が、表示のために差し替えられている場合の原の値
-        // (支出の skos:prefLabel = 支払先の法人名。詳細パネルで明示する)
-        kgLabel: n.kgLabel, amount: n.amount, unresolvedText: n.unresolvedText,
-        r: n.isCenter ? 13 : 8,
-        fan: (n.type === "Ministry" ? M.instance.hiddenSiblingBudgets : 0),
-        kind: "entity"
-      };
+      var node = {};
+      for (var k in n) node[k] = n[k];
+      node.r = n.isCenter ? 13 : 8;
+      node.fan = n.type === "Ministry" ? M.instance.hiddenSiblingBudgets : 0;
+      node.kind = "entity";
+      return node;
     });
     var idx = {};
     ns.forEach(function (n, i) { idx[n.id] = i; });
@@ -893,12 +894,24 @@ svg.graph.dragging { cursor: grabbing; }
       html += "<table><tr><th>" + esc(predLabel("unresolved_text")) + "</th><td>" +
         esc(n.unresolvedText) + "</td></tr></table>";
     }
+    if (n.type === "ExpenditureBlock") {
+      html += "<table>" +
+        "<tr><th>" + esc(predLabel("payeeCount")) + "</th><td class=\"num\">" +
+        Number(n.payeeCount).toLocaleString("ja-JP") + " 先</td></tr>" +
+        "<tr><th>" + esc(predLabel("paidByGovernment")) + "</th><td>" +
+        (n.paidByGovernment ? "<b>はい（この段が入口）</b>" : "いいえ（通過金）") +
+        "</td></tr></table>";
+      html += '<p class="notice" style="margin:0.6rem 0">この段の表示名は、KGの中では ' +
+        "<b>「" + esc(n.kgLabel) + "」</b>です（＝支出先の名前）。" +
+        "<b>支出と同じ問題がブロックにもあります</b>——隣の法人ノードと同じ文字列になるため、" +
+        "このモックでは金額と支出先数を主ラベルにしています。</p>";
+    }
     if (n.kgLabel && n.type === "Expenditure") {
       html += '<p class="notice" style="margin:0.6rem 0">この支出の表示名は、KGの中では ' +
         "<b>「" + esc(n.kgLabel) + "」</b>（＝支払先の法人名）です。" +
         "隣の法人ノードと同じ文字列になり見分けが付かないため、<b>このモックでは金額を主ラベルにしています</b>。" +
         "どちらを正とするかはレビュー事項です。</p>";
-    } else if (n.kgLabel) {
+    } else if (n.kgLabel && n.type === "UnresolvedReference") {
       html += '<p class="notice" style="margin:0.6rem 0">この記述には表示名（<code>skos:prefLabel</code>）が' +
         "<b>ありません</b>。いまの本番アプリは <b>「" + esc(n.kgLabel) +
         "」</b>と描いています。<b>このモックでは元の記述そのもの</b>を表示名にしています" +
