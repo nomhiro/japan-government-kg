@@ -66,7 +66,11 @@ done
 # **正はLinuxの出力とする**(CIがそれで検査するため)。Windowsで再生成した
 # 場合は、コミット前に次でLinuxの出力に置き換えること:
 #
-#   docker run --rm -v "$(pwd -W):/w" -w /w -e PYTHONUTF8=1 #     -e UV_PROJECT_ENVIRONMENT=/tmp/venv python:3.12-slim #     bash -c 'pip install -q uv && uv sync --quiet && bash ./scripts/generate-schema.sh'
+#   MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W):/w" -w /w -e PYTHONUTF8=1 -e UV_PROJECT_ENVIRONMENT=/tmp/venv python:3.12-slim bash -c 'pip install -q uv && uv sync --quiet && bash ./scripts/generate-schema.sh'
+#
+# **`MSYS_NO_PATHCONV=1` を必ず付けること**(Windows の Git Bash から実行する場合)。
+# 付けないと Git Bash が `-w /w` を `W:/` に変換し、
+# `docker: the working directory 'W:/' is invalid` で落ちる(実測)。
 #
 # **`UV_PROJECT_ENVIRONMENT` を必ず渡すこと** —— 省くとコンテナの `uv sync` が
 # マウントした `.venv` をLinux用に上書きし、ホスト側の環境が壊れる(実際に踏んだ)。
