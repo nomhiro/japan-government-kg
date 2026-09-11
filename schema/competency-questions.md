@@ -176,6 +176,15 @@ CQ16(年度ごとの合計)だけを見ると「要求の96.9〜99.4%が付い�
   ?nextYear)`を前置すると3.617秒(3.7倍速)で答えは同一だった
   (controller実測。後置FILTERはJenaに交差積を作らせてから捨てさせる)。
   起動時に1回払う費用(裁定B103)なので、この差が設計に効く。
+- **追記(裁定「導出の母集団が正しくなければならない」): `requestedBoth`/
+  `initialBoth`(両方の年度に存在する事業だけの要求額・当初予算の合計)を
+  足した。** Task 4+5の実装で、画面がCQ16の全記録合計(年度Yの全要求・
+  年度Y+1の全当初予算)を割合の分母・分子に使ったところ、新規事業(前年の
+  要求を持たない事業)が当初予算側だけを膨らませ、2022→2023年度が
+  「要求の104.1%が付いた」という見かけの数字になった(実際は5.5兆円分の
+  新規事業が原因)。**割合は必ずこの2列(同じ結合が既に持つ母集団)で
+  作ること。** CQ16の合計は「年度ごとの要求額・当初予算の総額」という
+  別の事実としてなら出してよいが、割合の分母には使わない。
 - **訂正(team-lead裁定を受けた修正)。** 当初のfixtureは「両方の年度に
   記録がある事業」がPROJECT_CORE(CQ14/CQ16と同じ事業)1件だけで、
   たまたま完全一致(2024年度要求100,000,000円=2025年度当初100,000,000円)
@@ -214,7 +223,7 @@ CQ16(年度ごとの合計)だけを見ると「要求の96.9〜99.4%が付い�
 | CQ17 | resolved=9,525,000円(7件)・unresolved=500,000円(1件)・bundled=200,000円(1件)・sentinel_or_nonexistent_houjin_bangou=100,000円(1件) |
 | CQ18 | GovernmentOrgan=40・Ministry=40・Expenditure=10・BudgetProject=5・Law=4・UnresolvedReference=3・LawRevision=3・ExpenditureBlock=3・AnnualBudget=3(CQ20実演のため2026年度分を追加し2→3)・Organization=1・AbolishedGovernmentOrgan=1・IndirectCost=1 |
 | CQ19 | 2025年度: naiveSum=2,500,000円(ブロックA+B+C)/entryOnly=1,000,000円(ブロックAのみ)/blockCount=3。**CQ12(1,007,000円=entryOnly+間接経費)とは別の値**である |
-| CQ20 | 2024年度: projectsInBothYears=1・exactMatches=1(要求100,000,000円=2025年度当初100,000,000円)。2025年度: projectsInBothYears=1・exactMatches=0(要求110,000,000円≠2026年度当初95,000,000円。不一致の実演) |
+| CQ20 | 2024年度: requestedBoth=100,000,000円・initialBoth=100,000,000円・projectsInBothYears=1・exactMatches=1(一致)。2025年度: requestedBoth=110,000,000円・initialBoth=95,000,000円・projectsInBothYears=1・exactMatches=0(不一致の実演) |
 
 ### 実在値の根拠(B-S3。CQ1/CQ7/CQ8/CQ9で使う法令アンカー)
 

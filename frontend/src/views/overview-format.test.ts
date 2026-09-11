@@ -4,7 +4,6 @@ import type {
   BudgetAndExecution,
   MinistryBudget,
   RecipientIdentification,
-  RequestAndInitial,
   RequestExactlyGranted,
   TypeCount,
 } from "../api/client";
@@ -60,20 +59,11 @@ function budgetRow(overrides: Partial<BudgetAndExecution> = {}): BudgetAndExecut
   };
 }
 
-function requestAndInitialRow(overrides: Partial<RequestAndInitial> = {}): RequestAndInitial {
-  return {
-    budget_fiscal_year: 2021,
-    requested: 111_300_000_000_000,
-    initial: 999_999_999_999, // **わざと「この行自身のinitial」を要求額と対応しない値にする**
-    // ——`requestVsGrantedRows`が誤って同じ行のinitialを使えばテストで検出できる。
-    record_count: 23_036,
-    ...overrides,
-  };
-}
-
 function requestExactlyGrantedRow(overrides: Partial<RequestExactlyGranted> = {}): RequestExactlyGranted {
   return {
     request_fiscal_year: 2021,
+    requested_both: 111_305_746_476_457,
+    initial_both: 107_830_651_392_489,
     exact_matches: 1293,
     projects_in_both_years: 3574,
     ...overrides,
@@ -440,104 +430,95 @@ describe("mostRecentRow", () => {
 });
 
 // =============================================================================
-// requestVsGrantedRows: CQ16(年度をずらさない)+CQ20(年度Yの完全一致件数)から
-// 「年度Yの要求 → 年度Y+1の当初予算」の対応付けを作る(トップページ第1層
-// ブリーフTask4 Step1)。**核心はこの「ずらし」を間違えないこと**——
-// 間違えると「要求より多く付いた」ように見える。
+// requestVsGrantedRows: `RequestExactlyGranted`(CQ20。`requested_both`/
+// `initial_both`込み)から「年度Yの要求 → 年度Y+1の当初予算」の表示行を
+// 作る(トップページ第1層ブリーフTask4修正: 「導出の母集団が正しくなければ
+// ならない」)。**核心は`RequestAndInitial`(CQ16)の全事業合計を混ぜない
+// こと**——混ぜると新規事業が当初予算側だけを膨らませ、「要求より多く
+// 付いた」ように見える見かけの数字になる(実測: 2022→2023年度が104.1%)。
 // =============================================================================
 
 describe("requestVsGrantedRows", () => {
-  it("**核心**: 年度Yのrequestedを、年度Yのinitialではなく年度Y+1のinitialと対応付ける", () => {
+  it("CQ20の1行をそのまま表示用の形(年度ラベル・requested/initial)にする", () => {
     const rows = [
-      requestAndInitialRow({ budget_fiscal_year: 2021, requested: 111_300_000_000_000, initial: 1 }),
-      requestAndInitialRow({ budget_fiscal_year: 2022, requested: 2, initial: 107_100_000_000_000 }),
+      requestExactlyGrantedRow({
+        request_fiscal_year: 2021,
+        requested_both: 111_305_746_476_457,
+        initial_both: 107_830_651_392_489,
+        exact_matches: 1293,
+        projects_in_both_years: 3574,
+      }),
     ];
-    const out = requestVsGrantedRows(rows, []);
+    const out = requestVsGrantedRows(rows);
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({
       requestYear: 2021,
       grantedYear: 2022,
-      requested: 111_300_000_000_000,
-      initial: 107_100_000_000_000, // 2022年度行のinitial(2021年度行自身のinitial=1ではない)
+      requested: 111_305_746_476_457,
+      initial: 107_830_651_392_489,
+      exactMatches: 1293,
+      projectsInBothYears: 3574,
     });
   });
 
-  it("年度が配列の並び順(降順・隙間あり)で渡されても対応がずれない", () => {
-    // 意図的に降順で渡す。2023年度だけ次年度(2024)の行が無いので出ない。
+  it("**核心**: RequestAndInitial(CQ16)の全事業合計は使わない。requested/initialはrequested_both/initial_bothそのもの", () => {
+    // CQ16基準なら2022→2023年度は104.1%(要求112.3兆・当初117.0兆)になるが、
+    // CQ20のrequested_both/initial_bothは新規事業を含まないため99.2%になる
+    // (team-lead実測)。この関数はCQ20の値をそのまま渡すだけで、CQ16を
+    // 一切参照しない(引数にRequestAndInitialを取らないことがその保証)。
     const rows = [
-      requestAndInitialRow({ budget_fiscal_year: 2023, requested: 30, initial: 999 }),
-      requestAndInitialRow({ budget_fiscal_year: 2020, requested: 10, initial: 999 }),
-      requestAndInitialRow({ budget_fiscal_year: 2021, requested: 20, initial: 100 }),
-      requestAndInitialRow({ budget_fiscal_year: 2022, requested: 30, initial: 200 }),
+      requestExactlyGrantedRow({
+        request_fiscal_year: 2022,
+        requested_both: 112_336_438_903_489,
+        initial_both: 111_454_687_976_040,
+      }),
     ];
-    const out = requestVsGrantedRows(rows, []);
-    // 出力はrequestYear昇順。
-    expect(out.map((r) => r.requestYear)).toEqual([2020, 2021, 2022]);
-    expect(out[0]).toMatchObject({ requestYear: 2020, initial: 100 }); // 2021年度行のinitial
-    expect(out[1]).toMatchObject({ requestYear: 2021, initial: 200 }); // 2022年度行のinitial
-    expect(out[2]).toMatchObject({ requestYear: 2022, initial: 999 }); // 2023年度行のinitial
+    const out = requestVsGrantedRows(rows)[0]!;
+    expect(out.requested).toBe(112_336_438_903_489);
+    expect(out.initial).toBe(111_454_687_976_040);
   });
 
-  it("翌年度の行が無ければ、その年度は出さない(欠損を0や自分の行の値に落とさない)", () => {
-    const out = requestVsGrantedRows([requestAndInitialRow({ budget_fiscal_year: 2025 })], []);
-    expect(out).toEqual([]);
+  it("年度が配列の並び順(降順)で渡されても、出力はrequestYear昇順になる", () => {
+    const rows = [
+      requestExactlyGrantedRow({ request_fiscal_year: 2023 }),
+      requestExactlyGrantedRow({ request_fiscal_year: 2021 }),
+      requestExactlyGrantedRow({ request_fiscal_year: 2022 }),
+    ];
+    const out = requestVsGrantedRows(rows);
+    expect(out.map((r) => r.requestYear)).toEqual([2021, 2022, 2023]);
   });
 
-  it("対応するCQ20の行があればexactMatches/projectsInBothYearsを添える", () => {
-    const rows = [
-      requestAndInitialRow({ budget_fiscal_year: 2021 }),
-      requestAndInitialRow({ budget_fiscal_year: 2022 }),
-    ];
-    const granted = [requestExactlyGrantedRow({ request_fiscal_year: 2021, exact_matches: 1293, projects_in_both_years: 3574 })];
-    const out = requestVsGrantedRows(rows, granted);
-    expect(out[0]).toMatchObject({ exactMatches: 1293, projectsInBothYears: 3574 });
-  });
-
-  it("**核心**: 対応するCQ20の行が無ければnull(0という偽の確定値を入れない)", () => {
-    const rows = [
-      requestAndInitialRow({ budget_fiscal_year: 2021 }),
-      requestAndInitialRow({ budget_fiscal_year: 2022 }),
-    ];
-    const out = requestVsGrantedRows(rows, []);
-    expect(out[0]).toMatchObject({ exactMatches: null, projectsInBothYears: null });
+  it("空配列なら空配列", () => {
+    expect(requestVsGrantedRows([])).toEqual([]);
   });
 });
 
 describe("requestGrantedPercent", () => {
-  it("当初予算/要求額を%で返す", () => {
-    const row = requestVsGrantedRows(
-      [
-        requestAndInitialRow({ budget_fiscal_year: 2021, requested: 111_300_000_000_000 }),
-        requestAndInitialRow({ budget_fiscal_year: 2022, initial: 107_100_000_000_000 }),
-      ],
-      [],
-    )[0]!;
-    expect(requestGrantedPercent(row)).toBeCloseTo(96.2, 1);
+  it("initial_both/requested_bothを%で返す", () => {
+    const row = requestVsGrantedRows([
+      requestExactlyGrantedRow({ requested_both: 111_305_746_476_457, initial_both: 107_830_651_392_489 }),
+    ])[0]!;
+    expect(requestGrantedPercent(row)).toBeCloseTo(96.9, 1);
   });
 
   it("要求額が0以下なら計算できないのでnull", () => {
-    const row = requestVsGrantedRows(
-      [requestAndInitialRow({ budget_fiscal_year: 2021, requested: 0 }), requestAndInitialRow({ budget_fiscal_year: 2022 })],
-      [],
-    )[0]!;
+    const row = requestVsGrantedRows([requestExactlyGrantedRow({ requested_both: 0 })])[0]!;
     expect(requestGrantedPercent(row)).toBeNull();
   });
 });
 
 describe("exactMatchRatioPercent", () => {
   it("exact_matches/projects_in_both_yearsを%で返す", () => {
-    const row = requestVsGrantedRows(
-      [requestAndInitialRow({ budget_fiscal_year: 2021 }), requestAndInitialRow({ budget_fiscal_year: 2022 })],
-      [requestExactlyGrantedRow({ request_fiscal_year: 2021, exact_matches: 1293, projects_in_both_years: 3574 })],
-    )[0]!;
+    const row = requestVsGrantedRows([
+      requestExactlyGrantedRow({ exact_matches: 1293, projects_in_both_years: 3574 }),
+    ])[0]!;
     expect(exactMatchRatioPercent(row)).toBeCloseTo(36.2, 1);
   });
 
-  it("CQ20の行が無ければnull", () => {
-    const row = requestVsGrantedRows(
-      [requestAndInitialRow({ budget_fiscal_year: 2021 }), requestAndInitialRow({ budget_fiscal_year: 2022 })],
-      [],
-    )[0]!;
+  it("分母(projects_in_both_years)が0以下ならnull", () => {
+    const row = requestVsGrantedRows([
+      requestExactlyGrantedRow({ exact_matches: 0, projects_in_both_years: 0 }),
+    ])[0]!;
     expect(exactMatchRatioPercent(row)).toBeNull();
   });
 });

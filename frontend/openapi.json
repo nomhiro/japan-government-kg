@@ -930,7 +930,7 @@
       },
       "RequestAndInitial": {
         "additionalProperties": false,
-        "description": "CQ16の1行。**年度のずれは解消していない** ——\n年度Yの`requested`に対応するのは年度Y+1の`initial`である\n(CQ16のヘッダ参照)。対応付けは表示側で行う。",
+        "description": "CQ16の1行。**年度のずれは解消していない** ——\n年度Yの`requested`に対応するのは年度Y+1の`initial`である\n(CQ16のヘッダ参照)。対応付けは表示側で行う。\n\n**`requested`/`initial`はそれぞれ年度Y・年度Y+1の全事業の合計であり、\n「両方の年度に存在する事業だけ」には絞っていない。** 割合(要求に対して\n何%付いたか)を作るときにこの2つを分母・分子にすると、新規事業(前年の\n要求を持たない)が当初予算側だけを膨らませ、見かけの数字になる\n(実測: 2022→2023年度が104.1%という「要求より多く付いた」ように誤読\nさせる値になった)。**割合を出すなら`RequestExactlyGranted`\n(CQ20)の`requested_both`/`initial_both`(両方の年度に存在する事業だけの\n合計)を使うこと。**",
         "properties": {
           "budget_fiscal_year": {
             "title": "Budget Fiscal Year",
@@ -960,10 +960,14 @@
       },
       "RequestExactlyGranted": {
         "additionalProperties": false,
-        "description": "CQ20の1行。**要求額がそのまま付いた事業の件数。**\n\n`exact_matches / projects_in_both_years`が「事業ごとに見た一致率」で、\n実データでは3〜4割である。**CQ16の「全体では96.9〜99.4%」と並べて\n初めて正しく読める** ——全体の割合だけを出すと「ほぼ満額」と誤読される。\n\n`projects_in_both_years`は**両方の年度に存在する事業だけ**の件数\n(新規・廃止事業は分母から落ちる。CQ20のヘッダ参照)。",
+        "description": "CQ20の1行。**要求額がそのまま付いた事業の件数、および同じ母集団の金額。**\n\n`exact_matches / projects_in_both_years`が「事業ごとに見た一致率」で、\n実データでは3〜4割である。**`requested_both`/`initial_both`と並べて\n初めて正しく読める** ——全体の割合だけを出すと「ほぼ満額」と誤読される。\n\n`projects_in_both_years`は**両方の年度に存在する事業だけ**の件数\n(新規・廃止事業は分母から落ちる。CQ20のヘッダ参照)。\n\n**`requested_both`/`initial_both`は、`projects_in_both_years`と同じ\n母集団(両方の年度に存在する事業だけ)の要求額・当初予算の合計である。**\n`RequestAndInitial`(CQ16)の`requested`/`initial`は**年度Yの全要求**・\n**年度Y+1の全当初予算**の合計であり、母集団が異なる——新規事業(前年の\n要求を持たない)が当初予算側だけを膨らませるため、CQ16の合計どうしで\n割合を作ると見かけの数字になる(実測: 2022→2023年度がCQ16基準で104.1%\nという「要求より多く付いた」ように誤読させる値になった。原因は\n5.5兆円分の新規事業)。**画面で「要求に対して何%付いたか」を出すときは\n必ずこの2つを使う**(裁定「導出の母集団が正しくなければならない」)。",
         "properties": {
           "exact_matches": {
             "title": "Exact Matches",
+            "type": "integer"
+          },
+          "initial_both": {
+            "title": "Initial Both",
             "type": "integer"
           },
           "projects_in_both_years": {
@@ -973,10 +977,16 @@
           "request_fiscal_year": {
             "title": "Request Fiscal Year",
             "type": "integer"
+          },
+          "requested_both": {
+            "title": "Requested Both",
+            "type": "integer"
           }
         },
         "required": [
           "request_fiscal_year",
+          "requested_both",
+          "initial_both",
           "projects_in_both_years",
           "exact_matches"
         ],

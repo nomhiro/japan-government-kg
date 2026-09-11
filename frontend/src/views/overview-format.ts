@@ -8,7 +8,6 @@ import type {
   BudgetAndExecution,
   MinistryBudget,
   RecipientIdentification,
-  RequestAndInitial,
   RequestExactlyGranted,
   TypeCount,
 } from "../api/client";
@@ -297,82 +296,65 @@ export function mostRecentRow(rows: BudgetAndExecution[]): BudgetAndExecution | 
 }
 
 /**
- * 「いくら要求して、いくら付いたか」の1行(表示用に対応付け済み)。
+ * 「いくら要求して、いくら付いたか」の1行(表示用に整形済み)。
  *
- * `requestVsGrantedRows`が組み立てる。年度のずれの対応付けは
- * `requestYear`(=`RequestAndInitial.budget_fiscal_year`)と
- * `grantedYear`(=`requestYear + 1`)の両方を保持することで、
- * 呼び出し側(DOMを書く側)が「どの年度の要求が、どの年度の当初予算と
- * 対応しているか」を書き間違えないようにする。
+ * `requestVsGrantedRows`が`RequestExactlyGranted`(CQ20)からそのまま
+ * 組み立てる。**すべてのフィールドが「両方の年度に存在する事業だけ」という
+ * 同じ母集団から来ている**(裁定「導出の母集団が正しくなければならない」。
+ * `docs/decision-log.md`参照)——`RequestAndInitial`(CQ16)の全事業合計は
+ * ここでは使わない。
  */
 export interface RequestVsGrantedRow {
-  /** 要求した年度(=`RequestAndInitial.budget_fiscal_year`) */
+  /** 要求した年度(=`RequestExactlyGranted.request_fiscal_year`) */
   requestYear: number;
-  /** 付いた当初予算の年度(=`requestYear + 1`。CQ16のヘッダ参照) */
+  /** 付いた当初予算の年度(=`requestYear + 1`。CQ16/CQ20のヘッダ参照) */
   grantedYear: number;
-  /** `requestYear`の要求額 */
+  /** 両方の年度に存在する事業だけの要求額の合計(`requested_both`) */
   requested: number;
-  /** `grantedYear`の当初予算(`requestYear`の行の`initial`ではない) */
+  /** 同じ母集団の当初予算の合計(`initial_both`) */
   initial: number;
-  /** `requestYear`の`RequestAndInitial.record_count`(参考値) */
-  recordCount: number;
-  /** `requestYear`のCQ20行から。無ければ`null`(欠損を0に落とさない) */
-  exactMatches: number | null;
-  /** `requestYear`のCQ20行から。無ければ`null` */
-  projectsInBothYears: number | null;
+  /** 両方の年度に存在する事業の件数(分母) */
+  projectsInBothYears: number;
+  /** 額が完全一致した事業の件数 */
+  exactMatches: number;
 }
 
 /**
- * `request_and_initial`(CQ16)と`request_exactly_granted`(CQ20)から、
- * 「年度Yの要求 → 年度Y+1の当初予算」という表示用の対応付けを組み立てる。
+ * `request_exactly_granted`(CQ20)から、「年度Yの要求 → 年度Y+1の当初予算」
+ * という表示用の行を組み立てる。
  *
- * **CQ16は年度をずらさずに返す**(`RequestAndInitial`のdocstring参照)。
- * `nextYearRequest`(=このAPIの`requested`)は「その年度の記録が持つ
- * 翌年度の要求額」なので、比べる相手は**年度Y+1の`initial`**であり、
- * 同じ行の`initial`ではない——ここを間違えると「要求より多く付いた」ように
- * 見える(トップページ第1層ブリーフStep1)。
- *
- * **年度で引く(配列の並び順や添字を信じない)。** `requestAndInitial`を
- * `budget_fiscal_year`をキーにした`Map`にしてから`year + 1`で引くことで、
- * 入力が入れ替わっていても・欠番があっても正しく対応する
- * (`mostRecentRow`と同じ「並び順を信じない」方針)。
- *
- * **年度Y+1の行が無ければ、その年度Yは出さない**(欠損を0や同じ行の値に
- * 落とさない)。`exactMatches`/`projectsInBothYears`も同様に、対応する
- * CQ20の行が無ければ`null`(手書きの0を入れない)。
+ * **母集団を混ぜない。** 以前の実装は`RequestAndInitial`(CQ16。年度Yの
+ * *全*要求と年度Y+1の*全*当初予算の合計)を`requested`/`initial`に使い、
+ * CQ20の`exactMatches`/`projectsInBothYears`だけを添える形だった——
+ * これは2つの異なる母集団(全事業/両方の年度に存在する事業だけ)を
+ * 同じ行に混在させ、**新規事業(前年の要求を持たない)が当初予算側だけを
+ * 膨らませる分だけ比率を水増しする**(実測: 2022→2023年度がCQ16基準で
+ * 104.1%という「要求より多く付いた」ように誤読させる値になった。原因は
+ * 5.5兆円分の新規事業)。**CQ20が`requestedBoth`/`initialBoth`を足した
+ * ことで、この行のすべての数字を「両方の年度に存在する事業だけ」という
+ * 単一の母集団に揃えられる**——年度のマップ引き直しはもう要らない
+ * (CQ20の結合が既に正しい母集団で計算している)。
  *
  * 返す行は`requestYear`昇順。
  */
-export function requestVsGrantedRows(
-  requestAndInitial: RequestAndInitial[],
-  exactlyGranted: RequestExactlyGranted[],
-): RequestVsGrantedRow[] {
-  const initialByYear = new Map(requestAndInitial.map((r) => [r.budget_fiscal_year, r.initial]));
-  const matchByYear = new Map(exactlyGranted.map((r) => [r.request_fiscal_year, r]));
-
-  const out: RequestVsGrantedRow[] = [];
-  for (const row of requestAndInitial) {
-    const grantedYear = row.budget_fiscal_year + 1;
-    const initial = initialByYear.get(grantedYear);
-    if (initial === undefined) continue;
-    const match = matchByYear.get(row.budget_fiscal_year);
-    out.push({
-      requestYear: row.budget_fiscal_year,
-      grantedYear,
-      requested: row.requested,
-      initial,
-      recordCount: row.record_count,
-      exactMatches: match ? match.exact_matches : null,
-      projectsInBothYears: match ? match.projects_in_both_years : null,
-    });
-  }
-  return out.sort((a, b) => a.requestYear - b.requestYear);
+export function requestVsGrantedRows(exactlyGranted: RequestExactlyGranted[]): RequestVsGrantedRow[] {
+  return exactlyGranted
+    .map((r) => ({
+      requestYear: r.request_fiscal_year,
+      grantedYear: r.request_fiscal_year + 1,
+      requested: r.requested_both,
+      initial: r.initial_both,
+      projectsInBothYears: r.projects_in_both_years,
+      exactMatches: r.exact_matches,
+    }))
+    .sort((a, b) => a.requestYear - b.requestYear);
 }
 
 /**
- * `row`の「要求額に対して当初予算が何%付いたか」。**分母(要求額)が0以下
- * (=計算できない)なら`null`**(`topMinistryDominancePhrase`と同じ方針。
- * 0%という誤った確定値を出さない)。
+ * `row`の「要求額に対して当初予算が何%付いたか」(両方の年度に存在する
+ * 事業だけの合計での比率)。**分母(要求額)が0以下(=計算できない)なら
+ * `null`**(`topMinistryDominancePhrase`と同じ方針。0%という誤った確定値を
+ * 出さない)。
  */
 export function requestGrantedPercent(row: RequestVsGrantedRow): number | null {
   if (!(row.requested > 0)) return null;
@@ -381,11 +363,9 @@ export function requestGrantedPercent(row: RequestVsGrantedRow): number | null {
 
 /**
  * `row`の「両方の年度に存在する事業のうち、額が完全一致した事業の割合」
- * (CQ20)。CQ20の行が無い(`exactMatches`/`projectsInBothYears`が`null`)、
- * または分母が0以下なら`null`。
+ * (CQ20)。分母(`projectsInBothYears`)が0以下なら`null`。
  */
 export function exactMatchRatioPercent(row: RequestVsGrantedRow): number | null {
-  if (row.exactMatches === null || row.projectsInBothYears === null) return null;
   if (!(row.projectsInBothYears > 0)) return null;
   return (row.exactMatches / row.projectsInBothYears) * 100;
 }
@@ -394,7 +374,7 @@ export function exactMatchRatioPercent(row: RequestVsGrantedRow): number | null 
  * 複数の%値を「96.9〜99.4%」のような範囲表記にする。**モックは固定の
  * 範囲文言(「96.9〜99.4%」「3〜4割」)を書いていたが、これは特定の実測時点の
  * 値の手書きである**——年度が増えれば範囲も変わるので、この画面は
- * `request_and_initial`/`request_exactly_granted`の全行から範囲を導出する
+ * `request_exactly_granted`の全行から範囲を導出する
  * (controller補足3「測定値は導出する」)。
  *
  * 全ての値が同じ(または1件しかない)なら範囲ではなく単一の%を返す。

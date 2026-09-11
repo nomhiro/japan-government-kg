@@ -990,32 +990,44 @@ def test_cq20_counts_the_project_present_in_both_years_and_its_exact_match(kg):
     2026年度は`nextYearRequest`を持たないため、2026年度自身が
     `requestYear`になる行は現れない(次の年度=2027の記録も無い)。
 
+    **追記(裁定「導出の母集団が正しくなければならない」): `requestedBoth`/
+    `initialBoth`も固定する。** 両方の年度に存在する事業だけの要求額・
+    当初予算の合計であり、フロントエンドはこれを割合の分母・分子に使う
+    (`RequestAndInitial`の全事業合計を使うと、新規事業の混入で見かけの
+    比率になる——実データで2022→2023年度が104.1%になった実例)。
+    fixtureにはPROJECT_CORE1件しかCQ20に現れないので、`requestedBoth`/
+    `initialBoth`は該当年度の`nextYearRequest`/`initialBudget`そのものと
+    一致する。
+
     何があれば落ちるか(いずれも実際に壊して確認した。task-2b-report.md参照):
     - `SUM(IF(?req = ?nextInitial, 1, 0))`を`SUM(1)`(全件を一致として
       数える)に変えると、2025年度のexactMatchesが0から1に変わって
-      `by_year[2025] == (1, 0)`が崩れる(**2026年度追加前は、一致する
+      `by_year[2025]`が崩れる(**2026年度追加前は、一致する
       事業しかfixtureに無くこの変異を検出できなかった**——この壊し
       確認が通るようになったこと自体が、今回のfixture修正の目的である)
     - `BIND(?requestYear + 1 AS ?nextYear)`を外し同一年度で比べる実装に
       戻すと、年度の集合(`{2024, 2025}`)自体は変わらないが、2024年度の
       `exactMatches`が1から0に変わる(同一年度のnextYearRequest
       100,000,000円とinitialBudget 90,000,000円は一致しないため)——
-      `by_year[2024] == (1, 1)`が崩れる
+      `by_year[2024]`が崩れる
     """
     rows = _query(kg, "cq20-request-exactly-granted.rq")
     assert rows, "CQ20に答えられない"
-    by_year = {int(y): (int(both), int(exact)) for y, both, exact in rows}
+    by_year = {
+        int(y): (int(req_both), int(init_both), int(both), int(exact))
+        for y, req_both, init_both, both, exact in rows
+    }
     assert sorted(by_year) == [2024, 2025], by_year
-    assert by_year[2024] == (1, 1), by_year
-    assert by_year[2025] == (1, 0), by_year
+    assert by_year[2024] == (100_000_000, 100_000_000, 1, 1), by_year
+    assert by_year[2025] == (110_000_000, 95_000_000, 1, 0), by_year
 
 
 def test_cq20_matches_the_independent_count_from_budget_result_annual_budgets(kg, budget_result):
-    """`projectsInBothYears`/`exactMatches`を、`budget_result.annual_budgets`
-    (`rs.build_projects`の戻り値。手書きSPARQLではない別経路)から
-    (project_id, budget_fiscal_year)で自前に結合し直した値と突き合わせる
-    ——CQ19の`test_cq19_entry_only_matches_the_independent_sum_from_
-    budget_result_blocks`と同型の正のコントロール。
+    """`requestedBoth`/`initialBoth`/`projectsInBothYears`/`exactMatches`を、
+    `budget_result.annual_budgets`(`rs.build_projects`の戻り値。手書きSPARQL
+    ではない別経路)から(project_id, budget_fiscal_year)で自前に結合し直した
+    値と突き合わせる——CQ19の`test_cq19_entry_only_matches_the_independent_
+    sum_from_budget_result_blocks`と同型の正のコントロール。
 
     **訂正(team-lead裁定を受けた修正)。** この関数の前の版は「fixtureに
     不一致の事業が無いため、`SUM(IF(?req = ?nextInitial, 1, 0))`を
@@ -1028,14 +1040,25 @@ def test_cq20_matches_the_independent_count_from_budget_result_annual_budgets(kg
     (2025年度: 独立経路が導くexact=0に対し、変異後のCQ20は1を返すため
     不一致になる。壊し確認は`test_cq20_counts_the_project_present_in_
     both_years_and_its_exact_match`のdocstring・task-2b-report.md参照)。
+
+    **追記(裁定「導出の母集団が正しくなければならない」): `requestedBoth`/
+    `initialBoth`(両方の年度に存在する事業だけの要求額・当初予算の合計)も
+    同じ独立経路(`nextYearRequest`/`initialBudget`をそのまま足す)で
+    突き合わせる。** `SUM(?req)`を`SUM(?req) + 1`のような変異に変えると
+    ここで検出できる。
     """
     rows = _query(kg, "cq20-request-exactly-granted.rq")
-    cq20 = {int(y): (int(both), int(exact)) for y, both, exact in rows}
+    cq20 = {
+        int(y): (int(req_both), int(init_both), int(both), int(exact))
+        for y, req_both, init_both, both, exact in rows
+    }
 
     by_key = {
         (rec.project_id, int(rec.budget_fiscal_year)): rec
         for rec in budget_result.annual_budgets
     }
+    requested_both: dict[int, int] = {}
+    initial_both: dict[int, int] = {}
     both_years: dict[int, int] = {}
     exact: dict[int, int] = {}
     for (project_id, y), rec in by_key.items():
@@ -1044,11 +1067,15 @@ def test_cq20_matches_the_independent_count_from_budget_result_annual_budgets(kg
         nxt = by_key.get((project_id, y + 1))
         if nxt is None or nxt.initial_budget is None:
             continue
+        requested_both[y] = requested_both.get(y, 0) + rec.next_year_request
+        initial_both[y] = initial_both.get(y, 0) + nxt.initial_budget
         both_years[y] = both_years.get(y, 0) + 1
         if rec.next_year_request == nxt.initial_budget:
             exact[y] = exact.get(y, 0) + 1
 
     assert set(cq20) == set(both_years), (cq20, both_years)
-    for y, (both, exact_count) in cq20.items():
+    for y, (req_both, init_both, both, exact_count) in cq20.items():
+        assert req_both == requested_both[y], (y, req_both, requested_both)
+        assert init_both == initial_both[y], (y, init_both, initial_both)
         assert both == both_years[y], (y, both, both_years)
         assert exact_count == exact.get(y, 0), (y, exact_count, exact)

@@ -98,8 +98,8 @@ function renderContent(root: HTMLElement, data: OverviewResponse): void {
       <div class="jgkg-ov-history">${renderHistory(data.budget_and_execution)}</div>
 
       <h2>いくら要求して、いくら付いたか</h2>
-      ${sourceCitationHtml(data.sources, "request_and_initial", "request_exactly_granted")}
-      <div class="jgkg-ov-request">${renderRequestVsGranted(data.request_and_initial, data.request_exactly_granted)}</div>
+      ${sourceCitationHtml(data.sources, "request_exactly_granted")}
+      <div class="jgkg-ov-request">${renderRequestVsGranted(data.request_exactly_granted)}</div>
 
       <h2>国が自ら支払った額${esc(yearSuffix)}</h2>
       ${sourceCitationHtml(data.sources, "naive_sum_vs_entry_only", "government_paid")}
@@ -403,11 +403,19 @@ function renderHistory(rows: BudgetAndExecution[]): string {
  * (CQ20を足した理由そのもの。両方の年度に存在する事業だけを数えている
  * ことも明示する)。
  */
-function renderRequestVsGranted(
-  requestAndInitial: OverviewResponse["request_and_initial"],
-  requestExactlyGranted: OverviewResponse["request_exactly_granted"],
-): string {
-  const rows = requestVsGrantedRows(requestAndInitial, requestExactlyGranted);
+/**
+ * **母集団を明示する。** 表のすべての数字(要求額・当初予算・割合・
+ * 完全一致した事業)は`RequestExactlyGranted`(CQ20)から来ており、
+ * **両方の年度に事業として存在するものだけ**を対象にしている
+ * (新規・廃止事業は含まない)。この前提を書かないと「要求よりどれだけ付いた
+ * か」を全事業の話だと読み間違える——実際に、以前の実装は`RequestAndInitial`
+ * (CQ16。年度Yの*全*要求と年度Y+1の*全*当初予算の合計)を使い、新規事業が
+ * 当初予算側だけを膨らませたため、2022→2023年度が「要求の104.1%が付いた」
+ * という見かけの数字になった(裁定「導出の母集団が正しくなければならない」。
+ * `docs/decision-log.md`参照)。
+ */
+function renderRequestVsGranted(requestExactlyGranted: OverviewResponse["request_exactly_granted"]): string {
+  const rows = requestVsGrantedRows(requestExactlyGranted);
   if (rows.length === 0) {
     return '<p class="jgkg-muted">要求額と当初予算の対応データがありません。</p>';
   }
@@ -419,10 +427,7 @@ function renderRequestVsGranted(
       // 判断の使い回し。新しいクランプ処理をここに書き直さない)。
       const widthPct = pct !== null ? barWidthPercent(pct, 100) : 0;
       const pctText = pct !== null ? `${pct.toFixed(1)}%` : "—";
-      const matchText =
-        r.exactMatches !== null && r.projectsInBothYears !== null
-          ? `${r.exactMatches.toLocaleString("ja-JP")} / ${r.projectsInBothYears.toLocaleString("ja-JP")}`
-          : "—";
+      const matchText = `${r.exactMatches.toLocaleString("ja-JP")} / ${r.projectsInBothYears.toLocaleString("ja-JP")}`;
       return `
         <tr>
           <th>${r.requestYear}年度に要求 → ${r.grantedYear}年度に付いた</th>
@@ -450,11 +455,12 @@ function renderRequestVsGranted(
       ? `<p class="jgkg-ov-sub">全体では要求の<b>${esc(overallRange)}</b>が付いています。` +
         (matchRange !== null
           ? `ただし<b>事業ごとに見ると額が完全一致した事業は${esc(matchRange)}程度</b>なので、` +
-            "「ほぼ満額」と読むのは全体の話に限ります(両方の年度に存在する事業だけを数えています)。</p>"
+            "「ほぼ満額」と読むのは全体の話に限ります。</p>"
           : "</p>")
       : "";
 
   return `
+    <p class="jgkg-ov-sub"><b>この表は両方の年度に事業として存在するものだけを対象にしています</b>(新規・廃止事業は含みません)。</p>
     <table class="jgkg-ov-request-table">
       <thead><tr><th></th><th></th><th>要求額</th><th>付いた当初予算</th><th>割合</th><th>額が完全一致した事業</th></tr></thead>
       <tbody>${trs}</tbody>
@@ -473,12 +479,15 @@ function renderRequestVsGranted(
  * ではない。公開のトップページに推論を数字として並べると、測定と推論の
  * 区別が読者から見えなくなる(`docs/decision-log.md`裁定B103の追記)。
  *
- * **この額は下限であり、両方向に誤差がある**(`cq12-government-paid-total.rq`
- * のヘッダに実測がある: 入口の印が付いていない事業が32件で下振れ・
- * 国からの支払いと他の段からの流入が混在するブロックが9件あり最大
- * 63,863,635,000円(0.050%)過大になりうる)。**「正確な総額」とは書かない。**
- * 詳しい経緯は画面から`docs/decision-log.md`の裁定B97へ辿れるようにする
- * (`inferredTotal`等の推論の記録はここにある)。
+ * **この額は下限であり、両方向に誤差がある。画面には数字(件数・上限額)を
+ * 書かない。** `cq12-government-paid-total.rq`のヘッダには入口の印が
+ * 付いていない事業の件数・混在ブロックの件数・過大側の上限額が実測として
+ * 書かれているが、**それらはCQの`SELECT`が返す値ではない**——第1層に出す
+ * 数字はCQの答えに限る(裁定「画面の数字はCQの答えに限る」。当初はこれらの
+ * 数字を画面に書いていたが、`docs/decision-log.md`の裁定B103の「出さない
+ * もの」リストと同じ理由(推論ではなく調査結果の手書き)で修正した)。
+ * 質的な事実(下限・両方向に誤差がある)だけで担保は足りる——大きさを
+ * 知りたい読者は`cq12-*.rq`のヘッダか裁定B97へ辿れるようにする。
  *
  * `naiveRow`/`paidRow`が指定した年度に無ければ、その部分の主張を出さない
  * (欠損を既定値に落とさない。`government_paid[0]`のようなフォールバックは
@@ -509,9 +518,15 @@ function renderSpending(
     ? `<p class="jgkg-ov-sub">支出の記録を素朴に全部足すと<b>${esc(formatAmountRounded(naiveRow.naive_sum))}</b>になりますが、それは<b>同じお金を数えた分だけ多い</b>数字です。国自身が支払った段(担当組織からの支出)だけを取ると<b>${esc(formatAmountRounded(paidRow.government_paid))}</b>で、差の<b>${esc(formatAmountRounded(naiveRow.naive_sum - paidRow.government_paid))}</b>が重複でした。</p>`
     : "";
 
+  // **質的な事実だけを書く。数字(件数・上限額)は書かない**
+  // (裁定「画面に出す数字はCQの答えに限る」。`docs/decision-log.md`参照)。
+  // 32事業・9事業・上限63,863,635,000円(0.050%)は`cq12-government-paid-total.rq`
+  // のヘッダに実測として書かれているが、CQの`SELECT`が返す値ではない
+  // ——第1層にCQの答えではない数字を手書きすることになるため、ここでは
+  // 出さない。大きさを知りたい読者は下のCQ12ヘッダ/裁定B97への言及から辿れる。
   const caveat =
-    '<p class="jgkg-ov-sub">この額は<b>下限であり、両方向に誤差があります</b>。一次データで「国自身が支払った」印が付いていない事業が32件あり、この額には含めていません(構造から推論で補うこともできますが、それは一次データの主張ではないため入れていません)。反対に、国からの支払いと他の段からの資金が混在するブロックが9件あり、内訳が一次データに無いため<b>最大63,863,635,000円(入口合計の0.050%)過大になりえます</b>——どちらの向きが大きいかは分かりません。<b>「正確な総額」ではありません。</b></p>' +
-    '<p class="jgkg-ov-sub">この数字の限界についての詳しい経緯は docs/decision-log.md の裁定B97にあります。</p>';
+    '<p class="jgkg-ov-sub">この額は<b>下限であり、両方向に誤差があります</b>。<b>「正確な総額」ではありません。</b></p>' +
+    '<p class="jgkg-ov-sub">誤差の大きさの実測は queries/cq/cq12-government-paid-total.rq のヘッダ、または docs/decision-log.md の裁定B97にあります。</p>';
 
   return lede + facts + naiveText + caveat;
 }

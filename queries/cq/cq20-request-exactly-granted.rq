@@ -14,6 +14,16 @@
 # 片方にしか無い事業(新規・廃止)は分母から落ちる ——
 # 落とさないと「要求が無いのに予算が付いた」ように見える。
 #
+# **追記(裁定「導出の母集団が正しくなければならない」): `requestedBoth`/
+# `initialBoth`を足した。** CQ16の合計は年度Yの**全**要求と年度Y+1の**全**
+# 当初予算を足すため、年度Y+1に新規で始まった事業(当初予算を持つが
+# 前年の要求を持たない)が分子側だけを膨らませ、母集団が入れ替わった見かけの
+# 比率になる(実測: 2022→2023年度がCQ16基準で104.1%になり、「要求より
+# 多く付いた」ように誤読させた——実際は5.5兆円分の新規事業が原因)。
+# **画面の割合はこの2列(両方の年度に存在する事業だけの合計)を分母・分子に
+# 使うこと**——CQ16の全記録合計を割合の分母に使ってはいけない。
+# `SUM`を2つ足すだけで済む(結合は既にこのクエリが持っている)。
+#
 # **`BIND`を第2パターンの前に置くこと(実測で3.7倍速い)。**
 # `FILTER(?nextYear = ?requestYear + 1)`を後置する形だと**13.362秒**、
 # `BIND(?requestYear + 1 AS ?nextYear)`を前置すると**3.617秒**で、
@@ -22,6 +32,8 @@
 # (裁定B103: `/overview`は起動時に全CQを走らせる)。
 PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
 SELECT ?requestYear
+       (SUM(?req) AS ?requestedBoth)
+       (SUM(?nextInitial) AS ?initialBoth)
        (COUNT(?project) AS ?projectsInBothYears)
        (SUM(IF(?req = ?nextInitial, 1, 0)) AS ?exactMatches)
 WHERE {

@@ -505,7 +505,17 @@ class BudgetAndExecution(_Envelope):
 class RequestAndInitial(_Envelope):
     """CQ16の1行。**年度のずれは解消していない** ——
     年度Yの`requested`に対応するのは年度Y+1の`initial`である
-    (CQ16のヘッダ参照)。対応付けは表示側で行う。"""
+    (CQ16のヘッダ参照)。対応付けは表示側で行う。
+
+    **`requested`/`initial`はそれぞれ年度Y・年度Y+1の全事業の合計であり、
+    「両方の年度に存在する事業だけ」には絞っていない。** 割合(要求に対して
+    何%付いたか)を作るときにこの2つを分母・分子にすると、新規事業(前年の
+    要求を持たない)が当初予算側だけを膨らませ、見かけの数字になる
+    (実測: 2022→2023年度が104.1%という「要求より多く付いた」ように誤読
+    させる値になった)。**割合を出すなら`RequestExactlyGranted`
+    (CQ20)の`requested_both`/`initial_both`(両方の年度に存在する事業だけの
+    合計)を使うこと。**
+    """
 
     budget_fiscal_year: int
     requested: int
@@ -514,17 +524,29 @@ class RequestAndInitial(_Envelope):
 
 
 class RequestExactlyGranted(_Envelope):
-    """CQ20の1行。**要求額がそのまま付いた事業の件数。**
+    """CQ20の1行。**要求額がそのまま付いた事業の件数、および同じ母集団の金額。**
 
     `exact_matches / projects_in_both_years`が「事業ごとに見た一致率」で、
-    実データでは3〜4割である。**CQ16の「全体では96.9〜99.4%」と並べて
+    実データでは3〜4割である。**`requested_both`/`initial_both`と並べて
     初めて正しく読める** ——全体の割合だけを出すと「ほぼ満額」と誤読される。
 
     `projects_in_both_years`は**両方の年度に存在する事業だけ**の件数
     (新規・廃止事業は分母から落ちる。CQ20のヘッダ参照)。
+
+    **`requested_both`/`initial_both`は、`projects_in_both_years`と同じ
+    母集団(両方の年度に存在する事業だけ)の要求額・当初予算の合計である。**
+    `RequestAndInitial`(CQ16)の`requested`/`initial`は**年度Yの全要求**・
+    **年度Y+1の全当初予算**の合計であり、母集団が異なる——新規事業(前年の
+    要求を持たない)が当初予算側だけを膨らませるため、CQ16の合計どうしで
+    割合を作ると見かけの数字になる(実測: 2022→2023年度がCQ16基準で104.1%
+    という「要求より多く付いた」ように誤読させる値になった。原因は
+    5.5兆円分の新規事業)。**画面で「要求に対して何%付いたか」を出すときは
+    必ずこの2つを使う**(裁定「導出の母集団が正しくなければならない」)。
     """
 
     request_fiscal_year: int
+    requested_both: int
+    initial_both: int
     projects_in_both_years: int
     exact_matches: int
 

@@ -317,6 +317,8 @@ def _parse_request_exactly_granted(rows: list[Row]) -> list[RequestExactlyGrante
     return [
         RequestExactlyGranted(
             request_fiscal_year=_int(row, "requestYear"),
+            requested_both=_int(row, "requestedBoth"),
+            initial_both=_int(row, "initialBoth"),
             projects_in_both_years=_int(row, "projectsInBothYears"),
             exact_matches=_int(row, "exactMatches"),
         )
