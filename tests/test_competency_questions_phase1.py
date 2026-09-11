@@ -964,3 +964,79 @@ def test_cq19_entry_only_differs_from_cq12_government_paid_total(kg):
         "CQ19のentryOnlyとCQ12のgovernmentPaidが一致してしまっている"
         " —— 間接経費の扱いが混ざった疑い"
     )
+
+
+# =============================================================================
+# CQ20: 要求額がそのまま付いた事業の件数(裁定B103の追記。第3節の誤読防止)
+# =============================================================================
+
+
+def test_cq20_counts_the_project_present_in_both_years_and_its_exact_match(kg):
+    """fixtureのPROJECT_CORE(CQ14/CQ16と同じ事業)に対し、2024年度の
+    `nextYearRequest`(100,000,000円)と2025年度の`initialBudget`
+    (100,000,000円)が一致する1件だけが返ること。
+
+    fixtureで`annual_budgets`を持つ事業はPROJECT_COREだけで、かつ
+    2026年度の記録を持つ事業がどこにも無いため、**2025年度の行は
+    現れない**(次年度の記録が無く`projectsInBothYears`の分母に入らない)。
+
+    何があれば落ちるか:
+    - `BIND(?requestYear + 1 AS ?nextYear)`を外し同一年度で比べる実装に
+      戻すと、2024年度がexactMatches=0(100,000,000≠90,000,000)、
+      2025年度も現れる(100,000,000の記録が同一年度に無いため0件)ようになり、
+      `sorted(by_year) == [2024]`が崩れる
+    - `budget:project`での結合を外すと、両方の年度に記録がある事業の
+      判定自体ができなくなる(このfixtureでは`AnnualBudget`を持つ事業が
+      1件しかないため値としては変わらないが、構文上`?project`が未束縛に
+      なり`COUNT(?project)`が0になる——このテスト自身は検出するが、
+      「別の事業と誤って結合する」ケースはこのfixtureでは検証できない。
+      下のテストのdocstring「既知の限界」参照)
+    """
+    rows = _query(kg, "cq20-request-exactly-granted.rq")
+    assert rows, "CQ20に答えられない"
+    by_year = {int(y): (int(both), int(exact)) for y, both, exact in rows}
+    assert sorted(by_year) == [2024], by_year
+    assert by_year[2024] == (1, 1), by_year
+
+
+def test_cq20_matches_the_independent_count_from_budget_result_annual_budgets(kg, budget_result):
+    """`projectsInBothYears`/`exactMatches`を、`budget_result.annual_budgets`
+    (`rs.build_projects`の戻り値。手書きSPARQLではない別経路)から
+    (project_id, budget_fiscal_year)で自前に結合し直した値と突き合わせる
+    ——CQ19の`test_cq19_entry_only_matches_the_independent_sum_from_
+    budget_result_blocks`と同型の正のコントロール。
+
+    **既知の限界(捕まえられないことを実際に確認した。壊し確認は
+    task-2b-report.md参照)。** fixtureで「両方の年度に記録がある事業」は
+    1件だけで、その1件がたまたま完全一致(2024年度要求100,000,000円=
+    2025年度当初100,000,000円)である。そのため`SUM(IF(?req =
+    ?nextInitial, 1, 0))`を`SUM(1)`(全件を一致として数える)に変える変異は、
+    この独立経路との突き合わせを含めてもなお**検出できない**——変異後も
+    `exactMatches`は`projectsInBothYears`と同じ1のままで、独立経路が
+    導く「一致した件数」も同じく1だからである。不一致の事業をfixtureに
+    追加すれば検出できるようになるはずだが、`tests/phase1_fixture.py`は
+    このタスクの変更対象外(team-lead裁定)のため見送る。
+    """
+    rows = _query(kg, "cq20-request-exactly-granted.rq")
+    cq20 = {int(y): (int(both), int(exact)) for y, both, exact in rows}
+
+    by_key = {
+        (rec.project_id, int(rec.budget_fiscal_year)): rec
+        for rec in budget_result.annual_budgets
+    }
+    both_years: dict[int, int] = {}
+    exact: dict[int, int] = {}
+    for (project_id, y), rec in by_key.items():
+        if rec.next_year_request is None:
+            continue
+        nxt = by_key.get((project_id, y + 1))
+        if nxt is None or nxt.initial_budget is None:
+            continue
+        both_years[y] = both_years.get(y, 0) + 1
+        if rec.next_year_request == nxt.initial_budget:
+            exact[y] = exact.get(y, 0) + 1
+
+    assert set(cq20) == set(both_years), (cq20, both_years)
+    for y, (both, exact_count) in cq20.items():
+        assert both == both_years[y], (y, both, both_years)
+        assert exact_count == exact.get(y, 0), (y, exact_count, exact)

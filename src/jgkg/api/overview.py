@@ -19,13 +19,19 @@
 また`minReplicas=1`/`maxReplicas=1`でFusekiとAPIが同じレプリカを共有して
 おり、Fuseki側にクエリのタイムアウトがまだ無い(既知の未処理事項)。
 
-**Task 2b追記: CQ19を足して8本になった。** controllerが本番と同じ索引に
-対してCQ19単体を実測した値は**1.390秒**(`queries/cq/cq19-naive-sum-vs-
-entry-only.rq`のヘッダ参照)。**8本合計の再実測はこのタスクでは行っていない**
-——上の7.282秒/2.772秒はTask 2時点の7本の値であり、単純に1.390秒を足した
-数字をここに書くと「測った」と「測っていないものを足し算した」の区別が
+**Task 2b追記: CQ19・CQ20を足して9本になった。** controllerが本番と同じ
+索引に対して単体で実測した値は、CQ19が**1.390秒**
+(`queries/cq/cq19-naive-sum-vs-entry-only.rq`のヘッダ参照)、CQ20が
+**3.617秒**(`BIND`を前置する形。後置`FILTER`だと13.362秒だった——
+`queries/cq/cq20-request-exactly-granted.rq`のヘッダ参照)。
+
+**9本合計の本番実測はまだ無い。** team-leadの見込みは
+**約12.3秒**(=7.282秒+1.390秒+3.617秒の単純な足し算。**本人も「見込みで
+あって実測ではない」と明記している**)。単純な足し算をこのモジュール自身の
+主張として書くと「測った」と「測っていないものを足し算した」の区別が
 付かなくなる(このモジュール自身が上で訂正した欠陥型と同型になる)ため、
-合計は書かない。
+**この見込み値をここでは書かない** ——9本合計の本番実測はTask 7で
+controllerが行う予定(task-2b-report.md参照)。
 
 **訂正(修正ラウンド1。レビューで誤診と指摘された)**: このdocstringの前の版は
 「3.999秒/3.114秒は実測前の仮の値だった」と書いていたが、これは誤り。
@@ -57,6 +63,7 @@ from jgkg.api.models import (
     OverviewResponse,
     RecipientIdentification,
     RequestAndInitial,
+    RequestExactlyGranted,
     TypeCount,
 )
 
@@ -92,6 +99,11 @@ OVERVIEW_QUERIES: dict[str, str] = {
     # 主張そのもの)。controllerが本番と同じ索引で実測済み(モジュール
     # docstring参照)——このクエリ自体は変更しない。
     "naive_sum_vs_entry_only": "cq19-naive-sum-vs-entry-only.rq",
+    # Task 2b(追加): CQ20(第3節「要求額はどれだけ付いたか」の誤読防止)。
+    # CQ16の全体合計だけでは「ほぼ満額」と読めてしまう——事業ごとの
+    # 完全一致率(実測3〜4割)を別に出す。BINDを前置する形が実測で3.7倍
+    # 速い(controllerの実測。ヘッダ参照)——このクエリ自体は変更しない。
+    "request_exactly_granted": "cq20-request-exactly-granted.rq",
 }
 
 
@@ -301,6 +313,17 @@ def _parse_naive_sum_vs_entry_only(rows: list[Row]) -> list[NaiveSumVsEntryOnly]
     ]
 
 
+def _parse_request_exactly_granted(rows: list[Row]) -> list[RequestExactlyGranted]:
+    return [
+        RequestExactlyGranted(
+            request_fiscal_year=_int(row, "requestYear"),
+            projects_in_both_years=_int(row, "projectsInBothYears"),
+            exact_matches=_int(row, "exactMatches"),
+        )
+        for row in rows
+    ]
+
+
 def build_overview(client: KGClient, base_uri: str, queries_dir: Path) -> OverviewResponse:
     raw: dict[str, list[Row]] = {}
     for key, filename in OVERVIEW_QUERIES.items():
@@ -319,4 +342,5 @@ def build_overview(client: KGClient, base_uri: str, queries_dir: Path) -> Overvi
         government_paid=_parse_government_paid(raw["government_paid"]),
         money_through_stages=_parse_money_through_stages(raw["money_through_stages"]),
         naive_sum_vs_entry_only=_parse_naive_sum_vs_entry_only(raw["naive_sum_vs_entry_only"]),
+        request_exactly_granted=_parse_request_exactly_granted(raw["request_exactly_granted"]),
     )

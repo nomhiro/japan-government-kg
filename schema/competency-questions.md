@@ -53,13 +53,14 @@ fixtureの構築は`tests/phase1_fixture.py`(実在値の出典はそのdocstrin
 | CQ17 | 支払先はどこまで特定できているか。照合区分ごとの金額と件数(B103) | `cq17-recipient-identification.rq` |
 | CQ18 | このKGには何が何件入っているか。型ごとに(B103) | `cq18-kg-scale.rq` |
 | CQ19 | 支出の記録を素朴に全部足すといくらで、国が自ら支出した分だけだといくらか。年度ごとに(B103の追記。**第4節「予算に対し記録を全部足すと合わない」の中心の主張そのもの**) | `cq19-naive-sum-vs-entry-only.rq` |
+| CQ20 | 要求した額がそのまま付いた事業は何件か。年度ごとに(B103の追記。**第3節「要求額はどれだけ付いたか」の誤読防止**——CQ16の全体合計だけでは「ほぼ満額」と読めてしまう) | `cq20-request-exactly-granted.rq` |
 
 CQ6・CQ9・CQ10は「データの欠けと鮮度そのものを問える」ことを要求している
 (P0-3〜5と同じ設計思想。§Phase 0の説明を参照)。
 
 固有名(URI・法令ID)を直接クエリに焼き込むのはCQ1・CQ3・CQ4・CQ7・CQ8
 (「あるXの」型)。CQ2は所管府省を焼き込む(骨子どおり)。CQ5・CQ6・CQ9・CQ10・
-CQ11・CQ12・CQ13・CQ14・CQ15・CQ16・CQ17・CQ18・CQ19は一般形(全件を返し、
+CQ11・CQ12・CQ13・CQ14・CQ15・CQ16・CQ17・CQ18・CQ19・CQ20は一般形(全件を返し、
 テスト側が特定の行にフィルタして確認する)。
 
 ### CQ15〜CQ18: 裁定B103(トップページ第1層はCQの答えを表示する)
@@ -153,6 +154,36 @@ CQ12は「国が自ら支払った額」(入口ブロック+間接経費)しか�
   モック値(`docs/mockups/mock-data.js`)を完全再現したものである
   (`queries/cq/cq19-naive-sum-vs-entry-only.rq`のヘッダ参照)。
 
+### CQ20: 裁定B103の追記(Task 2b追加分)
+
+第1層第3節「いくら要求して、いくら付いたか」の点検で見つかった欠落。
+CQ16(年度ごとの合計)だけを見ると「要求の96.9〜99.4%が付いている」=
+「ほぼ満額」と読める。**だが事業ごとに見ると完全一致は3〜4割しかない**
+(controller実測: 36%/33%/35%/44%)。全体の割合と事業ごとの一致率は
+別の話であり、前者だけを出すと後者について誤読させる——モックはこの
+注意書き自体を第3節の誠実さの核として持っている。
+
+- **年度のずれの対応付けが、このCQの問いの本体である。** CQ16は
+  `nextYearRequest`(年度Yの記録が持つ翌年度の要求額)と同じ行の
+  `initialBudget`を並べるだけで対応付けをしないが、CQ20は
+  「年度Yの`nextYearRequest`と年度Y+1の`initialBudget`を同じ事業
+  (`budget:project`)で結合して比較する」ところまでをクエリ自身が行う。
+- **`projectsInBothYears`は両方の年度に記録がある事業だけを数える。**
+  片方にしか記録が無い事業(新規・廃止)を分母に入れると、「要求が無いのに
+  予算が付いた」ように見えてしまう。
+- **性能: `BIND`を第2パターンの前に置く。** 素朴な後置`FILTER(?nextYear =
+  ?requestYear + 1)`は本番索引で13.362秒、`BIND(?requestYear + 1 AS
+  ?nextYear)`を前置すると3.617秒(3.7倍速)で答えは同一だった
+  (controller実測。後置FILTERはJenaに交差積を作らせてから捨てさせる)。
+  起動時に1回払う費用(裁定B103)なので、この差が設計に効く。
+- **既知の限界(fixture)**: fixtureで「両方の年度に記録がある事業」は
+  PROJECT_CORE(CQ14/CQ16と同じ事業)1件だけで、たまたま完全一致
+  (2024年度要求100,000,000円=2025年度当初100,000,000円)である。
+  **不一致の事業がfixtureに無い**ため、`SUM(IF(?req = ?nextInitial, 1,
+  0))`を`1`に変える変異(全件を一致として数える)を、既存のfixtureに対する
+  テストは検出できない(実際に壊して確認した。`tests/test_competency_
+  questions_phase1.py`の該当テストdocstring・task-2b-report.md参照)。
+
 ### 答えの例(fixtureに対して実行した結果)
 
 | ID | 答えの例 |
@@ -176,6 +207,7 @@ CQ12は「国が自ら支払った額」(入口ブロック+間接経費)しか�
 | CQ17 | resolved=9,525,000円(7件)・unresolved=500,000円(1件)・bundled=200,000円(1件)・sentinel_or_nonexistent_houjin_bangou=100,000円(1件) |
 | CQ18 | GovernmentOrgan=40・Ministry=40・Expenditure=10・BudgetProject=5・Law=4・UnresolvedReference=3・LawRevision=3・ExpenditureBlock=3・AnnualBudget=2・Organization=1・AbolishedGovernmentOrgan=1・IndirectCost=1 |
 | CQ19 | 2025年度: naiveSum=2,500,000円(ブロックA+B+C)/entryOnly=1,000,000円(ブロックAのみ)/blockCount=3。**CQ12(1,007,000円=entryOnly+間接経費)とは別の値**である |
+| CQ20 | 2024年度: projectsInBothYears=1・exactMatches=1(PROJECT_COREの要求100,000,000円=2025年度当初100,000,000円)。2025年度は2026年度の記録が無いため現れない |
 
 ### 実在値の根拠(B-S3。CQ1/CQ7/CQ8/CQ9で使う法令アンカー)
 

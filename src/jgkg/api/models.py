@@ -513,6 +513,22 @@ class RequestAndInitial(_Envelope):
     record_count: int
 
 
+class RequestExactlyGranted(_Envelope):
+    """CQ20の1行。**要求額がそのまま付いた事業の件数。**
+
+    `exact_matches / projects_in_both_years`が「事業ごとに見た一致率」で、
+    実データでは3〜4割である。**CQ16の「全体では96.9〜99.4%」と並べて
+    初めて正しく読める** ——全体の割合だけを出すと「ほぼ満額」と誤読される。
+
+    `projects_in_both_years`は**両方の年度に存在する事業だけ**の件数
+    (新規・廃止事業は分母から落ちる。CQ20のヘッダ参照)。
+    """
+
+    request_fiscal_year: int
+    projects_in_both_years: int
+    exact_matches: int
+
+
 class RecipientIdentification(_Envelope):
     """CQ17の1行。照合区分ごとの金額と件数。
 
@@ -585,3 +601,4 @@ class OverviewResponse(_Envelope):
     government_paid: list[GovernmentPaidTotal]
     money_through_stages: list[MoneyThroughStage]
     naive_sum_vs_entry_only: list[NaiveSumVsEntryOnly]
+    request_exactly_granted: list[RequestExactlyGranted]

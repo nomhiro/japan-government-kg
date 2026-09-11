@@ -1,0 +1,37 @@
+# CQ20: 要求した額がそのまま付いた事業は何件か。年度ごとに(裁定B103の追記)
+#
+# **なぜこの問いが要るか。** CQ16(年度ごとの合計)だけを見ると
+# 「要求の96.9〜99.4%が付いている」=「ほぼ満額」と読める。
+# **だが事業ごとに見ると完全一致は3〜4割しかない**(実測: 36%/33%/35%/44%)。
+# 全体の割合と事業ごとの一致率はまったく別の話であり、
+# **前者だけを出すと後者について誤読させる。**
+#
+# **年度のずれ**: `nextYearRequest`は「年度Yの記録が持つ翌年度の要求額」なので、
+# 比べる相手は**年度Y+1の`initialBudget`**である(CQ16のヘッダ参照)。
+# CQ16は対応付けをしないが、**このCQは対応付けが問いの本体**なのでここで行う。
+#
+# **`projectsInBothYears`は「両方の年度に存在する事業」だけを数える。**
+# 片方にしか無い事業(新規・廃止)は分母から落ちる ——
+# 落とさないと「要求が無いのに予算が付いた」ように見える。
+#
+# **`BIND`を第2パターンの前に置くこと(実測で3.7倍速い)。**
+# `FILTER(?nextYear = ?requestYear + 1)`を後置する形だと**13.362秒**、
+# `BIND(?requestYear + 1 AS ?nextYear)`を前置すると**3.617秒**で、
+# 答えは同一だった。後者はJenaが索引で引けるが、前者は交差積を作って
+# から捨てるためである。**起動時に1回払う費用なので、この差は効く**
+# (裁定B103: `/overview`は起動時に全CQを走らせる)。
+PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
+SELECT ?requestYear
+       (COUNT(?project) AS ?projectsInBothYears)
+       (SUM(IF(?req = ?nextInitial, 1, 0)) AS ?exactMatches)
+WHERE {
+  ?a budget:project ?project ;
+     budget:budgetFiscalYear ?requestYear ;
+     budget:nextYearRequest ?req .
+  BIND(?requestYear + 1 AS ?nextYear)
+  ?b budget:project ?project ;
+     budget:budgetFiscalYear ?nextYear ;
+     budget:initialBudget ?nextInitial .
+}
+GROUP BY ?requestYear
+ORDER BY ?requestYear
