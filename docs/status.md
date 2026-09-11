@@ -435,6 +435,33 @@ CRLFを書き戻す / コンテナの`uv sync`がマウントした`.venv`を上
 なければ意味を持たない。** コメントに「同じ基準」と書いてあっても、
 書いてあることが実現されているとは限らない。
 
+### 資金の流れと予算履歴を本番に載せた(2026-09-11。裁定B101/B102)
+
+**公開財としての配布と、本番の配信の両方を更新した。**
+
+| もの | 値 |
+|---|---|
+| GitHub Releases | [`2026-09-11-flow-and-history`](https://github.com/nomhiro/japan-government-kg/releases/tag/2026-09-11-flow-and-history)(Latest)。`kg.nq.gz` 23.9MB・`tdb2.tar.gz` 74.6MB・`manifest.json` |
+| 本番ACAのFuseki | `jgkg-serve-fuseki:2026-09-11-flow-and-history`(**1,438,620トリプル**。旧884,052) |
+| 本番ACAのAPI | `jgkg-api:2026-09-11-flow-and-history-api2`(裁定B102の修正版) |
+| 配備 | `provisioningState: Succeeded` / `runningStatus: Running`(2回とも確認) |
+| `minReplicas`/`maxReplicas` | 1 / 1(保持。テンプレート既定は0なので明示した) |
+
+**push前に確かめたこと**(ローカルの配信イメージに対して):
+イメージ内manifestの宣言(`triple_count: 1438620`)と`COUNT(*)`の実測が一致。
+`smoke-test-api.py`の5経路通過。**このリリースの本題であるCQ3本が非0**
+(CQ12 = 126,911,742,219,947円 —— 記録済みの値と一致)。
+**スモークテストは新クラスを見ないので、CQを別に流した。**
+
+**本番で確かめたこと**: 新クラスが`/entity/`で引ける
+(`ExpenditureBlock`は`type`・`label`・出典付き)。
+**恒等式(当初+補正+繰越+予備費=歳出予算現額)が本番の応答そのもので差0。**
+公開サイト→APIの経路も200・CORS許可。
+
+**`/chat`を初めて有効にした。** それまでの本番にはチャット用envが無く
+503を返していた。費用は裁定B92の`maxReplicas=1`で上限付き。
+**有効にした直後に裁定B102の欠陥が出て、その場で直して再配備した。**
+
 ### 取れると分かっているが未取得のファイル(2026-09-11。HEADのみで確認)
 
 | ファイル | サイズ | これで何ができるか |
