@@ -1425,9 +1425,12 @@ svg.graph.dragging { cursor: grabbing; }
         'markerHeight="6" orient="auto-start-reverse">' +
         '<path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>' +
         "</svg></figure>" +
-        '<p class="ov-sub">この図は<b>まだ本番では描けません</b>。段の情報' +
-        "（<code>5-2 支出先_支出ブロックのつながり</code>）はレイクに取得済みですが、" +
-        "ナレッジグラフ本体にまだ取り込んでいません。</p>";
+        '<p class="ov-sub">段の情報（<code>5-2 支出先_支出ブロックのつながり</code>）は' +
+        "<b>ナレッジグラフ本体に取り込み済み</b>です（裁定B97）——" +
+        "<code>budget:ExpenditureBlock</code> と <code>budget:paidByGovernment</code>/" +
+        "<code>budget:fundedBy</code> として入っており、上の額はKGへのSPARQL（CQ12）が" +
+        "返した値と一致します。<b>この図の描画だけが本番のアプリに未実装</b>です" +
+        "（グラフ画面ではブロックがノードとして出ます——「つながりを辿る」タブで見られます）。</p>";
 
       // 予算と支出を並べてはいけない実証(裁定B96の原則を維持する根拠)
       var MM = SP.mismatchExample;
