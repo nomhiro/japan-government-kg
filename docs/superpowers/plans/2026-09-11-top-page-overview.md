@@ -393,19 +393,38 @@ class RequestAndInitial(_Envelope):
 
 
 class RecipientIdentification(_Envelope):
-    """CQ17の1行。照合区分ごとの金額と件数。"""
+    """CQ17の1行。照合区分ごとの金額と件数。
+
+    **`label`を持たない。表示名はAPIからは出せない。**
+    `?category`は型なしの文字列リテラル(`resolved`等)であり、その日本語の
+    表示名(裁定B88の`dcterms:title @ja`)は**トリプルストアに入っていない**
+    ——`schema/generated/*.owl.ttl`はAPIイメージの`/chat`用の静的ファイルで、
+    名前付きグラフはソース別のデータグラフだけである。SPARQLで
+    `?category dcterms:title ?label`を引くと**0件**になる
+    (`queries/cq/cq17-recipient-identification.rq`のヘッダに実測と理由がある)。
+
+    表示名はフロントエンドが`labels.ts`の
+    `enumValueLabel("recipientMatchCategory", category)`で引く
+    ——ビルド時に書き出した`labels.json`の`enumValues`が出所である。
+    """
 
     category: str
-    label: str | None
     total_amount: int
     expenditure_count: int
 
 
 class TypeCount(_Envelope):
-    """CQ18の1行。"""
+    """CQ18の1行。
+
+    **`label`を持たない**(`RecipientIdentification`と同じ理由)。
+    型の表示名はフロントエンドが`labels.ts`の`typeLabel(localName)`で引く
+    (`labels.json`の`types`。18件)。
+
+    `type`は完全IRIで返す。ローカル名(`#`の後ろ)への切り出しは
+    **表示側で行う** ——`labels.ts`のキーがローカル名だからである。
+    """
 
     type: str
-    label: str | None
     instance_count: int
 
 
@@ -872,8 +891,15 @@ CQ12の値(実データで126,911,742,219,947円)。
 
 - [ ] **Step 3: 「支払先はどこまで特定できているか」を出す**
 
-CQ17の4区分。区分の表示名は`frontend/src/generated/labels.json`から取る
-(`labels.ts`に既存の仕組みがある。**手で対応表を書かない**)。
+CQ17の4区分。**区分の表示名は`labels.ts`の
+`enumValueLabel("recipientMatchCategory", category)`で引く**
+(実在する関数。`frontend/src/labels.ts:53`)。**手で対応表を書かない。**
+APIは`label`を返さない——理由はTask 2の`RecipientIdentification`の
+docstringにある(SPARQLでは辿れない)。
+
+型の表示名が要るところ(CQ18を使う「規模」の節)は`typeLabel(localName)`
+(`frontend/src/labels.ts:34`)を使う。**`type`は完全IRIで返るので、
+ローカル名への切り出しは表示側で行う。**
 
 - [ ] **Step 4: テスト・実ブラウザ確認・commit**
 
