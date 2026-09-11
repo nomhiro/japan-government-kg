@@ -37,6 +37,13 @@
         "description": "デプロイするイメージのタグ。**既定値を持たせない(:latestを既定にしない)**——D-6b-1がOCIラベル(org.opencontainers.image.revision・com.jgkg.kg.release-tag)に刻む追跡可能性を、配備定義の側でも壊さないため。scripts/build-serve-images.shが使ったのと同じ値をここに渡す。"
       }
     },
+    "apiImageTag": {
+      "type": "string",
+      "defaultValue": "[parameters('imageTag')]",
+      "metadata": {
+        "description": "APIイメージのタグ。既定は imageTag と同じ —— 通常はKGとAPIを同じタグで一緒に動かす。**KGを作り直さずにAPIだけ差し替えたいとき**にここを別の値にする(裁定B102: オントロジーの生成物をイメージに焼く修正で必要になった)。押し済みのタグを上書きせずに済ませるための逃げ道であり、このプロジェクトの同一性の規律(manifestのsha256・git_commit)と同じ趣旨である。"
+      }
+    },
     "minReplicas": {
       "type": "int",
       "defaultValue": 0,
@@ -95,7 +102,7 @@
   "variables": {
     "acrLoginServer": "[format('{0}.azurecr.io', parameters('acrName'))]",
     "fusekiImage": "[format('{0}/jgkg-serve-fuseki:{1}', variables('acrLoginServer'), parameters('imageTag'))]",
-    "apiImage": "[format('{0}/jgkg-api:{1}', variables('acrLoginServer'), parameters('imageTag'))]"
+    "apiImage": "[format('{0}/jgkg-api:{1}', variables('acrLoginServer'), parameters('apiImageTag'))]"
   },
   "resources": [
     {

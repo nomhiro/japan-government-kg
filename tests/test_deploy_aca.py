@@ -101,12 +101,30 @@ def test_image_tag_is_not_hardcoded_to_latest() -> None:
     """
     doc = _load()
     assert "defaultValue" not in doc["parameters"]["imageTag"]
-    for var_name in ("fusekiImage", "apiImage"):
+    # **どのタグパラメータを参照するかは変数ごとに違う(裁定B102)。**
+    # `apiImageTag` を足して、KGを作り直さずにAPIだけ差し替えられるように
+    # した。守るべき性質は「タグがパラメータ由来であること」なので、
+    # 変数ごとに**期待するパラメータ名**を明示して固定する
+    # (どれでもよい、にすると `latest` 固定を見逃す余地が戻る)。
+    expected_tag_parameter = {
+        "fusekiImage": "imageTag",
+        "apiImage": "apiImageTag",
+    }
+    assert set(expected_tag_parameter) == {"fusekiImage", "apiImage"}, (
+        "イメージ変数が増減したら、この期待表も直すこと"
+    )
+    for var_name, tag_parameter in expected_tag_parameter.items():
         expr = doc["variables"][var_name]
-        assert "parameters('imageTag')" in expr, (
-            f"variables.{var_name} が imageTag パラメータを参照していない: {expr}"
+        assert f"parameters('{tag_parameter}')" in expr, (
+            f"variables.{var_name} が {tag_parameter} パラメータを参照していない: {expr}"
         )
         assert ":latest" not in expr
+    # `apiImageTag` の既定値は**タグの literal ではなく imageTag からの導出**で
+    # あること(既定で今までと同じ挙動になり、かつ特定のタグに固定されない)
+    api_tag_default = doc["parameters"]["apiImageTag"]["defaultValue"]
+    assert api_tag_default == "[parameters('imageTag')]", (
+        f"apiImageTag の既定値が imageTag からの導出になっていない: {api_tag_default}"
+    )
 
 
 def test_fuseki_is_not_reachable_from_ingress() -> None:
