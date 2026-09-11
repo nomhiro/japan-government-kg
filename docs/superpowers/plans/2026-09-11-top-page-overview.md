@@ -69,7 +69,7 @@
 | `tests/test_api_overview.py` | 新規。`/overview`の内容と、CQ経由であることのspy検査 |
 | `frontend/src/api/client.ts` | `fetchOverview()` |
 | `frontend/src/views/overview.ts` | 新規。第1層の描画 |
-| `frontend/src/views/overview.test.ts` | 新規。整形と組み立ての単体テスト |
+| ~~`frontend/src/views/overview.test.ts`~~ | **作らない**(vitestにDOM環境が無い)。純関数を`format.test.ts`等でテストし、ビューは実ブラウザで確認する |
 | `frontend/src/router.ts` | `#/`(search)に第1層を載せる |
 
 ---
@@ -903,6 +903,35 @@ uv run pytest -q
 ---
 
 ## Task 3: 第1層の骨格と「規模」「府省ごとの予算額」「5年分の予算と執行」
+
+> **controller追記(2026-09-12): テストの置き方はこのリポジトリの作法に合わせる。
+> 当初の計画は`views/overview.test.ts`を作ると書いていたが、それはできない。**
+>
+> **vitestにDOM環境が無い**(実測: `package.json`のdevDependenciesに
+> jsdom/happy-domが無く、`vite.config.ts`にも`test`設定が無い)。
+> つまりテストの中で`document`は使えない。
+>
+> **このリポジトリの既存の作法(実測)**:
+> - テストがあるのは**純モジュール**だけ ——`format.test.ts`・
+>   `graph-colors.test.ts`・`graph-theme.test.ts`・`labels.test.ts`・
+>   `views/graph-merge.test.ts`
+> - `views/graph-merge.ts`は`document.`/`window.`の参照が**0件**。
+>   **ビューから抽出した純関数**である
+> - `graph-theme.test.ts`は**偽のstyleオブジェクトを注入**する
+>   (`{ getPropertyValue: (name) => ... }`)。`getComputedStyle`に触らない
+>   ——**モジュールはインターフェースを受け取り、グローバルを見ない**
+> - **ビュー本体(DOMを書く部分)は実ブラウザで確認する**(裁定B93:
+>   「描画された」は「動く」ではない。押せるものを実際に押す)
+>
+> **したがってこうする**:
+> - **純関数に切り出してテストする**: 金額の整形(`format.ts`)、
+>   `sources`からCQ番号の導出、目盛り切替の注記文の組み立て、
+>   `?y`と`?y+1`の対応付け(Task 4+5)
+> - **DOMを書く`overview.ts`にはテストを置かない。** 代わりに実ブラウザで
+>   確認し、**何を押して何が起きたかを報告に書く**
+> - **jsdomを入れない。** テストのためだけに依存を増やす判断は、
+>   この計画の範囲では取らない(原則1。必要になったら別途判断する)
+
 
 **Files:**
 - Create: `frontend/src/views/overview.ts`
