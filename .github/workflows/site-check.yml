@@ -59,10 +59,35 @@ jobs:
         run: npm ci
         working-directory: frontend
 
+      - name: "Pass VITE_API_BASE to the build, exactly as the deploy job does (裁定B101)"
+        # **これを落としていたために、この検査は2026-09-05から毎日
+        # 偽陽性で落ちていた。**
+        #
+        # `ci.yml` の deploy ジョブは `vars.VITE_API_BASE` が設定されていれば
+        # それをビルドに渡す。その値は**バンドルに埋め込まれる**ので、
+        # 渡さずにビルドした成果物は別のバイト列・別のハッシュになる
+        # (実測: 渡さない=`index-Bwel7FMh.js` / 渡す=`index-DfOLIwyo.js`。
+        #  後者は本番の配信物と**sha256が一致**した)。
+        #
+        # つまりここで渡さないと、`verify-site.py` の
+        #   - 「配信物とsha256が一致」
+        #   - 「/ が参照する資産が、いまビルドした成果物に存在する(陳腐化検出)」
+        # の2つが**本番が最新であっても必ず落ちる。** 比較の基準を
+        # deploy と揃えることが、この検査が意味を持つ前提である。
+        #
+        # 空文字列を `env:` に直接書かない理由は `ci.yml` の同名ステップに
+        # 詳しく書いてある(`??` が空文字列ではフォールバックしないため)。
+        if: vars.VITE_API_BASE != ''
+        run: echo "VITE_API_BASE=${{ vars.VITE_API_BASE }}" >> "$GITHUB_ENV"
+
       - name: Build the static site (comparison baseline for sha256 checks)
         # verify-site.py はビルド成果物(site/)と配信済みの内容をsha256で
         # 比較する(裁定B63)。ここでmainの現在のコミットから同じビルドを
         # 再現することで、ci.ymlのdeployジョブと同じ基準で比較できる。
+        #
+        # **「同じ基準」はビルド環境も含む(裁定B101)。** 直前のステップで
+        # `VITE_API_BASE` を揃えていないと、この文が言う「同じビルド」に
+        # ならない。
         run: bash scripts/build-site.sh
 
       - name: Verify the production site (read-only)
