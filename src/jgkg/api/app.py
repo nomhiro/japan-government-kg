@@ -76,6 +76,7 @@ from jgkg.api.queries import (
     get_neighborhood,
     search_entities,
 )
+from jgkg.api.readiness import wait_for_triplestore_ready
 from jgkg.api.warmup import warm_up
 from jgkg.config import get_settings
 
@@ -125,6 +126,20 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # **裁定B103追記3。`warm_up`/`build_overview`の前にトリプルストアの
+        # 応答を待つ(上限付き)。** ACAには同一レプリカ内のコンテナ起動順序を
+        # 指定する仕組みが無く、Fusekiが先に応答できる前提が崩れると
+        # 両方が接続エラーで失敗し、再試行が無いまま`/overview`が永久に503に
+        # なる(実測。`readiness.py`のモジュールdocstring参照)。ここでは
+        # 戻り値を分岐に使わない——上限に達しても、後続の`warm_up`/
+        # `build_overview`は今までどおり自分の`try`/`except`で失敗し503に
+        # 落ちる(このモジュールは「待つ」ことだけをする。裁定B84の族:
+        # 「まだ準備できていない」と「集約が失敗した」の2つの503を作らない)。
+        wait_for_triplestore_ready(
+            client,
+            settings.overview_readiness_timeout_seconds,
+            settings.overview_readiness_poll_interval_seconds,
+        )
         # 裁定B55対策。失敗しても起動は続ける(warmup.pyのdocstring参照)
         warm_up(client, resolved_base_uri)
         # **第1層の集約を起動時に1回だけ計算する(裁定B103)。**

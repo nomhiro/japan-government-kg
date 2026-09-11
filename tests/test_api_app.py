@@ -28,6 +28,8 @@ Windows限定にしてあり**、Linux(CIの実行環境)では以下のフィ�
 限定している。
 """
 
+import time
+
 import conftest
 import phase1_fixture as fx
 import pytest
@@ -189,15 +191,103 @@ class _AlwaysFailsClient:
         raise RuntimeError("SPARQLエンドポイントに接続できない(テスト用の故意の失敗)")
 
 
-def test_get_overview_returns_503_when_startup_aggregation_failed():
+def test_get_overview_returns_503_when_startup_aggregation_failed(monkeypatch):
     """壊し確認: `build_overview`が起動時に失敗しても起動自体は続き
     (`warm_up`と同じ方針)、`/overview`は503を返す——`/chat`が
     `chat_model`未設定のときに503を返すのと同じ作法。
+
+    **裁定B103追記3を足した後、この既定タイムアウト(30秒)のまま実行すると
+    テストが30秒かかる**(`_AlwaysFailsClient`は常に失敗するため
+    `wait_for_triplestore_ready`が上限まで再試行し続ける)——
+    `overview_readiness_timeout_seconds`をテスト用に短くする。
     """
+    monkeypatch.setenv("JGKG_OVERVIEW_READINESS_TIMEOUT_SECONDS", "0.05")
+    monkeypatch.setenv("JGKG_OVERVIEW_READINESS_POLL_INTERVAL_SECONDS", "0.01")
+    from jgkg.config import get_settings
+    get_settings.cache_clear()
+
     app = create_app(_AlwaysFailsClient(), base_uri=BASE)
     with TestClient(app) as tc:
         resp = tc.get("/overview")
     assert resp.status_code == 503, resp.text
+
+
+# =============================================================================
+# 裁定B103追記3: lifespanがトリプルストアの応答を待ってから集約すること
+# =============================================================================
+
+
+class _EventuallyRespondsClient:
+    """最初の`fail_times`回は接続エラー、それ以降は`inner`に委ねるスパイ。
+
+    **実測した設計欠陥の再演**(`docs/decision-log.md`「配備条件で測ったら
+    /overviewが永久に503になる設計欠陥が出た」参照): Fusekiが接続を
+    受ける前にAPIの`lifespan`が走った状態を、`RdflibKGClient`を包んで
+    最初の数回だけ`httpx.ConnectError`相当の例外を投げることで再現する。
+    """
+
+    def __init__(self, inner, *, fail_times: int):
+        self._inner = inner
+        self._fail_times = fail_times
+        self.queries: list[str] = []
+
+    def query(self, sparql: str):
+        self.queries.append(sparql)
+        if len(self.queries) <= self._fail_times:
+            raise ConnectionRefusedError(
+                "Fusekiがまだ接続を受けない(テスト用の故意の失敗)"
+            )
+        return self._inner.query(sparql)
+
+
+def test_overview_succeeds_after_the_triplestore_becomes_ready(kg, monkeypatch):
+    """**待ちが効いていること**: Fusekiが最初は応答しなくても、
+    `wait_for_triplestore_ready`が再試行し、最終的に`warm_up`・
+    `build_overview`が両方成功して`/overview`が200を返す。
+
+    **壊し確認(team-lead依頼)**: `app.py`の`lifespan`から
+    `wait_for_triplestore_ready(...)`の呼び出しを外すと、このテストは
+    落ちる——`_EventuallyRespondsClient`の最初の3回の失敗を
+    `warm_up`(1回)と`build_overview`の最初のクエリ(1回)が食ってしまい、
+    どちらも(再試行が無いので)そのまま失敗し、`overview`が`None`のまま
+    `/overview`は503になる(task-2b-report.md参照)。
+    """
+    monkeypatch.setenv("JGKG_OVERVIEW_READINESS_TIMEOUT_SECONDS", "5")
+    monkeypatch.setenv("JGKG_OVERVIEW_READINESS_POLL_INTERVAL_SECONDS", "0.01")
+    from jgkg.config import get_settings
+    get_settings.cache_clear()
+
+    client = _EventuallyRespondsClient(RdflibKGClient(kg), fail_times=3)
+    app = create_app(client, base_uri=BASE)
+    with TestClient(app) as tc:
+        resp = tc.get("/overview")
+    assert resp.status_code == 200, resp.text
+    assert len(client.queries) > 3, (
+        f"待ちが効いていない(再試行せず1回で諦めた疑い): {len(client.queries)}回"
+    )
+
+
+def test_overview_returns_503_within_bounded_time_when_the_triplestore_never_becomes_ready(
+    monkeypatch,
+):
+    """**上限を超えたら諦めること**: Fusekiが一度も応答しない場合、
+    上限(短くしたテスト用の値)で待ちを諦め、今と同じ挙動
+    (`overview=None`→503)に落ちる——**無限に待たない**ことを壁時計で確認する。
+    """
+    monkeypatch.setenv("JGKG_OVERVIEW_READINESS_TIMEOUT_SECONDS", "0.05")
+    monkeypatch.setenv("JGKG_OVERVIEW_READINESS_POLL_INTERVAL_SECONDS", "0.01")
+    from jgkg.config import get_settings
+    get_settings.cache_clear()
+
+    app = create_app(_AlwaysFailsClient(), base_uri=BASE)
+    started = time.monotonic()
+    with TestClient(app) as tc:
+        resp = tc.get("/overview")
+    wall_clock = time.monotonic() - started
+    assert resp.status_code == 503, resp.text
+    assert wall_clock < 5.0, (
+        f"上限(0.05秒)を大幅に超えている——諦めずに待ち続けている疑い: {wall_clock:.3f}秒"
+    )
 
 
 def test_get_overview_returns_503_not_500_when_lifespan_has_not_run(app_and_spy):
