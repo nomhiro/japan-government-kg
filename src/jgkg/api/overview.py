@@ -19,14 +19,24 @@
 また`minReplicas=1`/`maxReplicas=1`でFusekiとAPIが同じレプリカを共有して
 おり、Fuseki側にクエリのタイムアウトがまだ無い(既知の未処理事項)。
 
-**訂正**: このモジュールの計画段階の草稿はこの数字を3.999秒/3.114秒と
-書いていたが、これは実測前の仮の値だった。team-leadが本番と同じ索引で
-実測した値(7.282秒/2.772秒)に置き換える——このプロジェクトが繰り返し
-扱う「測っていない数字を書く」欠陥をここで再発させないための訂正。
+**訂正(修正ラウンド1。レビューで誤診と指摘された)**: このdocstringの前の版は
+「3.999秒/3.114秒は実測前の仮の値だった」と書いていたが、これは誤り。
+`docs/decision-log.md`(裁定B103)を読むと、3.999秒/3.114秒も**実測値**である
+——ただし**この設計を決める前に書いた別の5本のクエリ**を測ったものであり、
+CQ15の修正を経て確定した**この7本**とは違う集合だった。実際の誤りは
+「測っていない数字を書いた」ではなく「**別のクエリ集合の実測値**を、
+この7本の費用として引いた」である。診断を間違えたまま「測っていない数字を
+書く欠陥の再発防止」と書くと、読んだ人が学ぶべき教訓
+(「引く測定値が、記述している対象の測定値かを確かめる」)ではなく、
+無関係な教訓(「測らずに書くな」)を学んでしまう——このプロジェクトが
+繰り返し扱う「文書が実装/実測と異なる主張をする」欠陥型そのものであり、
+ここで訂正する。この7本自体の実測値(7.282秒/2.772秒。コンテナ再起動直後/
+2周目)は正しい。
 """
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 from jgkg.api.kgclient import KGClient, Row, Term
@@ -43,18 +53,20 @@ from jgkg.api.models import (
 
 # **`_id_path`は`queries.py`のプライベート関数だが、改名せずそのまま使う
 # (team-leadから判断を委ねられた点。報告に理由を書く)。** `queries.py`の
-# 既存5箇所(`_id_path`と検索して分かる: search_entities・get_entity_detail・
-# _unknown_entity_ref・_hydrate_entity_refs・_entity_exists)のうち3箇所は
+# 既存の呼び出し箇所(`_id_path`と検索して分かる: search_entities・
+# get_entity_detail・_unknown_entity_ref・_hydrate_entity_refs・
+# _entity_exists)のうち、`get_entity_detail`・`_entity_exists`は
 # **`id_path`という名前のローカル変数/パラメータを既に持つ**
-# (`get_entity_detail(client, base_uri, id_path, limit)`・
-# `_entity_exists(client, base_uri, id_path)`)。この関数を`id_path`という
-# 公開名に改名すると、そのローカル変数がモジュール関数を覆い隠し
-# (`id_path=id_path(base_uri, entity_uri)`は「strはcallableではない」で
-# 落ちる)、既存3エンドポイントを壊す。**複製を作らない**という制約の下では、
-# 衝突しない別の公開名(例: `derive_id_path`)へ改名して5箇所を直すか、
-# このままプライベート名を1箇所からimportするかの二択になる——後者は
-# 挙動を一切変えない最小の変更であり、既に安定している`/search`・
-# `/entity/{id}`・`/neighborhood/{id}`・`/path`に触れない。
+# (`get_entity_detail(client, base_uri, id_path, limit)`)。この関数を
+# `id_path`という公開名に改名すると、そのローカル変数がモジュール関数を
+# 覆い隠し(`id_path=id_path(base_uri, entity_uri)`は「strはcallableでは
+# ない」で落ちる)、既存の安定したエンドポイントを壊す。**複製を作らない**
+# という制約の下では、衝突しない別の公開名(例: `derive_id_path`)へ改名して
+# 呼び出し箇所全てを直すか、このままプライベート名を1箇所からimportするかの
+# 二択になる——後者は挙動を一切変えない最小の変更であり、既に安定している
+# `/search`・`/entity/{id}`・`/neighborhood/{id}`・`/path`に触れない。
+# **呼び出し箇所の個数はここに書かない**(`queries.py`の`_id_path`docstring
+# 参照。件数を書けば`MinistryBudget`のように増えたときまた古くなる)。
 from jgkg.api.queries import _id_path
 
 #: 応答の項目 → CQファイル名。**ここが数字の出所の一覧である。**
@@ -74,11 +86,28 @@ def _int(row: Row, name: str) -> int:
     """束縛を整数で読む。**未束縛は0ではなく例外にする** ——
     集約の列が欠けているのは実装の誤りであり、0として通すと
     「予算0円」が画面に出る(このプロジェクトの再発欠陥: 欠損を
-    既定値に落として静かに間違える)。"""
+    既定値に落として静かに間違える)。
+
+    **`float`を経由しない(レビュー要修正12)。** SPARQLの`SUM`/`COUNT`の
+    結果は`"45013000.0"`のような小数表記で来ることがある(裁定B99実測)。
+    `int(term.value)`で素直に通る整数表記はそのまま使い、それが失敗する
+    表記だけ`Decimal`で受けて整数であることを確かめてから`int`にする——
+    `float`より丸めの余地が無い。
+    """
     term: Term | None = row.get(name)
     if term is None:
         raise ValueError(f"{name} が束縛されていない: {sorted(row)}")
-    return int(float(term.value))
+    try:
+        return int(term.value)
+    except ValueError:
+        pass
+    try:
+        decimal_value = Decimal(term.value)
+    except Exception as exc:
+        raise ValueError(f"{name} が整数として読めない: {term.value!r}") from exc
+    if decimal_value != decimal_value.to_integral_value():
+        raise ValueError(f"{name} が整数ではない: {term.value!r}")
+    return int(decimal_value)
 
 
 def _str(row: Row, name: str) -> str:
@@ -100,23 +129,47 @@ def _text(row: Row, name: str) -> str | None:
 
 
 def _bool(row: Row, name: str) -> bool:
-    """束縛を真偽値で読む。**未束縛はFalseではなく例外にする**(`_int`と同じ理由)。
+    """束縛を真偽値で読む。**未束縛も、解釈できない値も、Falseに落とさず
+    例外にする**(`_int`と同じ理由)。
 
-    rdflib/リモートJSONのどちらでも`xsd:boolean`の字句形は`"true"`/`"false"`
-    (rdflibは正規化した字句形を返す)。
+    **訂正(レビュー要修正4)。** 前の版は`term.value == "true"`だけを見て
+    おり、それ以外の字句形はすべて黙って`False`になっていた。`xsd:boolean`
+    の正当な字句形は`"true"`/`"false"`だけでなく`"1"`/`"0"`もある
+    (XML Schema Datatypes)。`?paidByGovernment`はデータから直接束縛される
+    値であり、rdflibが返す字句形が正規化済みとは限らない
+    (`kgclient._rdflib_term_to_term`が正規化するのはPythonの`bool`から
+    作った`Literal`であって、TTLに`"1"^^xsd:boolean`と書かれていれば
+    `"1"`がそのまま来る)。**`"1"`を黙って`False`にすると、入口ブロックが
+    入口でなくなり、CQ13の表示(通過金/入口の区別)が狂う**——このプロジェクト
+    が繰り返し扱う「欠損/解釈不能を既定値に落として静かに間違える」欠陥の
+    再発になる。
     """
     term: Term | None = row.get(name)
     if term is None:
         raise ValueError(f"{name} が束縛されていない: {sorted(row)}")
-    return term.value == "true"
+    if term.value in ("true", "1"):
+        return True
+    if term.value in ("false", "0"):
+        return False
+    raise ValueError(f"{name} の値が真偽値として解釈できない: {term.value!r}")
 
 
 def _parse_ministries(rows: list[Row], base_uri: str) -> list[MinistryBudget]:
+    """CQ15の各行を`MinistryBudget`にする。
+
+    **`?ministry`は`_text`(未束縛→None→黙って捨てる)ではなく`_str`
+    (未束縛→例外)で読む(裁定。レビュー要検討8を受けた訂正)。**
+    CQ15は`GROUP BY ?ministry ?name ?y`なので`?ministry`は常に束縛される
+    ——`OPTIONAL`なのは`?name`だけである。黙って捨てる形だと、将来CQ15の
+    形が変わって`?ministry`が本当に未束縛になったとき、CQ15のヘッダが
+    警告する「落とすと合計が静かに減る(その府省の予算が消える)」を
+    まさに`overview.py`側で再演してしまう——`_int`/`_str`/`_bool`が揃って
+    宣言した「欠損は既定値ではなく例外にする」規律に、この列だけ逆行して
+    いた。
+    """
     out: list[MinistryBudget] = []
     for row in rows:
-        iri = _text(row, "ministry")
-        if iri is None:
-            continue  # 府省が未束縛の行は集約の対象外(OPTIONALの相手ではない)
+        iri = _str(row, "ministry")
         out.append(
             MinistryBudget(
                 id=iri,
@@ -133,16 +186,18 @@ def _parse_ministries(rows: list[Row], base_uri: str) -> list[MinistryBudget]:
 def _parse_budget_and_execution(rows: list[Row]) -> list[BudgetAndExecution]:
     """CQ14の各行を`BudgetAndExecution`にする。
 
-    **`?sheetYear`は使わない(意図的な省略。気になる点として報告する)。**
-    CQ14は`?sheetYear ?budgetYear ...`の9列を返すが、`BudgetAndExecution`は
-    `budget_fiscal_year`(=`?budgetYear`)しか持たない——CQ14のヘッダが
-    警告する「将来2つのシートが同じ`budgetYear`について食い違う」ケースが
-    起きたとき、この応答だけを見る利用者は食い違いに気づけない
-    (CQの生の答えには`sheetYear`が残っているので、消えるのはこの型に
-    詰め替えた後だけである)。
+    **`sheet_year`を持つ(裁定。修正ラウンド1で追加)。** 前の版は
+    `?sheetYear`を使わず`budget_fiscal_year`(=`?budgetYear`)しか
+    詰め替えていなかった——CQ14のヘッダが警告する「将来2つのシートが
+    同じ`budgetYear`について食い違う」ケースが起きたとき、この応答だけを
+    見る利用者は食い違いに気づけなかった(CQの生の答えには`sheetYear`が
+    残っているので、消えるのはこの型に詰め替えた後だけだった)。
+    `(sheet_year, budget_fiscal_year)`の組が一意であることは
+    `tests/test_api_overview.py`が固定する。
     """
     return [
         BudgetAndExecution(
+            sheet_year=_int(row, "sheetYear"),
             budget_fiscal_year=_int(row, "budgetYear"),
             initial_budget=_int(row, "initialBudget"),
             supplementary_budget=_int(row, "supplementaryBudget"),

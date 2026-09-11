@@ -26,7 +26,7 @@
       },
       "BudgetAndExecution": {
         "additionalProperties": false,
-        "description": "CQ14の1行。ある予算年度の内訳と執行。",
+        "description": "CQ14の1行。ある予算年度の内訳と執行。\n\n**`sheet_year`(レビューシート自体の年度)を持つ(修正ラウンド1で追加)。**\n`budget_fiscal_year`(=そのシートが語る予算年度)と組で一意になる——\n将来2枚目のレビューシートが取り込まれると、同じ`budget_fiscal_year`\nについて2行が現れうる(`queries/cq/cq14-budget-and-execution-by-year.rq`\nのヘッダ参照)。この2つを組で持つことで、利用者がその2行を区別できる。",
         "properties": {
           "budget_fiscal_year": {
             "title": "Budget Fiscal Year",
@@ -52,6 +52,10 @@
             "title": "Reserve Fund",
             "type": "integer"
           },
+          "sheet_year": {
+            "title": "Sheet Year",
+            "type": "integer"
+          },
           "supplementary_budget": {
             "title": "Supplementary Budget",
             "type": "integer"
@@ -62,6 +66,7 @@
           }
         },
         "required": [
+          "sheet_year",
           "budget_fiscal_year",
           "initial_budget",
           "supplementary_budget",
@@ -1279,7 +1284,7 @@
     },
     "/overview": {
       "get": {
-        "description": "トップページ第1層(裁定B103)。起動時に1回計算した値を返すだけ\n——リクエストごとにCQを走らせない(`overview.py`のモジュール\ndocstring参照)。\n\n`app.state.overview`が`None`なら**503**を返す。`/chat`が\n`chat_model`未設定のときに503を返すのと同じ作法(このモジュール\ndocstring参照)——起動時の集約に失敗しても、他のエンドポイントの\n起動を妨げない設計の裏返しである。",
+        "description": "トップページ第1層(裁定B103)。起動時に1回計算した値を返すだけ\n——リクエストごとにCQを走らせない(`overview.py`のモジュール\ndocstring参照)。\n\n`app.state.overview`が`None`なら**503**を返す。`/chat`が\n`chat_model`未設定のときに503を返すのと同じ作法(このモジュール\ndocstring参照)——起動時の集約に失敗しても、他のエンドポイントの\n起動を妨げない設計の裏返しである。\n\n**`getattr`で守る(レビュー要修正14)。** `app.state.overview`を\n直接読むと、`lifespan`が走っていない(`with`を付けない\n`TestClient(app)`等)状態で`AttributeError`になり、意図した503\nではなく500が返る——既存テストは全て`with`を使うので今は表に\n出ないが、`getattr(app.state, \"overview\", None)`にすれば\nlifespan未実行の状態でも意図した503に収束する。",
         "operationId": "overview_overview_get",
         "responses": {
           "200": {

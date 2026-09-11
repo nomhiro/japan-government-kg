@@ -24,6 +24,7 @@ clientを作る設計にすると、温め処理だけが本物のFusekiへ接�
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -130,11 +131,23 @@ def create_app(
         # 索引が温まった後の方が速いので`warm_up`の後に呼ぶ。
         # 失敗しても起動は続ける——`/overview`が503を返すだけで、
         # 検索やエンティティ表示は影響を受けない。
+        started = time.monotonic()
         try:
             app.state.overview = build_overview(client, resolved_base_uri, resolved_queries_dir)
         except Exception:
             logger.exception("第1層の集約に失敗した。/overview は503を返す")
             app.state.overview = None
+        else:
+            # **成功時も所要時間をログに残す(裁定D-15)。** 失敗時は
+            # `logger.exception`があるのに成功時は何も出ないと、本番で
+            # 「何秒かかったか」「そもそも走ったか」が分からない——
+            # 裁定B103の設計は「起動時に1回払う」に立っており、この費用が
+            # 実際にいくらだったかを運用側が確認できる必要がある
+            # (Task 7がこれを実測する)。
+            logger.info(
+                "第1層の集約が完了した(%.3f秒。裁定B103対策)。",
+                time.monotonic() - started,
+            )
         yield
 
     app = FastAPI(title="Japan Government KG API", lifespan=lifespan)
@@ -179,8 +192,15 @@ def create_app(
         `chat_model`未設定のときに503を返すのと同じ作法(このモジュール
         docstring参照)——起動時の集約に失敗しても、他のエンドポイントの
         起動を妨げない設計の裏返しである。
+
+        **`getattr`で守る(レビュー要修正14)。** `app.state.overview`を
+        直接読むと、`lifespan`が走っていない(`with`を付けない
+        `TestClient(app)`等)状態で`AttributeError`になり、意図した503
+        ではなく500が返る——既存テストは全て`with`を使うので今は表に
+        出ないが、`getattr(app.state, "overview", None)`にすれば
+        lifespan未実行の状態でも意図した503に収束する。
         """
-        if app.state.overview is None:
+        if getattr(app.state, "overview", None) is None:
             raise HTTPException(
                 status_code=503, detail="第1層の集約に失敗した(起動時のログ参照)"
             )

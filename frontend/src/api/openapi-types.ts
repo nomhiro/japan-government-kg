@@ -72,6 +72,13 @@ export interface paths {
          *     `chat_model`未設定のときに503を返すのと同じ作法(このモジュール
          *     docstring参照)——起動時の集約に失敗しても、他のエンドポイントの
          *     起動を妨げない設計の裏返しである。
+         *
+         *     **`getattr`で守る(レビュー要修正14)。** `app.state.overview`を
+         *     直接読むと、`lifespan`が走っていない(`with`を付けない
+         *     `TestClient(app)`等)状態で`AttributeError`になり、意図した503
+         *     ではなく500が返る——既存テストは全て`with`を使うので今は表に
+         *     出ないが、`getattr(app.state, "overview", None)`にすれば
+         *     lifespan未実行の状態でも意図した503に収束する。
          */
         get: operations["overview_overview_get"];
         put?: never;
@@ -143,6 +150,12 @@ export interface components {
         /**
          * BudgetAndExecution
          * @description CQ14の1行。ある予算年度の内訳と執行。
+         *
+         *     **`sheet_year`(レビューシート自体の年度)を持つ(修正ラウンド1で追加)。**
+         *     `budget_fiscal_year`(=そのシートが語る予算年度)と組で一意になる——
+         *     将来2枚目のレビューシートが取り込まれると、同じ`budget_fiscal_year`
+         *     について2行が現れうる(`queries/cq/cq14-budget-and-execution-by-year.rq`
+         *     のヘッダ参照)。この2つを組で持つことで、利用者がその2行を区別できる。
          */
         BudgetAndExecution: {
             /** Budget Fiscal Year */
@@ -157,6 +170,8 @@ export interface components {
             project_count: number;
             /** Reserve Fund */
             reserve_fund: number;
+            /** Sheet Year */
+            sheet_year: number;
             /** Supplementary Budget */
             supplementary_budget: number;
             /** Total Budget Available */

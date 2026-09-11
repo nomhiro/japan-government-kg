@@ -41,7 +41,7 @@ COPY src ./src
 # **コンテナという別の環境を一度も見ていなかった**(再発欠陥9)。
 # `.dockerignore`は`schema/`を除外していないのでそのまま送られる。
 COPY schema/generated ./schema/generated
-# **CQファイルを焼く(裁定B103)。`/overview`が起動時に実行時に読む。**
+# **CQファイルを焼く(裁定B103)。`/overview`が実行時に読む。**
 # 裁定B102で`schema/generated`を焼き忘れて本番のチャットが壊れたのと
 # 同じ穴なので、`tests/test_api_image_contents.py`が両方を見る。
 COPY queries ./queries
@@ -55,7 +55,7 @@ ARG BUILD_DATE=""
 # (eclipse-temurin/Ubuntu由来)側のコメント参照。それでも`.description`は
 # 明示しておく(値が無いより正確な値がある方がよい)
 LABEL org.opencontainers.image.title="jgkg-api" \
-      org.opencontainers.image.description="Japan Government KGのAPI層(/search・/entity/{id}・/neighborhood/{id}・/path)" \
+      org.opencontainers.image.description="Japan Government KGのAPI層(/search・/entity/{id}・/neighborhood/{id}・/path・/overview・/chat)" \
       org.opencontainers.image.source="https://github.com/nomhiro/japan-government-kg" \
       org.opencontainers.image.revision="${GIT_COMMIT}" \
       org.opencontainers.image.created="${BUILD_DATE}" \

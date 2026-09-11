@@ -469,8 +469,12 @@ class MinistryBudget(_Envelope):
 
     id: str
     id_path: str
-    #: 表示名(`dcterms:title @ja`)。**無いことがある** ——
-    #: CQ15が`OPTIONAL`で取るため。フロントで合成しない(裁定B78/B88)。
+    #: 表示名(`skos:prefLabel`)。**無いことがある** ——
+    #: CQ15が`OPTIONAL`で取るため。フロントで合成しない
+    #: (裁定B78/B88は語彙——クラス・スロット・列挙値——の表示名の根拠であって、
+    #: この述語自体の根拠ではない。混同するとCQ15のヘッダが名指しで警告する
+    #: 誤りを再演する。修正ラウンド1でこのコメント自身がそれをやっていたので
+    #: 訂正した——レビュー要修正2)。
     label: str | None
     fiscal_year: int
     total_budget: int
@@ -478,8 +482,16 @@ class MinistryBudget(_Envelope):
 
 
 class BudgetAndExecution(_Envelope):
-    """CQ14の1行。ある予算年度の内訳と執行。"""
+    """CQ14の1行。ある予算年度の内訳と執行。
 
+    **`sheet_year`(レビューシート自体の年度)を持つ(修正ラウンド1で追加)。**
+    `budget_fiscal_year`(=そのシートが語る予算年度)と組で一意になる——
+    将来2枚目のレビューシートが取り込まれると、同じ`budget_fiscal_year`
+    について2行が現れうる(`queries/cq/cq14-budget-and-execution-by-year.rq`
+    のヘッダ参照)。この2つを組で持つことで、利用者がその2行を区別できる。
+    """
+
+    sheet_year: int
     budget_fiscal_year: int
     initial_budget: int
     supplementary_budget: int

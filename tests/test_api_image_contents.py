@@ -20,8 +20,14 @@
 **F-2(裁定B103)での拡張。** `/overview`が起動時に読む`queries_dir`
 (既定`queries/cq`)も同じ穴を踏みうる——`generated_dir`だけを固定して
 見る形のままだと、次に足された実行時ディレクトリでCOPYを忘れても
-このテストは気づかない。そのため`create_app`の**シグネチャが持つ既定値を
-全部**(`generated_dir`・`queries_dir`)コードから取り出す形に広げた。
+このテストは気づかない。そのため`create_app`**本体が持つ既定値を全部**
+(`generated_dir`・`queries_dir`)コードから取り出す形に広げた。
+
+**訂正(レビュー要検討5)。** この節は以前「`create_app`の**シグネチャ**が
+持つ既定値を全部」と書いていたが、実装は`inspect.signature`のような
+シグネチャ検査を一切行わず、`create_app`**本体**のソーステキストから
+`<param> or Path("...")`という**書き方**を正規表現で拾っている——
+書いてあることと実装が食い違っていたので直した。
 """
 
 from __future__ import annotations
@@ -43,6 +49,13 @@ _DEFAULT_RUNTIME_DIR_RE = re.compile(
 )
 
 
+#: **これらは必ず検出されているべき既知の実行時ディレクトリ**
+#: (レビュー要検討11)。正規表現の対象を狭めない(新しいディレクトリが
+#: 増えれば`found`に自動的に加わる)一般性は保ちつつ、既知のどちらかが
+#: **書き方の変化で静かに検査対象から落ちたら大声で落ちる**ようにする。
+_KNOWN_RUNTIME_DIR_PARAMS = frozenset({"generated_dir", "queries_dir"})
+
+
 def _default_runtime_dirs() -> dict[str, str]:
     """`create_app`が引数省略時に読む相対パスを**全部**コードから取り出す。
 
@@ -53,8 +66,16 @@ def _default_runtime_dirs() -> dict[str, str]:
     """
     source = _APP_PY.read_text(encoding="utf-8")
     found = dict(_DEFAULT_RUNTIME_DIR_RE.findall(source))
-    assert found, (
-        "app.py から既定の実行時ディレクトリを1つも取り出せない。"
+    # **`assert found`(1件でも通る)にしない(訂正。レビュー要検討11)。**
+    # 旧版は特定の1件を名指しで探して`assert match`していたので、それが
+    # 落ちれば大声で落ちた。今の正規表現は「何かは見つかった」だけでは
+    # 弱く、`generated_dir`側が別の書き方(`x if x is not None else
+    # Path(...)`等)に変わると、検査対象から静かに1件落ちたまま
+    # このテストは緑のままになる——既知の集合が両方見つかったことまで
+    # 固定する。
+    missing_known = _KNOWN_RUNTIME_DIR_PARAMS - set(found)
+    assert not missing_known, (
+        f"app.py から既知の実行時ディレクトリを取り出せない: {sorted(missing_known)}。"
         "`<param> or Path(\"...\")` の形が変わったなら、"
         "この検査の正規表現も直すこと(黙って通してはいけない)"
     )

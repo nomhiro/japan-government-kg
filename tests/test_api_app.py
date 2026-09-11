@@ -200,6 +200,24 @@ def test_get_overview_returns_503_when_startup_aggregation_failed():
     assert resp.status_code == 503, resp.text
 
 
+def test_get_overview_returns_503_not_500_when_lifespan_has_not_run(app_and_spy):
+    """壊し確認(レビュー要修正14): `app.state.overview`を`getattr`で守って
+    いないと、`lifespan`が走っていない状態(`with`を付けない`TestClient`)で
+    `AttributeError`から**500**になる——意図した503にならない。
+
+    既存の`/overview`テストは全て`with TestClient(app) as tc`を使うため、
+    この経路はこれまで検査されていなかった。ここでは`with`を付けずに
+    `TestClient(app)`を使い、`lifespan`のstartupを実行しないまま
+    `/overview`を叩く。
+    """
+    app, _ = app_and_spy
+    tc = TestClient(app)  # 意図的に`with`を使わない(lifespanのstartupが走らない)
+    resp = tc.get("/overview")
+    assert resp.status_code == 503, (
+        f"lifespan未実行時に意図した503ではなくなっている: {resp.status_code} {resp.text}"
+    )
+
+
 # =============================================================================
 # ルーティング(検索・エンティティ詳細)
 # =============================================================================
