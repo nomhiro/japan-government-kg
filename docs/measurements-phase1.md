@@ -3025,3 +3025,94 @@ GROUP BY ?b ?ba  →  ?ba != SUM(?ea) の件数 = 0
 SHACL制約を後から足すと1,416件が壊れる。** 恒等式は負値を含んだまま
 差0円で成立する。実装者が事業828のFY2024(予備費等 -400,000円)を
 実データのままfixtureに入れており、テストで押さえてある。
+
+## 裁定B97/B99: 実エンドポイント(Jena/TDB2)でCQ14本を実行した(**残っていた穴を閉じた**)
+
+裁定B97・B99の時点では「rdflibで答えられること」しか確認できておらず、
+`run_cq.py`のdocstringが言う**(b) Fuseki(TDB2)でも同じクエリが動くこと**が
+未確認だった(rdflibとJenaのSPARQL実装は別物)。Dockerを起動して埋めた。
+
+### ビルド(2026-09-11)
+
+```
+scripts/build.sh --source houjin-bangou=2026-08-23 --source egov-law=2026-08-25 \
+  --source egov-law-data=2026-08-26 --source rs-system=2026-09-11 \
+  --include-all-corporations --corporations-scope payees \
+  --previous-release 2026-08-28-d2-recipient-category-v2 \
+  --out-dir data/artifact/2026-09-11-flow-and-history
+```
+
+| | 値 |
+|---|---|
+| release | `2026-09-11-flow-and-history` |
+| **triple_count** | **1,438,620**(前リリース884,052から+554,568) |
+| jena_version | 6.2.0 |
+| 総所要 | 504秒(鮮度1/スキーマ生成35/パイプライン389/tdbloader75/検査1/manifest3) |
+| kg.nq | 309,781,925 バイト |
+| tdb2.tar.gz | 74,611,429 バイト |
+
+**rs-systemの取得日は2026-09-11。** 5-2を含む完全なスナップショットを
+揃えるため、必須4本+組織情報を同じ日に取り直した ——
+**8/23版と共通の5本はsha256が完全一致**(同じデータに5-2が増えただけ)。
+日付を混ぜた偽のスナップショットは作っていない。
+
+### パイプラインレポート(裁定B97/B99の件数)
+
+```
+budget_blocks                              20,482
+budget_blocks_paid_by_government            13,172
+budget_indirect_costs                        2,432
+budget_annual_budgets                       23,036
+budget_expenditures_block_unknown                0
+budget_block_connection_read                  True
+budget_annual_budget_years_without_aggregate_row 0
+budget_block_amount_checked                 19,125
+budget_annual_budget_identity_checked       23,036
+budget_annual_budget_project_amount_checked  5,794
+report_graph_mismatches                          0
+```
+
+**不変条件3本すべてが、実データのフルビルドで破れ0件。** どれも
+「検査した件数」を報告しているので、**空振りでないことが確認できる**。
+
+### CQ14本すべてが非0の答えを返した(完了条件A)
+
+`run_cq.py --endpoint http://localhost:3030/kg/sparql`。
+**所要時間は初回(冷えたTDB2)と2回目(温まった後)で大きく違う**:
+
+| CQ | 行数 | 初回 | 2回目 |
+|---|---:|---:|---:|
+| cq01 jurisdiction-of-ordinance | 1 | 0.047 | 0.047 |
+| cq02 ministry-budget-by-year | 1 | — | 0.047 |
+| cq03 recipient-expenditures-by-year | 13 | — | 0.062 |
+| cq04 money-trace-to-ministry-and-law | 2,033 | — | 0.110 |
+| cq05 ministry-of-basis-law | 5,680 | — | 0.140 |
+| cq06 unresolved-recipients-per-project | 8,151 | — | 0.766 |
+| cq07 provenance-of-edge | 1 | 0.015 | 0.015 |
+| cq08 law-revision-as-of-date | 1 | 0.062 | 0.063 |
+| cq09 jurisdiction-resolution-status | 6,541 | 5.266 | 0.156 |
+| cq10 release-freshness | 6 | 0.016 | 0.015 |
+| cq11 succession-of-abolished-ministry | 1,995 | 0.172 | 0.156 |
+| **cq12 government-paid-total** | 1 | **22.829** | **0.187** |
+| **cq13 money-passing-through-stages** | 20 | **11.187** | **0.516** |
+| **cq14 budget-and-execution-by-year** | 5 | **35.000** | **0.438** |
+
+**Jenaの答えはrdflibの答えと完全に一致した**:
+- CQ12: `2025 | 126,911,742,219,947 | 14,587` —— controllerがCSVを直接
+  走査した値、rdflibの値、Jenaの値の**3つが一致**
+- CQ13: 20行。先頭は物価高騰対応重点支援地方創生臨時交付金の
+  blkB「地方公共団体」2,151,949,970,000円 ← blkA「総務省」
+- CQ14: 5年度すべて、当初/補正/繰越/予備費/現額/執行額が既測値と一致
+
+### **運用上の注意: 配備直後の最初のクエリは最大35秒かかる**
+
+初回と2回目の差は**TDB2のメモリマップのページフォルト**である
+(索引はイメージ層/ディスクにあり、最初のアクセスで実際に読み込まれる)。
+新しい成果物を配置した直後の1回目だけ、CQ14が35秒・CQ12が23秒かかった。
+2回目以降は0.2〜0.5秒。
+
+**これはACAのコールドスタート(実測35.297秒。裁定B90)とは別の待ち時間で、
+両者は足し算になる。** 配備直後の最初の訪問者は「コンテナ起動35秒 +
+索引の初回読み込み最大35秒」を待ちうる。**モックの第1層はCQ14相当の
+集計を出すので、そこを実装するときは (a) 配備後に一度温める、
+(b) 集計値を事前計算する、のどちらかが必要になる。**
