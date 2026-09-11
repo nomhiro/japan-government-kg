@@ -8,6 +8,9 @@
   --signal: #8a2b1c;
   --signal-bg: #f6ece9;
   --accent: #2563eb;
+  /* トップページ第1層(裁定B103)の帯グラフ track用。`docs/mockups/top-page.html`の
+     `--surface-2`と同じ値(レビュー済みの見た目をそのまま使う)。 */
+  --surface-2: #efece7;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -18,6 +21,7 @@
     --signal: #dd8570;
     --signal-bg: #2c1d19;
     --accent: #7ba7f7;
+    --surface-2: #22262c;
   }
 }
 * { box-sizing: border-box; }
@@ -166,3 +170,65 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .jgkg-tool-name { font-weight: 600; }
 .jgkg-chat-form { display: flex; gap: 0.5rem; }
 .jgkg-chat-input { flex: 1; font: inherit; padding: 0.6rem 0.8rem; border: 1px solid var(--rule); border-radius: 4px; background: var(--paper); color: var(--ink); }
+
+/* ===== トップページ第1層(裁定B103)。検索ボックスの下に置く(views/search.ts)。
+   整形・レイアウトはレビュー済みモック(docs/mockups/top-page.html)から写す
+   ——ここは同じ見た目をjgkg-プレフィックスの命名規則に合わせただけ。 */
+.jgkg-overview { margin-top: 2rem; }
+.jgkg-ov-lede { font-size: 1.1rem; line-height: 1.6; margin: 0.5rem 0 0.4rem; }
+.jgkg-ov-lede b { font-variant-numeric: tabular-nums; }
+.jgkg-ov-year {
+  display: inline-block; border: 1px solid var(--signal); color: var(--ink); background: var(--signal-bg);
+  padding: 0.1rem 0.5rem; border-radius: 3px; font-size: 0.78rem;
+}
+.jgkg-ov-facts { display: flex; flex-wrap: wrap; gap: 0.3rem 1.4rem; color: var(--muted); font-size: 0.84rem; margin: 0 0 0.3rem; }
+.jgkg-ov-facts b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.jgkg-ov-source { font-size: 0.78rem; color: var(--muted); margin: 0.2rem 0; }
+.jgkg-ov-sub { color: var(--muted); font-size: 0.84rem; margin: 0.3rem 0 0.8rem; }
+.jgkg-ov-sub b { color: var(--ink); }
+
+/* 目盛りの切替(全府省/厚労省を除いて見る)。対数目盛りにしない判断は
+   overview-format.tsのscaleExcludingTopNoteが理由ごと持っている。 */
+.jgkg-ov-scale { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0; }
+.jgkg-ov-scale button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
+/* 府省ごとの帯。金額そのままの長さ+最低幅(小さい府省も必ず見える)。 */
+.jgkg-ov-bar {
+  display: grid;
+  grid-template-columns: 9.5rem minmax(0, 1fr) 7.5rem 5rem;
+  gap: 0.5rem;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 0.16rem 0.2rem;
+  cursor: pointer;
+  border-radius: 3px;
+  font: inherit;
+  color: inherit;
+}
+.jgkg-ov-bar:hover, .jgkg-ov-bar:focus-visible { background: var(--surface-2); }
+.jgkg-ov-bar-name { font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jgkg-ov-bar-track { height: 0.75rem; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+.jgkg-ov-bar-fill { height: 100%; min-width: 2px; background: var(--accent); display: block; }
+.jgkg-ov-bar-amt, .jgkg-ov-bar-cnt { font-size: 0.82rem; font-variant-numeric: tabular-nums; text-align: right; color: var(--muted); }
+.jgkg-ov-bar-amt { color: var(--ink); }
+@media (max-width: 640px) {
+  .jgkg-ov-bar { grid-template-columns: 7rem minmax(0, 1fr) 5.6rem; }
+  .jgkg-ov-bar-cnt { display: none; }
+}
+
+/* 5年分の予算と執行(裁定B99)。テーブルだけを横スクロールの対象にする
+   (ページ本体は横に伸びない)。 */
+.jgkg-ov-history { overflow-x: auto; }
+.jgkg-ov-history-table { border-collapse: collapse; font-size: 0.84rem; width: 100%; min-width: 32rem; }
+.jgkg-ov-history-table th, .jgkg-ov-history-table td { border-bottom: 1px solid var(--rule); padding: 0.3rem 0.5rem 0.3rem 0; text-align: left; }
+.jgkg-ov-history-table thead th { color: var(--muted); font-weight: 600; font-size: 0.78rem; text-align: right; }
+.jgkg-ov-history-table thead th:first-child, .jgkg-ov-history-table thead th:nth-child(2) { text-align: left; }
+.jgkg-ov-history-table tbody th { white-space: nowrap; font-weight: 600; }
+.jgkg-ov-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.jgkg-ov-histbar { width: 40%; min-width: 8rem; }
+.jgkg-ov-track { position: relative; display: block; height: 0.85rem; background: var(--surface-2); border-radius: 2px; }
+.jgkg-ov-fill { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+.jgkg-ov-tick { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); }

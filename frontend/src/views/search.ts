@@ -4,6 +4,7 @@ import { SEARCH_LIMIT } from "../api/limits";
 import { esc, truncationNotice } from "../format";
 import { typeLabel } from "../labels";
 import { navigate } from "../router";
+import { renderOverview } from "./overview";
 
 // **検索はキー入力ごとに投げない(D-5ブリーフ実測: 1リクエストあたり
 // 109,005件のラベル全走査。`ORDER BY`が全件計算を強制する)。** デバウンス
@@ -58,6 +59,7 @@ export function renderSearch(container: HTMLElement, initialQuery: string): void
         ${_VOCAB_LINK} ・ ${_RELEASES_LINK}
       </footer>
     </section>
+    <div class="jgkg-overview-slot" aria-live="polite"></div>
   `;
 
   const input = container.querySelector<HTMLInputElement>(".jgkg-search-box")!;
@@ -116,4 +118,11 @@ export function renderSearch(container: HTMLElement, initialQuery: string): void
   });
 
   if (initialQuery) void run(initialQuery);
+
+  // **第1層(裁定B103)は検索ボックスの下に置く。検索ボックス自体は今までどおり
+  // 常に出す**(トップページ第1層ブリーフStep 4: 「今の入り口を壊さない」)。
+  // `apiUnavailableReason()`が非nullの経路は上の早期returnで既に外れている
+  // ——ここに来る時点でAPIは配備されている(裁定B82の「準備中」表示と整合)。
+  const overviewSlot = container.querySelector<HTMLElement>(".jgkg-overview-slot");
+  if (overviewSlot) void renderOverview(overviewSlot);
 }

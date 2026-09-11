@@ -25,6 +25,8 @@ import {
   attributeValueHtml,
   chatSourceHtml,
   describePathResult,
+  formatAmountFull,
+  formatAmountRounded,
   neighborhoodStatusText,
   provenanceHtml,
   toolCallLogEntryHtml,
@@ -275,6 +277,48 @@ describe("chatSourceHtml", () => {
   it("labelが無いとき「(表示名なし)」と表示する(空文字を描かない)", () => {
     const source: ChatSource = { id: "x", id_path: "x", type: "Law", label: null, graphs: [] };
     expect(chatSourceHtml(source, {})).toContain("(表示名なし)");
+  });
+});
+
+// =============================================================================
+// formatAmountRounded / formatAmountFull: 第1層(裁定B103)の金額整形。
+// `docs/mockups/top-page.html`の`jpShort`/`jpFull`(レビュー済み)と同じ
+// 境界・同じ丸め方であることをここで固定する——作り直したら壊れる。
+// =============================================================================
+
+describe("formatAmountRounded", () => {
+  it("1兆円以上は兆円単位・小数1桁", () => {
+    expect(formatAmountRounded(91_789_031_491_000)).toBe("91.8兆円");
+    expect(formatAmountRounded(1e12)).toBe("1.0兆円");
+  });
+
+  it("1000億円以上1兆円未満は億円単位・整数(桁区切り)", () => {
+    expect(formatAmountRounded(135_589_321_000)).toBe("1,356億円");
+    expect(formatAmountRounded(1e11)).toBe("1,000億円");
+  });
+
+  it("1億円以上1000億円未満は億円単位・小数1桁", () => {
+    expect(formatAmountRounded(30_432_969_000)).toBe("304.3億円");
+    expect(formatAmountRounded(1e8)).toBe("1.0億円");
+  });
+
+  it("1万円以上1億円未満は万円単位・整数", () => {
+    expect(formatAmountRounded(45_013_000)).toBe("4501万円");
+    // **境界は`jpShort`と同じく1億円未満なら万円のまま**(1億円ちょうど手前で
+    // 億円に切り替わらない。モックと同じ丸め方をそのまま持ってきているため)。
+    expect(formatAmountRounded(99_999_999)).toBe("10000万円");
+  });
+
+  it("1万円未満は円のまま(桁区切り)", () => {
+    expect(formatAmountRounded(9999)).toBe("9,999円");
+    expect(formatAmountRounded(0)).toBe("0円");
+  });
+});
+
+describe("formatAmountFull", () => {
+  it("桁区切り+「円」を付けた正確な値を返す(丸めた値と併記するための表示)", () => {
+    expect(formatAmountFull(91_789_031_491_000)).toBe("91,789,031,491,000円");
+    expect(formatAmountFull(0)).toBe("0円");
   });
 });
 

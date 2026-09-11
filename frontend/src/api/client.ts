@@ -17,6 +17,11 @@ export type ChatMessage = components["schemas"]["ChatMessage"];
 export type ChatResponse = components["schemas"]["ChatResponse"];
 export type ChatSource = components["schemas"]["ChatSource"];
 export type ToolCallLogEntry = components["schemas"]["ToolCallLogEntry"];
+export type OverviewResponse = components["schemas"]["OverviewResponse"];
+export type MinistryBudget = components["schemas"]["MinistryBudget"];
+export type BudgetAndExecution = components["schemas"]["BudgetAndExecution"];
+export type TypeCount = components["schemas"]["TypeCount"];
+export type GovernmentPaidTotal = components["schemas"]["GovernmentPaidTotal"];
 
 // **APIの本番URLを直書きしない(base_uriと同じ規律。D-5ブリーフ)。**
 // ビルド時の設定値にする——D-6b(配備先)が未決なため、既定はローカルの
@@ -119,6 +124,21 @@ async function getJson<T>(url: string): Promise<T> {
 
 export async function search(q: string, limit?: number): Promise<SearchResponse> {
   return getJson<SearchResponse>(`${API_BASE}/search?${buildQuery({ q, limit })}`);
+}
+
+/**
+ * トップページ第1層(裁定B103)。**引数を取らない**——起動時に1回計算した
+ * 値を返すだけのエンドポイントである(`overview.py`のモジュールdocstring
+ * 参照。リクエストごとにCQを走らせない)。
+ *
+ * **起動時の集約が失敗していると503になる(`app.py`の`lifespan`が例外を
+ * 飲んで`app.state.overview = None`にする設計)。** `getJson`は503でも
+ * 例外(`ApiError`)を投げる——呼び出し側(`views/overview.ts`)が
+ * `apiUnavailableReason()`(APIそのものが未配備)とは別の経路として
+ * 扱う必要がある。
+ */
+export async function fetchOverview(): Promise<OverviewResponse> {
+  return getJson<OverviewResponse>(`${API_BASE}/overview`);
 }
 
 /**
