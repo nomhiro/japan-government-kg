@@ -97,8 +97,8 @@ def test_dispatches_egov_law_with_the_resolved_fetched_on(monkeypatch, capsys):
 def test_dispatches_rs_system_with_the_year(monkeypatch, capsys):
     calls = []
 
-    def stub_fetch_all(year, fetched_on):
-        calls.append((year, fetched_on))
+    def stub_fetch_all(year, fetched_on, **kwargs):
+        calls.append((year, fetched_on, kwargs))
         return {"organization_information": _stub_result("rs-system", fetched_on)}
 
     monkeypatch.setattr(fetch_module.rs_system, "fetch_all", stub_fetch_all)
@@ -110,7 +110,10 @@ def test_dispatches_rs_system_with_the_year(monkeypatch, capsys):
     # rs-systemはgroup名がsource_idと異なるため、単一ファイルの源とは違い
     # 括弧内の表示が残ってよい(むしろ無いと5本のどれかが分からなくなる)
     assert "rs-system (organization_information)" in capsys.readouterr().out
-    assert calls == [(2025, DAY)]
+    # **--rs-group を渡していないときは groups を渡さない**
+    # ——コネクタの既定(FETCHED_GROUPS)を唯一の出典にするため、
+    # CLIが5本の一覧を複製して渡してはいけない。
+    assert calls == [(2025, DAY, {})]
 
 
 def test_dispatches_houjin_bangou_with_the_configured_url(monkeypatch):
@@ -625,3 +628,94 @@ def test_a_registered_but_undispatched_source_gives_a_repo_bug_error_not_a_crash
     err = capsys.readouterr().err
     assert "結線されていない" in err
     assert "fake-source" in err
+
+
+def test_rs_group_selects_only_the_named_files(monkeypatch, capsys):
+    """`--rs-group` で指定した1本だけをコネクタに渡す。
+
+    何があれば落ちるか: `--rs-group` を黙って無視する実装に戻すと、
+    `groups` が渡らずコネクタの既定5本(既にレイクにあるもの)を対象に
+    してしまい、**取りたかった1本が取れないまま成功する**。
+    """
+    calls = []
+
+    def stub_fetch_all(year, fetched_on, groups=None, **kwargs):
+        calls.append((year, fetched_on, groups))
+        return {"payee_payment_block_connection": _stub_result("rs-system", fetched_on)}
+
+    monkeypatch.setattr(fetch_module.rs_system, "fetch_all", stub_fetch_all)
+
+    rc = fetch_module.main([
+        "--source", "rs-system", "--year", "2025",
+        "--rs-group", "payee_payment_block_connection",
+        "--fetched-on", "2026-08-20",
+    ])
+    assert rc == 0
+    assert calls == [(2025, DAY, ("payee_payment_block_connection",))]
+    assert "rs-system (payee_payment_block_connection)" in capsys.readouterr().out
+
+
+def test_rs_group_can_be_repeated_and_is_deduplicated(monkeypatch):
+    """複数回指定でき、重複は1回にまとめる(--source と同じ規約。順序は保つ)。"""
+    calls = []
+
+    def stub_fetch_all(year, fetched_on, groups=None, **kwargs):
+        calls.append(groups)
+        return {}
+
+    monkeypatch.setattr(fetch_module.rs_system, "fetch_all", stub_fetch_all)
+
+    rc = fetch_module.main([
+        "--source", "rs-system", "--year", "2025",
+        "--rs-group", "payee_payment_block_connection",
+        "--rs-group", "budget_detail",
+        "--rs-group", "payee_payment_block_connection",
+        "--fetched-on", "2026-08-20",
+    ])
+    assert rc == 0
+    assert calls == [("payee_payment_block_connection", "budget_detail")]
+
+
+def test_rs_group_on_a_non_rs_system_source_is_rejected(monkeypatch):
+    """`--year` と同じ扱いにする: 黙って無視しない。
+
+    何があれば落ちるか: この検査が無いと、`--source egov-law --rs-group ...`
+    が何のエラーも出さず成功し、**利用者は指定が効いたと誤解する**
+    (`--year` で実際に踏んだ欠陥と同じ型)。検査が外れても実ネットワークに
+    触れないよう、コネクタは「呼ばれてはならない」スタブにしておく。
+    """
+    calls: list = []
+    monkeypatch.setattr(fetch_module.egov_law, "fetch", _forbidden(calls))
+
+    with pytest.raises(SystemExit) as exc_info:
+        fetch_module.main([
+            "--source", "egov-law",
+            "--rs-group", "payee_payment_block_connection",
+        ])
+
+    assert exc_info.value.code != 0
+    assert calls == []
+
+
+def test_rs_group_rejects_a_name_that_is_not_a_real_rs_file(monkeypatch):
+    """選択肢はコネクタの RS_GROUP_FILENAMES から導出する(手書きの一覧にしない)。
+
+    何があれば落ちるか: choices を手書きすると、RS側がファイルを増やした
+    ときにCLIだけが古くなる。ここでは**実在しない名前が弾かれること**と、
+    **15本すべてが選べること**の両方を、コネクタの辞書から導出して検査する。
+    """
+    calls: list = []
+    monkeypatch.setattr(fetch_module.rs_system, "fetch_all", _forbidden(calls))
+
+    with pytest.raises(SystemExit) as exc_info:
+        fetch_module.main([
+            "--source", "rs-system", "--year", "2025",
+            "--rs-group", "no_such_group",
+        ])
+    assert exc_info.value.code != 0
+    assert calls == []
+
+    # 15本すべてが choices に入っている(コネクタの辞書がそのまま出典)
+    parser_choices = set(fetch_module.rs_system.RS_GROUP_FILENAMES)
+    assert len(parser_choices) == 15, parser_choices
+    assert "payee_payment_block_connection" in parser_choices

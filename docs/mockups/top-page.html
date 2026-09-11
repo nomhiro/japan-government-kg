@@ -193,6 +193,26 @@ svg.graph.dragging { cursor: grabbing; }
 #ov-match td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 #ov-match .good { color: var(--found); font-weight: 600; }
 
+
+/* 資金の流れの図(裁定B97)。SVGはCSSを読むのでトークンがそのまま効く */
+.flowfig { margin: 0.8rem 0 0.4rem; }
+.flowfig svg { display: block; width: 100%; max-width: 100%; height: auto; color: var(--muted); }
+.flowfig figcaption { color: var(--muted); font-size: 0.82rem; margin-bottom: 0.4rem; }
+.flowfig figcaption b { color: var(--ink); }
+.fnode { fill: var(--surface); stroke: var(--rule); stroke-width: 1; }
+.fnode.fgov { fill: var(--surface-2); stroke: var(--ink); }
+.flab { font-size: 13px; fill: var(--ink); font-weight: 600; }
+.fsub { font-size: 10px; fill: var(--muted); }
+.fedge { stroke: var(--muted); stroke-width: 1.4; }
+.fedge.fentry { stroke: var(--accent); stroke-width: 3; }
+.fedgelab { font-size: 10px; fill: var(--muted); }
+.famt { font-size: 12px; fill: var(--ink); font-variant-numeric: tabular-nums; }
+.famt.fdim { fill: var(--muted); }
+.nomix { border: 1px solid var(--signal); background: var(--signal-bg); border-radius: 3px;
+  padding: 0.5rem 0.8rem; font-size: 0.84rem; margin: 0.8rem 0 0; }
+.nomix p { margin: 0 0 0.3rem; }
+.nomix p:last-child { margin-bottom: 0; }
+
 /* ===== 詳細パネル ===== */
 .detail { padding: 0.9rem 1rem 2rem; min-width: 0; overflow-wrap: anywhere; }
 .detail .placeholder { color: var(--muted); font-size: 0.85rem; }
@@ -277,8 +297,13 @@ svg.graph.dragging { cursor: grabbing; }
   <p class="ov-sub" id="ov-scale-note"></p>
   <div id="ov-bars"></div>
 
+  <h2 class="ov-h">国が自ら支払った額（2025年度）</h2>
+  <div id="ov-spend"></div>
+  <div id="ov-flow"></div>
+  <div id="ov-nomix" class="nomix"></div>
+
   <details id="ov-nosum">
-    <summary><b>支出の総額を出していないのはなぜ？</b></summary>
+    <summary><b>なぜ「素朴に足した額」が使えないのか（詳しく）</b></summary>
     <div id="ov-nosum-body"></div>
   </details>
 
@@ -1151,7 +1176,8 @@ svg.graph.dragging { cursor: grabbing; }
       "<span>府省 <b>" + T.ministries + "</b></span>" +
       "<span>法令 <b>" + T.laws.toLocaleString("ja-JP") + "</b></span>" +
       "<span>法人 <b>" + T.orgs.toLocaleString("ja-JP") + "</b></span>" +
-      "<span>支出の記録 <b>" + T.expenditures.toLocaleString("ja-JP") + "</b></span></p>" +
+      "<span>支出の記録 <b>" + T.expenditures.toLocaleString("ja-JP") + "</b></span>" +
+      "<span>国が支払った額 <b>" + jpShort(OV.spending.governmentPaid) + "</b>以上</span></p>" +
       '<p class="ov-sub">前の年度は入っていないので、<b>増えた・減ったは分かりません</b>。' +
       "この画面が答えられるのは「いま、どの府省の、どの事業に、いくら付いていて、" +
       "それが誰に渡ったか」です。</p>";
@@ -1192,6 +1218,95 @@ svg.graph.dragging { cursor: grabbing; }
       wire(".bar", "data-ministry");
     }
 
+    // 「国が支出した額」と資金の流れ(裁定B97)。
+    //
+    // **裁定B96では「支出総額は出せない」と書いたが、撤回した。**
+    // `5-2 支出先_支出ブロックのつながり` が資金の流れを有向グラフとして持ち、
+    // 「担当組織からの支出=TRUE」が入口(国自身が払った)を示すため、
+    // 重複(約29.9兆円)を除いた額が出せる。
+    //
+    // **ただし出す数字は一次データが明示しているものだけにする。**
+    // フラグが欠けている32事業を我々の推論(流入辺0)で補った額は、
+    // 区別できる形で併記し、主たる数字にしない。
+    var SP = OV.spending, FD = OV.flowDiagram;
+
+    function renderSpending() {
+      var d = SP.depths;
+      document.getElementById("ov-spend").innerHTML =
+        '<p class="ov-lede"><b>' + jpShort(SP.governmentPaid) + "</b>" +
+        '<span class="ov-sub" style="display:inline"> ——国が自ら支払った額</span></p>' +
+        '<p class="ov-facts"><span>正確には <b>' + jpFull(SP.governmentPaid) + "</b></span>" +
+        "<span>これは<b>下限</b>です</span></p>" +
+        '<p class="ov-sub">支出の記録を素朴に全部足すと ' + jpShort(SP.naiveSum) +
+        "になりますが、それは<b>同じお金を数えた分だけ多い</b>数字です。" +
+        "国自身が支払った段（「担当組織からの支出」）だけを取ると " +
+        jpShort(SP.governmentPaid) + "で、<b>差の " + jpShort(SP.duplicationRemoved) +
+        "が重複でした</b>。</p>" +
+        '<p class="ov-sub"><b>下限である理由</b>: 一次データで入口の印が付いていない事業が ' +
+        SP.flagMissingProjects + "件あります。構造から補うと " +
+        SP.inferredProjects + "件・" + jpShort(SP.inferredExtra) +
+        "を足せて合計 " + jpShort(SP.inferredTotal) +
+        "になりますが、<b>それは我々の推論であって一次データの主張ではない</b>ので、" +
+        "上の数字には入れていません（残り " + SP.stillUnknownProjects + "件は決まりません）。</p>" +
+        '<p class="ov-sub">お金は最大 <b>5段</b>まで流れます（' +
+        "1段 " + d["1"].toLocaleString("ja-JP") + " / 2段 " + d["2"].toLocaleString("ja-JP") +
+        " / 3段 " + d["3"].toLocaleString("ja-JP") + " / 4段 " + d["4"] + " / 5段 " + d["5"] +
+        "ブロック）。</p>";
+
+      // 資金の流れの図(実データ1件)。**SVGで描く**——段と向きが本体なので、
+      // 表では「同じ金額が2回出てくる」ようにしか見えない。
+      var bA = FD.blocks.A, bB = FD.blocks.B;
+      var W = 760, H = 150;
+      document.getElementById("ov-flow").innerHTML =
+        '<figure class="flowfig"><figcaption>実例:「' + esc(FD.project) +
+        '」——同じ ' + jpFull(bA.amount) + " が2つの段に現れます。" +
+        "足すと2倍になり、<b>国が支払ったのは左の1回だけ</b>です。</figcaption>" +
+        '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="国から市町村へ、' +
+        '市町村から児童手当受給者へ資金が流れる2段の図">' +
+        // 国
+        '<rect x="8" y="46" width="120" height="52" rx="4" class="fnode fgov"/>' +
+        '<text x="68" y="70" class="flab" text-anchor="middle">国</text>' +
+        '<text x="68" y="86" class="fsub" text-anchor="middle">こども家庭庁</text>' +
+        // 辺1(入口。太く強調)
+        '<line x1="128" y1="72" x2="246" y2="72" class="fedge fentry" marker-end="url(#fa)"/>' +
+        '<text x="187" y="62" class="fedgelab" text-anchor="middle">支払った（入口）</text>' +
+        '<text x="187" y="90" class="famt" text-anchor="middle">' + jpShort(bA.amount) + "</text>" +
+        // 市町村
+        '<rect x="250" y="40" width="150" height="64" rx="4" class="fnode"/>' +
+        '<text x="325" y="64" class="flab" text-anchor="middle">' + esc(bA.name) + "</text>" +
+        '<text x="325" y="80" class="fsub" text-anchor="middle">' +
+        Number(bA.payees).toLocaleString("ja-JP") + " 先</text>" +
+        '<text x="325" y="96" class="fsub" text-anchor="middle">' + esc(bA.role) + "</text>" +
+        // 辺2(次の段。細く)
+        '<line x1="400" y1="72" x2="518" y2="72" class="fedge" marker-end="url(#fa)"/>' +
+        '<text x="459" y="62" class="fedgelab" text-anchor="middle">次の段</text>' +
+        '<text x="459" y="90" class="famt fdim" text-anchor="middle">' + jpShort(bB.amount) + "</text>" +
+        // 受給者
+        '<rect x="522" y="40" width="230" height="64" rx="4" class="fnode"/>' +
+        '<text x="637" y="64" class="flab" text-anchor="middle">' + esc(bB.name) + "</text>" +
+        '<text x="637" y="80" class="fsub" text-anchor="middle">' +
+        Number(bB.payees).toLocaleString("ja-JP") + " 人</text>" +
+        '<text x="637" y="96" class="fsub" text-anchor="middle">' + esc(bB.role) + "</text>" +
+        '<defs><marker id="fa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" ' +
+        'markerHeight="6" orient="auto-start-reverse">' +
+        '<path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>' +
+        "</svg></figure>" +
+        '<p class="ov-sub">この図は<b>まだ本番では描けません</b>。段の情報' +
+        "（<code>5-2 支出先_支出ブロックのつながり</code>）はレイクに取得済みですが、" +
+        "ナレッジグラフ本体にまだ取り込んでいません。</p>";
+
+      // 予算と支出を並べてはいけない実証(裁定B96の原則を維持する根拠)
+      var MM = SP.mismatchExample;
+      document.getElementById("ov-nomix").innerHTML =
+        "<p><b>予算額と支出額を並べたり引き算したりはしません。</b>" +
+        "年度も基準も違います——支出の記録は<b>前年度の執行実績</b>で、" +
+        "基金や複数年度の契約を含みます。</p>" +
+        "<p>実例: <b>" + esc(MM.ministry) + "</b>の2025年度予算は " + jpShort(MM.budget) +
+        "ですが、入口ベースの支出は " + jpShort(MM.paid) + " です（" +
+        "約" + (MM.paid / MM.budget).toFixed(1) + "倍）。" +
+        "並べれば「予算の4倍近く使った」と必ず誤読されます。</p>";
+    }
+
     // 「支出の総額を出さない」理由(裁定B96)。**実例を必ず添える。**
     var S = OV.sumProblem, F = OV.flowExample, D = OV.dupExample;
     document.getElementById("ov-nosum-body").innerHTML =
@@ -1215,7 +1330,13 @@ svg.graph.dragging { cursor: grabbing; }
       "<b>どちらも「支出総額」ではありません</b>——ブロックは事業によって" +
       "「並列の区分」「流れの段階」「お金の出どころ」のどれでもあり得るので、" +
       "機械的に足す方法が存在しません。</p>" +
-      "<p>合計してよいのは<b>予算額</b>だけです（1事業1年度に1つの値で、重複がありません）。</p>";
+      "<p><b>ここまでが裁定B96の時点での結論でした。</b>その後 " +
+      "<code>5-2 支出先_支出ブロックのつながり</code> を取得したところ、" +
+      "<b>資金の流れが有向グラフとして記録されており、「担当組織からの支出」列が" +
+      "入口（国自身が払った段）を示している</b>ことが分かりました。" +
+      "これで重複を除けるので、<b>上の「国が自ら支払った額」を出せます</b>" +
+      "（裁定B97でB96を撤回）。ブロックの意味が事業ごとに違うのは事実ですが、" +
+      "<b>どれが入口かはデータ側に書いてあった</b>のです。</p>";
 
     // 実例3つ
     var E = OV.examples;
@@ -1275,6 +1396,7 @@ svg.graph.dragging { cursor: grabbing; }
     }
     wire(".ex button", "data-goto");
 
+    renderSpending();
     renderBars("all");
     var sa = document.getElementById("scale-all"), sr = document.getElementById("scale-rest");
     function setScale(s) {

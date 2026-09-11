@@ -16,6 +16,7 @@
     uv run python -m jgkg.fetch --source houjin-bangou
     uv run python -m jgkg.fetch --source egov-law --source rs-system --year 2025
     uv run python -m jgkg.fetch --law-id 412CO0000000315
+    uv run python -m jgkg.fetch --source rs-system --year 2025 \n        --rs-group payee_payment_block_connection
 
 **`--law-id`(C-1)は`--source`とは独立した軸。** `--source egov-law`は
 全件メタデータ(`/api/2/laws`)を取るが、`--law-id`は指定した法令1件の
@@ -43,7 +44,9 @@ from jgkg.connectors import egov_law, houjin_bangou, rs_system
 from jgkg.connectors.base import FetchResult
 
 
-def _reject_egov_law_data_via_source(fetched_on: object, year: object, url: object) -> object:
+def _reject_egov_law_data_via_source(
+    fetched_on: object, year: object, url: object, rs_groups: object
+) -> object:
     """`--source egov-law-data` は意図的に使えない(C-2裁定)。
 
     `egov-law-data` は law_id ごとに取得する源で、全件走査に相当する意味が
@@ -65,10 +68,18 @@ def _reject_egov_law_data_via_source(fetched_on: object, year: object, url: obje
 # それはこのモジュールの結線漏れであり利用者の入力ミスではない——区別する。
 # egov-law-dataは例外で、結線はあるが意図的に案内エラーを返す)。
 DISPATCH: dict[str, Callable[..., object]] = {
-    "egov-law": lambda fetched_on, year, url: egov_law.fetch(fetched_on),
+    "egov-law": lambda fetched_on, year, url, rs_groups: egov_law.fetch(fetched_on),
     "egov-law-data": _reject_egov_law_data_via_source,
-    "houjin-bangou": lambda fetched_on, year, url: houjin_bangou.fetch(url, fetched_on),
-    "rs-system": lambda fetched_on, year, url: rs_system.fetch_all(year, fetched_on),
+    "houjin-bangou": lambda fetched_on, year, url, rs_groups: houjin_bangou.fetch(
+        url, fetched_on
+    ),
+    # rs_groups が None のときは rs_system 側の既定(FETCHED_GROUPS)に委ねる
+    # ——**ここに5本の一覧を複製しない**(コネクタが唯一の出典。再発欠陥1)。
+    "rs-system": lambda fetched_on, year, url, rs_groups: (
+        rs_system.fetch_all(year, fetched_on, groups=rs_groups)
+        if rs_groups is not None
+        else rs_system.fetch_all(year, fetched_on)
+    ),
 }
 
 
@@ -187,6 +198,20 @@ def main(argv: list[str] | None = None) -> int:
         "(黙って無視しない)",
     )
     parser.add_argument(
+        "--rs-group",
+        action="append",
+        dest="rs_groups",
+        choices=sorted(rs_system.RS_GROUP_FILENAMES),
+        default=None,
+        metavar="GROUP",
+        help="rs-system で取得するファイルを明示する。**複数回指定できる**。"
+        "既定(省略時)はコネクタの FETCHED_GROUPS(列照合済みの5本)。"
+        "RSは15本のCSVを配布しており、5本だけでは辿れない情報がある"
+        "(例: payee_payment_block_connection = 支出先ブロックのつながり。"
+        "資金の流れの段階を持つ)。**rs-system 以外に付けるとエラー**"
+        "(黙って無視しない。--year と同じ)",
+    )
+    parser.add_argument(
         "--fetched-on",
         type=_parse_date,
         default=None,
@@ -237,6 +262,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.year is not None and "rs-system" not in requested:
         parser.error(
             f"--year は rs-system 以外の源には付けられない"
+            f"(渡された --source: {', '.join(requested)})"
+        )
+    if args.rs_groups is not None and "rs-system" not in requested:
+        parser.error(
+            f"--rs-group は rs-system 以外の源には付けられない"
             f"(渡された --source: {', '.join(requested)})"
         )
 
@@ -308,7 +338,10 @@ def main(argv: list[str] | None = None) -> int:
     failed: list[str] = []
     for source_id in requested:
         try:
-            result = DISPATCH[source_id](fetched_on, args.year, url)
+            rs_groups = (
+                tuple(dict.fromkeys(args.rs_groups)) if args.rs_groups else None
+            )
+            result = DISPATCH[source_id](fetched_on, args.year, url, rs_groups)
         except Exception as exc:  # noqa: BLE001 — 1つの源の失敗で他を止めない。
             # 何が失敗したかを利用者に伝えるのが目的で、例外型を狭めると
             # コネクタが投げうる全種類(httpx.HTTPStatusError,
