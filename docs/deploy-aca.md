@@ -1,5 +1,42 @@
 # Azure Container Apps への配備手順(D-6b-2)
 
+## 2026-09-11: 資金の流れと予算履歴を載せ、チャットを有効にした(裁定B101/B102)
+
+**KGを 884,052 クアッド → 1,438,620 トリプルに入れ替えた。**
+公開リリース `2026-09-11-flow-and-history` からイメージを作り、
+`provisioningState: Succeeded` を確認して配備した。
+
+| 測ったこと | 結果 |
+|---|---|
+| 配備 | `Succeeded` / `Running`(2回とも) |
+| `smoke-test-api.py` の5経路 | 全経路が実データで通過 |
+| 新クラスが本番で引けるか | `ExpenditureBlock`(`type`・`label`・出典付き)・`AnnualBudget` 両方引けた |
+| 恒等式(当初+補正+繰越+予備費=現額) | **本番の応答そのもので差0** |
+| `/chat` | 200。実体系4道具は出典4件つきで正答 |
+
+**同時に`/chat`を初めて有効にした。** テンプレートのチャット用env
+(`AZURE_CLIENT_ID`・`JGKG_AOAI_*`)は2026-09-11のコミットで入ったもので、
+それまでの本番には無く、`/chat`は503を返していた。
+**費用は裁定B92の`maxReplicas=1`で上限付き。**
+
+**そして有効にした直後に欠陥が出た(裁定B102)。** チャットが
+「オントロジーを取得できなかった」と答えた ——
+`api.Dockerfile` が `schema/generated/` をCOPYしていなかった。
+**テストは全部緑だった**(`generated_dir`にリポジトリのパスを渡すので、
+コンテナという別の環境を一度も見ていなかった)。
+`apiImageTag` を足してAPIだけ差し替え、**同じ質問が正答するまで確認した。**
+
+**踏んだ罠(この手順書に足りなかったもの)**:
+- **`minReplicas` の既定は0。** 本番は1で動いているので、渡さないと
+  コールドスタートが戻る。手順6にその注記を足した
+- **`az containerapp show` で env を丸ごと読もうとすると権限で止まる。**
+  必要なのは `identity`・`registries`・`template.containers[].image` など、
+  **秘密を含まない範囲に絞った問い合わせ**である
+- **日本語を含むJSON本文を `curl -d` でシェル越しに渡すと壊れる**(400)。
+  UTF-8のファイルに書いて `--data-binary @file` で送る
+
+---
+
 ## 2026-09-06: この手順は実行され、通った(裁定B90)
 
 **以下の記述は「一度も実行されていない」状態のときに書かれたものである。
@@ -127,7 +164,9 @@ export LOCATION="<自分の使うAzureリージョン。例: japaneast>"
 export ACR_NAME="<自分のACR名(*.azurecr.ioの*部分)>"
 export ENV_NAME="<自分の付けるContainer Apps Environment名>"
 export APP_NAME="jgkg"
-export IMAGE_TAG="<公開リリースのタグと揃える。例: 2026-08-28-d2-recipient-category-v2>"
+export IMAGE_TAG="<公開リリースのタグと揃える。例: 2026-09-11-flow-and-history>"
+# **APIだけ差し替えるとき**に別の値にする(既定はIMAGE_TAGと同じ。裁定B102)
+export API_IMAGE_TAG="${IMAGE_TAG}"
 ```
 
 `SUBSCRIPTION_ID`・`RESOURCE_GROUP`・`LOCATION`・`ACR_NAME`は
@@ -216,10 +255,15 @@ scripts/build-serve-images.sh release "$IMAGE_TAG"
 az acr login --name "$ACR_NAME"
 
 docker tag jgkg-serve-fuseki:local "$ACR_NAME.azurecr.io/jgkg-serve-fuseki:$IMAGE_TAG"
-docker tag jgkg-api:local           "$ACR_NAME.azurecr.io/jgkg-api:$IMAGE_TAG"
+docker tag jgkg-api:local           "$ACR_NAME.azurecr.io/jgkg-api:$API_IMAGE_TAG"
 
 docker push "$ACR_NAME.azurecr.io/jgkg-serve-fuseki:$IMAGE_TAG"
-docker push "$ACR_NAME.azurecr.io/jgkg-api:$IMAGE_TAG"
+docker push "$ACR_NAME.azurecr.io/jgkg-api:$API_IMAGE_TAG"
+
+# **APIだけ差し替えるときは、Fuseki側のtag/pushを飛ばす**
+# (ACRに既にあるものをそのまま使う)。**押し済みのタグは上書きしない** ——
+# このプロジェクトはmanifestのsha256・git_commit・/def/*の1バイト不変で
+# 同一性を守っており、タグの上書きはその規律に反する(裁定B102)。
 ```
 
 ### 6. 配備する
@@ -233,9 +277,15 @@ az deployment group create \
       managedEnvironmentId="$ENV_ID" \
       containerAppName="$APP_NAME" \
       acrName="$ACR_NAME" \
-      imageTag="$IMAGE_TAG"
+      imageTag="$IMAGE_TAG" \
+      apiImageTag="$API_IMAGE_TAG"
+      # apiImageTagはIMAGE_TAGと同じなら省略してよい(既定がimageTag。裁定B102)
       # minReplicas・maxReplicas・fusekiCpu・fusekiMemory・apiCpu・apiMemoryは
       # 既定値を使うなら省略してよい(deploy/aca.jsonのparameters.*.metadata.description参照)
+      #
+      # **minReplicasは既定0である。** 本番は1で動かしているので(利用者の選択。
+      # コールド35.297秒を避ける)、**省略すると0に戻る** —— 明示すること。
+      # 2026-09-11の配備では minReplicas=1 maxReplicas=1 を渡した。
 ```
 
 ### 7. **配備が `Succeeded` になったことを確認する(飛ばさないこと)**
