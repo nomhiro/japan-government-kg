@@ -31,6 +31,16 @@ FROM python:3.12-slim AS runtime
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY src ./src
+# **オントロジーの生成物を焼く(裁定B102)。**
+# `/chat`の`get_ontology`は`schema/generated/{module}.owl.ttl`を
+# **相対パスで**読む(`create_app`の既定 `Path("schema/generated")`)。
+# E-2でこの道具を足したとき、ここのCOPYを足さなかったため、
+# **本番のコンテナでは`get_ontology`が常に失敗していた**
+# (`chat_tools.py`の「コンテナにも焼かれている」という記述は事実と違った)。
+# テストは`generated_dir`にリポジトリのパスを渡すので常に緑になり、
+# **コンテナという別の環境を一度も見ていなかった**(再発欠陥9)。
+# `.dockerignore`は`schema/`を除外していないのでそのまま送られる。
+COPY schema/generated ./schema/generated
 RUN pip install --no-cache-dir --disable-pip-version-check .
 
 ARG GIT_COMMIT=""
