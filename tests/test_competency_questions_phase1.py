@@ -843,20 +843,25 @@ def test_cq17_sums_amounts_from_the_core_namespace(kg, budget_result):
 
 
 def test_cq18_counts_instances_across_named_graphs(kg):
-    """型ごとの件数が、**名前付きグラフをまたいで、二重に数えずに**返ること。
+    """型ごとの件数が、実測値どおりに返ること。
 
-    何があれば落ちるか: `GRAPH ?g { ... }` を付けると rdflib の
-    `default_union=True` では二重に数える形になりうる。逆に
-    データを既定グラフだけに探しに行く形にすると0件になる。
+    **検出できる(実測で確認済み)**: 型のどれかの件数がずれること。
+    たとえば1つの名前付きグラフだけに絞る変異
+    (`GRAPH <.../graph/houjin-bangou/2026-08-01> { ?s a ?type }`)を試すと、
+    組織ドメイン以外の型がすべて消えて実際に落ちる(task-1-report.md
+    「修正ラウンド1」参照)。CQ18は「このKGには何が何件入っているか」
+    という**件数そのものが答え**のCQなので、Step 5の実測値
+    (`schema/competency-questions.md`「答えの例」と同じ値)をそのまま固定する
+    ——`Expenditure`の10件はCQ17テストが`budget_result.stats`から導く
+    支出の内訳合計とも一致する。
 
-    **修正ラウンド1(task-1-review.md指摘3)**: 以前は`counts.get(expected, 0) > 0`
-    だけを見ていたため、前者(二重計上)を検出できなかった——名前付きグラフの
-    データが残っている限り主要な型はどれも非0のままなので、
-    `GRAPH ?g { ?s a ?type }` を付けても緑になってしまう。CQ18は
-    「このKGには何が何件入っているか」という**件数そのものが答え**のCQなので、
-    Step 5の実測値(`schema/competency-questions.md`「答えの例」と同じ値)を
-    そのまま固定する——`Expenditure`の10件はCQ17テストが`budget_result.stats`
-    から導く支出の内訳合計とも一致する。
+    **検出できない(実測で確認済み。修正ラウンド2)**: `GRAPH ?g { ?s a ?type }`
+    (名前付きグラフを個別に辿る形)を試しても、この完全一致に変えた後も
+    **PASSEDのまま**だった——このfixtureには同じ`(s, rdf:type, type)`が
+    複数の名前付きグラフに重複して乗っているケースが無いため、二重計上が
+    そもそも起こらない。実演するにはfixtureにcarry-over型の重複トリプルを
+    人工的に注入する必要があり、**見送った**(controller裁定: 他の29件の
+    CQテストの標本を人工の重複で汚すコストの方が高い)。
     """
     rows = _query(kg, "cq18-kg-scale.rq")
     assert rows, "CQ18に答えられない"
