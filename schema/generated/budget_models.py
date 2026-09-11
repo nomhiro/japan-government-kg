@@ -389,7 +389,8 @@ class BudgetProject(Work):
     fiscalYear: int = Field(default=..., title="予算年度", description="""この記述が対応する事業年度(RSのレビューシート自体の年度)。 budgetAmountは同じ年度の当初予算(合計)を指す (budget_summaryの「予算年度」列がこの値と一致する集計行)。RSは 1シートに直近5年度分の予算履歴を束ねて持つが、Task 7はレビューシート 自体の年度分のみを1つのBudgetProjectとしてモデル化する(過去4年度分の 履歴は対象外。Task 7報告書の逸脱台帳を参照)""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject',
                        'Expenditure',
                        'ExpenditureBlock',
-                       'IndirectCost']} })
+                       'IndirectCost',
+                       'AnnualBudget']} })
     ministry: Optional[str] = Field(default=None, title="所管府省庁", description="""所管府省庁。RSの政策所管府省庁欄(rs_columns.RS_COLのministry_name。 列5を採用する根拠はrs_columns.pyの照合記録)の名称で、Task 5の府省参照表と 突合する。突合できない場合はこのスロットを設定せず、 core:UnresolvedReference を別に立てる""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject']} })
     budgetAmount: Optional[int] = Field(default=None, title="予算額", description="""当初予算(合計)。単位は円(RSのCSVヘッダに単位表記は無いが、実データの 最大値(約30.04兆円)から円であると確認済み。rs_columns.py照合記録 「検証8」参照)。'0'(ゼロ予算)は有効な値であり欠損ではない (rs_columns.find_budget_aggregate_row のdocstring参照)""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject']} })
     basisLaw: Optional[list[str]] = Field(default=None, title="根拠法令", description="""この予算事業の根拠法令。RSの政策・施策・法令等ファイルが持つ法令IDでの 直結を主とし(e-Govスナップショットに存在することを検査し、解決できた 場合のみ設定する)、法令IDが欠落した引用は法令名・略称の完全一致で フォールバックする(曖昧照合はしない)。解決できない引用はこのスロットを 設定せず、core:UnresolvedReference を別に立てる。1つの法令を複数の 条項で引用しても、このスロットには法令単位で1エッジのみ張る (rs_columns.py照合記録「検証4」参照)""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject']} })
@@ -421,12 +422,16 @@ class Expenditure(MonetaryItem):
                         'project': {'name': 'project', 'required': True}},
          'title': '支出'})
 
-    project: str = Field(default=..., title="予算事業", description="""この支出が属する予算事業""", json_schema_extra = { "linkml_meta": {'domain_of': ['Expenditure', 'ExpenditureBlock', 'IndirectCost']} })
+    project: str = Field(default=..., title="予算事業", description="""この支出が属する予算事業""", json_schema_extra = { "linkml_meta": {'domain_of': ['Expenditure',
+                       'ExpenditureBlock',
+                       'IndirectCost',
+                       'AnnualBudget']} })
     recipient: Optional[str] = Field(default=None, title="支払先", description="""この支出の支払先。法人番号による直結を主とし、無い場合は名称正規化の 一意一致でフォールバックする。このスロットを設定しない場合が3つある: (1)「その他」等への束ね行(RSのその他支出先フラグ、またはその他支出先名。 rs_columns.py照合記録「検証7」参照) — 黙って支出自体を落とすわけではなく core:label に表示名を残す。(2) RSが「法人番号を持たない支払先」(個人・ 職員等)に使うセンチネル法人番号(`9999999999999`。法人番号の検査数字は 満たすが実在しない。task-7-review.md指摘1・B18裁定)— この場合も core:UnresolvedReferenceは立てない(照合すべき実体がそもそも存在しない ので「未解決」と呼ぶと嘘になる)代わりに`payeeLabel`に表示名を残す。 (3) 解決を試みて失敗した場合(束ね行・センチネルのいずれでもないのに 一致しない)は core:UnresolvedReference を別に立てる""", json_schema_extra = { "linkml_meta": {'domain_of': ['Expenditure']} })
     fiscalYear: int = Field(default=..., title="予算年度", description="""このExpenditureが属するBudgetProjectと同じRSレビューシートの年度 (URIの構成要素でもある。`uris.expenditure_uri`)。**支出の実際の 支払年度ではない** — task-7-review.md指摘7の実測: RS 2025シートの 支出先ファイルは実はFY2024の執行実績であり(事業ごとのΣ[23]と budget_summaryのFY2024執行額[19]の比較で、中央比1.0000・完全一致 32.3%を確認)、支出先ファイル自身の事業年度列は193,912行すべて '2025'固定でFY2024/2025を区別する列を持たない。したがって `budgetAmount`(FY2025当初予算)と`Σ amount_jpy`(FY2024執行)を 同じBudgetProjectの下で単純に比較すると、年度の異なる2つの値を 比べることになる(URIのキーとリテラルの意味を分けるモデル変更は Task 7の範囲外。controllerの裁定を仰いだ懸念として報告書に記載)""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject',
                        'Expenditure',
                        'ExpenditureBlock',
-                       'IndirectCost']} })
+                       'IndirectCost',
+                       'AnnualBudget']} })
     payeeLabel: Optional[str] = Field(default=None, title="支払先の表示名", description="""支払先の表示名(RS上の名称。「個人Ａ」等)。`recipient`がセンチネル 法人番号(B18)により未設定になったExpenditureだけが持つ — 束ね行は core:label(skos:prefLabel)で表示名を既に持つため重複させず、 解決に失敗した行(NO_CANDIDATE/AMBIGUOUS)はcore:unresolved_textが 同じ役割を果たすため、このスロットは「照合対象ではないと分かっている」 行専用にする(task-7-review.md指摘1)""", json_schema_extra = { "linkml_meta": {'domain_of': ['Expenditure']} })
     role: Optional[str] = Field(default=None, title="役割", description="""RSの[16]事業を行う上での役割の文言をそのまま保存する(verbatim。 解釈しない — LangStringではなく識別子的なコード値に近い扱いとして plainなstringにする。B20裁定)。「一次支出先」「間接補助事業者」 「再委託」等の値が実データに現れ、事業内の支出額を段を区別せず単純合計 すると通過金を二重に数える(task-7-review.md指摘8)。この段を集計から どう扱うか(モデル化するか、一次支出先のみを対象にするか)はTask 9の 裁定事項であり、Task 7はデータを保存するだけにとどめる""", json_schema_extra = { "linkml_meta": {'domain_of': ['Expenditure', 'ExpenditureBlock']} })
     recipientMatchCategory: RecipientMatchCategoryEnum = Field(default=..., title="支払先の照合区分", description="""支払先の照合がどう分類されたかを、パイプライン自身の判定 (`rs.resolve_recipient`/`rs.build_projects`が既に下した決定)から そのまま書く。**すべてのExpenditureが必ず1つを持つ**(推論し直さない — D-2裁定)。CQ6(cq06-unresolved-recipients-per-project.rq)は以前、 `recipient`/`payeeLabel`/core:UnresolvedReferenceの有無から3重の OPTIONALで**この分類を推論していた**。73,919件に対して149.875秒 かかり(主語側が未束縛の`?u core:unresolvedFor ?e`逆引きが主因で 索引が効きにくい)、**かつ「不在から推論する」構造そのものがB42の 欠陥の原因だった**(sentinelという名前がグラフ上区別できない2種類 〔センチネル法人番号・実在しない法人番号〕の合算であることを、 推論だけでは見分けられなかった)。このスロットを明示することで、 cq06は単一の結合になり、読み手も「何が無いか」から推論せずに済む。 旧クエリ(OPTIONAL推論)と新クエリ(このスロットを直接読む)が同じ 結果を返すことは、ビルド時に`jgkg.pipeline`が突き合わせる (`queries/cq/legacy-cq06-optional-inference.rq`参照)""", json_schema_extra = { "linkml_meta": {'domain_of': ['Expenditure']} })
@@ -456,11 +461,15 @@ class ExpenditureBlock(MonetaryItem):
          'title': '支出先ブロック'})
 
     blockId: str = Field(default=..., title="支出先ブロック番号", description="""RSの支出先ブロック番号(\"A\"/\"B\"/…/\"AA\"…)。**単独では一意でない** — 事業ごとに振り直されるため、ExpenditureBlockの同一性は (fiscalYear, projectId, blockId)の組で決まる(URIも3つを材料にする。 `uris.expenditure_block_uri`)。そのためprojectIdと同じ理由で `identifier: true`は付けない。実測(2026-09-11): 19,125ブロックすべてで (事業, ブロック番号)に対しブロック名とブロック合計支出額が一意に決まる""", json_schema_extra = { "linkml_meta": {'domain_of': ['ExpenditureBlock']} })
-    project: str = Field(default=..., title="予算事業", description="""この支出が属する予算事業""", json_schema_extra = { "linkml_meta": {'domain_of': ['Expenditure', 'ExpenditureBlock', 'IndirectCost']} })
+    project: str = Field(default=..., title="予算事業", description="""この支出が属する予算事業""", json_schema_extra = { "linkml_meta": {'domain_of': ['Expenditure',
+                       'ExpenditureBlock',
+                       'IndirectCost',
+                       'AnnualBudget']} })
     fiscalYear: int = Field(default=..., title="予算年度", description="""このブロックが属するBudgetProjectと同じRSレビューシートの年度 (URIの構成要素でもある)。**支出の実際の支払年度ではない** — Expenditureの同名スロットと同じ事情(RS 2025シートの支出先情報は 実はFY2024の執行実績である。budget.yamlのExpenditure.fiscalYear のdocstring参照)""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject',
                        'Expenditure',
                        'ExpenditureBlock',
-                       'IndirectCost']} })
+                       'IndirectCost',
+                       'AnnualBudget']} })
     role: Optional[str] = Field(default=None, title="役割", description="""RSの[16]事業を行う上での役割の文言をそのまま保存する(verbatim。 解釈しない — LangStringではなく識別子的なコード値に近い扱いとして plainなstringにする。B20裁定)。「一次支出先」「間接補助事業者」 「再委託」等の値が実データに現れ、事業内の支出額を段を区別せず単純合計 すると通過金を二重に数える(task-7-review.md指摘8)。この段を集計から どう扱うか(モデル化するか、一次支出先のみを対象にするか)はTask 9の 裁定事項であり、Task 7はデータを保存するだけにとどめる""", json_schema_extra = { "linkml_meta": {'domain_of': ['Expenditure', 'ExpenditureBlock']} })
     payeeCount: Optional[int] = Field(default=None, title="支出先の数", description="""このブロックに含まれる支出先の数(RSの[15]支出先の数)。**法人の数とは 限らない** — 個人が対象のブロックでは人数が入る(実測: 児童手当等交付金の 「児童手当受給者」ブロックは7,789,939)。RSの表示名をそのまま使う""", json_schema_extra = { "linkml_meta": {'domain_of': ['ExpenditureBlock']} })
     paidByGovernment: Optional[bool] = Field(default=None, title="国自身が支払った", description="""このブロックへ、担当組織(国)が自ら支払ったか(RSの[15]担当組織からの支出)。 **資金の流れの入口を機械的に判定する唯一の手がかりであり、裁定B97の核心 である。** 支出額を段の区別なく全部足すと29.9兆円の重複が出る(実測)が、 このスロットが真のブロックだけを合計すれば重複を除いた額になる。 実測(2026-09-11): この印が付く行は22列ファイルの23,381行中、 支出元ブロックが**必ず空**(例外0件)であり、「国が起点である」という 読み方と矛盾しない。ただし`fundedBy`と排他ではない — **国からの支払いと他ブロックからの流入が混在するブロックが9件ある** (実測)。したがって「入口の合計」はそれらのブロックの全額を含み、 その分だけ過大になりうる(9/13,172ブロック)""", json_schema_extra = { "linkml_meta": {'domain_of': ['ExpenditureBlock']} })
@@ -480,11 +489,68 @@ class IndirectCost(MonetaryItem):
          'slot_usage': {'project': {'name': 'project', 'required': True}},
          'title': '国自らが支出する間接経費'})
 
-    project: str = Field(default=..., title="予算事業", description="""この支出が属する予算事業""", json_schema_extra = { "linkml_meta": {'domain_of': ['Expenditure', 'ExpenditureBlock', 'IndirectCost']} })
+    project: str = Field(default=..., title="予算事業", description="""この支出が属する予算事業""", json_schema_extra = { "linkml_meta": {'domain_of': ['Expenditure',
+                       'ExpenditureBlock',
+                       'IndirectCost',
+                       'AnnualBudget']} })
     fiscalYear: int = Field(default=..., title="予算年度", description="""この記述が対応する事業年度(RSのレビューシート自体の年度)。 budgetAmountは同じ年度の当初予算(合計)を指す (budget_summaryの「予算年度」列がこの値と一致する集計行)。RSは 1シートに直近5年度分の予算履歴を束ねて持つが、Task 7はレビューシート 自体の年度分のみを1つのBudgetProjectとしてモデル化する(過去4年度分の 履歴は対象外。Task 7報告書の逸脱台帳を参照)""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject',
                        'Expenditure',
                        'ExpenditureBlock',
-                       'IndirectCost']} })
+                       'IndirectCost',
+                       'AnnualBudget']} })
+    amount_jpy: Optional[int] = Field(default=None, title="金額(円)", description="""金額(円)""", json_schema_extra = { "linkml_meta": {'domain_of': ['MonetaryItem']} })
+    id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
+    label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
+
+
+class AnnualBudget(MonetaryItem):
+    """
+    1つの予算事業の、1つの会計年度についての予算と執行の記録(裁定B99)。 同一性は(fiscalYear, projectId, budgetFiscalYear)の組で決まる —— 「どのレビューシートが、どの事業の、どの年度について言っているか」。
+    **このクラスが必要な理由**: BudgetProjectは`budgetAmount`(レビュー シート年度の当初予算)しか持たず、**「増えた・減った」に答えられない**。 ところがRSのbudget_summaryは**直近5年度分(2021〜2025)の予算履歴を 既に持っていた**(実測2026-09-11)。裁定B96の追記で「経年比較には 2024年度の配布ファイルが必要」と書いたのは誤りで、**取得は不要だった**。
+    **`amount_jpy`(MonetaryItemから継承)は使わない。** このクラスは 名前の付いた金額を8つ持つので、そのうち1つを汎用スロットに載せると `SUM(?amount_jpy)`の意味がまた変わる(`ExpenditureBlock`のdocstringに 書いた「3粒度に載る」危険をこれ以上広げない)。**軸はMonetaryItemの ままにする** —— 金額についての記録であり、出来事でも主体でもない。
+    **恒等式(実測: 5年度すべてで差0円)**:
+
+        initialBudget + supplementaryBudget
+          + carriedOverFromPreviousYear + reserveFund
+        = totalBudgetAvailable
+
+    ビルド時に検査する。この恒等式が、2021年度の「当初予算107.1兆円に 対し執行額128.1兆円」という一見異常な並びを説明する(実際の分母は 150.2兆円、執行率85.3%)。
+    **翌年度要求額(RSの[22])はモデル化しない** —— 集計行23,036件すべてで 空だった(実測)。列は存在するが値が無い。
+    """
+    linkml_meta: ClassVar[LinkMLMeta] = LinkMLMeta({'from_schema': 'https://jgkg.norr-tech.com/def/budget',
+         'slot_usage': {'fiscalYear': {'description': 'この記録が載っている**レビューシート自体の年度**。 '
+                                                      '対象の会計年度は`budgetFiscalYear`が持つ。2025年のシートは '
+                                                      '2021〜2025について語るので、この2つは一致しないのが普通である',
+                                       'name': 'fiscalYear'},
+                        'project': {'name': 'project', 'required': True}},
+         'title': '年度ごとの予算と執行'})
+
+    project: str = Field(default=..., title="予算事業", description="""この支出が属する予算事業""", json_schema_extra = { "linkml_meta": {'domain_of': ['Expenditure',
+                       'ExpenditureBlock',
+                       'IndirectCost',
+                       'AnnualBudget']} })
+    fiscalYear: int = Field(default=..., title="予算年度", description="""この記録が載っている**レビューシート自体の年度**。 対象の会計年度は`budgetFiscalYear`が持つ。2025年のシートは 2021〜2025について語るので、この2つは一致しないのが普通である""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject',
+                       'Expenditure',
+                       'ExpenditureBlock',
+                       'IndirectCost',
+                       'AnnualBudget']} })
+    budgetFiscalYear: int = Field(default=..., title="予算年度", description="""この予算・執行の記録が対象とする会計年度(RSの[13]予算年度)。 **`fiscalYear`(レビューシート自体の年度)とは別物である** —— 2025年度のレビューシートは**直近5年度分(2021〜2025)の予算履歴を 束ねて持っている**(実測2026-09-11: budget_summary 47,100行の 予算年度の分布は 2021:7,180 / 2022:7,683 / 2023:9,915 / 2024:10,614 / 2025:11,708行)。この2つを同じスロットにすると 「いつのシートが、いつの年度について何と言っているか」が消える。""", json_schema_extra = { "linkml_meta": {'domain_of': ['AnnualBudget']} })
+    initialBudget: Optional[int] = Field(default=None, title="当初予算", description="""その予算年度の当初予算(合計)。RSの[14]当初予算（合計）。
+**`budgetAmount`とは意図的に別のスロットにしている(裁定B99)。** 両者は同じ列を出典とするが粒度が違う —— `budgetAmount`は BudgetProjectが持つ「レビューシート年度の予算額」(5,794件)で、 こちらはAnnualBudgetが持つ「各予算年度の当初予算」(23,036件)。 **同じスロット名にすると`SUM(?budgetAmount)`が粒度をまたいで 二重に数える**(`ExpenditureBlock`で`amount_jpy`が3粒度に載った のと同じ危険。`ExpenditureBlock`のdocstring参照)。 表示名も「予算額」と「当初予算」で区別する(RS自身が列14を 「当初予算（合計）」と呼ぶ)。
+**不変条件(実測)**: BudgetProjectの`budgetAmount`は、同じ事業の レビューシート年度のAnnualBudgetの`initialBudget`に等しい (どちらも`find_budget_aggregate_row`が選ぶ同じ行の同じ列から来る)。 ビルド時に検査する。""", json_schema_extra = { "linkml_meta": {'domain_of': ['AnnualBudget']} })
+    supplementaryBudget: Optional[int] = Field(default=None, title="補正予算", description="""その予算年度の補正予算(合計)。RSの[15]補正予算（合計）""", json_schema_extra = { "linkml_meta": {'domain_of': ['AnnualBudget']} })
+    carriedOverFromPreviousYear: Optional[int] = Field(default=None, title="前年度からの繰越し", description="""前年度から繰り越された額(合計)。RSの[16]前年度からの繰越し（合計）""", json_schema_extra = { "linkml_meta": {'domain_of': ['AnnualBudget']} })
+    reserveFund: Optional[int] = Field(default=None, title="予備費等", description="""予備費等(合計)。RSの[17]予備費等（合計）""", json_schema_extra = { "linkml_meta": {'domain_of': ['AnnualBudget']} })
+    totalBudgetAvailable: Optional[int] = Field(default=None, title="歳出予算現額", description="""その年度に実際に使える額の合計(歳出予算現額)。RSの[18]計（歳出予算現額合計）。
+**執行額を比べるべき分母はこれであり、当初予算ではない(裁定B99)。** 実測(2026-09-11、5年度すべて)で次の恒等式が**差0円で成立する**:
+
+    当初予算 + 補正予算 + 前年度からの繰越し + 予備費等 = 歳出予算現額
+
+この列が無いと、2021年度の「当初予算107.1兆円に対し執行額128.1兆円」 という一見異常な並びを説明できない —— 実際の分母は歳出予算現額 150.2兆円で、執行率は85.3%である。**裁定B96が「予算額と支出額を 並べるな」と言ったのは正しかったが、正しい分母がこの列にあった。**""", json_schema_extra = { "linkml_meta": {'domain_of': ['AnnualBudget']} })
+    executedAmount: Optional[int] = Field(default=None, title="執行額", description="""その年度に実際に執行された額(合計)。RSの[19]執行額（合計）。
+**この列は資金の流れ(ExpenditureBlock)の計算に一切使っていないため、 独立した検証のオラクルになる(裁定B98)。** 実測: FY2024の執行額 128,407,860,724,145円に対し、CQ12(入口ブロック+間接経費)が98.83%、 構造からの推論を含めると100.086%で一致した。裁定B20が挙げた 「比が正確に2.0/3.0になる245事業」のうち243事業が比1.0に直った。
+**レビューシート年度(2025)の執行額は0である**(まだ執行されていない。 実測: 5,794事業すべて)。欠損ではなく「その時点でまだ無い」。""", json_schema_extra = { "linkml_meta": {'domain_of': ['AnnualBudget']} })
+    carriedOverToNextYear: Optional[int] = Field(default=None, title="翌年度への繰越し", description="""翌年度へ繰り越した額(合計)。RSの[21]翌年度への繰越し(合計）。 ある年度の`carriedOverToNextYear`は、次の年度の `carriedOverFromPreviousYear`と対応するはずだが、**事業単位では 一致を仮定しない**(事業の分割・統合・終了があるため)。""", json_schema_extra = { "linkml_meta": {'domain_of': ['AnnualBudget']} })
     amount_jpy: Optional[int] = Field(default=None, title="金額(円)", description="""金額(円)""", json_schema_extra = { "linkml_meta": {'domain_of': ['MonetaryItem']} })
     id: str = Field(default=..., description="""このリソースのURI""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity']} })
     label: Optional[str] = Field(default=None, description="""人間が読む名称""", json_schema_extra = { "linkml_meta": {'domain_of': ['Entity'], 'slot_uri': 'skos:prefLabel'} })
@@ -510,3 +576,4 @@ BudgetProject.model_rebuild()
 Expenditure.model_rebuild()
 ExpenditureBlock.model_rebuild()
 IndirectCost.model_rebuild()
+AnnualBudget.model_rebuild()

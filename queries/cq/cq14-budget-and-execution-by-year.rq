@@ -1,0 +1,51 @@
+# CQ14: 国の予算はいくら付いて、いくら使われたか。年度ごとに増えたのか減ったのか(裁定B99)
+#
+# **この製品が今まで答えられなかった問いである。** BudgetProjectは
+# レビューシート年度の当初予算しか持たず、「増えた・減った」が言えなかった
+# ——「状態」の把握は本来「変化」なので、これは構造的な欠落だった。
+# RSのbudget_summaryが**直近5年度分の予算履歴を既に持っていた**ことが
+# 分かり(裁定B98)、`budget:AnnualBudget`としてモデル化した(裁定B99)。
+#
+# **執行額を比べる分母は`totalBudgetAvailable`(歳出予算現額)であり、
+# `initialBudget`(当初予算)ではない。** 当初予算と執行額を並べると
+# 2021年度は107.1兆円に対し128.1兆円となり「予算の1.2倍使った」と
+# 読めてしまうが、実際には補正予算・前年度からの繰越し・予備費等が
+# 加わった150.2兆円が分母で、執行率は85.3%である(実測)。
+# 裁定B96が「予算額と支出額を並べるな」と言ったのは正しく、
+# **正しい分母がこの列にあった。**
+#
+# 次の恒等式が5年度すべてで差0円で成立することを実測済み(裁定B99):
+#   当初予算 + 補正予算 + 前年度からの繰越し + 予備費等 = 歳出予算現額
+# このCQは4つの内訳も返すので、**増減がどの要素で起きたかまで読める。**
+#
+# **レビューシート年度(最新年度)の執行額は0である** —— まだ執行されて
+# いないため(実測: 2025年度の5,794事業すべて)。欠損ではない。
+# 執行率を計算する側は、分子が0の年度を「執行率0%」と表示してはいけない。
+#
+# **`fiscalYear`(レビューシート自体の年度)で絞っていないのは意図的である。**
+# 将来2024年度のシートも取り込むと、同じ`budgetFiscalYear`について
+# 2つのシートが別々に語る状態になる —— そのとき**このCQは両方を返し、
+# 食い違いがあれば見える**。片方を黙って選ぶより、見えた方がよい。
+PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
+
+SELECT ?sheetYear ?budgetYear
+       (SUM(?initial) AS ?initialBudget)
+       (SUM(?supplementary) AS ?supplementaryBudget)
+       (SUM(?carriedIn) AS ?carriedOverFromPreviousYear)
+       (SUM(?reserve) AS ?reserveFund)
+       (SUM(?available) AS ?totalBudgetAvailable)
+       (SUM(?executed) AS ?executedAmount)
+       (COUNT(?ab) AS ?projectCount)
+WHERE {
+  ?ab a budget:AnnualBudget ;
+      budget:fiscalYear ?sheetYear ;
+      budget:budgetFiscalYear ?budgetYear ;
+      budget:initialBudget ?initial ;
+      budget:supplementaryBudget ?supplementary ;
+      budget:carriedOverFromPreviousYear ?carriedIn ;
+      budget:reserveFund ?reserve ;
+      budget:totalBudgetAvailable ?available ;
+      budget:executedAmount ?executed .
+}
+GROUP BY ?sheetYear ?budgetYear
+ORDER BY ?sheetYear ?budgetYear

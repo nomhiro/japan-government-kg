@@ -194,6 +194,19 @@ svg.graph.dragging { cursor: grabbing; }
 #ov-match .good { color: var(--found); font-weight: 600; }
 
 
+/* 年度ごとの予算と執行(裁定B99) */
+#ov-history { overflow-x: auto; }
+#ov-history table { border-collapse: collapse; font-size: 0.84rem; width: 100%; }
+#ov-history th, #ov-history td { border-bottom: 1px solid var(--rule); padding: 0.3rem 0.5rem 0.3rem 0; text-align: left; }
+#ov-history thead th { color: var(--muted); font-weight: 600; font-size: 0.78rem; text-align: right; }
+#ov-history thead th:first-child, #ov-history thead th:nth-child(2) { text-align: left; }
+#ov-history tbody th { white-space: nowrap; font-weight: 600; }
+#ov-history td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#ov-history td.histbar { width: 40%; min-width: 10rem; }
+#ov-history .track { position: relative; display: block; height: 0.85rem; background: var(--surface-2); border-radius: 2px; }
+#ov-history .fill { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+#ov-history .tick { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); }
+
 /* 資金の流れの図(裁定B97)。SVGはCSSを読むのでトークンがそのまま効く */
 .flowfig { margin: 0.8rem 0 0.4rem; }
 .flowfig svg { display: block; width: 100%; max-width: 100%; height: auto; color: var(--muted); }
@@ -296,6 +309,9 @@ svg.graph.dragging { cursor: grabbing; }
   </div>
   <p class="ov-sub" id="ov-scale-note"></p>
   <div id="ov-bars"></div>
+
+  <h2 class="ov-h">予算はいくら付いて、いくら使われたか（5年分）</h2>
+  <div id="ov-history"></div>
 
   <h2 class="ov-h">国が自ら支払った額（2025年度）</h2>
   <div id="ov-spend"></div>
@@ -1231,6 +1247,47 @@ svg.graph.dragging { cursor: grabbing; }
       wire(".bar", "data-ministry");
     }
 
+    // 年度ごとの予算と執行(裁定B99)。**この製品が今まで答えられなかった問い。**
+    //
+    // **正しい分母は歳出予算現額であり、当初予算ではない。** 当初予算と執行額を
+    // 並べると2021年度は107.1兆に対し128.1兆で「予算の1.2倍使った」と読めるが、
+    // 補正予算・前年度繰越・予備費を加えた150.2兆が分母で、執行率は85.3%。
+    // 恒等式(当初+補正+繰越+予備費=現額)は5年度すべて差0円で成立する(実測)。
+    function renderHistory() {
+      var H = OV.history;
+      var maxAvail = Math.max.apply(null, H.map(function (h) { return h.available; }));
+      var rows = H.map(function (h) {
+        var rate = h.available ? (h.executed / h.available) * 100 : null;
+        // 帯: 歳出予算現額を全体、執行額を塗り、当初予算の位置に目印を置く
+        var execPct = h.available ? (h.executed / h.available) * 100 : 0;
+        var initPct = h.available ? (h.initial / h.available) * 100 : 0;
+        var widthPct = (h.available / maxAvail) * 100;
+        return '<tr><th>' + h.year + '年度</th>' +
+          '<td class="histbar"><span class="track" style="width:' + widthPct.toFixed(2) + '%">' +
+          '<span class="fill" style="width:' + execPct.toFixed(2) + '%"></span>' +
+          '<span class="tick" style="left:' + initPct.toFixed(2) + '%" ' +
+          'title="当初予算 ' + jpFull(h.initial) + '"></span>' +
+          "</span></td>" +
+          '<td class="n">' + jpShort(h.initial) + "</td>" +
+          '<td class="n">' + jpShort(h.available) + "</td>" +
+          '<td class="n">' + (h.executed ? jpShort(h.executed) : "—") + "</td>" +
+          '<td class="n">' + (rate === null || !h.executed ? "—" : rate.toFixed(1) + "%") + "</td>" +
+          "</tr>";
+      }).join("");
+      document.getElementById("ov-history").innerHTML =
+        "<table><thead><tr><th></th><th></th><th>当初予算</th>" +
+        "<th>歳出予算現額</th><th>執行額</th><th>執行率</th></tr></thead>" +
+        "<tbody>" + rows + "</tbody></table>" +
+        '<p class="ov-sub">帯の全体が<b>歳出予算現額</b>（その年度に実際に使える額）、' +
+        "塗った部分が<b>執行額</b>、縦線が<b>当初予算</b>の位置です。" +
+        "当初予算より使える額が大きいのは、<b>補正予算・前年度からの繰越し・予備費</b>が" +
+        "加わるためです（4つを足すと現額に一致します——5年度すべてで差0円）。" +
+        "<b>" + H[H.length - 1].year + "年度の執行額が空欄なのは、まだ執行されていないから</b>です" +
+        "（執行率0%ではありません）。</p>" +
+        '<p class="ov-sub">この5年分は<b>2025年度のレビューシートが記録しているもの</b>です。' +
+        "年度ごとに別のシートを取ってきて並べたのではありません。</p>";
+    }
+
     // 「国が支出した額」と資金の流れ(裁定B97)。
     //
     // **裁定B96では「支出総額は出せない」と書いたが、撤回した。**
@@ -1316,13 +1373,21 @@ svg.graph.dragging { cursor: grabbing; }
       // 予算と支出を並べてはいけない実証(裁定B96の原則を維持する根拠)
       var MM = SP.mismatchExample;
       document.getElementById("ov-nomix").innerHTML =
-        "<p><b>予算額と支出額を並べたり引き算したりはしません。</b>" +
-        "年度も基準も違います——支出の記録は<b>前年度の執行実績</b>で、" +
-        "基金や複数年度の契約を含みます。</p>" +
-        "<p>実例: <b>" + esc(MM.ministry) + "</b>の2025年度予算は " + jpShort(MM.budget) +
-        "ですが、入口ベースの支出は " + jpShort(MM.paid) + " です（" +
-        "約" + (MM.paid / MM.budget).toFixed(1) + "倍）。" +
-        "並べれば「予算の4倍近く使った」と必ず誤読されます。</p>";
+        "<p><b>当初予算と執行額を並べてはいけません。</b>" +
+        "正しい分母は<b>歳出予算現額</b>（当初＋補正＋前年度繰越＋予備費）です。</p>" +
+        "<p><b>この誤りを実際に踏んだ記録</b>: " +
+        esc(MM.ministry) + "について「予算 " + jpShort(MM.budget2025Initial) +
+        " に対し支出 " + jpShort(MM.paid) + " で約3.9倍」と書きましたが、" +
+        "<b>年度も分母も違う2つを割った値</b>で意味がありません" +
+        "（分子はFY2024相当の支出、分母はFY2025の当初予算）。</p>" +
+        "<p><b>正しく並べるとこうなります</b>: " + esc(MM.ministry) +
+        "のFY2024の歳出予算現額は " + jpShort(MM.available2024) +
+        "、執行額は " + jpShort(MM.executed2024) + "（" +
+        ((MM.executed2024 / MM.available2024) * 100).toFixed(1) + "%）。" +
+        "支出先情報から積み上げた " + jpShort(MM.paid) + " は、その執行額の <b>" +
+        ((MM.paid / MM.executed2024) * 100).toFixed(1) +
+        "%</b> です —— <b>別の経路で数えた2つの値が一致している</b>ので、" +
+        "資金の流れの積み上げが正しいことの裏づけにもなっています。</p>";
     }
 
     // 「支出の総額を出さない」理由(裁定B96)。**実例を必ず添える。**
@@ -1414,6 +1479,7 @@ svg.graph.dragging { cursor: grabbing; }
     }
     wire(".ex button", "data-goto");
 
+    renderHistory();
     renderSpending();
     renderBars("all");
     var sa = document.getElementById("scale-all"), sr = document.getElementById("scale-rest");

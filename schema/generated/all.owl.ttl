@@ -13,6 +13,113 @@
     dcterms:title "日本政府ナレッジグラフ 全モジュール統合(検証用)"@ja ;
     skos:definition "SHACL検証のために全モジュールを1つに束ねるだけのスキーマ。ここから生成した all.shacl.ttl を検証の唯一の入力にする。モジュール別に生成すると、import された 上位モジュールのシェイプが各ファイルに重複して現れ、閉じたシェイプが同一クラスに 複数適用されて偽の違反になるため。 新しいドメインモジュールを追加したら、必ずここの imports にも追加する。 このオントロジーは日本国政府が公開するデータを第三者が構造化したものであり、日本国政府による公式なデータセットではない。"@ja .
 
+<https://jgkg.norr-tech.com/def/budget#AnnualBudget> a owl:Class ;
+    rdfs:label "AnnualBudget" ;
+    dcterms:title "年度ごとの予算と執行"@ja ;
+    rdfs:subClassOf [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#totalBudgetAvailable> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#executedAmount> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#initialBudget> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#reserveFund> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#supplementaryBudget> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#totalBudgetAvailable> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#executedAmount> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#initialBudget> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#reserveFund> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#supplementaryBudget> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:integer ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#totalBudgetAvailable> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:integer ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#executedAmount> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:integer ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#initialBudget> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:integer ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#reserveFund> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#carriedOverToNextYear> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:integer ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#supplementaryBudget> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#project> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#carriedOverToNextYear> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#fiscalYear> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom <https://jgkg.norr-tech.com/def/budget#BudgetProject> ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#project> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#budgetFiscalYear> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#carriedOverFromPreviousYear> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#project> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#fiscalYear> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:integer ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#carriedOverToNextYear> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#budgetFiscalYear> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:integer ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#fiscalYear> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:integer ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#budgetFiscalYear> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#carriedOverFromPreviousYear> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:integer ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#carriedOverFromPreviousYear> ],
+        <https://jgkg.norr-tech.com/def/core#MonetaryItem> ;
+    skos:definition """1つの予算事業の、1つの会計年度についての予算と執行の記録(裁定B99)。 同一性は(fiscalYear, projectId, budgetFiscalYear)の組で決まる —— 「どのレビューシートが、どの事業の、どの年度について言っているか」。\r
+**このクラスが必要な理由**: BudgetProjectは`budgetAmount`(レビュー シート年度の当初予算)しか持たず、**「増えた・減った」に答えられない**。 ところがRSのbudget_summaryは**直近5年度分(2021〜2025)の予算履歴を 既に持っていた**(実測2026-09-11)。裁定B96の追記で「経年比較には 2024年度の配布ファイルが必要」と書いたのは誤りで、**取得は不要だった**。\r
+**`amount_jpy`(MonetaryItemから継承)は使わない。** このクラスは 名前の付いた金額を8つ持つので、そのうち1つを汎用スロットに載せると `SUM(?amount_jpy)`の意味がまた変わる(`ExpenditureBlock`のdocstringに 書いた「3粒度に載る」危険をこれ以上広げない)。**軸はMonetaryItemの ままにする** —— 金額についての記録であり、出来事でも主体でもない。\r
+**恒等式(実測: 5年度すべてで差0円)**:\r
+\r
+    initialBudget + supplementaryBudget\r
+      + carriedOverFromPreviousYear + reserveFund\r
+    = totalBudgetAvailable\r
+\r
+ビルド時に検査する。この恒等式が、2021年度の「当初予算107.1兆円に 対し執行額128.1兆円」という一見異常な並びを説明する(実際の分母は 150.2兆円、執行率85.3%)。\r
+**翌年度要求額(RSの[22])はモデル化しない** —— 集計行23,036件すべてで 空だった(実測)。列は存在するが値が無い。"""@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
+
 <https://jgkg.norr-tech.com/def/budget#Expenditure> a owl:Class ;
     rdfs:label "Expenditure" ;
     dcterms:title "支出"@ja ;
@@ -454,11 +561,50 @@ skos:prefLabel a owl:DatatypeProperty ;
     skos:definition "当初予算(合計)。単位は円(RSのCSVヘッダに単位表記は無いが、実データの 最大値(約30.04兆円)から円であると確認済み。rs_columns.py照合記録 「検証8」参照)。'0'(ゼロ予算)は有効な値であり欠損ではない (rs_columns.find_budget_aggregate_row のdocstring参照)"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
 
+<https://jgkg.norr-tech.com/def/budget#budgetFiscalYear> a owl:DatatypeProperty ;
+    rdfs:label "budgetFiscalYear" ;
+    dcterms:title "予算年度"@ja ;
+    rdfs:range xsd:integer ;
+    skos:definition "この予算・執行の記録が対象とする会計年度(RSの[13]予算年度)。 **`fiscalYear`(レビューシート自体の年度)とは別物である** —— 2025年度のレビューシートは**直近5年度分(2021〜2025)の予算履歴を 束ねて持っている**(実測2026-09-11: budget_summary 47,100行の 予算年度の分布は 2021:7,180 / 2022:7,683 / 2023:9,915 / 2024:10,614 / 2025:11,708行)。この2つを同じスロットにすると 「いつのシートが、いつの年度について何と言っているか」が消える。"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
+
+<https://jgkg.norr-tech.com/def/budget#carriedOverFromPreviousYear> a owl:DatatypeProperty ;
+    rdfs:label "carriedOverFromPreviousYear" ;
+    dcterms:title "前年度からの繰越し"@ja ;
+    rdfs:range xsd:integer ;
+    skos:definition "前年度から繰り越された額(合計)。RSの[16]前年度からの繰越し（合計）"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
+
+<https://jgkg.norr-tech.com/def/budget#carriedOverToNextYear> a owl:DatatypeProperty ;
+    rdfs:label "carriedOverToNextYear" ;
+    dcterms:title "翌年度への繰越し"@ja ;
+    rdfs:range xsd:integer ;
+    skos:definition "翌年度へ繰り越した額(合計)。RSの[21]翌年度への繰越し(合計）。 ある年度の`carriedOverToNextYear`は、次の年度の `carriedOverFromPreviousYear`と対応するはずだが、**事業単位では 一致を仮定しない**(事業の分割・統合・終了があるため)。"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
+
+<https://jgkg.norr-tech.com/def/budget#executedAmount> a owl:DatatypeProperty ;
+    rdfs:label "executedAmount" ;
+    dcterms:title "執行額"@ja ;
+    rdfs:range xsd:integer ;
+    skos:definition """その年度に実際に執行された額(合計)。RSの[19]執行額（合計）。\r
+**この列は資金の流れ(ExpenditureBlock)の計算に一切使っていないため、 独立した検証のオラクルになる(裁定B98)。** 実測: FY2024の執行額 128,407,860,724,145円に対し、CQ12(入口ブロック+間接経費)が98.83%、 構造からの推論を含めると100.086%で一致した。裁定B20が挙げた 「比が正確に2.0/3.0になる245事業」のうち243事業が比1.0に直った。\r
+**レビューシート年度(2025)の執行額は0である**(まだ執行されていない。 実測: 5,794事業すべて)。欠損ではなく「その時点でまだ無い」。"""@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
+
 <https://jgkg.norr-tech.com/def/budget#inBlock> a owl:ObjectProperty ;
     rdfs:label "inBlock" ;
     dcterms:title "属する支出先ブロック"@ja ;
     rdfs:range <https://jgkg.norr-tech.com/def/budget#ExpenditureBlock> ;
     skos:definition "この支出(支出先1件分)が、どの支出先ブロック=資金の流れのどの段に 属するか。**これが無いと、支出を段の区別なく合計してしまう** (裁定B96で29.9兆円の重複として実測した誤りそのもの)。 `role`は従来Expenditure側にも伝播させているが(B20)、役割は一次データ上 ブロック行にしか現れない属性であり、本来の持ち主はブロック側である"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
+
+<https://jgkg.norr-tech.com/def/budget#initialBudget> a owl:DatatypeProperty ;
+    rdfs:label "initialBudget" ;
+    dcterms:title "当初予算"@ja ;
+    rdfs:range xsd:integer ;
+    skos:definition """その予算年度の当初予算(合計)。RSの[14]当初予算（合計）。\r
+**`budgetAmount`とは意図的に別のスロットにしている(裁定B99)。** 両者は同じ列を出典とするが粒度が違う —— `budgetAmount`は BudgetProjectが持つ「レビューシート年度の予算額」(5,794件)で、 こちらはAnnualBudgetが持つ「各予算年度の当初予算」(23,036件)。 **同じスロット名にすると`SUM(?budgetAmount)`が粒度をまたいで 二重に数える**(`ExpenditureBlock`で`amount_jpy`が3粒度に載った のと同じ危険。`ExpenditureBlock`のdocstring参照)。 表示名も「予算額」と「当初予算」で区別する(RS自身が列14を 「当初予算（合計）」と呼ぶ)。\r
+**不変条件(実測)**: BudgetProjectの`budgetAmount`は、同じ事業の レビューシート年度のAnnualBudgetの`initialBudget`に等しい (どちらも`find_budget_aggregate_row`が選ぶ同じ行の同じ列から来る)。 ビルド時に検査する。"""@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
 
 <https://jgkg.norr-tech.com/def/budget#ministry> a owl:ObjectProperty ;
@@ -514,6 +660,32 @@ skos:prefLabel a owl:DatatypeProperty ;
     dcterms:title "支払先の照合区分"@ja ;
     rdfs:range <https://jgkg.norr-tech.com/def/budget#RecipientMatchCategoryEnum> ;
     skos:definition "支払先の照合がどう分類されたかを、パイプライン自身の判定 (`rs.resolve_recipient`/`rs.build_projects`が既に下した決定)から そのまま書く。**すべてのExpenditureが必ず1つを持つ**(推論し直さない — D-2裁定)。CQ6(cq06-unresolved-recipients-per-project.rq)は以前、 `recipient`/`payeeLabel`/core:UnresolvedReferenceの有無から3重の OPTIONALで**この分類を推論していた**。73,919件に対して149.875秒 かかり(主語側が未束縛の`?u core:unresolvedFor ?e`逆引きが主因で 索引が効きにくい)、**かつ「不在から推論する」構造そのものがB42の 欠陥の原因だった**(sentinelという名前がグラフ上区別できない2種類 〔センチネル法人番号・実在しない法人番号〕の合算であることを、 推論だけでは見分けられなかった)。このスロットを明示することで、 cq06は単一の結合になり、読み手も「何が無いか」から推論せずに済む。 旧クエリ(OPTIONAL推論)と新クエリ(このスロットを直接読む)が同じ 結果を返すことは、ビルド時に`jgkg.pipeline`が突き合わせる (`queries/cq/legacy-cq06-optional-inference.rq`参照)"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
+
+<https://jgkg.norr-tech.com/def/budget#reserveFund> a owl:DatatypeProperty ;
+    rdfs:label "reserveFund" ;
+    dcterms:title "予備費等"@ja ;
+    rdfs:range xsd:integer ;
+    skos:definition "予備費等(合計)。RSの[17]予備費等（合計）"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
+
+<https://jgkg.norr-tech.com/def/budget#supplementaryBudget> a owl:DatatypeProperty ;
+    rdfs:label "supplementaryBudget" ;
+    dcterms:title "補正予算"@ja ;
+    rdfs:range xsd:integer ;
+    skos:definition "その予算年度の補正予算(合計)。RSの[15]補正予算（合計）"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
+
+<https://jgkg.norr-tech.com/def/budget#totalBudgetAvailable> a owl:DatatypeProperty ;
+    rdfs:label "totalBudgetAvailable" ;
+    dcterms:title "歳出予算現額"@ja ;
+    rdfs:range xsd:integer ;
+    skos:definition """その年度に実際に使える額の合計(歳出予算現額)。RSの[18]計（歳出予算現額合計）。\r
+**執行額を比べるべき分母はこれであり、当初予算ではない(裁定B99)。** 実測(2026-09-11、5年度すべて)で次の恒等式が**差0円で成立する**:\r
+\r
+    当初予算 + 補正予算 + 前年度からの繰越し + 予備費等 = 歳出予算現額\r
+\r
+この列が無いと、2021年度の「当初予算107.1兆円に対し執行額128.1兆円」 という一見異常な並びを説明できない —— 実際の分母は歳出予算現額 150.2兆円で、執行率は85.3%である。**裁定B96が「予算額と支出額を 並べるな」と言ったのは正しかったが、正しい分母がこの列にあった。**"""@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
 
 <https://jgkg.norr-tech.com/def/core#Event> a owl:Class ;
@@ -688,64 +860,6 @@ skos:prefLabel a owl:DatatypeProperty ;
     skos:definition "所在地の都道府県名"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
-<https://jgkg.norr-tech.com/def/budget#BudgetProject> a owl:Class ;
-    rdfs:label "BudgetProject" ;
-    dcterms:title "予算事業"@ja ;
-    rdfs:subClassOf [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/budget#budgetAmount> ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/budget#projectName> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/budget#budgetAmount> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom rdf:langString ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/budget#projectName> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/budget#projectName> ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/budget#basisLaw> ],
-        [ a owl:Restriction ;
-            owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/budget#ministry> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom xsd:integer ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/budget#budgetAmount> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/budget#ministry> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom <https://jgkg.norr-tech.com/def/law#Law> ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/budget#basisLaw> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/budget#fiscalYear> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom xsd:string ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/budget#projectId> ],
-        [ a owl:Restriction ;
-            owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/budget#projectId> ],
-        [ a owl:Restriction ;
-            owl:minCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/budget#fiscalYear> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom xsd:integer ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/budget#fiscalYear> ],
-        [ a owl:Restriction ;
-            owl:allValuesFrom <https://jgkg.norr-tech.com/def/org#Organization> ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/budget#ministry> ],
-        [ a owl:Restriction ;
-            owl:minCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/budget#projectId> ],
-        <https://jgkg.norr-tech.com/def/core#Work> ;
-    skos:definition "行政事業レビュー(RS)の予算事業。projectIdとfiscalYearの組で同一性を持つ (URIも両方を材料にする。上記projectIdのdocstring参照)"@ja ;
-    skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
-
 <https://jgkg.norr-tech.com/def/budget#ExpenditureBlock> a owl:Class ;
     rdfs:label "ExpenditureBlock" ;
     dcterms:title "支出先ブロック"@ja ;
@@ -838,21 +952,63 @@ skos:prefLabel a owl:DatatypeProperty ;
     skos:definition "法人種別が国の機関である組織"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/org> .
 
-<https://jgkg.norr-tech.com/def/core#MonetaryItem> a owl:Class ;
-    rdfs:label "MonetaryItem" ;
-    dcterms:title "いくらで(金額)"@ja ;
+<https://jgkg.norr-tech.com/def/budget#BudgetProject> a owl:Class ;
+    rdfs:label "BudgetProject" ;
+    dcterms:title "予算事業"@ja ;
     rdfs:subClassOf [ a owl:Restriction ;
             owl:minCardinality 0 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#amount_jpy> ],
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#budgetAmount> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#projectName> ],
         [ a owl:Restriction ;
             owl:maxCardinality 1 ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#amount_jpy> ],
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#budgetAmount> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom rdf:langString ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#projectName> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#projectName> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#basisLaw> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#ministry> ],
         [ a owl:Restriction ;
             owl:allValuesFrom xsd:integer ;
-            owl:onProperty <https://jgkg.norr-tech.com/def/core#amount_jpy> ],
-        <https://jgkg.norr-tech.com/def/core#Entity> ;
-    skos:definition "「いくらで」の軸。予算科目・支出の上位"@ja ;
-    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#budgetAmount> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#ministry> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom <https://jgkg.norr-tech.com/def/law#Law> ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#basisLaw> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#fiscalYear> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:string ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#projectId> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#projectId> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#fiscalYear> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:integer ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#fiscalYear> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom <https://jgkg.norr-tech.com/def/org#Organization> ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#ministry> ],
+        [ a owl:Restriction ;
+            owl:minCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/budget#projectId> ],
+        <https://jgkg.norr-tech.com/def/core#Work> ;
+    skos:definition "行政事業レビュー(RS)の予算事業。projectIdとfiscalYearの組で同一性を持つ (URIも両方を材料にする。上記projectIdのdocstring参照)"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
 
 <https://jgkg.norr-tech.com/def/org#Organization> a owl:Class ;
     rdfs:label "Organization" ;
@@ -917,6 +1073,22 @@ skos:prefLabel a owl:DatatypeProperty ;
     skos:definition "RSの[16]事業を行う上での役割の文言をそのまま保存する(verbatim。 解釈しない — LangStringではなく識別子的なコード値に近い扱いとして plainなstringにする。B20裁定)。「一次支出先」「間接補助事業者」 「再委託」等の値が実データに現れ、事業内の支出額を段を区別せず単純合計 すると通過金を二重に数える(task-7-review.md指摘8)。この段を集計から どう扱うか(モデル化するか、一次支出先のみを対象にするか)はTask 9の 裁定事項であり、Task 7はデータを保存するだけにとどめる"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
 
+<https://jgkg.norr-tech.com/def/core#MonetaryItem> a owl:Class ;
+    rdfs:label "MonetaryItem" ;
+    dcterms:title "いくらで(金額)"@ja ;
+    rdfs:subClassOf [ a owl:Restriction ;
+            owl:minCardinality 0 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#amount_jpy> ],
+        [ a owl:Restriction ;
+            owl:maxCardinality 1 ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#amount_jpy> ],
+        [ a owl:Restriction ;
+            owl:allValuesFrom xsd:integer ;
+            owl:onProperty <https://jgkg.norr-tech.com/def/core#amount_jpy> ],
+        <https://jgkg.norr-tech.com/def/core#Entity> ;
+    skos:definition "「いくらで」の軸。予算科目・支出の上位"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/core> .
+
 <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum> a owl:Class ;
     rdfs:label "UnresolvedReasonEnum" ;
     owl:unionOf ( <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum/AMBIGUOUS> <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum/NO_CANDIDATE> <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum/OBSOLETE_ORGANIZATION> <https://jgkg.norr-tech.com/def/core#UnresolvedReasonEnum/OLD_MINISTRY> ) ;
@@ -941,13 +1113,6 @@ skos:prefLabel a owl:DatatypeProperty ;
     skos:exactMatch prov:Agent ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
 
-<https://jgkg.norr-tech.com/def/budget#project> a owl:ObjectProperty ;
-    rdfs:label "project" ;
-    dcterms:title "予算事業"@ja ;
-    rdfs:range <https://jgkg.norr-tech.com/def/budget#BudgetProject> ;
-    skos:definition "この支出が属する予算事業"@ja ;
-    skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
-
 <https://jgkg.norr-tech.com/def/core#Entity> a owl:Class ;
     rdfs:label "Entity" ;
     rdfs:subClassOf [ a owl:Restriction ;
@@ -971,6 +1136,13 @@ skos:prefLabel a owl:DatatypeProperty ;
         [ owl:unionOf ( <https://jgkg.norr-tech.com/def/core#Agent> <https://jgkg.norr-tech.com/def/core#Concept> <https://jgkg.norr-tech.com/def/core#Event> <https://jgkg.norr-tech.com/def/core#MonetaryItem> <https://jgkg.norr-tech.com/def/core#Place> <https://jgkg.norr-tech.com/def/core#UnresolvedReference> <https://jgkg.norr-tech.com/def/core#Work> ) ] ;
     skos:definition "本KGが扱うすべての事物の基底"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/core> .
+
+<https://jgkg.norr-tech.com/def/budget#project> a owl:ObjectProperty ;
+    rdfs:label "project" ;
+    dcterms:title "予算事業"@ja ;
+    rdfs:range <https://jgkg.norr-tech.com/def/budget#BudgetProject> ;
+    skos:definition "この支出が属する予算事業"@ja ;
+    skos:inScheme <https://jgkg.norr-tech.com/def/budget> .
 
 <https://jgkg.norr-tech.com/def/budget#fiscalYear> a owl:DatatypeProperty ;
     rdfs:label "fiscalYear" ;

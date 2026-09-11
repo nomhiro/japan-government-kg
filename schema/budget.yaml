@@ -220,6 +220,88 @@ slots:
       `role`は従来Expenditure側にも伝播させているが(B20)、役割は一次データ上
       ブロック行にしか現れない属性であり、本来の持ち主はブロック側である
 
+  budgetFiscalYear:
+    title: 予算年度
+    required: true
+    range: integer
+    description: >-
+      この予算・執行の記録が対象とする会計年度(RSの[13]予算年度)。
+      **`fiscalYear`(レビューシート自体の年度)とは別物である** ——
+      2025年度のレビューシートは**直近5年度分(2021〜2025)の予算履歴を
+      束ねて持っている**(実測2026-09-11: budget_summary 47,100行の
+      予算年度の分布は 2021:7,180 / 2022:7,683 / 2023:9,915 /
+      2024:10,614 / 2025:11,708行)。この2つを同じスロットにすると
+      「いつのシートが、いつの年度について何と言っているか」が消える。
+  initialBudget:
+    title: 当初予算
+    range: integer
+    description: >-
+      その予算年度の当初予算(合計)。RSの[14]当初予算（合計）。
+
+      **`budgetAmount`とは意図的に別のスロットにしている(裁定B99)。**
+      両者は同じ列を出典とするが粒度が違う —— `budgetAmount`は
+      BudgetProjectが持つ「レビューシート年度の予算額」(5,794件)で、
+      こちらはAnnualBudgetが持つ「各予算年度の当初予算」(23,036件)。
+      **同じスロット名にすると`SUM(?budgetAmount)`が粒度をまたいで
+      二重に数える**(`ExpenditureBlock`で`amount_jpy`が3粒度に載った
+      のと同じ危険。`ExpenditureBlock`のdocstring参照)。
+      表示名も「予算額」と「当初予算」で区別する(RS自身が列14を
+      「当初予算（合計）」と呼ぶ)。
+
+      **不変条件(実測)**: BudgetProjectの`budgetAmount`は、同じ事業の
+      レビューシート年度のAnnualBudgetの`initialBudget`に等しい
+      (どちらも`find_budget_aggregate_row`が選ぶ同じ行の同じ列から来る)。
+      ビルド時に検査する。
+  supplementaryBudget:
+    title: 補正予算
+    range: integer
+    description: その予算年度の補正予算(合計)。RSの[15]補正予算（合計）
+  carriedOverFromPreviousYear:
+    title: 前年度からの繰越し
+    range: integer
+    description: 前年度から繰り越された額(合計)。RSの[16]前年度からの繰越し（合計）
+  reserveFund:
+    title: 予備費等
+    range: integer
+    description: 予備費等(合計)。RSの[17]予備費等（合計）
+  totalBudgetAvailable:
+    title: 歳出予算現額
+    range: integer
+    description: >-
+      その年度に実際に使える額の合計(歳出予算現額)。RSの[18]計（歳出予算現額合計）。
+
+      **執行額を比べるべき分母はこれであり、当初予算ではない(裁定B99)。**
+      実測(2026-09-11、5年度すべて)で次の恒等式が**差0円で成立する**:
+
+          当初予算 + 補正予算 + 前年度からの繰越し + 予備費等 = 歳出予算現額
+
+      この列が無いと、2021年度の「当初予算107.1兆円に対し執行額128.1兆円」
+      という一見異常な並びを説明できない —— 実際の分母は歳出予算現額
+      150.2兆円で、執行率は85.3%である。**裁定B96が「予算額と支出額を
+      並べるな」と言ったのは正しかったが、正しい分母がこの列にあった。**
+  executedAmount:
+    title: 執行額
+    range: integer
+    description: >-
+      その年度に実際に執行された額(合計)。RSの[19]執行額（合計）。
+
+      **この列は資金の流れ(ExpenditureBlock)の計算に一切使っていないため、
+      独立した検証のオラクルになる(裁定B98)。** 実測: FY2024の執行額
+      128,407,860,724,145円に対し、CQ12(入口ブロック+間接経費)が98.83%、
+      構造からの推論を含めると100.086%で一致した。裁定B20が挙げた
+      「比が正確に2.0/3.0になる245事業」のうち243事業が比1.0に直った。
+
+      **レビューシート年度(2025)の執行額は0である**(まだ執行されていない。
+      実測: 5,794事業すべて)。欠損ではなく「その時点でまだ無い」。
+  carriedOverToNextYear:
+    title: 翌年度への繰越し
+    range: integer
+    description: >-
+      翌年度へ繰り越した額(合計)。RSの[21]翌年度への繰越し(合計）。
+      ある年度の`carriedOverToNextYear`は、次の年度の
+      `carriedOverFromPreviousYear`と対応するはずだが、**事業単位では
+      一致を仮定しない**(事業の分割・統合・終了があるため)。
+
 enums:
   RecipientMatchCategoryEnum:
     description: >-
@@ -369,3 +451,46 @@ classes:
     slots: [project, fiscalYear]
     slot_usage:
       project: { required: true }
+
+  AnnualBudget:
+    title: 年度ごとの予算と執行
+    is_a: MonetaryItem
+    description: >-
+      1つの予算事業の、1つの会計年度についての予算と執行の記録(裁定B99)。
+      同一性は(fiscalYear, projectId, budgetFiscalYear)の組で決まる ——
+      「どのレビューシートが、どの事業の、どの年度について言っているか」。
+
+      **このクラスが必要な理由**: BudgetProjectは`budgetAmount`(レビュー
+      シート年度の当初予算)しか持たず、**「増えた・減った」に答えられない**。
+      ところがRSのbudget_summaryは**直近5年度分(2021〜2025)の予算履歴を
+      既に持っていた**(実測2026-09-11)。裁定B96の追記で「経年比較には
+      2024年度の配布ファイルが必要」と書いたのは誤りで、**取得は不要だった**。
+
+      **`amount_jpy`(MonetaryItemから継承)は使わない。** このクラスは
+      名前の付いた金額を8つ持つので、そのうち1つを汎用スロットに載せると
+      `SUM(?amount_jpy)`の意味がまた変わる(`ExpenditureBlock`のdocstringに
+      書いた「3粒度に載る」危険をこれ以上広げない)。**軸はMonetaryItemの
+      ままにする** —— 金額についての記録であり、出来事でも主体でもない。
+
+      **恒等式(実測: 5年度すべてで差0円)**:
+
+          initialBudget + supplementaryBudget
+            + carriedOverFromPreviousYear + reserveFund
+          = totalBudgetAvailable
+
+      ビルド時に検査する。この恒等式が、2021年度の「当初予算107.1兆円に
+      対し執行額128.1兆円」という一見異常な並びを説明する(実際の分母は
+      150.2兆円、執行率85.3%)。
+
+      **翌年度要求額(RSの[22])はモデル化しない** —— 集計行23,036件すべてで
+      空だった(実測)。列は存在するが値が無い。
+    slots: [project, fiscalYear, budgetFiscalYear, initialBudget,
+            supplementaryBudget, carriedOverFromPreviousYear, reserveFund,
+            totalBudgetAvailable, executedAmount, carriedOverToNextYear]
+    slot_usage:
+      project: { required: true }
+      fiscalYear:
+        description: >-
+          この記録が載っている**レビューシート自体の年度**。
+          対象の会計年度は`budgetFiscalYear`が持つ。2025年のシートは
+          2021〜2025について語るので、この2つは一致しないのが普通である
