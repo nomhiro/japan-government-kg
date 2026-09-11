@@ -135,6 +135,8 @@ _EXPECTED_OVERVIEW_QUERIES = {
     "type_counts": "cq18-kg-scale.rq",
     "government_paid": "cq12-government-paid-total.rq",
     "money_through_stages": "cq13-money-passing-through-stages.rq",
+    # Task 2b: CQ19(第4節「予算に対し記録を全部足すと合わない」の中心の主張)。
+    "naive_sum_vs_entry_only": "cq19-naive-sum-vs-entry-only.rq",
 }
 
 
@@ -309,6 +311,7 @@ def test_build_overview_end_to_end_against_the_rdflib_fixture_succeeds(tmp_path,
     assert result.type_counts, "CQ18: 型別件数の行が1件も無い"
     assert result.government_paid, "CQ12: 国が自ら支払った額の行が1件も無い"
     assert result.money_through_stages, "CQ13: 通過金の段の行が1件も無い"
+    assert result.naive_sum_vs_entry_only, "CQ19: 素朴な合計/入口だけの合計の行が1件も無い"
 
     # **`(sheet_year, budget_fiscal_year)`の組が一意であること**(裁定D-14)。
     # CQ14は将来2枚目のレビューシートが増えると同じ`budget_fiscal_year`に

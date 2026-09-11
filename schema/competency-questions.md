@@ -52,13 +52,14 @@ fixtureの構築は`tests/phase1_fixture.py`(実在値の出典はそのdocstrin
 | CQ16 | 要求した額と、実際に付いた当初予算はどれだけ違うか。年度ごとに(B103) | `cq16-request-vs-initial-budget.rq` |
 | CQ17 | 支払先はどこまで特定できているか。照合区分ごとの金額と件数(B103) | `cq17-recipient-identification.rq` |
 | CQ18 | このKGには何が何件入っているか。型ごとに(B103) | `cq18-kg-scale.rq` |
+| CQ19 | 支出の記録を素朴に全部足すといくらで、国が自ら支出した分だけだといくらか。年度ごとに(B103の追記。**第4節「予算に対し記録を全部足すと合わない」の中心の主張そのもの**) | `cq19-naive-sum-vs-entry-only.rq` |
 
 CQ6・CQ9・CQ10は「データの欠けと鮮度そのものを問える」ことを要求している
 (P0-3〜5と同じ設計思想。§Phase 0の説明を参照)。
 
 固有名(URI・法令ID)を直接クエリに焼き込むのはCQ1・CQ3・CQ4・CQ7・CQ8
 (「あるXの」型)。CQ2は所管府省を焼き込む(骨子どおり)。CQ5・CQ6・CQ9・CQ10・
-CQ11・CQ12・CQ13・CQ14・CQ15・CQ16・CQ17・CQ18は一般形(全件を返し、
+CQ11・CQ12・CQ13・CQ14・CQ15・CQ16・CQ17・CQ18・CQ19は一般形(全件を返し、
 テスト側が特定の行にフィルタして確認する)。
 
 ### CQ15〜CQ18: 裁定B103(トップページ第1層はCQの答えを表示する)
@@ -131,6 +132,27 @@ fixtureは架空の事業ID(999901〜)を使い実データは実在のIDを使�
 固定できているのは、fixtureが実在の法人番号(厚生労働省・
 株式会社ウルフスタイル)を持っているからで、事業IDには同じ手が使えない。
 
+### CQ19: 裁定B103の追記(Task 2b)
+
+第1層第4節「国が自ら支払った額」の中心の主張——**「予算123.1兆に対し、
+支出の記録を全部足すと156.8兆。合いません」**——にはCQ12だけでは足りない。
+CQ12は「国が自ら支払った額」(入口ブロック+間接経費)しか返さず、
+「素朴に全部足すといくらか」という比較先の数字を持たない。CQ19はこの
+比較そのものを1本のクエリの答えにする。
+
+- **CQ19の`entryOnly`とCQ12の`governmentPaid`は別の値である。**
+  CQ12は`entryOnly` + 間接経費(`budget:IndirectCost`)の合計だが、
+  CQ19は`budget:ExpenditureBlock`だけを見る(間接経費を含まない)。
+  fixtureのFY2025で確認できる: CQ12=1,007,000円(入口1,000,000円+
+  間接経費7,000円)に対し、CQ19の`entryOnly`=1,000,000円(入口だけ)。
+  表示側で混同しないこと(`models.py`の`NaiveSumVsEntryOnly`docstring参照)。
+- **差(`naiveSum - entryOnly`)は二重計上である**(裁定B97)。予算の不足では
+  ない——RSの支出先ブロックが「国→市町村→受給者」のような資金の流れを
+  段ごとに記録するため、全段を足すと同じお金を何度も数える。
+- クエリ本文はcontrollerが本番と同じ索引(1,438,620トリプル)に実測して
+  モック値(`docs/mockups/mock-data.js`)を完全再現したものである
+  (`queries/cq/cq19-naive-sum-vs-entry-only.rq`のヘッダ参照)。
+
 ### 答えの例(fixtureに対して実行した結果)
 
 | ID | 答えの例 |
@@ -153,6 +175,7 @@ fixtureは架空の事業ID(999901〜)を使い実データは実在のIDを使�
 | CQ16 | 2024年度: 要求100,000,000円/当初90,000,000円(1件)。2025年度: 要求110,000,000円/当初100,000,000円(1件) |
 | CQ17 | resolved=9,525,000円(7件)・unresolved=500,000円(1件)・bundled=200,000円(1件)・sentinel_or_nonexistent_houjin_bangou=100,000円(1件) |
 | CQ18 | GovernmentOrgan=40・Ministry=40・Expenditure=10・BudgetProject=5・Law=4・UnresolvedReference=3・LawRevision=3・ExpenditureBlock=3・AnnualBudget=2・Organization=1・AbolishedGovernmentOrgan=1・IndirectCost=1 |
+| CQ19 | 2025年度: naiveSum=2,500,000円(ブロックA+B+C)/entryOnly=1,000,000円(ブロックAのみ)/blockCount=3。**CQ12(1,007,000円=entryOnly+間接経費)とは別の値**である |
 
 ### 実在値の根拠(B-S3。CQ1/CQ7/CQ8/CQ9で使う法令アンカー)
 

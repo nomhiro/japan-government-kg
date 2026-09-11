@@ -880,3 +880,87 @@ def test_cq18_counts_instances_across_named_graphs(kg):
         "AbolishedGovernmentOrgan": 1,
         "IndirectCost": 1,
     }, counts
+
+
+# =============================================================================
+# CQ19: 素朴な合計と入口だけの合計(裁定B103の追記。第4節の中心の主張)
+# =============================================================================
+
+
+def test_cq19_naive_sum_includes_all_blocks_and_entry_only_is_just_the_entry_stage(kg):
+    """fixtureのPROJECT_FLOW_DEMO(A入口1,000,000・B通過1,000,000・C借入金
+    500,000)に対し、`naiveSum`が3ブロック全額(2,500,000)、`entryOnly`が
+    入口(A)だけ(1,000,000)、`blockCount`が3であること。
+
+    何があれば落ちるか:
+    - `budget:paidByGovernment ?entry`を落とす・`IF(?entry, ?all, 0)`を
+      `?all`に変えると`entryOnly`が`naiveSum`と同じ2,500,000になる
+      (壊し確認。task-2b-report.md参照)
+    - `blockCount`が入口だけを数える実装に変わると3ではなく1になる
+      ——`blockCount`は入口/非入口を問わず全ブロックを数える設計であることの
+      正のコントロール
+    """
+    rows = _query(kg, "cq19-naive-sum-vs-entry-only.rq")
+    assert rows, "CQ19に答えられない"
+    by_year = {int(y): (int(naive), int(entry), int(count)) for y, naive, entry, count in rows}
+    assert sorted(by_year) == [2025], by_year
+    assert by_year[2025] == (2_500_000, 1_000_000, 3), by_year
+
+
+def test_cq19_entry_only_matches_the_independent_sum_from_budget_result_blocks(kg, budget_result):
+    """**正のコントロール(ブリーフStep 3の要求)**: `entryOnly`が
+    `SUM(IF(?entry, ?all, 0))`の効果によるものであることを、`entryOnly <
+    naiveSum`という弱い比較ではなく、一次データを組み立てる別の経路
+    (`budget_result.blocks`。`rs.build_projects`の戻り値。手書きSPARQLでは
+    ない)から独立に導いた「入口フラグが真のブロックの金額合計」と
+    突き合わせて確認する。
+
+    何があれば落ちるか: このテストは`naiveSum`・`entryOnly`・`blockCount`の
+    3つを`budget_result.blocks`から独立に再計算するため、
+    `IF(?entry, ?all, 0)`を`?all`に変える変異(全ブロックを入口として
+    数える)は、独立に導いた`entry`(1,000,000)とCQ19の`entryOnly`
+    (変異後は2,500,000)が不一致になって落ちる——`entryOnly < naiveSum`
+    だけを見る形では、fixtureのブロックがたまたまその関係を満たしているだけ
+    かもしれず、この変異を検出できない(ブリーフStep 3の指摘そのもの)。
+    """
+    rows = _query(kg, "cq19-naive-sum-vs-entry-only.rq")
+    cq19 = {int(y): (int(naive), int(entry), int(count)) for y, naive, entry, count in rows}
+
+    by_year: dict[int, dict[str, int]] = {}
+    for block in budget_result.blocks:
+        year_totals = by_year.setdefault(int(block.fiscal_year), {"naive": 0, "entry": 0, "count": 0})
+        year_totals["naive"] += block.amount
+        year_totals["count"] += 1
+        if block.paid_by_government:
+            year_totals["entry"] += block.amount
+
+    assert set(cq19) == set(by_year), (cq19, by_year)
+    for y, (naive, entry, count) in cq19.items():
+        expected = by_year[y]
+        assert naive == expected["naive"], (y, naive, expected)
+        assert entry == expected["entry"], (y, entry, expected)
+        assert count == expected["count"], (y, count, expected)
+        assert entry < naive, (
+            f"{y}年度: entryOnly({entry})がnaiveSum({naive})未満になっていない"
+            " —— fixtureに通過/借入の段が無く、二重計上の主張を裏づけられない"
+        )
+
+
+def test_cq19_entry_only_differs_from_cq12_government_paid_total(kg):
+    """**CQ19の`entryOnly`とCQ12の`governmentPaid`は別の値である**こと
+    (`models.py`の`NaiveSumVsEntryOnly`docstring・CQ19ヘッダ参照)。
+
+    CQ12=`entryOnly` + 間接経費なので、fixtureのFY2025では
+    CQ12=1,007,000円(=1,000,000+7,000) ≠ CQ19の`entryOnly`=1,000,000円。
+    表示側がこの2つを同じ「国が自ら支払った額」として混同すると、
+    差の7,000円分だけ食い違ったまま気づけない——両方を実際にfixtureに対して
+    計算し、意図的に不一致であることをここで固定する。
+    """
+    cq19 = {int(y): int(entry) for y, _naive, entry, _count in _query(kg, "cq19-naive-sum-vs-entry-only.rq")}
+    cq12 = {int(y): int(total) for y, total, _count in _query(kg, "cq12-government-paid-total.rq")}
+    assert cq19[2025] == 1_000_000, cq19
+    assert cq12[2025] == 1_007_000, cq12
+    assert cq19[2025] != cq12[2025], (
+        "CQ19のentryOnlyとCQ12のgovernmentPaidが一致してしまっている"
+        " —— 間接経費の扱いが混ざった疑い"
+    )

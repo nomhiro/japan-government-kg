@@ -13,11 +13,19 @@
 `tests/test_api_overview.py`がこれを固定している。
 
 **起動時に1回だけ計算する。** team-leadが本番と同じ索引
-(1,438,620トリプル)で実測した値は、この7本のCQを走らせるのに
+(1,438,620トリプル)で実測した値は、Task 2時点の7本のCQを走らせるのに
 **コールド7.282秒・ウォーム2.772秒**(コンテナ再起動直後/ウォーム)。
 第1層は全訪問者が最初に開く画面なので、リクエストごとに払える代償ではない。
 また`minReplicas=1`/`maxReplicas=1`でFusekiとAPIが同じレプリカを共有して
 おり、Fuseki側にクエリのタイムアウトがまだ無い(既知の未処理事項)。
+
+**Task 2b追記: CQ19を足して8本になった。** controllerが本番と同じ索引に
+対してCQ19単体を実測した値は**1.390秒**(`queries/cq/cq19-naive-sum-vs-
+entry-only.rq`のヘッダ参照)。**8本合計の再実測はこのタスクでは行っていない**
+——上の7.282秒/2.772秒はTask 2時点の7本の値であり、単純に1.390秒を足した
+数字をここに書くと「測った」と「測っていないものを足し算した」の区別が
+付かなくなる(このモジュール自身が上で訂正した欠陥型と同型になる)ため、
+合計は書かない。
 
 **訂正(修正ラウンド1。レビューで誤診と指摘された)**: このdocstringの前の版は
 「3.999秒/3.114秒は実測前の仮の値だった」と書いていたが、これは誤り。
@@ -45,6 +53,7 @@ from jgkg.api.models import (
     GovernmentPaidTotal,
     MinistryBudget,
     MoneyThroughStage,
+    NaiveSumVsEntryOnly,
     OverviewResponse,
     RecipientIdentification,
     RequestAndInitial,
@@ -79,6 +88,10 @@ OVERVIEW_QUERIES: dict[str, str] = {
     "type_counts": "cq18-kg-scale.rq",
     "government_paid": "cq12-government-paid-total.rq",
     "money_through_stages": "cq13-money-passing-through-stages.rq",
+    # Task 2b: CQ19(第4節「予算に対し記録を全部足すと合わない」の中心の
+    # 主張そのもの)。controllerが本番と同じ索引で実測済み(モジュール
+    # docstring参照)——このクエリ自体は変更しない。
+    "naive_sum_vs_entry_only": "cq19-naive-sum-vs-entry-only.rq",
 }
 
 
@@ -276,6 +289,18 @@ def _parse_money_through_stages(rows: list[Row]) -> list[MoneyThroughStage]:
     ]
 
 
+def _parse_naive_sum_vs_entry_only(rows: list[Row]) -> list[NaiveSumVsEntryOnly]:
+    return [
+        NaiveSumVsEntryOnly(
+            fiscal_year=_int(row, "y"),
+            naive_sum=_int(row, "naiveSum"),
+            entry_only=_int(row, "entryOnly"),
+            block_count=_int(row, "blockCount"),
+        )
+        for row in rows
+    ]
+
+
 def build_overview(client: KGClient, base_uri: str, queries_dir: Path) -> OverviewResponse:
     raw: dict[str, list[Row]] = {}
     for key, filename in OVERVIEW_QUERIES.items():
@@ -293,4 +318,5 @@ def build_overview(client: KGClient, base_uri: str, queries_dir: Path) -> Overvi
         type_counts=_parse_type_counts(raw["type_counts"]),
         government_paid=_parse_government_paid(raw["government_paid"]),
         money_through_stages=_parse_money_through_stages(raw["money_through_stages"]),
+        naive_sum_vs_entry_only=_parse_naive_sum_vs_entry_only(raw["naive_sum_vs_entry_only"]),
     )

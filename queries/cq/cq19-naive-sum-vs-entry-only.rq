@@ -1,0 +1,37 @@
+# CQ19: 支出の記録を素朴に全部足すといくらで、国が自ら支出した分だけだと
+# いくらか。年度ごとに(裁定B103の追記)
+#
+# **この2つの差が、この製品がいちばん説明しなければならないものである。**
+# 予算(当初123.1兆)に対し、素朴な合計は156.8兆になる——差の33兆は
+# 予算の不足ではなく**二重計上**である。RSの支出先ブロックは
+# 「国→市町村→受給者」のような資金の流れを段ごとに記録するので、
+# 全段を足すと同じお金を何度も数える(裁定B97)。
+#
+# `budget:paidByGovernment`が真のブロック=**入口**(国自身が支出した段)。
+# それだけを足したものが`entryOnly`である。
+# **国が自ら支払った額(CQ12)は`entryOnly` + 間接経費**であり、
+# このクエリの`entryOnly`とは別の値になる(CQ12のヘッダ参照)。
+#
+# 実測(2026-09-11。本番と同じ索引1,438,620トリプル・1.390秒):
+#   2025年度: naiveSum=156,775,926,742,671 / entryOnly=126,878,845,988,981
+#             blockCount=19,125
+# **この3つはモック用にCSVを全走査して出した値と一致する**
+# (`docs/mockups/mock-data.js`の`overview.sumProblem.allBlocks`・
+#  `overview.spending.naiveSum`/`entryTrue`)。
+# blockCountはパイプラインの`budget_block_amount_checked`とも一致する。
+#
+# **`amount_jpy`は`core:`名前空間である**(`budget:`ではない)。
+PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
+PREFIX core: <https://jgkg.norr-tech.com/def/core#>
+SELECT ?y
+       (SUM(?all) AS ?naiveSum)
+       (SUM(IF(?entry, ?all, 0)) AS ?entryOnly)
+       (COUNT(?b) AS ?blockCount)
+WHERE {
+  ?b a budget:ExpenditureBlock ;
+     budget:fiscalYear ?y ;
+     core:amount_jpy ?all ;
+     budget:paidByGovernment ?entry .
+}
+GROUP BY ?y
+ORDER BY ?y

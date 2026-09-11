@@ -534,6 +534,20 @@ class RecipientIdentification(_Envelope):
     expenditure_count: int
 
 
+class NaiveSumVsEntryOnly(_Envelope):
+    """CQ19の1行。**この2つの差が二重計上である**(裁定B97)。
+
+    `entry_only`は`budget:paidByGovernment`が真のブロックだけの合計。
+    **CQ12の「国が自ら支払った額」は`entry_only` + 間接経費**なので、
+    この値とは一致しない——表示側で混同しないこと。
+    """
+
+    fiscal_year: int
+    naive_sum: int
+    entry_only: int
+    block_count: int
+
+
 class TypeCount(_Envelope):
     """CQ18の1行。
 
@@ -570,3 +584,4 @@ class OverviewResponse(_Envelope):
     type_counts: list[TypeCount]
     government_paid: list[GovernmentPaidTotal]
     money_through_stages: list[MoneyThroughStage]
+    naive_sum_vs_entry_only: list[NaiveSumVsEntryOnly]
