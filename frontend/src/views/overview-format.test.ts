@@ -1,15 +1,22 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { computeApiUnavailableReason } from "../api/client";
-import type { MinistryBudget, TypeCount } from "../api/client";
+import type { BudgetAndExecution, MinistryBudget, TypeCount } from "../api/client";
 import {
   OVERVIEW_UNAVAILABLE_TEXT,
+  barWidthPercent,
   cqNumberFromFilename,
+  distinctSheetYears,
+  historyRowYearLabel,
+  historySheetYearNote,
   latestFiscalYear,
   localNameFromIri,
+  ministriesForFiscalYear,
   ministryDisplayName,
+  mostRecentRow,
   scaleExcludingTopNote,
   sourceCitation,
   sumMinistryBudgets,
+  topMinistryDominancePhrase,
   typeInstanceCount,
 } from "./overview-format";
 
@@ -21,6 +28,21 @@ function ministry(overrides: Partial<MinistryBudget> = {}): MinistryBudget {
     fiscal_year: 2025,
     total_budget: 91_789_031_491_000,
     project_count: 1176,
+    ...overrides,
+  };
+}
+
+function budgetRow(overrides: Partial<BudgetAndExecution> = {}): BudgetAndExecution {
+  return {
+    sheet_year: 2025,
+    budget_fiscal_year: 2021,
+    initial_budget: 107_148_031_818_947,
+    supplementary_budget: 17_309_791_593_000,
+    carried_over_from_previous_year: 24_130_080_016_038,
+    reserve_fund: 1_640_413_263_509,
+    total_budget_available: 150_228_316_691_494,
+    executed_amount: 128_147_462_147_862,
+    project_count: 3575,
     ...overrides,
   };
 }
@@ -121,6 +143,72 @@ describe("latestFiscalYear", () => {
 });
 
 // =============================================================================
+// ministriesForFiscalYear: 複数年度が混在したCQ15の行から、指定年度だけを
+// 取り出す(修正ラウンド1・レビューS5)。合計・府省数・帯グラフはすべて
+// この関数を通した後の行を使う前提。
+// =============================================================================
+
+describe("ministriesForFiscalYear", () => {
+  it("指定した年度の行だけを、元の順序を保って返す", () => {
+    const rows = [
+      ministry({ id: "https://…/a", fiscal_year: 2025, total_budget: 3 }),
+      ministry({ id: "https://…/b", fiscal_year: 2024, total_budget: 2 }),
+      ministry({ id: "https://…/c", fiscal_year: 2025, total_budget: 1 }),
+    ];
+    expect(ministriesForFiscalYear(rows, 2025).map((m) => m.id)).toEqual([
+      "https://…/a",
+      "https://…/c",
+    ]);
+  });
+
+  it("**核心**: 同じ府省IDが同じ年度に2回現れても1回に絞る(重複除去)", () => {
+    const rows = [
+      ministry({ id: "https://…/a", fiscal_year: 2025 }),
+      ministry({ id: "https://…/a", fiscal_year: 2025 }),
+    ];
+    expect(ministriesForFiscalYear(rows, 2025)).toHaveLength(1);
+  });
+
+  it("fiscalYearがnullなら空配列(latestFiscalYearが行なしを返したとき)", () => {
+    expect(ministriesForFiscalYear([ministry()], null)).toEqual([]);
+  });
+
+  it("一致する年度が無ければ空配列", () => {
+    expect(ministriesForFiscalYear([ministry({ fiscal_year: 2024 })], 2025)).toEqual([]);
+  });
+});
+
+// =============================================================================
+// topMinistryDominancePhrase: 「{最大の府省}が全体の{割合}%」。
+// 府省名・割合の両方をministriesから導出する(手書きしない。裁定A2/S2)。
+// =============================================================================
+
+describe("topMinistryDominancePhrase", () => {
+  it("最大の府省の表示名と割合(小数1桁の%)を含む", () => {
+    const rows = [
+      ministry({ label: "厚生労働省", total_budget: 91_789_031_491_000 }),
+      ministry({ label: "こども家庭庁", total_budget: 6_223_531_981_000 }),
+    ];
+    // 合計は他の21府省を省いた小さい例なので、実データの74.6%ではなく
+    // この2件だけの合計に対する割合になる(=93.7%)。手計算で固定する。
+    expect(topMinistryDominancePhrase(rows)).toBe("厚生労働省が全体の93.7%");
+  });
+
+  it("labelがnullの府省が最大なら、id_pathを使う(表示名を合成しない)", () => {
+    const rows = [ministry({ label: null, id_path: "org/9999999999999", total_budget: 10 })];
+    expect(topMinistryDominancePhrase(rows)).toBe("org/9999999999999が全体の100.0%");
+  });
+
+  it("府省が0件ならnull", () => {
+    expect(topMinistryDominancePhrase([])).toBeNull();
+  });
+
+  it("合計予算が0以下(=割合を計算できない)ならnull", () => {
+    expect(topMinistryDominancePhrase([ministry({ total_budget: 0 })])).toBeNull();
+  });
+});
+
+// =============================================================================
 // cqNumberFromFilename / sourceCitation: sourcesからCQ番号を導出する。
 // 対応表を手で書かない(controller補足1: 再発欠陥1と同型)。
 // =============================================================================
@@ -143,6 +231,10 @@ describe("sourceCitation", () => {
     government_paid: "cq12-government-paid-total.rq",
   };
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("1項目なら「出所: CQnn」", () => {
     expect(sourceCitation(SOURCES, "ministries")).toBe("出所: CQ15");
   });
@@ -153,8 +245,24 @@ describe("sourceCitation", () => {
     );
   });
 
-  it("sourcesに無いキーは黙って落とす(無いキーを渡すのは呼び出し側の誤りだが、ここではクラッシュしない)", () => {
-    expect(sourceCitation(SOURCES, "no_such_key")).toBe("出所: ");
+  it("**核心**: sourcesに無いキーだけを渡すと、空の主張(「出所: 」)ではなくnullを返す(修正ラウンド1・レビューQ1)", () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(sourceCitation(SOURCES, "no_such_key")).toBeNull();
+  });
+
+  it("無いキーはconsole.errorに出す(調査可能にする。画面には出さない)", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    sourceCitation(SOURCES, "no_such_key");
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(String(spy.mock.calls[0]?.[0])).toContain("no_such_key");
+  });
+
+  it("**核心**: 一部のキーだけ無いときは、引けた分の出所だけを出す(無いキーはconsole.errorに残るが、画面から出所自体は消さない)", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(sourceCitation(SOURCES, "ministries", "no_such_key", "type_counts")).toBe(
+      "出所: CQ15・CQ18",
+    );
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -180,16 +288,112 @@ describe("scaleExcludingTopNote", () => {
     expect(text).toContain("全23府省");
   });
 
-  it("**核心**: 対数目盛りという語を含まない(このプロジェクトは対数を採らない判断そのものを持ってきている)", () => {
-    const text = scaleExcludingTopNote({
-      excludedName: "厚生労働省",
-      excludedBudget: 91_789_031_491_000,
-      totalBudget: 123_080_937_002_000,
-      newMaxName: "こども家庭庁",
-      restCount: 22,
-      totalCount: 23,
-    });
-    expect(text).not.toContain("対数");
+});
+
+// =============================================================================
+// barWidthPercent: 帯グラフの幅(線形)。**対数を採らない判断の実体はこの
+// 計算そのもの**(修正ラウンド1・レビューQ2)。以前は`renderBars`の中に
+// 埋め込まれ、「対数という語を含まない」という文言だけを見るテストで
+// 守ろうとしていたが、それは実装を`Math.log`に変えても緑のままだった
+// ——ここでは計算結果そのもの(線形であること)を直接固定する。
+// =============================================================================
+
+describe("barWidthPercent", () => {
+  it("最大値ちょうどなら100", () => {
+    expect(barWidthPercent(100, 100)).toBe(100);
+  });
+
+  it("**核心**: 線形である(半分の値は必ず50%。対数ならこの値にならない)", () => {
+    // 対数(例: log(amount+1)/log(max+1)*100)なら、log(51)/log(101)*100 ≈ 85.5
+    // になり50から大きく外れる——この期待値そのものが「線形の判断」を守る。
+    expect(barWidthPercent(50, 100)).toBe(50);
+    expect(barWidthPercent(1, 100)).toBe(1);
+  });
+
+  it("0なら0%", () => {
+    expect(barWidthPercent(0, 100)).toBe(0);
+  });
+
+  it("maxが0以下なら0%(0除算・負のmaxでも例外を投げない)", () => {
+    expect(barWidthPercent(50, 0)).toBe(0);
+    expect(barWidthPercent(50, -10)).toBe(0);
+  });
+
+  it("amountがmaxを超えても100%で止める(帯が枠から溢れない)", () => {
+    expect(barWidthPercent(150, 100)).toBe(100);
+  });
+
+  it("amountが負でも0%未満にはしない", () => {
+    expect(barWidthPercent(-10, 100)).toBe(0);
+  });
+});
+
+// =============================================================================
+// distinctSheetYears / historyRowYearLabel / historySheetYearNote /
+// mostRecentRow: CQ14の複数シート混在を画面が受け止める(修正ラウンド1・
+// レビューS5)。
+// =============================================================================
+
+describe("distinctSheetYears", () => {
+  it("重複を除いた年度を昇順で返す", () => {
+    const rows = [budgetRow({ sheet_year: 2025 }), budgetRow({ sheet_year: 2025 }), budgetRow({ sheet_year: 2024 })];
+    expect(distinctSheetYears(rows)).toEqual([2024, 2025]);
+  });
+
+  it("1種類だけなら1件の配列", () => {
+    expect(distinctSheetYears([budgetRow({ sheet_year: 2025 })])).toEqual([2025]);
+  });
+
+  it("空配列なら空配列", () => {
+    expect(distinctSheetYears([])).toEqual([]);
+  });
+});
+
+describe("historyRowYearLabel", () => {
+  it("シートが1種類なら年度だけ", () => {
+    const row = budgetRow({ budget_fiscal_year: 2021, sheet_year: 2025 });
+    expect(historyRowYearLabel(row, [2025])).toBe("2021年度");
+  });
+
+  it("**核心**: シートが2種類以上混在するときはsheet_yearを併記する(どのシートの主張か区別できるようにする)", () => {
+    const row = budgetRow({ budget_fiscal_year: 2021, sheet_year: 2025 });
+    expect(historyRowYearLabel(row, [2024, 2025])).toBe("2021年度(2025年度シート)");
+  });
+});
+
+describe("historySheetYearNote", () => {
+  it("シートが1種類のとき、その年度のシートが記録しているという文になる", () => {
+    expect(historySheetYearNote([2025])).toBe(
+      "この5年分は2025年度のレビューシートが記録しているものです。年度ごとに別のシートを取ってきて並べたのではありません。",
+    );
+  });
+
+  it("**核心**: シートが2種類以上のとき、単一シートの断言(偽になる文)ではなく混在を正直に書く", () => {
+    const text = historySheetYearNote([2024, 2025]);
+    expect(text).not.toContain("この5年分は2024年度のレビューシートが記録しているもの");
+    expect(text).not.toContain("この5年分は2025年度のレビューシートが記録しているもの");
+    expect(text).toContain("2024・2025年度");
+  });
+
+  it("年度が1件も無ければ空文字", () => {
+    expect(historySheetYearNote([])).toBe("");
+  });
+});
+
+describe("mostRecentRow", () => {
+  it("budget_fiscal_yearが最大の行を返す(配列の並び順を信じない)", () => {
+    // 意図的に末尾行を最新年度ではない行にする(2枚目のシートで並び順が
+    // budget_fiscal_year単調にならないケースの再現)。
+    const rows = [
+      budgetRow({ budget_fiscal_year: 2021 }),
+      budgetRow({ budget_fiscal_year: 2025 }),
+      budgetRow({ budget_fiscal_year: 2020 }),
+    ];
+    expect(mostRecentRow(rows)?.budget_fiscal_year).toBe(2025);
+  });
+
+  it("1行も無ければundefined", () => {
+    expect(mostRecentRow([])).toBeUndefined();
   });
 });
 

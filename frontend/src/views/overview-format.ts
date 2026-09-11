@@ -4,7 +4,7 @@
 // DOMを書く関数はテストできない。ここに置く関数はどれも`document`/`window`を
 // 参照しない。
 
-import type { MinistryBudget, TypeCount } from "../api/client";
+import type { BudgetAndExecution, MinistryBudget, TypeCount } from "../api/client";
 import { formatAmountRounded } from "../format";
 
 /**
@@ -41,11 +41,13 @@ export function localNameFromIri(iri: string): string {
 /**
  * `type_counts`(CQ18)から、指定したローカル名の件数を引く。
  *
- * **複数のローカル名をフォールバック順に渡せる**——例えば「法令」の件数は
- * `Law`が本来の対象だが、無ければ`LawRevision`で代える、という判断を
- * 呼び出し側(`views/overview.ts`)が選べるようにする(実データでは両方
- * 同じ件数だが、それを前提に決め打ちしない)。どのローカル名にも一致
- * しなければ`null`(0で静かに間違えない。`overview.py`の`_int`と同じ方針)。
+ * **複数のローカル名をフォールバック順に渡せる**が、呼び出し側は
+ * 「この2つの型は同じ意味である」という業務知識を持っているときだけ
+ * 使うこと。**`Law`/`LawRevision`のように意味が異なる型を、実データで
+ * 件数が偶然一致するからといって束ねてはいけない**(修正ラウンド1・
+ * レビューA4/S1で実際に踏んだ欠陥——`views/overview.ts`はいまこの引数を
+ * 1つしか渡さない)。どのローカル名にも一致しなければ`null`(0で静かに
+ * 間違えない。`overview.py`の`_int`と同じ方針)。
  */
 export function typeInstanceCount(typeCounts: TypeCount[], ...localNames: string[]): number | null {
   for (const name of localNames) {
@@ -81,6 +83,55 @@ export function latestFiscalYear(ministries: MinistryBudget[]): number | null {
 }
 
 /**
+ * `ministries`(CQ15)を、指定した年度の行だけに絞る。**さらに府省IDで
+ * 重複を除く**(修正ラウンド1・レビューS5)。
+ *
+ * **CQ15は年度で絞っていない**(`?y`でもGROUP BYするだけ。ヘッダ「年度を
+ * 固定で書き込むと来年のデータで黙って壊れる」参照)。複数年度が混在した
+ * まま`sumMinistryBudgets`/`.length`/帯グラフに渡すと、合計が2年度分を
+ * 足した値になり、府省数が行数(=府省数×年度数)になり、帯グラフに同じ
+ * 府省が2本並ぶ——**この画面の全ての集計がこの関数を通ってから行われる
+ * 前提を置く**。`fiscalYear`が`null`(=行が1件も無い)なら空配列を返す。
+ */
+export function ministriesForFiscalYear(
+  ministries: MinistryBudget[],
+  fiscalYear: number | null,
+): MinistryBudget[] {
+  if (fiscalYear === null) return [];
+  const seen = new Set<string>();
+  const out: MinistryBudget[] = [];
+  for (const m of ministries) {
+    if (m.fiscal_year !== fiscalYear) continue;
+    if (seen.has(m.id)) continue;
+    seen.add(m.id);
+    out.push(m);
+  }
+  return out;
+}
+
+/**
+ * 「{最大の府省}が全体の{割合}%」という句。**府省名も割合も`ministries`
+ * (CQ15)から導出する**(修正ラウンド1・レビューA2/S2)。
+ *
+ * 当初の実装は「厚生労働省が全体の約4分の3」という文言をモックから
+ * そのまま書き込んでいた——同じ画面の目盛り切替注記(`scaleExcludingTopNote`)
+ * は同じ2つの値を動的に計算しているので、データが変われば本文とボタンが
+ * 食い違う(裁定B103違反)。丸めた分数表現(「4分の3」)を再現する代わりに、
+ * `scaleExcludingTopNote`と同じ精度(小数1桁の%)で揃える——2箇所が別の
+ * 丸め方をしていると、それ自体が食い違いに見える。
+ *
+ * `ministries`が空、または合計予算が0以下(=割合が計算できない)なら`null`。
+ */
+export function topMinistryDominancePhrase(ministries: MinistryBudget[]): string | null {
+  const top = ministries[0];
+  if (!top) return null;
+  const total = sumMinistryBudgets(ministries);
+  if (total <= 0) return null;
+  const pct = ((top.total_budget / total) * 100).toFixed(1);
+  return `${ministryDisplayName(top)}が全体の${pct}%`;
+}
+
+/**
  * `sources`(`OverviewResponse.sources`)から「出所: CQ15」のような注記を作る。
  *
  * **CQ番号は`sources`のファイル名から導出する。対応表を手で書かない**
@@ -92,11 +143,31 @@ export function cqNumberFromFilename(filename: string): string {
   return m ? `CQ${Number(m[1])}` : filename;
 }
 
-export function sourceCitation(sources: Record<string, string>, ...keys: string[]): string {
-  const labels = keys
-    .map((k) => sources[k])
-    .filter((f): f is string => f !== undefined)
-    .map(cqNumberFromFilename);
+/**
+ * **`sources`に無いキーは黙って落とさない**(修正ラウンド1・レビューQ1)。
+ * `sources`の型は`{ [key: string]: string }`(生成物`openapi-types.ts`が
+ * インデックス型で返す)なので、TypeScriptはキーの誤り(呼び出し側の
+ * typo・APIが`OVERVIEW_QUERIES`のキーを改名した場合)を検出できない。
+ *
+ * 引けなかったキーは`console.error`に出す(調査可能にする)——**それでも
+ * 引けた分の出所は出す**(1項目消えたからといって残りの出所表示まで
+ * 消すと、`renderHead`のように複数キーを1行にまとめている箇所で
+ * 「一見正しいが実は1つ欠けている」出所表示になるより、欠落自体は
+ * コンソールで分かる形にする)。**1件も引けなければ`null`を返し、
+ * 呼び出し側はその節の出所行自体を出さない**(「出所: 」という空の
+ * 主張を画面に残さない)。
+ */
+export function sourceCitation(sources: Record<string, string>, ...keys: string[]): string | null {
+  const labels: string[] = [];
+  for (const key of keys) {
+    const filename = sources[key];
+    if (filename === undefined) {
+      console.error(`overview: sources に "${key}" が無い(出所の表示が欠落する)`, sources);
+      continue;
+    }
+    labels.push(cqNumberFromFilename(filename));
+  }
+  if (labels.length === 0) return null;
   return `出所: ${labels.join("・")}`;
 }
 
@@ -131,4 +202,89 @@ export function scaleExcludingTopNote(input: ScaleExcludingTopNoteInput): string
     `除いた${input.restCount}府省のうち最大（${input.newMaxName}）を棒いっぱいにしています。` +
     `府省どうしの比較はこちらが読みやすく、全体に対する割合は「全${input.totalCount}府省」が正確です。`
   );
+}
+
+/**
+ * 帯グラフの幅(%)。**線形**(`amount / max * 100`。0〜100にクランプする)。
+ *
+ * **対数目盛りにしないという判断の実体はこの計算そのものである**
+ * (`docs/mockups/top-page.html`のコメント: 「対数は集中の事実を静かに消す」)。
+ * 以前は`renderBars`/`renderHistory`(DOMを書く側)にこの式が直接埋め込まれ、
+ * 「対数という語を含まない」というテストで守ろうとしていたが、それは
+ * **文言を見ていて計算を見ていない**(実装を`Math.log(...)`に変えても
+ * その種のテストは緑のままになる。修正ラウンド1・レビューQ2)。
+ * ここに切り出し、**線形であること自体**(半分の値は必ず50%になる)を
+ * 直接固定する。
+ *
+ * `max`が0以下(=比較対象が無い/計算できない)なら常に0。
+ * `amount`が`max`を超えても100で止める(0%〜100%の外に出さない)。
+ */
+export function barWidthPercent(amount: number, max: number): number {
+  if (!(max > 0)) return 0;
+  const pct = (amount / max) * 100;
+  return Math.min(100, Math.max(0, pct));
+}
+
+/**
+ * `budget_and_execution`(CQ14)の行から、重複を除いた`sheet_year`を
+ * 昇順で返す(修正ラウンド1・レビューS5)。
+ *
+ * **`sheet_year`は「そのレビューシート自体の年度」であり、
+ * `budget_fiscal_year`(そのシートが語る予算年度)とは別の軸**
+ * (`BudgetAndExecution`のdocstring参照)。将来2枚目のシートが増えると、
+ * 同じ`budget_fiscal_year`について`sheet_year`が違う2行が現れうる——
+ * この関数はその混在を検出するための土台。
+ */
+export function distinctSheetYears(rows: BudgetAndExecution[]): number[] {
+  return [...new Set(rows.map((r) => r.sheet_year))].sort((a, b) => a - b);
+}
+
+/**
+ * 表の年度ラベル。**シートが2種類以上混在しているときだけ`sheet_year`を
+ * 併記する**(1種類だけなら`budget_fiscal_year`だけで区別できるので、
+ * 冗長な注記を出さない)。混在しているのに`budget_fiscal_year`だけを
+ * 出すと、2枚のシートが同じ年度を語る行が見分けられなくなる
+ * (`BudgetAndExecution.sheet_year`をAPI側の型に足した理由そのもの)。
+ */
+export function historyRowYearLabel(row: BudgetAndExecution, sheetYears: number[]): string {
+  return sheetYears.length > 1
+    ? `${row.budget_fiscal_year}年度(${row.sheet_year}年度シート)`
+    : `${row.budget_fiscal_year}年度`;
+}
+
+/**
+ * 「この5年分は{年度}年度のレビューシートが記録しているもの」という
+ * 注記。**シートが1種類のときだけこの文言が真になる**——2種類以上
+ * 混在しているのに「{先頭行の年度}のシートが記録している」と書くと、
+ * 他のシートの行についてはその文が偽になる(修正ラウンド1・レビューS5)。
+ * 混在時は、正直に「複数のシートが混在している」と書く(数値は
+ * `distinctSheetYears`からそのまま列挙するので手書きしない)。
+ */
+export function historySheetYearNote(sheetYears: number[]): string {
+  const year = sheetYears[0];
+  if (sheetYears.length <= 1) {
+    return year !== undefined
+      ? `この5年分は${year}年度のレビューシートが記録しているものです。年度ごとに別のシートを取ってきて並べたのではありません。`
+      : "";
+  }
+  return (
+    `この表には複数のレビューシート(${sheetYears.join("・")}年度)の主張が混在しています。` +
+    "年度ラベルの隣に、どのシートの主張かを示しています。"
+  );
+}
+
+/**
+ * `budget_and_execution`(CQ14)の行のうち、`budget_fiscal_year`が最大の行。
+ *
+ * **配列の並び順(`rows[rows.length - 1]`)を信じない**(修正ラウンド1・
+ * レビューS5)。CQ14は`ORDER BY ?sheetYear ?budgetYear`——シートが1種類
+ * だけなら末尾行が最新の予算年度と一致するが、2枚目のシートが増えると
+ * `sheetYear`が主なソート鍵になり、末尾行は必ずしも最新の予算年度では
+ * なくなる。1行も無ければ`undefined`。
+ */
+export function mostRecentRow(rows: BudgetAndExecution[]): BudgetAndExecution | undefined {
+  return rows.reduce<BudgetAndExecution | undefined>((best, r) => {
+    if (!best || r.budget_fiscal_year > best.budget_fiscal_year) return r;
+    return best;
+  }, undefined);
 }

@@ -313,12 +313,35 @@ describe("formatAmountRounded", () => {
     expect(formatAmountRounded(9999)).toBe("9,999円");
     expect(formatAmountRounded(0)).toBe("0円");
   });
+
+  // 修正ラウンド1・レビューQ6: 負値は絶対値で桁を判定し符号を戻す
+  // (`>=`だけの分岐だと負値がすべて最後の分岐に落ち、未丸めの生の桁になる)。
+  it("**核心**: 負値も絶対値で丸めてから符号を戻す(事業ごとの補正額は実在する負値)", () => {
+    expect(formatAmountRounded(-518_000_000_000)).toBe("-5,180億円");
+    expect(formatAmountRounded(-91_789_031_491_000)).toBe("-91.8兆円");
+    expect(formatAmountRounded(-9999)).toBe("-9,999円");
+  });
+
+  it("非有限値(NaN/Infinity)はクラッシュせず文字列化する", () => {
+    expect(formatAmountRounded(NaN)).toBe("NaN");
+    expect(formatAmountRounded(Infinity)).toBe("Infinity");
+    expect(formatAmountRounded(-Infinity)).toBe("-Infinity");
+  });
 });
 
 describe("formatAmountFull", () => {
   it("桁区切り+「円」を付けた正確な値を返す(丸めた値と併記するための表示)", () => {
     expect(formatAmountFull(91_789_031_491_000)).toBe("91,789,031,491,000円");
     expect(formatAmountFull(0)).toBe("0円");
+  });
+
+  it("負値も桁区切りの符号付きで返す(修正ラウンド1・レビューQ6)", () => {
+    expect(formatAmountFull(-518_000_000_000)).toBe("-518,000,000,000円");
+  });
+
+  it("非有限値(NaN/Infinity)はクラッシュせず文字列化する", () => {
+    expect(formatAmountFull(NaN)).toBe("NaN");
+    expect(formatAmountFull(Infinity)).toBe("Infinity");
   });
 });
 

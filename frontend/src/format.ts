@@ -28,21 +28,40 @@ export function esc(s: string): string {
  * 必ず併記すること**(モックのコメント: 「丸めた値を出すときは正確な値も
  * 併記する」)——この関数自体は文字列を1つ返すだけなので、その規律は
  * 呼び出し側(`views/overview.ts`)が守る。
+ *
+ * **負値は絶対値で桁を判定し、符号を戻す**(修正ラウンド1・レビューQ6)。
+ * `>=`だけの分岐だと負値は必ず最後の分岐に落ち、"-518,000,000,000円"の
+ * ような未丸めの生の桁が出る——第4節(次のタスク)以降、事業ごとの補正額
+ * (裁定S7の「必ず増えるとは限らない」)には実在する負値であり、隣の
+ * 正の値と桁が揃わないのは読みにくい。
+ *
+ * **非有限値(`NaN`/`Infinity`)はクラッシュせず文字列化する**(モックの
+ * `yen()`の`isFinite`ガードと同じ意図)。第1層のCQの答えに非有限値が来る
+ * ことは無いはずだが、共用関数(`format.ts`)として他画面から呼ばれても
+ * 例外を投げない。
  */
 export function formatAmountRounded(yen: number): string {
-  if (yen >= 1e12) return `${(yen / 1e12).toFixed(1)}兆円`;
-  if (yen >= 1e11) return `${Math.round(yen / 1e8).toLocaleString("ja-JP")}億円`;
-  if (yen >= 1e8) return `${(yen / 1e8).toFixed(1)}億円`;
-  if (yen >= 1e4) return `${(yen / 1e4).toFixed(0)}万円`;
-  return `${yen.toLocaleString("ja-JP")}円`;
+  if (!Number.isFinite(yen)) return String(yen);
+  const sign = yen < 0 ? "-" : "";
+  const n = Math.abs(yen);
+  if (n >= 1e12) return `${sign}${(n / 1e12).toFixed(1)}兆円`;
+  if (n >= 1e11) return `${sign}${Math.round(n / 1e8).toLocaleString("ja-JP")}億円`;
+  if (n >= 1e8) return `${sign}${(n / 1e8).toFixed(1)}億円`;
+  if (n >= 1e4) return `${sign}${(n / 1e4).toFixed(0)}万円`;
+  return `${sign}${n.toLocaleString("ja-JP")}円`;
 }
 
 /**
  * 円をそのまま(桁区切り+「円」)表示する。`docs/mockups/top-page.html`の
  * `yen()`/`jpFull()`と同じ形——`formatAmountRounded`と併記して、丸めた値の
  * 裏にある正確な値を示すために使う。
+ *
+ * `toLocaleString`は負値の符号をそのまま桁区切りの前に置くので、
+ * `formatAmountRounded`と違って符号を別途組み立て直す必要は無い
+ * (修正ラウンド1・レビューQ6)。非有限値はクラッシュせず文字列化する。
  */
 export function formatAmountFull(yen: number): string {
+  if (!Number.isFinite(yen)) return String(yen);
   return `${yen.toLocaleString("ja-JP")}円`;
 }
 

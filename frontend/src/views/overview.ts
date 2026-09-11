@@ -15,14 +15,22 @@
 import type { BudgetAndExecution, MinistryBudget, OverviewResponse } from "../api/client";
 import { fetchOverview } from "../api/client";
 import { esc, formatAmountFull, formatAmountRounded } from "../format";
+import { typeLabel } from "../labels";
 import { navigate } from "../router";
 import {
   OVERVIEW_UNAVAILABLE_TEXT,
+  barWidthPercent,
+  distinctSheetYears,
+  historyRowYearLabel,
+  historySheetYearNote,
   latestFiscalYear,
+  ministriesForFiscalYear,
   ministryDisplayName,
+  mostRecentRow,
   scaleExcludingTopNote,
   sourceCitation,
   sumMinistryBudgets,
+  topMinistryDominancePhrase,
   typeInstanceCount,
 } from "./overview-format";
 
@@ -54,59 +62,111 @@ export async function renderOverview(root: HTMLElement): Promise<void> {
 }
 
 function renderContent(root: HTMLElement, data: OverviewResponse): void {
+  // **CQ15は年度で絞っていない**(ヘッダ「年度を固定で書き込むと来年の
+  // データで黙って壊れる」)。混在したまま合計・府省数・帯グラフに使うと
+  // 2年度分を静かに足すことになる(修正ラウンド1・レビューS5)——以後の
+  // 集計はすべて`currentMinistries`(最新年度に絞った後)を通す。
   const fiscalYear = latestFiscalYear(data.ministries);
+  const currentMinistries = ministriesForFiscalYear(data.ministries, fiscalYear);
   const yearSuffix = fiscalYear !== null ? `（${fiscalYear}年度）` : "";
 
   root.innerHTML = `
     <section class="jgkg-overview" aria-label="日本政府の予算と支出の全体像">
-      ${renderHead(data, fiscalYear)}
+      ${renderHead(data, currentMinistries, fiscalYear)}
 
       <h2>府省ごとの予算額${esc(yearSuffix)}</h2>
-      <p class="jgkg-ov-source">${esc(sourceCitation(data.sources, "ministries"))}</p>
-      <p class="jgkg-ov-sub">棒の長さは金額そのままです(対数にしていません)。<b>厚生労働省が全体の約4分の3</b>という事実が、目盛りをいじると消えてしまうからです。府省をクリックすると、その府省を中心にしたグラフへ移ります。</p>
+      ${sourceCitationHtml(data.sources, "ministries")}
+      ${renderDominanceNote(currentMinistries)}
       <div class="jgkg-ov-scale" role="group" aria-label="目盛り"></div>
-      <p class="jgkg-ov-sub jgkg-ov-scale-note"></p>
+      <p class="jgkg-ov-sub jgkg-ov-scale-note" aria-live="polite"></p>
       <div class="jgkg-ov-bars"></div>
 
       <h2>予算はいくら付いて、いくら使われたか(5年分)</h2>
-      <p class="jgkg-ov-source">${esc(sourceCitation(data.sources, "budget_and_execution"))}</p>
+      ${sourceCitationHtml(data.sources, "budget_and_execution")}
       <div class="jgkg-ov-history">${renderHistory(data.budget_and_execution)}</div>
     </section>
   `;
 
-  wireBars(root, data.ministries);
+  wireBars(root, currentMinistries);
 }
 
-/** 「規模」——骨格の要約(裁定B103)。件数・金額は`type_counts`(CQ18)と`ministries`(CQ15)から導出する。対応表を手で書かない。 */
-function renderHead(data: OverviewResponse, fiscalYear: number | null): string {
-  const totalBudget = sumMinistryBudgets(data.ministries);
+/** `sourceCitation`が`null`(引けるキーが1つも無かった)なら、出所の行自体を出さない(修正ラウンド1・レビューQ1)。 */
+function sourceCitationHtml(sources: Record<string, string>, ...keys: string[]): string {
+  const citation = sourceCitation(sources, ...keys);
+  return citation ? `<p class="jgkg-ov-source">${esc(citation)}</p>` : "";
+}
+
+/**
+ * 「棒の長さは金額そのまま…」の説明文。**府省名と割合は`ministries`から
+ * 導出する**(手書きの「厚生労働省が全体の約4分の3」を廃止。修正ラウンド1・
+ * レビューA2/S2)——隣の目盛り切替注記(`scaleExcludingTopNote`)と同じ
+ * 精度(小数1桁の%)で揃える。府省が0件のときは事実の句を省く。
+ */
+function renderDominanceNote(ministries: MinistryBudget[]): string {
+  const dominance = topMinistryDominancePhrase(ministries);
+  const dominanceClause = dominance
+    ? `<b>${esc(dominance)}</b>という事実が、目盛りをいじると消えてしまうからです。`
+    : "";
+  return `<p class="jgkg-ov-sub">棒の長さは金額そのままです(対数にしていません)。${dominanceClause}府省をクリックすると、その府省を中心にしたグラフへ移ります。</p>`;
+}
+
+/**
+ * 「規模」——骨格の要約(裁定B103)。件数・金額は`type_counts`(CQ18)と
+ * `ministries`(CQ15。呼び出し側が既に最新年度に絞ったもの)から導出する。
+ * 対応表を手で書かない——**型の表示名は`typeLabel()`で引く**
+ * (修正ラウンド1・レビューS1: 手書きの「法人」「支出の記録」が生成物の
+ * 「組織」「支出」と食い違っていた。`typeLabel("Organization")`が
+ * 「組織」で不適切だと考えるなら、直す場所はオントロジー側の
+ * `dcterms:title @ja`であり、この画面ではない)。
+ */
+function renderHead(data: OverviewResponse, currentMinistries: MinistryBudget[], fiscalYear: number | null): string {
+  const totalBudget = sumMinistryBudgets(currentMinistries);
   const projectCount = typeInstanceCount(data.type_counts, "BudgetProject");
-  const lawCount = typeInstanceCount(data.type_counts, "Law", "LawRevision");
+  // **`Law`のみ(`LawRevision`へのフォールバックを消した)**(修正ラウンド1・
+  // レビューA4)。実データでは両方9,550件で偶然一致しているだけで、
+  // 「法令」の件数として`LawRevision`(法令の改正版)を代わりに出す判断を
+  // この画面が下してはいけない。
+  const lawCount = typeInstanceCount(data.type_counts, "Law");
   const orgCount = typeInstanceCount(data.type_counts, "Organization");
   const expenditureCount = typeInstanceCount(data.type_counts, "Expenditure");
+  // **一致する年度が無ければ項目を出さない**(修正ラウンド1・レビューS3/A3)。
+  // 先頭行へのフォールバックは、「{fiscalYear}年度のみ」というバッジの下に
+  // 別の年度の額を出してしまう——`lawCount`等と同じ「nullなら出さない」
+  // 規律に揃える。
   const governmentPaidRow =
-    (fiscalYear !== null && data.government_paid.find((r) => r.fiscal_year === fiscalYear)) ||
-    data.government_paid[0];
+    fiscalYear !== null ? data.government_paid.find((r) => r.fiscal_year === fiscalYear) : undefined;
 
   const yearBadge = fiscalYear !== null ? `<span class="jgkg-ov-year">${fiscalYear}年度のみ</span><br>` : "";
   const projectsPhrase = projectCount !== null ? `${projectCount.toLocaleString("ja-JP")}件` : "件数不明";
 
   const facts: string[] = [`<span>予算額の合計 <b>${esc(formatAmountFull(totalBudget))}</b></span>`];
-  facts.push(`<span>府省 <b>${data.ministries.length}</b></span>`);
-  if (lawCount !== null) facts.push(`<span>法令 <b>${lawCount.toLocaleString("ja-JP")}</b></span>`);
-  if (orgCount !== null) facts.push(`<span>法人 <b>${orgCount.toLocaleString("ja-JP")}</b></span>`);
+  facts.push(`<span>府省 <b>${currentMinistries.length}</b></span>`);
+  if (lawCount !== null) {
+    facts.push(`<span>${esc(typeLabel("Law"))} <b>${lawCount.toLocaleString("ja-JP")}</b></span>`);
+  }
+  if (orgCount !== null) {
+    facts.push(`<span>${esc(typeLabel("Organization"))} <b>${orgCount.toLocaleString("ja-JP")}</b></span>`);
+  }
   if (expenditureCount !== null) {
-    facts.push(`<span>支出の記録 <b>${expenditureCount.toLocaleString("ja-JP")}</b></span>`);
+    facts.push(`<span>${esc(typeLabel("Expenditure"))} <b>${expenditureCount.toLocaleString("ja-JP")}</b></span>`);
   }
   if (governmentPaidRow) {
-    facts.push(`<span>国が支払った額 <b>${esc(formatAmountRounded(governmentPaidRow.government_paid))}</b></span>`);
+    // **「下限」であることを一語添える**(修正ラウンド1・レビューS4)。
+    // `GovernmentPaidTotal`のdocstringが「画面に『正確な総額』と書くな」
+    // と明記している——第4節(次のタスク)が入るまで、この画面がこの数字を
+    // 出す唯一の場所であり、無注記のままにはできない。`title`に正確な値を
+    // 併記する(修正ラウンド1・レビューQ3)。
+    facts.push(
+      `<span title="正確には ${esc(formatAmountFull(governmentPaidRow.government_paid))}">` +
+        `国が支払った額(下限) <b>${esc(formatAmountRounded(governmentPaidRow.government_paid))}</b></span>`,
+    );
   }
 
   return `
     <div class="jgkg-ov-head">
       <p class="jgkg-ov-lede">${yearBadge}国の予算事業 <b>${esc(projectsPhrase)}</b>・<b>${esc(formatAmountRounded(totalBudget))}</b>を、根拠になった法令と、お金が渡った先まで結び付けたものです。</p>
       <p class="jgkg-ov-facts">${facts.join("")}</p>
-      <p class="jgkg-ov-source">${esc(sourceCitation(data.sources, "government_paid", "ministries", "type_counts"))}</p>
+      ${sourceCitationHtml(data.sources, "government_paid", "ministries", "type_counts")}
       <p class="jgkg-ov-sub">前の年度は入っていないので、<b>増えた・減ったは分かりません</b>。この画面が答えられるのは「いま、どの府省の、どの事業に、いくら付いていて、それが誰に渡ったか」です。</p>
     </div>
   `;
@@ -162,20 +222,23 @@ function renderBars(container: HTMLElement, ministries: MinistryBudget[], scale:
   // **既定は全府省。「除いて見る」は先頭(=予算額が最大)を除いた残り。**
   // `ministries`は`sources.ministries`(CQ15)が既に予算額の降順で返す
   // (`queries/cq/cq15-ministry-budget-ranking.rq`の`ORDER BY DESC(?totalBudget)`)
-  // ——ここで並べ替え直さない。
+  // ——ここで並べ替え直さない。**この順序を信じる方針を最大値の取得にも
+  // 揃える**(修正ラウンド1・レビューQ4): 先頭(`base[0]`)が常に最大なので
+  // `Math.max`で防御的に取り直さない——防御と信頼が1つの関数の中で
+  // 混在すると、「除く対象」と「最大値」がずれる余地を生む。
   const base = scale === "rest" ? ministries.slice(1) : ministries;
   if (base.length === 0) {
     container.innerHTML = "";
     return;
   }
-  const max = Math.max(...base.map((m) => m.total_budget));
+  const max = base[0]!.total_budget;
   container.innerHTML = base
     .map((m) => {
       const name = ministryDisplayName(m);
       // **最低幅を持たせる(下位の府省が幅0で消えない)。** 幅そのものは
       // CSS側の`min-width`(`.jgkg-ov-bar-fill`)が守る——ここでは0%を
       // 許して構わない。
-      const pct = max > 0 ? Math.min(100, (m.total_budget / max) * 100) : 0;
+      const pct = barWidthPercent(m.total_budget, max);
       return `
         <button type="button" class="jgkg-ov-bar" data-id-path="${esc(m.id_path)}"
                 title="${esc(name)} ${esc(formatAmountFull(m.total_budget))}">
@@ -204,9 +267,13 @@ function renderScaleNote(noteEl: HTMLElement, ministries: MinistryBudget[], scal
     noteEl.textContent = "";
     return;
   }
+  // **降順を信じる(`renderBars`と同じ方針。修正ラウンド1・レビューQ4)。**
+  // `rest[0]`(=先頭を除いた次)が常に残りの最大なので、`reduce`で
+  // 取り直さない——取り直すと「除く対象はslice(1)基準・最大値はreduce
+  // 基準」という2つの信頼度が1関数の中で混在する。
   const top = ministries[0]!;
   const rest = ministries.slice(1);
-  const newMax = rest.reduce((best, m) => (m.total_budget > best.total_budget ? m : best), rest[0]!);
+  const newMax = rest[0]!;
   noteEl.textContent = scaleExcludingTopNote({
     excludedName: ministryDisplayName(top),
     excludedBudget: top.total_budget,
@@ -226,20 +293,28 @@ function renderScaleNote(noteEl: HTMLElement, ministries: MinistryBudget[], scal
  * (裁定B99)はモックの文言をそのまま持ってくる。
  *
  * **`budget_and_execution`(CQ14)にある行だけを使う。** 「5年度すべてで
- * 差0円」のような、この応答に無いフィールド(事業ごとの補正・予備費の
- * 内訳件数)に基づく主張はここに書かない——第1層に出す数字はCQの答えで
- * なければならない(裁定B103)。
+ * 差0円」「減額補正589件…」のような、この応答に無いフィールド(事業ごとの
+ * 補正・予備費の内訳件数)に基づく主張はここに書かない——第1層に出す数字
+ * はCQの答えでなければならない(裁定B103)。**ただし「必ず増えるとは
+ * 限らない」という件数を伴わない判断は残す**(修正ラウンド1・裁定S7:
+ * controllerが「1を復活させる。ただし件数は書かない」と裁定)。
+ *
+ * **複数のレビューシート(`sheet_year`)が混在する場合を受け止める**
+ * (修正ラウンド1・レビューS5)。`rows`の並び順(`ORDER BY ?sheetYear
+ * ?budgetYear`)を「末尾行が最新の予算年度」だと信じない——`mostRecentRow`
+ * で`budget_fiscal_year`が最大の行を明示的に探す。
  */
 function renderHistory(rows: BudgetAndExecution[]): string {
   if (rows.length === 0) {
     return '<p class="jgkg-muted">年度ごとの予算と執行のデータがありません。</p>';
   }
+  const sheetYears = distinctSheetYears(rows);
   const maxAvailable = Math.max(...rows.map((r) => r.total_budget_available));
   const trs = rows
     .map((r) => {
-      const widthPct = maxAvailable > 0 ? (r.total_budget_available / maxAvailable) * 100 : 0;
-      const execPct = r.total_budget_available > 0 ? (r.executed_amount / r.total_budget_available) * 100 : 0;
-      const initPct = r.total_budget_available > 0 ? (r.initial_budget / r.total_budget_available) * 100 : 0;
+      const widthPct = barWidthPercent(r.total_budget_available, maxAvailable);
+      const execPct = barWidthPercent(r.executed_amount, r.total_budget_available);
+      const initPct = barWidthPercent(r.initial_budget, r.total_budget_available);
       // **執行額0は「執行率0%」ではなく「まだ執行されていない」。** 空欄
       // (「—」)にする——0%という誤った確定値を出さない(mock/renderHistory
       // と同じ判断)。
@@ -248,9 +323,13 @@ function renderHistory(rows: BudgetAndExecution[]): string {
         r.total_budget_available > 0 && r.executed_amount > 0
           ? `${((r.executed_amount / r.total_budget_available) * 100).toFixed(1)}%`
           : "—";
+      // **歳出予算現額・執行額にも正確な値を`title`で併記する**
+      // (修正ラウンド1・レビューQ3。当初予算は縦線=tickのtitleに既にある)。
+      const availableTitle = esc(formatAmountFull(r.total_budget_available));
+      const executedTitle = r.executed_amount > 0 ? ` title="${esc(formatAmountFull(r.executed_amount))}"` : "";
       return `
         <tr>
-          <th>${r.budget_fiscal_year}年度</th>
+          <th>${esc(historyRowYearLabel(r, sheetYears))}</th>
           <td class="jgkg-ov-histbar">
             <span class="jgkg-ov-track" style="width:${widthPct.toFixed(2)}%">
               <span class="jgkg-ov-fill" style="width:${execPct.toFixed(2)}%"></span>
@@ -258,18 +337,17 @@ function renderHistory(rows: BudgetAndExecution[]): string {
             </span>
           </td>
           <td class="jgkg-ov-num">${esc(formatAmountRounded(r.initial_budget))}</td>
-          <td class="jgkg-ov-num">${esc(formatAmountRounded(r.total_budget_available))}</td>
-          <td class="jgkg-ov-num">${executedText}</td>
+          <td class="jgkg-ov-num" title="${availableTitle}">${esc(formatAmountRounded(r.total_budget_available))}</td>
+          <td class="jgkg-ov-num"${executedTitle}>${executedText}</td>
           <td class="jgkg-ov-num">${rateText}</td>
         </tr>`;
     })
     .join("");
 
-  const last = rows[rows.length - 1]!;
-  const first = rows[0]!;
+  const latest = mostRecentRow(rows);
   const notYetExecutedNote =
-    last.executed_amount === 0
-      ? ` <b>${last.budget_fiscal_year}年度の執行額が空欄なのは、まだ執行されていないから</b>です(執行率0%ではありません)。`
+    latest && latest.executed_amount === 0
+      ? ` <b>${latest.budget_fiscal_year}年度の執行額が空欄なのは、まだ執行されていないから</b>です(執行率0%ではありません)。`
       : "";
 
   return `
@@ -277,7 +355,7 @@ function renderHistory(rows: BudgetAndExecution[]): string {
       <thead><tr><th></th><th></th><th>当初予算</th><th>歳出予算現額</th><th>執行額</th><th>執行率</th></tr></thead>
       <tbody>${trs}</tbody>
     </table>
-    <p class="jgkg-ov-sub">帯の全体が<b>歳出予算現額</b>(その年度に実際に使える額)、塗った部分が<b>執行額</b>、縦線が<b>当初予算</b>の位置です。当初予算より使える額が大きいのは、<b>補正予算・前年度からの繰越し・予備費</b>が加わるためです。${notYetExecutedNote}</p>
-    <p class="jgkg-ov-sub">この5年分は<b>${first.sheet_year}年度のレビューシートが記録しているもの</b>です。年度ごとに別のシートを取ってきて並べたのではありません。</p>
+    <p class="jgkg-ov-sub">帯の全体が<b>歳出予算現額</b>(その年度に実際に使える額)、塗った部分が<b>執行額</b>、縦線が<b>当初予算</b>の位置です。当初予算より使える額が大きいのは、<b>補正予算・前年度からの繰越し・予備費</b>が加わるためです。ただし、これらは事業ごとに見ると<b>負になることもあります</b>(必ず増えるとは限りません)。${notYetExecutedNote}</p>
+    <p class="jgkg-ov-sub">${esc(historySheetYearNote(sheetYears))}</p>
   `;
 }
