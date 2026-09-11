@@ -362,6 +362,10 @@ class PipelineReport(BaseModel):
     # のと違う。B54が"in fetched_on"で判定するのと同じ理由)
     budget_annual_budget_identity_checked: int | None = None
     budget_annual_budget_project_amount_checked: int | None = None
+    #: 裁定B97の不変条件(ブロックの金額 == 所属する支出の総和)を何件検査したか。
+    #: 上の2つと同じ理由で載せる ——「破れ0件」だけでは「壊れていない」と
+    #: 「1件も見ていない」を区別できない(裁定B99のレビューで揃えた)
+    budget_block_amount_checked: int | None = None
 
 
 class QuarantineNotEmptyError(RuntimeError):
@@ -1040,7 +1044,9 @@ def _expenditure_block_amount_mismatches(clean: Dataset) -> list[str]:
     GROUP BY ?block ?blockAmount
     """
     mismatches: list[str] = []
+    checked = 0
     for block, block_amount, total in clean.query(query):
+        checked += 1
         if int(block_amount) != int(total):
             mismatches.append(
                 f"budget:ExpenditureBlock {block} の金額が{int(block_amount)}円だが、"
@@ -1049,7 +1055,10 @@ def _expenditure_block_amount_mismatches(clean: Dataset) -> list[str]:
                 "19,125ブロック全件で一致するので、取り込みが支出を"
                 "誤ったブロックに割り当てた疑いが強い)"
             )
-    return mismatches
+    # **検査した件数も返す(実装者の設計に揃えた。裁定B99のレビュー)。**
+    # 「破れ0件」だけでは「壊れていない」と「1件も見ていない」を区別できず、
+    # 列を丸ごと落とした取り込みでは恒真の検査になる(再発欠陥2)。
+    return mismatches, checked
 
 
 def _annual_budget_identity_mismatches(clean: Dataset) -> tuple[list[str], int]:
@@ -1182,7 +1191,10 @@ def _annual_budget_project_amount_mismatches(clean: Dataset) -> tuple[list[str],
             mismatches.append(
                 f"budget:BudgetProject {project} の予算額が{int(budget_amount)}円だが、"
                 f"同じ事業のレビューシート年度のbudget:AnnualBudgetの当初予算は"
-                f"{sorted(initials)}円(裁定B99の不変条件が崩れている —— どちらも"
+                # 通常は1件。複数あれば「同じ年度のAnnualBudgetが2つ以上ある」
+                # という別の異常なので、そのときだけ集合を見せる
+                f"{next(iter(initials)) if len(initials) == 1 else sorted(initials)}円"
+                "(裁定B99の不変条件が崩れている —— どちらも"
                 "RSの同じ列から来るので、年度の対応付けを取り違えた疑いが強い)"
             )
     return mismatches, checked
@@ -2087,11 +2099,15 @@ def run(
     # 内容そのものを検査するので、egov_law_ranと同じ理由で"rs-system" in
     # fetched_onで判定する——rs_resolution_ranではない。B54が「carry-overで
     # 意図せず据え置かれる」ケースを狙って"in fetched_on"にしたのと同じ理由)
+    block_amount_checked: int | None = None
     if "rs-system" in fetched_on:
         report_graph_mismatches.extend(_expenditure_category_mismatches(clean))
         # 裁定B97: ブロックの金額 == 所属する支出の金額の総和(一次データが
         # 19,125ブロック全件で満たす関係。取り違えを捕まえる)
-        report_graph_mismatches.extend(_expenditure_block_amount_mismatches(clean))
+        block_amount_mismatches, block_amount_checked = (
+            _expenditure_block_amount_mismatches(clean)
+        )
+        report_graph_mismatches.extend(block_amount_mismatches)
         # 裁定B99: 年度ごとの予算と執行の恒等式(当初+補正+繰越+予備費=
         # 歳出予算現額)と、BudgetProjectの予算額 == レビューシート年度の
         # AnnualBudgetの当初予算。どちらも実測で全件成立する関係なので、
@@ -2226,6 +2242,7 @@ def run(
         ),
         budget_annual_budget_identity_checked=annual_budget_identity_checked,
         budget_annual_budget_project_amount_checked=annual_budget_project_amount_checked,
+        budget_block_amount_checked=block_amount_checked,
     )
 
 
