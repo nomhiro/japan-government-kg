@@ -167,6 +167,58 @@ class ExpenditureLine:
     is_bundled: bool
     amount: int
     role: str = ""
+    # 裁定B97: この支出先が属する支出先ブロック番号([13])。verbatim(空文字は
+    # 「ブロック番号の記録が無い」。実測2026-09-11では支出先行193,211行すべてで
+    # 非空だが、`role`と同じくRS側の記録に委ねる)。ブロック実体との突合は
+    # `build_projects`が行う(このクラスは列をそのまま持つだけ)
+    block_id: str = ""
+
+
+@dataclass(frozen=True)
+class ExpenditureBlockLine:
+    """資金の流れの1つの段(支出先ブロック)。**2つのファイルを突き合わせて作る。**
+
+    名前・役割・金額・支出先の数は **5-1**(payee_payment_information)の
+    ブロック行([18]支出先名が空で[17]ブロックの合計支出額が非空の行)にあり、
+    入口フラグ(`paid_by_government`)・出どころ(`funded_by`)・補足情報
+    (`flow_notes`)は **5-2**(payee_payment_block_connection)にしか無い
+    (裁定B97。schema/budget.yaml の `paidByGovernment`/`fundedBy` のdocstring)。
+
+    **5-2にしか現れないブロックも作る**(`amount`/`payee_count` が `None`)。
+    実測(2026-09-11): 5-2が辺の端点として挙げる20,372ブロックのうち1,357は
+    5-1に金額行を持たない(事業1409の「信用保証協会」「金融機関」「中小企業等」
+    など、事業全体の資金の流れを示すための参考記載)。**捨てると`funded_by`が
+    存在しないブロックを指し、参照整合ゲート(裁定B4。`budget:fundedBy`は
+    reference-classes.jsonに載る)が落ちる** — 段のつながりが切れて流れが
+    辿れなくなるのと同じことがグラフ上で起こる。
+
+    `paid_by_government` と `funded_by` は**排他ではない**(実測: 両方を持つ
+    ブロックが9件ある。事業1409のブロックAは国からの支払いと「信用保証協会」
+    からの保険料支払の両方を受ける)。schema/budget.yaml の
+    `paidByGovernment` のdocstringを参照。
+    """
+
+    block_id: str          # "A"/"B"/"AA"… (5-1 [13]ブロック番号 / 5-2 [13][16])
+    block_name: str        # 5-1 [14]支出先ブロック名(無ければ5-2 [17]/[14])
+    role: str              # 5-1 [16]事業を行う上での役割(5-2のみのブロックは空)
+    amount: int | None     # 5-1 [17]ブロックの合計支出額(5-2のみのブロックはNone)
+    payee_count: int | None  # 5-1 [15]支出先の数(同上)
+    paid_by_government: bool  # 5-2 [15]担当組織からの支出 == TRUE の行が1つでもあるか
+    funded_by: tuple[str, ...]   # 5-2 [13]。このブロックを宛先とする辺の起点
+    flow_notes: tuple[str, ...]  # 5-2 [18]。重複を除いた集合(順序は出現順)
+
+
+@dataclass(frozen=True)
+class IndirectCostLine:
+    """国自らが支出する間接経費(5-2の[20]項目・[21]金額)の1件。
+
+    **5-1(支出先_支出情報)には現れない** — 国が支出先を介さず自ら支払う分
+    なので、支出先の表から漏れる(裁定B97)。判定は金額列[21]の非空で行う
+    ([19]は固定文言ではない。rs_columns.pyの`indirect_flag`の注記参照)。
+    """
+
+    item: str        # 5-2 [20]国自らが支出する間接経費の項目
+    amount: int      # 5-2 [21]同 金額
 
 
 @dataclass(frozen=True)
@@ -201,6 +253,13 @@ class RsRow:
     prior_year_executed_amount: int | None = None
     basis_law_citations: tuple[BasisLawCitation, ...] = ()
     expenditures: tuple[ExpenditureLine, ...] = ()
+    # 裁定B97。`paths` に payee_payment_block_connection が無ければ両方とも
+    # 空になる(この2つは任意グループから来る。既定値を持つのはそのため)。
+    # **空になったことは`RsParseStats.block_connection_read`が観測できる**
+    # ——「ファイルを渡していないから空」と「渡したが該当が無い」を呼び出し元が
+    # 区別できないと、資金の流れが丸ごと抜けたリリースが黙って通る
+    blocks: tuple[ExpenditureBlockLine, ...] = ()
+    indirect_costs: tuple[IndirectCostLine, ...] = ()
 
 
 # =============================================================================
@@ -213,6 +272,20 @@ REQUIRED_GROUPS: tuple[str, ...] = (
     "policy_measure_laws_and_regulations",
     "payee_payment_information",
 )
+
+OPTIONAL_GROUPS: tuple[str, ...] = ("payee_payment_block_connection",)
+"""`parse_rs` が `paths` にあれば読むが、無くても落ちないグループ(裁定B97)。
+
+payee_payment_block_connection を `REQUIRED_GROUPS` に入れない理由は歴史的な
+ものである——このファイルは裁定B97(2026-09-11)で初めて取得したので、
+それより前に作られた fixture・呼び出し元はどれもこのパスを持たない。必須に
+すると資金の流れと無関係なテストまで一斉に落ちる。
+
+**代わりに「読まなかった」ことを`RsParseStats.block_connection_read`で
+観測できるようにする**(§8.2「欠損を沈黙させない」。このファイルが無いと
+`RsRow.blocks`/`RsRow.indirect_costs`が空になるが、空の理由が「渡していない」
+なのか「データに無い」なのかを型からは区別できない)。
+"""
 
 
 @dataclass
@@ -241,6 +314,37 @@ class RsParseStats:
     payee_rows_block: int = 0
     payee_rows_contract_detail: int = 0
     project_summary_duplicate_rows: int = 0
+
+    # =========================================================================
+    # 裁定B97: payee_payment_block_connection(5-2)。**このファイルは任意
+    # グループ(OPTIONAL_GROUPS)なので、「読まなかった」ことが呼び出し元から
+    # 見えなければならない。** `block_connection_read` が偽なら
+    # `RsRow.blocks`/`RsRow.indirect_costs` は全事業で空になっている。
+    #
+    # 行の内訳は恒等式になる(全行 = 入口 + 辺 + 間接経費 + 無内容)。
+    # 実測(2026-09-11、全23,381行): 13,219 + 7,494 + 2,432 + 236。
+    # [15]担当組織からの支出の値は 'TRUE'/'FALSE'/'' の3種で、TRUEの行は
+    # 必ず[13]支出元ブロックが空(例外0件)・FALSEの行は必ず[13][16]が両方
+    # 非空、空の行は間接経費行か無内容行のいずれか。
+    #
+    # **無内容行(9つの内容列がすべて空)を数えるのは、この236行が「取りこぼし」
+    # ではなく「一次データにそう入っている」ことを固定するため。** 数えないと
+    # 恒等式が閉じず、将来この数が増えたとき(=解析漏れ)と区別できない
+    # =========================================================================
+    block_connection_read: bool = False
+    block_connection_rows: int = 0
+    block_connection_rows_paid_by_government: int = 0
+    block_connection_rows_edge: int = 0
+    block_connection_rows_indirect_cost: int = 0
+    block_connection_rows_without_payload: int = 0
+    # 同じ事業で同じ項目名の間接経費行が2件以上あった件数(先頭を採り、以降を
+    # 捨てた数)。**項目名がURIの鍵である**(`uris.indirect_cost_uri`。
+    # schema/budget.yaml の IndirectCost のdocstringが(年度,事業,項目名)の
+    # 一意性を実測で根拠にしている)ため、捨てずに両方emitすると1つのノードが
+    # `core:amount_jpy` を2つ持ち、閉じたシェイプの `sh:maxCount 1` に違反して
+    # rs-systemグラフ全体が隔離される。実測(2026-09-11)は0件だが、ここで
+    # 黙って落とすと将来この前提が崩れたときに金額の消失が見えなくなる
+    block_connection_indirect_cost_duplicate_item: int = 0
 
 
 def _group_rows(group_key: str, path: Path) -> Iterator[list[str]]:
@@ -380,6 +484,236 @@ def _block_roles_for(
     return out
 
 
+# =============================================================================
+# 資金の流れ(支出先ブロック・間接経費。裁定B97)
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class _BlockAttributes:
+    """5-1のブロック行が持つ属性(5-2と突き合わせる前の「半分」)。
+
+    `amount` が `int`(`None`ではない)なのは、この辞書に入るのが
+    「[17]ブロックの合計支出額が非空のブロック行」だけだからである
+    ——金額の無いブロックは5-1側の属性を一切持たないものとして扱い、
+    `ExpenditureBlockLine.amount=None` で表す(そちらは`None`を許す)。
+    """
+
+    block_name: str
+    role: str
+    amount: int
+    payee_count: int | None
+
+
+def _block_attributes_for(rows_for_project: list[list[str]]) -> dict[str, _BlockAttributes]:
+    """5-1のブロック行から(ブロック番号 → 名前・役割・金額・支出先の数)を作る。
+
+    `_block_roles_for`(支出先行へ`role`を伝播させるための対応表)と**対象が
+    違う**ので別関数にする: あちらはブロック行をすべて採って後勝ちで上書き
+    するが、ここは**[17]ブロックの合計支出額が非空の行だけ**を採る。
+    実測(2026-09-11): その条件を満たすブロック行は19,125行で、
+    (事業, ブロック番号)に対しちょうど1行(重複0件)——事業1409ブロックAが
+    2つのブロック行を持つ唯一の実例(`_block_roles_for` のdocstring)も、
+    一方は[17]が空なのでここでは衝突しない。したがって後勝ちの上書き規則を
+    ここに複製する必要は無い。
+
+    ブロック番号が空のブロック行(実測203行)は鍵が作れないので採らない
+    (うち[17]が非空の行は0件なので、この除外で金額は失われない)。
+    """
+    spec = rs_columns.RS_FILES["payee_payment_information"]
+    idx_payee = spec.col["recipient_name"]
+    idx_block = spec.col["block_number"]
+    idx_block_name = spec.col["block_name"]
+    idx_count = spec.col["block_payee_count"]
+    idx_role = spec.col["expenditure_role"]
+    idx_amount = spec.col["block_amount"]
+
+    out: dict[str, _BlockAttributes] = {}
+    for r in rows_for_project:
+        if r[idx_payee].strip():
+            continue  # 支出先行(ブロック行ではない)
+        block_id = r[idx_block].strip()
+        amount = normalize_amount(r[idx_amount])
+        if not block_id or amount is None:
+            continue
+        out[block_id] = _BlockAttributes(
+            block_name=r[idx_block_name].strip(),
+            role=r[idx_role].strip(),
+            amount=amount,
+            payee_count=normalize_amount(r[idx_count]),
+        )
+    return out
+
+
+def _blocks_for(
+    block_attributes: Mapping[str, _BlockAttributes], connection_rows: list[list[str]]
+) -> tuple[ExpenditureBlockLine, ...]:
+    """5-1の属性と5-2のつながりを突き合わせて `ExpenditureBlockLine` を組み立てる。
+
+    ブロックの集合は **5-1の金額行 ∪ 5-2の支出先ブロック ∪ 5-2の支出元ブロック**
+    にする。支出元側まで含めるのは`funded_by`を閉じるためである
+    ——実測(2026-09-11): 5-2の支出元ブロック4,257件のうち2件
+    (事業274ブロックA・事業19873ブロックC)はどこの支出先にも現れず5-1にも
+    金額行が無い。この2件を作らないと`budget:fundedBy`が型の無いURIを指し、
+    参照整合ゲート(裁定B4)がリリース全体を止める。
+
+    出現順は「5-1のブロック行の順 → 5-2の行の順(支出先が先、支出元が後)」。
+    順序そのものに意味は無いが、同じ入力から同じ順で出ることを固定しておく
+    (emitの出力が実行ごとに揺れないようにする)。
+
+    名前は5-1の[14]を優先し、5-1に属性が無い(または名前が空の)ブロックだけ
+    5-2の名前([17]支出先ブロック名 / [13]が非空の行の[14]支出元ブロック名)で
+    埋める。実測: 5-1と5-2の両方に現れる18,988ブロックすべてで2つのファイルの
+    名前が一致する(食い違い0件。schema/budget.yaml の ExpenditureBlock の
+    docstring)ので、どちらを優先しても値は変わらない。
+    """
+    spec = rs_columns.RS_FILES["payee_payment_block_connection"]
+    idx_from = spec.col["block_from"]
+    idx_from_name = spec.col["block_from_name"]
+    idx_paid = spec.col["paid_by_government"]
+    idx_to = spec.col["block_to"]
+    idx_to_name = spec.col["block_to_name"]
+    idx_note = spec.col["flow_note"]
+
+    order: list[str] = list(block_attributes)
+    seen: set[str] = set(order)
+    name_from_connection: dict[str, str] = {}
+    paid_by_government: set[str] = set()
+    funded_by: dict[str, list[str]] = {}
+    flow_notes: dict[str, list[str]] = {}
+
+    def _remember(block_id: str, name: str) -> None:
+        if block_id not in seen:
+            seen.add(block_id)
+            order.append(block_id)
+        if name and block_id not in name_from_connection:
+            name_from_connection[block_id] = name
+
+    for r in connection_rows:
+        block_to = r[idx_to].strip()
+        if not block_to:
+            # 間接経費行・無内容行。実測(2026-09-11): [16]が空で[13]が非空の行、
+            # および[16]が空で[15]がTRUEの行はいずれも0件なので、ここで抜けても
+            # 辺と入口フラグは失われない
+            continue
+        _remember(block_to, r[idx_to_name].strip())
+        block_from = r[idx_from].strip()
+        if block_from:
+            _remember(block_from, r[idx_from_name].strip())
+            sources = funded_by.setdefault(block_to, [])
+            if block_from not in sources:
+                sources.append(block_from)
+        if r[idx_paid].strip().upper() == "TRUE":
+            paid_by_government.add(block_to)
+        note = r[idx_note].strip()
+        if note:
+            notes = flow_notes.setdefault(block_to, [])
+            if note not in notes:
+                notes.append(note)
+
+    out: list[ExpenditureBlockLine] = []
+    for block_id in order:
+        attrs = block_attributes.get(block_id)
+        out.append(
+            ExpenditureBlockLine(
+                block_id=block_id,
+                block_name=(
+                    attrs.block_name
+                    if attrs is not None and attrs.block_name
+                    else name_from_connection.get(block_id, "")
+                ),
+                role=attrs.role if attrs is not None else "",
+                amount=attrs.amount if attrs is not None else None,
+                payee_count=attrs.payee_count if attrs is not None else None,
+                paid_by_government=block_id in paid_by_government,
+                funded_by=tuple(funded_by.get(block_id, ())),
+                flow_notes=tuple(flow_notes.get(block_id, ())),
+            )
+        )
+    return tuple(out)
+
+
+def _indirect_costs_for(
+    connection_rows: list[list[str]], stats: RsParseStats
+) -> tuple[IndirectCostLine, ...]:
+    """5-2の[20]項目・[21]金額から間接経費を取る(裁定B97)。
+
+    判定は**金額列[21]の非空**で行う。[19]は「間接経費」という固定文言では
+    なく自由記述である(実測2026-09-11: 2,432行のうち「間接経費」は2,023行で、
+    残りは「事務費」「旅費」「文部科学省」等。rs_columns.pyの`indirect_flag`の
+    注記参照)。[19][20][21]は2,432行すべてで3列同時に非空なので、どの列で
+    判定しても同じ集合になるが、**金額が無い行を作らない**ために金額列を選ぶ
+    (`IndirectCostLine.amount`は`int`であり欠損を表現できない)。
+
+    同じ項目名が同じ事業に2回現れた場合は先頭を採り、件数を
+    `stats.block_connection_indirect_cost_duplicate_item` に数える(項目名が
+    URIの鍵なので、両方emitすると1ノードが2つの金額を持って閉じたシェイプに
+    違反する。同フィールドのdocstring参照)。
+    """
+    spec = rs_columns.RS_FILES["payee_payment_block_connection"]
+    idx_item = spec.col["indirect_item"]
+    idx_amount = spec.col["indirect_amount"]
+
+    out: list[IndirectCostLine] = []
+    seen_items: set[str] = set()
+    for r in connection_rows:
+        amount = normalize_amount(r[idx_amount])
+        if amount is None:
+            continue
+        item = r[idx_item].strip()
+        if item in seen_items:
+            stats.block_connection_indirect_cost_duplicate_item += 1
+            continue
+        seen_items.add(item)
+        out.append(IndirectCostLine(item=item, amount=amount))
+    return tuple(out)
+
+
+def _counted_block_connection_rows(
+    rows: Iterator[list[str]], stats: RsParseStats
+) -> Iterator[list[str]]:
+    """5-2の全行を読みながら、行の種別を`stats`に数えてそのまま流す。
+
+    **事業ごとではなくファイル全体で数える。** `_expenditures_for` 等が
+    事業ループの中で数えるのと違うのは、ここが答えるべき問いが「このファイルを
+    読んだか・何行読んだか」(OPTIONAL_GROUPSのdocstring)であり、
+    project_summaryの背骨に載っていない事業の行も「読んだ行」だからである。
+
+    種別は4つで互いに素、和は全行に等しい(`RsParseStats`の該当節に実測値)。
+    """
+    spec = rs_columns.RS_FILES["payee_payment_block_connection"]
+    idx_paid = spec.col["paid_by_government"]
+    idx_to = spec.col["block_to"]
+    idx_amount = spec.col["indirect_amount"]
+    payload = (
+        spec.col["block_from"], spec.col["block_from_name"], idx_paid, idx_to,
+        spec.col["block_to_name"], spec.col["flow_note"], spec.col["indirect_flag"],
+        spec.col["indirect_item"], idx_amount,
+    )
+
+    for row in rows:
+        stats.block_connection_rows += 1
+        if row[idx_to].strip():
+            if row[idx_paid].strip().upper() == "TRUE":
+                stats.block_connection_rows_paid_by_government += 1
+            else:
+                stats.block_connection_rows_edge += 1
+        elif row[idx_amount].strip():
+            stats.block_connection_rows_indirect_cost += 1
+        elif not any(row[i].strip() for i in payload):
+            stats.block_connection_rows_without_payload += 1
+        else:
+            # 上の3種のどれでもないのに内容がある行。実測0件だが、恒等式を
+            # 閉じたまま「未知の形の行が現れた」ことを見せるために例外にする
+            # (黙って無視すると、資金の流れが欠けた理由が誰にも見えなくなる)
+            raise rs_columns.ColumnLayoutError(
+                "payee_payment_block_connection に未知の形の行がある"
+                f"(支出先ブロックも間接経費の金額も空だが内容がある): {row!r}。"
+                " RSの配布フォーマットが変わった可能性がある"
+            )
+        yield row
+
+
 def _expenditures_for(
     rows_for_project: list[list[str]], stats: RsParseStats
 ) -> tuple[ExpenditureLine, ...]:
@@ -433,6 +767,7 @@ def _expenditures_for(
                 is_bundled=is_bundled,
                 amount=amount,
                 role=block_role.get(r[idx_block], ""),
+                block_id=r[idx_block].strip(),
             )
         )
     return tuple(out)
@@ -449,6 +784,12 @@ def parse_rs(
     project_id の集合は project_summary を正準の出典とする(RS_COLの設計。
     他の3ファイルも実データでは同じ集合を持つが、project_summaryが「この
     事業年度のレビューシートに載っている事業」の正の出典)。
+
+    **`OPTIONAL_GROUPS`(payee_payment_block_connection。裁定B97)は無くても
+    落ちない** —— 無ければ`RsRow.blocks`/`RsRow.indirect_costs`が全事業で
+    空になる。**空の理由は`stats.block_connection_read`で区別できる**
+    (OPTIONAL_GROUPSのdocstring参照。「渡していないから空」を「データに
+    無いから空」と混同させない)。
 
     `stats` に `RsParseStats` を渡すと、`build_projects` が受け取れない
     parse段階の欠損件数(`payee_rows_missing_amount`)がそこに書き込まれる
@@ -491,9 +832,31 @@ def parse_rs(
         _group_rows("payee_payment_information", paths["payee_payment_information"])
     )
 
+    # 裁定B97: 任意グループ。無ければ空の辞書のまま進む(blocks/indirect_costsが
+    # 全事業で空になり、そのことは st.block_connection_read が偽であることから
+    # 読み取れる)
+    connection_by_pid: dict[str, list[list[str]]] = {}
+    # `st`ではなくローカルで判定する —— `stats`は呼び出し元から渡される
+    # 使い回し可能なオブジェクトであり、そこに書いた値を同じ関数の分岐条件に
+    # 使うと、前回の呼び出しの痕跡でこの回の挙動が変わる経路ができる
+    has_block_connection = "payee_payment_block_connection" in paths
+    if has_block_connection:
+        st.block_connection_read = True
+        connection_by_pid = _group_by_project_id(
+            _counted_block_connection_rows(
+                _group_rows(
+                    "payee_payment_block_connection",
+                    paths["payee_payment_block_connection"],
+                ),
+                st,
+            )
+        )
+
     for pid in order:
         project_name, ministry_name, fiscal_year = spine[pid]
         rows_for_project = budget_by_pid.get(pid, [])
+        payee_rows = payee_by_pid.get(pid, [])
+        connection_rows = connection_by_pid.get(pid, [])
         yield RsRow(
             project_id=pid,
             fiscal_year=fiscal_year,
@@ -502,7 +865,17 @@ def parse_rs(
             budget_amount=_current_year_budget_amount(rows_for_project, fiscal_year),
             prior_year_executed_amount=_prior_year_executed_amount(rows_for_project, fiscal_year),
             basis_law_citations=_basis_law_citations_for(law_by_pid.get(pid, [])),
-            expenditures=_expenditures_for(payee_by_pid.get(pid, []), st),
+            expenditures=_expenditures_for(payee_rows, st),
+            # ブロックは5-2が無ければ組み立てない(5-1だけでは入口フラグ・
+            # 出どころが分からず、「段を区別して合計する」というこのクラスの
+            # 存在理由が満たせないため。半分だけのブロックをKGに出すと
+            # paidByGovernment偽のブロックと区別できない)
+            blocks=(
+                _blocks_for(_block_attributes_for(payee_rows), connection_rows)
+                if has_block_connection
+                else ()
+            ),
+            indirect_costs=_indirect_costs_for(connection_rows, st),
         )
 
 
@@ -709,6 +1082,22 @@ class BuildStats:
     recipients_resolved_by_houjin_bangou: int = 0
     recipients_resolved_by_name: int = 0
     recipients_unresolved: int = 0
+    # =========================================================================
+    # 裁定B97: 資金の流れ。`blocks_paid_by_government`(入口ブロック)が
+    # 「国が払った額」の分母になるブロック数で、この3つが0のまま(かつ
+    # `RsParseStats.block_connection_read`が偽)なら5-2を渡していない
+    # =========================================================================
+    blocks_seen: int = 0
+    blocks_paid_by_government: int = 0
+    indirect_costs_seen: int = 0
+    # 支出先行の[13]ブロック番号に対応するブロックを組み立てられなかった件数
+    # (`budget:inBlock`を張らずに支出自体は残す)。**参照整合ゲート(裁定B4)は
+    # `budget:inBlock`も検査する**ので、存在しないブロックURIを張ると
+    # リリース全体が止まる。実測(2026-09-11)は0件 —— 支出としてemitされる
+    # 19,125ブロック分の支出先行はすべて5-1に金額のあるブロック行を持つ ——
+    # だが、黙って落とすと将来この前提が崩れたときに「段が付いていない支出」の
+    # 存在が誰にも見えなくなる(欠陥型4)
+    expenditures_block_unknown: int = 0
 
 
 @dataclass(frozen=True)
@@ -754,6 +1143,46 @@ class ExpenditureRecord:
     # docstring参照)
     payee_label: str | None = None
     role: str = ""
+    # 裁定B97: この支出が属する支出先ブロック(`budget:inBlock`)。
+    # **`ExpenditureLine.block_id`(列の値そのもの)とは別物である** ——
+    # ここに入るのは「同じ事業の`BuildResult.blocks`に実在するブロック番号」
+    # だけで、対応するブロックが無ければ`None`にして
+    # `BuildStats.expenditures_block_unknown`に数える(同フィールドのdocstring)。
+    # 5-2を渡さないリリースでは全件`None`になる(ブロック自体が無いため)
+    block_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ExpenditureBlockRecord:
+    """`budget:ExpenditureBlock` としてemitする1ブロック(裁定B97)。
+
+    `ExpenditureRecord` と同じく、解決の判断は`build_projects`が済ませてあり
+    emitはこれを書くだけにする。`funded_by` は同じ事業内のブロック番号の列で、
+    **`BuildResult.blocks` に必ず実在する**(`_blocks_for` が支出元側の
+    ブロックも作るため。同関数のdocstring)。emitはこれをそのまま
+    `uris.expenditure_block_uri` に渡してよい。
+    """
+
+    project_id: str
+    fiscal_year: str
+    block_id: str
+    block_name: str
+    role: str
+    amount: int | None
+    payee_count: int | None
+    paid_by_government: bool
+    funded_by: tuple[str, ...]
+    flow_notes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class IndirectCostRecord:
+    """`budget:IndirectCost` としてemitする1件(裁定B97)。"""
+
+    project_id: str
+    fiscal_year: str
+    item: str
+    amount: int
 
 
 @dataclass(frozen=True)
@@ -778,6 +1207,10 @@ class BuildResult:
     expenditures: tuple[ExpenditureRecord, ...]
     unresolved: tuple[UnresolvedBudgetReference, ...]
     stats: BuildStats = field(default_factory=BuildStats)
+    # 裁定B97。5-2(payee_payment_block_connection)を渡さないリリースでは
+    # 両方とも空になる(RsRow側で空になっているため)
+    blocks: tuple[ExpenditureBlockRecord, ...] = ()
+    indirect_costs: tuple[IndirectCostRecord, ...] = ()
 
 
 def build_projects(
@@ -816,6 +1249,8 @@ def build_projects(
     projects: list[BudgetProjectRecord] = []
     expenditures: list[ExpenditureRecord] = []
     unresolved: list[UnresolvedBudgetReference] = []
+    blocks: list[ExpenditureBlockRecord] = []
+    indirect_costs: list[IndirectCostRecord] = []
 
     for row in rows:
         stats.projects_seen += 1
@@ -878,6 +1313,39 @@ def build_projects(
             )
         )
 
+        # 裁定B97: ブロックと間接経費はここで解決を要しない(参照先は同じ事業内
+        # のブロックだけで、`_blocks_for`が閉じていることを保証している)。
+        # 支出の`inBlock`が指せるブロック番号の集合を先に確定させる
+        known_block_ids = {b.block_id for b in row.blocks}
+        for block in row.blocks:
+            stats.blocks_seen += 1
+            if block.paid_by_government:
+                stats.blocks_paid_by_government += 1
+            blocks.append(
+                ExpenditureBlockRecord(
+                    project_id=row.project_id,
+                    fiscal_year=row.fiscal_year,
+                    block_id=block.block_id,
+                    block_name=block.block_name,
+                    role=block.role,
+                    amount=block.amount,
+                    payee_count=block.payee_count,
+                    paid_by_government=block.paid_by_government,
+                    funded_by=block.funded_by,
+                    flow_notes=block.flow_notes,
+                )
+            )
+        for cost in row.indirect_costs:
+            stats.indirect_costs_seen += 1
+            indirect_costs.append(
+                IndirectCostRecord(
+                    project_id=row.project_id,
+                    fiscal_year=row.fiscal_year,
+                    item=cost.item,
+                    amount=cost.amount,
+                )
+            )
+
         for seq, line in enumerate(row.expenditures):
             stats.expenditures_seen += 1
             if line.is_bundled:
@@ -896,6 +1364,20 @@ def build_projects(
                 recipient_match_category = "resolved"
             else:
                 recipient_match_category = "unresolved"
+            # 裁定B97: 列にブロック番号があっても、対応するブロックを組み立て
+            # られていなければ`inBlock`を張らない(存在しないURIを指すと参照
+            # 整合ゲートがリリース全体を止める)。**その事業のブロックが1件も
+            # 無いとき(=5-2を渡していないリリース、またはその事業が5-1にも
+            # 5-2にもブロックを持たない)は数えない** —— 全件Noneになるのが
+            # 「ブロックという概念がこのリリースに無い」の正しい表現であり、
+            # 数えると5-2を渡さないテスト全部で警報が鳴り続けて意味を失う。
+            # 数えるのは「同じ事業に他のブロックはあるのに、この支出のブロック
+            # 番号だけ解決できない」=本当に異常な場合に限る
+            block_id: str | None = None
+            if line.block_id and line.block_id in known_block_ids:
+                block_id = line.block_id
+            elif line.block_id and known_block_ids:
+                stats.expenditures_block_unknown += 1
             expenditures.append(
                 ExpenditureRecord(
                     project_id=row.project_id,
@@ -915,6 +1397,7 @@ def build_projects(
                         else None
                     ),
                     role=line.role,
+                    block_id=block_id,
                 )
             )
             if recipient.is_sentinel:
@@ -943,18 +1426,25 @@ def build_projects(
         expenditures=tuple(expenditures),
         unresolved=tuple(unresolved),
         stats=stats,
+        blocks=tuple(blocks),
+        indirect_costs=tuple(indirect_costs),
     )
 
 
 __all__ = [
+    "OPTIONAL_GROUPS",
     "REQUIRED_GROUPS",
     "SENTINEL_HOUJIN_BANGOU",
     "BasisLawCitation",
     "BudgetProjectRecord",
     "BuildResult",
     "BuildStats",
+    "ExpenditureBlockLine",
+    "ExpenditureBlockRecord",
     "ExpenditureLine",
     "ExpenditureRecord",
+    "IndirectCostLine",
+    "IndirectCostRecord",
     "LawResolution",
     "RecipientResolution",
     "RsParseStats",

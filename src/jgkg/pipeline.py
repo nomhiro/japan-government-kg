@@ -318,6 +318,26 @@ class PipelineReport(BaseModel):
     budget_ratio_other: int | None = None
     budget_ratio_no_denominator: int | None = None
 
+    # =========================================================================
+    # 裁定B97: 資金の流れ(支出先ブロック・国自らが支出する間接経費)。
+    # **`budget_block_connection_read` が偽なら残り全部が0である理由は
+    # 「レイクに5-2が無かった」であり、「データに無かった」ではない。**
+    # この2つを区別できないと、資金の流れが丸ごと欠けたリリースが
+    # 「ブロック0件」として正常に見えてしまう(OPTIONAL_GROUPSのdocstring)。
+    # 他のbudget_*と同じく、rs-system未結線/据え置きなら`None`。
+    #
+    # 実測(2026-09-11): blocks=20,482 / paid_by_government=13,172 /
+    # indirect_costs=2,432。入口ブロックの合計と全ブロックの単純合計の差が
+    # 29.9兆円(=段を区別せず合計したときの重複)
+    # =========================================================================
+    budget_block_connection_read: bool | None = None
+    budget_blocks: int | None = None
+    budget_blocks_paid_by_government: int | None = None
+    budget_indirect_costs: int | None = None
+    # 支出先行にブロック番号があるのに、同じ事業のブロックとして解決できな
+    # かった件数(`budget:inBlock`を張らなかった支出)。実測0件
+    budget_expenditures_block_unknown: int | None = None
+
 
 class QuarantineNotEmptyError(RuntimeError):
     """隔離が発生した状態でリリースしようとした。"""
@@ -855,6 +875,20 @@ def _rs_group_paths(fetched_on: datetime.date) -> dict[str, Path]:
             f"rs-systemの必須ファイルが無い(取得日 {fetched_on.isoformat()}): {missing}。"
             f" 検出したファイル: {sorted(s.path.name for s in snapshots)}"
         )
+    # **裁定B97: 任意グループ(payee_payment_block_connection)はレイクに
+    # あればそのまま`paths`に入っている**(このループはグループを区別せず
+    # テンプレート照合で埋めるため)。無ければ落とさないが、黙って進むと
+    # 資金の流れ(ブロック・間接経費)が丸ごと欠けたリリースが警告なしに
+    # 通ってしまう —— 29.9兆円の重複を除く手段そのものが消えるので、
+    # 実行ログに残す(件数はPipelineReportのbudget_blocks等が持つ)
+    optional_missing = [g for g in rs_mod.OPTIONAL_GROUPS if g not in paths]
+    if optional_missing:
+        print(
+            f"警告: rs-systemの任意ファイルが無い(取得日 {fetched_on.isoformat()}):"
+            f" {optional_missing}。資金の流れ(支出先ブロック・国自らが支出する"
+            "間接経費)はこのリリースに含まれない"
+            f" 検出したファイル: {sorted(s.path.name for s in snapshots)}"
+        )
     return paths
 
 
@@ -943,6 +977,54 @@ def _expenditure_category_mismatches(clean: Dataset) -> list[str]:
             )
     return mismatches
 
+
+def _expenditure_block_amount_mismatches(clean: Dataset) -> list[str]:
+    """裁定B97: `budget:ExpenditureBlock` の金額が、そのブロックに属する
+
+    `budget:Expenditure` の金額の総和に等しいことを検査する。
+
+    **これは一次データが持つ関係そのものである** —— RSの列17(ブロックの
+    合計支出額)と列23(支出先の合計支出額)は、19,125ブロック全件で
+    完全一致する(差0円。実測2026-09-11。docs/measurements-phase1.md参照)。
+    つまり**取り込みが `inBlock` の割り当てを誤れば、この検査は必ず崩れる。**
+
+    `_expenditure_category_mismatches`(D-2)と同じ思想で置いている:
+    明示した値を明示した値自身で検査すると循環になるので、**独立に運ばれて
+    きた2つの値**(ブロック行の合計と、支出先行の合計)を突き合わせる。
+    片方だけが壊れる取り違えを、もう片方が捕まえる。
+
+    **金額を持たないブロックは対象外**(5-2にしか現れるブロック。実測1,357件。
+    `schema/budget.yaml` の `ExpenditureBlock` docstring参照) —— そこには
+    比べる相手が無い。`inBlock` を1本も持たないブロックも対象外
+    (SUMが0になり、金額を持つブロックとの比較が常に失敗するため。
+    **「支出先行が1件も無いのに金額を持つブロック」は実測0件**なので、
+    この除外で見逃す状態は現時点で存在しない)。
+
+    返り値が空でなければ `report_graph_mismatches` に合流させ、
+    `enforce_release_gate` が同じゲートで止める。
+    """
+    query = """
+    PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
+    PREFIX core: <https://jgkg.norr-tech.com/def/core#>
+    SELECT ?block ?blockAmount (SUM(?expenditureAmount) AS ?total) WHERE {
+      ?block a budget:ExpenditureBlock ;
+             core:amount_jpy ?blockAmount .
+      ?expenditure budget:inBlock ?block ;
+                   core:amount_jpy ?expenditureAmount .
+    }
+    GROUP BY ?block ?blockAmount
+    """
+    mismatches: list[str] = []
+    for block, block_amount, total in clean.query(query):
+        if int(block_amount) != int(total):
+            mismatches.append(
+                f"budget:ExpenditureBlock {block} の金額が{int(block_amount)}円だが、"
+                f"budget:inBlockで結び付く支出の合計は{int(total)}円"
+                "(裁定B97の不変条件が崩れている —— 一次データでは"
+                "19,125ブロック全件で一致するので、取り込みが支出を"
+                "誤ったブロックに割り当てた疑いが強い)"
+            )
+    return mismatches
 
 def run(
     fetched_on: Mapping[str, datetime.date],
@@ -1484,6 +1566,8 @@ def run(
     budget_projects_all: tuple[rs_mod.BudgetProjectRecord, ...] = ()
     budget_expenditures_all: tuple[rs_mod.ExpenditureRecord, ...] = ()
     budget_unresolved_all: tuple[rs_mod.UnresolvedBudgetReference, ...] = ()
+    budget_blocks_all: tuple[rs_mod.ExpenditureBlockRecord, ...] = ()
+    budget_indirect_costs_all: tuple[rs_mod.IndirectCostRecord, ...] = ()
     budget_stats = rs_mod.BuildStats()
 
     if "rs-system" in fetched_on:
@@ -1545,6 +1629,8 @@ def run(
             budget_projects_all = budget_result.projects
             budget_expenditures_all = budget_result.expenditures
             budget_unresolved_all = budget_result.unresolved
+            budget_blocks_all = budget_result.blocks
+            budget_indirect_costs_all = budget_result.indirect_costs
             budget_stats = budget_result.stats
 
     # 裁定B24(6): 「合計≒執行額」の比の分布を観測として計算する(ゲートには
@@ -1629,6 +1715,8 @@ def run(
                 "rs-system",
                 rs_date,
                 sha256=rs_snapshot_sha256s,
+                blocks=budget_blocks_all,
+                indirect_costs=budget_indirect_costs_all,
             ),
         )
 
@@ -1834,6 +1922,9 @@ def run(
     # 意図せず据え置かれる」ケースを狙って"in fetched_on"にしたのと同じ理由)
     if "rs-system" in fetched_on:
         report_graph_mismatches.extend(_expenditure_category_mismatches(clean))
+        # 裁定B97: ブロックの金額 == 所属する支出の金額の総和(一次データが
+        # 19,125ブロック全件で満たす関係。取り違えを捕まえる)
+        report_graph_mismatches.extend(_expenditure_block_amount_mismatches(clean))
 
     return PipelineReport(
         # リリース名は**成果物ディレクトリのbasename**(Ruling B31)。
@@ -1932,6 +2023,20 @@ def run(
         budget_ratio_other=budget_ratio_other if rs_resolution_ran else None,
         budget_ratio_no_denominator=(
             budget_ratio_no_denominator if rs_resolution_ran else None
+        ),
+        # 裁定B97。`block_connection_read` は`parse_rs`が実際に5-2を読んだか
+        # (レイクにあったか)を記録する値で、件数が0のとき「渡していない」と
+        # 「データに無い」を区別する唯一の手がかりである
+        budget_block_connection_read=(
+            rs_parse_stats.block_connection_read if rs_resolution_ran else None
+        ),
+        budget_blocks=budget_stats.blocks_seen if rs_resolution_ran else None,
+        budget_blocks_paid_by_government=(
+            budget_stats.blocks_paid_by_government if rs_resolution_ran else None
+        ),
+        budget_indirect_costs=budget_stats.indirect_costs_seen if rs_resolution_ran else None,
+        budget_expenditures_block_unknown=(
+            budget_stats.expenditures_block_unknown if rs_resolution_ran else None
         ),
     )
 

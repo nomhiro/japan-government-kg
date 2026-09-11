@@ -1279,3 +1279,607 @@ def test_spine_row_accounting_identity_holds_across_the_full_fixture():
     total = _count_data_rows(paths["project_summary"])
     assert total == 12
     assert len(rows) + stats.project_summary_duplicate_rows == total
+
+
+# =============================================================================
+# 資金の流れ(支出先ブロック・国自らが支出する間接経費。裁定B97)
+#
+# **同じお金が流れの段ごとに何度も記録される**ため、段を区別せず合計すると
+# 全体で29.9兆円を二重に数える(実測2026-09-11)。この節のテストは
+# 「段を区別できること」そのものを縛る。
+#
+# 実データ由来の実例(R45。すべて2026-09-11取得の5-1/5-2から引用):
+#   6494 児童手当等交付金に必要な経費 — 同額が2ブロックに現れる典型
+#   1406 独立行政法人国際協力機構有償資金協力部門への出資 — 出どころが3つ、
+#        借入金ブロックは国の支出ではない
+#   1409 中小企業信用保険事業 — 5-2にしか現れないブロック/入口と流入の混在
+# =============================================================================
+
+
+def _block_connection_fixture_paths() -> dict[str, Path]:
+    """`_full_fixture_paths()` に5-2(支出先_支出ブロックのつながり)を足したもの。
+
+    既存の3つの恒等式テストは意図的に5-2を渡さない4ファイル版
+    (`_full_fixture_paths`)を使い続ける —— あちらは「5-2が無いときも既存の
+    勘定が閉じている」ことを見ており、こちらは「5-2があるときの勘定」を見る。
+    """
+    return _full_fixture_paths() | {
+        "payee_payment_block_connection": FIXTURES / "rs_block_connection_sample.csv",
+    }
+
+
+def _write_five_files(
+    tmp_path: Path,
+    *,
+    project_id: str,
+    project_name: str,
+    ministry_name: str,
+    payee_rows: list[list[str]],
+    connection_rows: list[list[str]],
+) -> dict[str, Path]:
+    """1事業分の5ファイル(必須4本+5-2)をtmp_pathに書き、`parse_rs`用のpathsを返す。
+
+    `_write_csv`/`_full_row`(既存)と同じ作法。budget_summary・法令は空にする
+    (このテスト群が見るのは資金の流れだけで、予算額・根拠法令は無関係)。
+    """
+    from jgkg.transform import rs_columns
+
+    project_spec = rs_columns.RS_FILES["project_summary"]
+    _write_csv(
+        tmp_path / "project_summary.csv",
+        project_spec.full_header,
+        [
+            _full_row(project_spec, {
+                "project_id": project_id, "fiscal_year": "2025",
+                "project_name": project_name, "ministry_name": ministry_name,
+            })
+        ],
+    )
+    budget_spec = rs_columns.RS_FILES["budget_summary"]
+    _write_csv(tmp_path / "budget_summary.csv", budget_spec.full_header, [])
+    law_spec = rs_columns.RS_FILES["policy_measure_laws_and_regulations"]
+    _write_csv(tmp_path / "law.csv", law_spec.full_header, [])
+    _write_csv(
+        tmp_path / "payee.csv",
+        rs_columns.RS_FILES["payee_payment_information"].full_header,
+        payee_rows,
+    )
+    _write_csv(
+        tmp_path / "connection.csv",
+        rs_columns.RS_FILES["payee_payment_block_connection"].full_header,
+        connection_rows,
+    )
+    return {
+        "project_summary": tmp_path / "project_summary.csv",
+        "budget_summary": tmp_path / "budget_summary.csv",
+        "policy_measure_laws_and_regulations": tmp_path / "law.csv",
+        "payee_payment_information": tmp_path / "payee.csv",
+        "payee_payment_block_connection": tmp_path / "connection.csv",
+    }
+
+
+def _block_row(values: dict) -> list[str]:
+    from jgkg.transform import rs_columns
+
+    return _full_row(rs_columns.RS_FILES["payee_payment_information"], values)
+
+
+def _connection_row(values: dict) -> list[str]:
+    from jgkg.transform import rs_columns
+
+    return _full_row(rs_columns.RS_FILES["payee_payment_block_connection"], values)
+
+
+# 児童手当等交付金(project_id=6494・こども家庭庁)の実データ。同じ
+# 1,401,293,745,413円が「国→市町村(1,741先)」と「市町村→児童手当受給者
+# (7,789,939人)」の2ブロックに現れる(schema/budget.yaml ExpenditureBlock参照)
+JIDOU_TEATE_AMOUNT = 1401293745413
+
+
+def _jidou_teate_paths(tmp_path: Path) -> dict[str, Path]:
+    return _write_five_files(
+        tmp_path,
+        project_id="6494",
+        project_name="児童手当等交付金に必要な経費",
+        ministry_name="こども家庭庁",
+        payee_rows=[
+            _block_row({
+                "project_id": "6494", "fiscal_year": "2025", "block_number": "A",
+                "block_name": "市町村", "block_payee_count": "1741",
+                "expenditure_role": "児童手当の支給事務",
+                "block_amount": str(JIDOU_TEATE_AMOUNT),
+            }),
+            _block_row({
+                "project_id": "6494", "fiscal_year": "2025", "block_number": "B",
+                "block_name": "児童手当受給者", "block_payee_count": "7789939",
+                "expenditure_role": "児童手当の受給",
+                "block_amount": str(JIDOU_TEATE_AMOUNT),
+            }),
+        ],
+        connection_rows=[
+            _connection_row({
+                "project_id": "6494", "fiscal_year": "2025",
+                "block_from_name": "こども家庭庁", "paid_by_government": "TRUE",
+                "block_to": "A", "block_to_name": "市町村",
+            }),
+            _connection_row({
+                "project_id": "6494", "fiscal_year": "2025",
+                "block_from": "A", "block_from_name": "市町村",
+                "paid_by_government": "FALSE",
+                "block_to": "B", "block_to_name": "児童手当受給者",
+            }),
+        ],
+    )
+
+
+def test_blocks_entry_only_total_is_half_of_the_naive_total_for_jidou_teate(tmp_path: Path):
+    """児童手当型の2段構造で、**入口ブロックだけの合計が片方の額になる**こと。
+
+    何があれば落ちるか: `paid_by_government` が全ブロックで真になる実装
+    (例: [15]を見ずに「5-2に現れたら入口」とする)だと、入口だけの合計が
+    単純合計と同じ2,802,587,490,826円になってここで落ちる。逆に[15]がTRUEの
+    行を取りこぼすと入口が0件になり、こちらも落ちる。**これが29.9兆円の
+    二重計上を避けられることの最小の証明**である。
+    """
+    rows = list(rs.parse_rs(_jidou_teate_paths(tmp_path)))
+    assert len(rows) == 1
+    blocks = {b.block_id: b for b in rows[0].blocks}
+    assert sorted(blocks) == ["A", "B"]
+
+    naive_total = sum(b.amount for b in blocks.values() if b.amount is not None)
+    entry_total = sum(
+        b.amount for b in blocks.values() if b.paid_by_government and b.amount is not None
+    )
+    assert naive_total == 2 * JIDOU_TEATE_AMOUNT
+    assert entry_total == JIDOU_TEATE_AMOUNT
+    assert blocks["A"].paid_by_government is True
+    assert blocks["B"].paid_by_government is False
+
+
+def test_blocks_carry_the_payee_count_and_role_from_the_5_1_block_row(tmp_path: Path):
+    """ブロック名・役割・支出先の数が5-1のブロック行から来ること。
+
+    何があれば落ちるか: 支出先の数を5-2側で探すと(5-2はこの列を持たない)
+    7,789,939がNoneになる。**この値は法人数ではなく人数である**(budget.yaml
+    `payeeCount`)ため、支出先行を数え直す実装でも落ちる。
+    """
+    rows = list(rs.parse_rs(_jidou_teate_paths(tmp_path)))
+    blocks = {b.block_id: b for b in rows[0].blocks}
+    assert blocks["A"].block_name == "市町村"
+    assert blocks["A"].role == "児童手当の支給事務"
+    assert blocks["A"].payee_count == 1741
+    assert blocks["B"].block_name == "児童手当受給者"
+    assert blocks["B"].payee_count == 7789939
+    assert blocks["B"].funded_by == ("A",)
+
+
+# 独立行政法人国際協力機構有償資金協力部門への出資(project_id=1406・財務省)の
+# 実データ。ブロックDに3つの出どころ(A一般会計出資金 / B財政融資資金借入金 /
+# C回収金等)が流れ込み、Bは国の支出ではない(budget.yaml `fundedBy` 参照)
+JICA_BLOCK_ROWS = [
+    ("A", "一般会計出資金", "1", "一般会計出資金", "81330000000"),
+    ("B", "財政融資資金借入金", "1", "財政融資資金借入金", "1033400000000"),
+    ("C", "回収金等", "1", "回収金等", "712241152858"),
+    ("D", "独立行政法人国際協力機構", "1", "有償資金協力業務の実施", "1826971152858"),
+    ("E", "開発途上地域の政府等", "1", "開発援助", "1826971153000"),
+]
+
+
+def _jica_paths(tmp_path: Path) -> dict[str, Path]:
+    return _write_five_files(
+        tmp_path,
+        project_id="1406",
+        project_name="独立行政法人国際協力機構有償資金協力部門への出資",
+        ministry_name="財務省",
+        payee_rows=[
+            _block_row({
+                "project_id": "1406", "fiscal_year": "2025", "block_number": block_id,
+                "block_name": name, "block_payee_count": count,
+                "expenditure_role": role, "block_amount": amount,
+            })
+            for block_id, name, count, role, amount in JICA_BLOCK_ROWS
+        ],
+        connection_rows=[
+            _connection_row({
+                "project_id": "1406", "fiscal_year": "2025",
+                "block_from_name": "財務省", "paid_by_government": "TRUE",
+                "block_to": "A", "block_to_name": "一般会計出資金",
+            }),
+        ] + [
+            _connection_row({
+                "project_id": "1406", "fiscal_year": "2025",
+                "block_from": source, "block_from_name": source_name,
+                "paid_by_government": "FALSE",
+                "block_to": "D", "block_to_name": "独立行政法人国際協力機構",
+            })
+            for source, source_name in (
+                ("A", "一般会計出資金"), ("B", "財政融資資金借入金"), ("C", "回収金等"),
+            )
+        ] + [
+            _connection_row({
+                "project_id": "1406", "fiscal_year": "2025",
+                "block_from": "D", "block_from_name": "独立行政法人国際協力機構",
+                "paid_by_government": "FALSE",
+                "block_to": "E", "block_to_name": "開発途上地域の政府等",
+            }),
+        ],
+    )
+
+
+def test_funded_by_is_multivalued_and_the_loan_block_is_not_paid_by_government(tmp_path: Path):
+    """JICA型: ブロックDの`funded_by`が3値になり、借入金ブロックBの
+
+    `paid_by_government`が偽であること。
+
+    何があれば落ちるか: `funded_by`を単値(後勝ち等)にすると、A/Cのどちらかが
+    消えて("C",)等になる。また「5-1に金額があるブロックは国が払った」と
+    みなす実装だと、1,033,400,000,000円の財政融資資金借入金(国の支出では
+    なく事業に流れ込む資金)が入口として数えられ、Bが真になって落ちる。
+    """
+    rows = list(rs.parse_rs(_jica_paths(tmp_path)))
+    blocks = {b.block_id: b for b in rows[0].blocks}
+    assert blocks["D"].funded_by == ("A", "B", "C")
+    assert blocks["B"].paid_by_government is False
+    assert blocks["B"].funded_by == ()
+    assert blocks["B"].amount == 1033400000000
+    # 入口はAだけ。国が出した額(815億)と、事業に流れ込む総額との違いが出る
+    assert [b.block_id for b in rows[0].blocks if b.paid_by_government] == ["A"]
+    assert blocks["A"].amount == 81330000000
+
+
+def test_funded_by_only_blocks_are_created_so_that_the_edges_stay_closed(tmp_path: Path):
+    """出どころとしてしか現れないブロックも作られること(参照整合のため)。
+
+    何があれば落ちるか: 「5-2の支出先ブロック([16])だけをブロックにする」
+    実装だと、どこの支出先にもならないブロック(実測2件。事業274ブロックA・
+    事業19873ブロックC)が作られず、`budget:fundedBy`が型の無いURIを指して
+    参照整合ゲート(裁定B4)がリリース全体を止める。ここでは5-1に金額行を
+    持たない純粋な出どころを1つ足して、それがブロックになることを見る。
+    """
+    paths = _write_five_files(
+        tmp_path,
+        project_id="274",
+        project_name="合成: 出どころにしか現れないブロック",
+        ministry_name="内閣府",
+        payee_rows=[
+            _block_row({
+                "project_id": "274", "fiscal_year": "2025", "block_number": "B",
+                "block_name": "受け取る側", "block_amount": "1000",
+            })
+        ],
+        connection_rows=[
+            _connection_row({
+                "project_id": "274", "fiscal_year": "2025",
+                "block_from": "A", "block_from_name": "出どころだけのブロック",
+                "paid_by_government": "FALSE",
+                "block_to": "B", "block_to_name": "受け取る側",
+            })
+        ],
+    )
+    rows = list(rs.parse_rs(paths))
+    blocks = {b.block_id: b for b in rows[0].blocks}
+    assert set(blocks) == {"A", "B"}, "出どころ側のブロックが作られていない"
+    assert blocks["A"].amount is None
+    assert blocks["A"].block_name == "出どころだけのブロック"
+    assert blocks["B"].funded_by == ("A",)
+    # funded_byの各値が必ずブロックとして実在すること(参照が閉じている)
+    for block in rows[0].blocks:
+        for source in block.funded_by:
+            assert source in blocks, (block.block_id, source)
+
+
+def test_blocks_present_only_in_5_2_are_kept_with_a_none_amount_for_project_1409():
+    """5-2にあって5-1に金額行が無いブロックが、金額Noneのブロックとして作られること。
+
+    project_id=1409(中小企業信用保険事業)のブロックB(信用保証協会)・
+    C(金融機関)・D(中小企業等)は5-2にしか現れない(事業全体の資金の流れを
+    示す参考記載)。名前は5-2の[17]から取る。
+
+    何があれば落ちるか: 5-1のブロック行だけをブロックにする実装だと、
+    B/C/Dが作られず`funded_by`の鎖(A→B→C→D)が切れる — 資金の流れを
+    辿れなくなるのと、`budget:fundedBy`が参照整合ゲートに落ちるのが同時に起こる。
+    """
+    rows = {r.project_id: r for r in rs.parse_rs(_block_connection_fixture_paths())}
+    blocks = {b.block_id: b for b in rows["1409"].blocks}
+    assert sorted(blocks) == ["A", "B", "C", "D"]
+    # Aだけが5-1に金額行を持つ
+    assert blocks["A"].amount == 46600000000
+    for block_id in ("B", "C", "D"):
+        assert blocks[block_id].amount is None, block_id
+        assert blocks[block_id].payee_count is None, block_id
+        assert blocks[block_id].role == "", block_id
+    assert blocks["B"].block_name == "信用保証協会"
+    assert blocks["C"].block_name == "金融機関"
+    assert blocks["D"].block_name == "中小企業等"
+    # 鎖が閉じている: A→B→C→D(受け取る側から見た向きで持つ)
+    assert blocks["B"].funded_by == ("A",)
+    assert blocks["C"].funded_by == ("B",)
+    assert blocks["D"].funded_by == ("C",)
+
+
+def test_paid_by_government_and_funded_by_coexist_for_project_1409_block_a():
+    """入口フラグと出どころは**排他ではない**こと(実測9件のうちの1件)。
+
+    project_id=1409のブロックA(株式会社日本政策金融公庫)は、国(財務省)からの
+    出資と信用保証協会からの保険料支払の両方を受ける。
+
+    何があれば落ちるか: 「`funded_by`があるなら入口ではない」と正規化する
+    実装(あるいはその逆)だと、どちらか一方が消える。budget.yaml の
+    `paidByGovernment` はこの9件のために「入口の合計は過大になりうる」と
+    明記しており、その前提がコード側で保たれていることをここで固定する。
+    """
+    rows = {r.project_id: r for r in rs.parse_rs(_block_connection_fixture_paths())}
+    block_a = {b.block_id: b for b in rows["1409"].blocks}["A"]
+    assert block_a.paid_by_government is True
+    assert block_a.funded_by == ("B",)
+
+
+def test_flow_notes_are_kept_verbatim_on_the_block_for_project_1409():
+    """[18]資金の流れの補足情報がブロック側にverbatimで載ること。
+
+    何があれば落ちるか: `role`と同じ列から取る実装だと空になる(両者は別物 —
+    budget.yaml `flowNote`。同じブロックAが役割「※信用保証協会が…」と
+    補足情報「保険料支払」を別々に持つ)。またブロック側ではなく辺側に持つ
+    設計に変えると、このアクセス経路自体が消える。
+    """
+    rows = {r.project_id: r for r in rs.parse_rs(_block_connection_fixture_paths())}
+    blocks = {b.block_id: b for b in rows["1409"].blocks}
+    assert blocks["B"].flow_notes == (
+        "保険金支払（事業全体を把握するための参考標記。以下同様。）",
+    )
+    assert blocks["C"].flow_notes == ("代位弁済",)
+    assert blocks["A"].flow_notes == ("保険料支払",)
+    assert blocks["A"].role.startswith("※信用保証協会が代位弁済を行った場合")
+
+
+def test_flow_notes_deduplicate_repeated_values_within_a_block(tmp_path: Path):
+    """同じ補足情報が複数の辺に付いていても、ブロック側では1回だけ持つこと。
+
+    何があれば落ちるか: 素朴にappendする実装だと('再委託','再委託')になり、
+    emitが同じトリプルを2回書く(RDF上は無害だが、件数を数えたときに
+    辺の数とブロックの数が混ざる)。異なる補足情報は両方残ること(実測:
+    4,481ブロック中14件)も同時に見る。
+    """
+    paths = _write_five_files(
+        tmp_path,
+        project_id="999999",
+        project_name="合成: 同じ補足情報が2つの辺に付くブロック",
+        ministry_name="内閣府",
+        payee_rows=[],
+        connection_rows=[
+            _connection_row({
+                "project_id": "999999", "fiscal_year": "2025",
+                "block_from": source, "block_from_name": f"出どころ{source}",
+                "paid_by_government": "FALSE",
+                "block_to": "Z", "block_to_name": "受け取る側", "flow_note": note,
+            })
+            for source, note in (("A", "再委託"), ("B", "再委託"), ("C", "間接補助"))
+        ],
+    )
+    rows = list(rs.parse_rs(paths))
+    block_z = {b.block_id: b for b in rows[0].blocks}["Z"]
+    assert block_z.funded_by == ("A", "B", "C")
+    assert block_z.flow_notes == ("再委託", "間接補助")
+
+
+def test_indirect_costs_are_read_from_the_block_connection_file_for_project_1():
+    """国自らが支出する間接経費が5-2から取れること(5-1には現れない金額)。
+
+    project_id=1(内閣人事局経費)の講師謝金1,034,000円・委員等旅費9,000円。
+
+    何があれば落ちるか: [19]を「間接経費」という固定文言のフラグとして
+    判定する実装だと、[19]が「旅費」である project_id=284 の2件
+    (委員等旅費830,000円・職員旅費299,000円)が落ちる(rs_columns.pyの
+    `indirect_flag` の注記: [19]は自由記述である)。
+    """
+    rows = {r.project_id: r for r in rs.parse_rs(_block_connection_fixture_paths())}
+    assert rows["1"].indirect_costs == (
+        rs.IndirectCostLine(item="講師謝金", amount=1034000),
+        rs.IndirectCostLine(item="委員等旅費", amount=9000),
+    )
+    # [19]が「間接経費」ではない実例([19]='旅費')も取れていること
+    assert rows["284"].indirect_costs == (
+        rs.IndirectCostLine(item="委員等旅費", amount=830000),
+        rs.IndirectCostLine(item="職員旅費", amount=299000),
+    )
+
+
+def test_indirect_costs_keep_the_first_row_when_an_item_name_repeats(tmp_path: Path):
+    """同じ事業に同じ項目名が2回現れたら先頭を採り、件数を統計に残すこと。
+
+    項目名がURIの鍵(`uris.indirect_cost_uri`)なので、両方emitすると1ノードが
+    `core:amount_jpy`を2つ持ち、閉じたシェイプの`sh:maxCount 1`違反で
+    rs-systemグラフ全体が隔離される。実測(2026-09-11)は0件だが、黙って
+    落とすと将来の金額消失が見えなくなる。
+
+    何があれば落ちるか: 重複除去を入れずに両方返す実装(件数3になる)、
+    あるいは黙って捨てて数えない実装(統計が0のまま)。
+    """
+    paths = _write_five_files(
+        tmp_path,
+        project_id="999999",
+        project_name="合成: 同じ項目名の間接経費が2行",
+        ministry_name="内閣府",
+        payee_rows=[],
+        connection_rows=[
+            _connection_row({
+                "project_id": "999999", "fiscal_year": "2025",
+                "indirect_flag": "間接経費", "indirect_item": item,
+                "indirect_amount": amount,
+            })
+            for item, amount in (("講師謝金", "1000"), ("講師謝金", "2000"), ("旅費", "3000"))
+        ],
+    )
+    stats = rs.RsParseStats()
+    rows = list(rs.parse_rs(paths, stats=stats))
+    assert rows[0].indirect_costs == (
+        rs.IndirectCostLine(item="講師謝金", amount=1000),
+        rs.IndirectCostLine(item="旅費", amount=3000),
+    )
+    assert stats.block_connection_indirect_cost_duplicate_item == 1
+
+
+def test_parse_rs_leaves_blocks_empty_and_says_so_when_the_file_is_absent():
+    """5-2を渡さないとき、ブロックと間接経費が空になり、**そのことが統計から
+
+    観測できる**こと(`block_connection_read`が偽)。
+
+    何があれば落ちるか: 5-2をREQUIRED_GROUPSに入れると、この4ファイル呼び出し
+    自体がValueErrorで落ちる。逆に「無いから空」を記録しない実装だと、
+    資金の流れが丸ごと欠けたリリースが「ブロック0件」として正常に見える
+    ——`block_connection_read`が真なのにブロックが0、という区別が付かなくなる。
+    """
+    stats = rs.RsParseStats()
+    rows = list(rs.parse_rs(_full_fixture_paths(), stats=stats))
+    assert rows, "背骨の事業が読めていない"
+    assert all(r.blocks == () for r in rows)
+    assert all(r.indirect_costs == () for r in rows)
+    assert stats.block_connection_read is False
+    assert stats.block_connection_rows == 0
+
+    # 同じ入力に5-2を足すと、同じ統計が「読んだ」側に振れる(偽が既定値の
+    # まま固まっているのではないことの対抗確認)
+    with_connection = rs.RsParseStats()
+    rows = list(rs.parse_rs(_block_connection_fixture_paths(), stats=with_connection))
+    assert with_connection.block_connection_read is True
+    assert with_connection.block_connection_rows == 71
+    assert sum(len(r.blocks) for r in rows) == 63
+    assert sum(len(r.indirect_costs) for r in rows) == 7
+
+
+def test_block_connection_row_accounting_identity_holds_across_the_full_fixture():
+    """5-2の全行が、入口・辺・間接経費・無内容のいずれか1つに必ず属すること。
+
+    実測(2026-09-11、実データ全23,381行): 13,219 + 7,494 + 2,432 + 236。
+    このfixture(71行)では 34 + 30 + 7 + 0。
+
+    何があれば落ちるか: 行の種別判定に抜けがあると和が全行に足りない
+    (`_counted_block_connection_rows`は未知の形の行をColumnLayoutErrorに
+    するので、そちらの経路でも気付ける)。既存の3つの恒等式テストと同じ
+    「消費者のいない記録を作らない」ための検算。
+    """
+    paths = _block_connection_fixture_paths()
+    stats = rs.RsParseStats()
+    list(rs.parse_rs(paths, stats=stats))
+
+    total = _count_data_rows(paths["payee_payment_block_connection"])
+    assert total == 71
+    assert stats.block_connection_rows == total
+    assert (
+        stats.block_connection_rows_paid_by_government
+        + stats.block_connection_rows_edge
+        + stats.block_connection_rows_indirect_cost
+        + stats.block_connection_rows_without_payload
+        == total
+    )
+    assert stats.block_connection_rows_paid_by_government == 34
+    assert stats.block_connection_rows_edge == 30
+    assert stats.block_connection_rows_indirect_cost == 7
+
+
+def test_build_projects_counts_blocks_and_indirect_costs():
+    """`BuildStats`が件数を持つこと(入口ブロック数を含む)。
+
+    何があれば落ちるか: `blocks_paid_by_government`を数えない実装だと、
+    「国が払った額」の分母になるブロック数がリリース記録から消える
+    (pipeline-report.jsonのbudget_blocks_paid_by_governmentの入力)。
+    """
+    rows = list(rs.parse_rs(_block_connection_fixture_paths()))
+    result = rs.build_projects(rows, {}, {}, {})
+    assert result.stats.blocks_seen == len(result.blocks) == 63
+    assert result.stats.indirect_costs_seen == len(result.indirect_costs) == 7
+    assert result.stats.blocks_paid_by_government == 34
+    assert result.stats.blocks_paid_by_government == sum(
+        1 for b in result.blocks if b.paid_by_government
+    )
+    assert result.stats.expenditures_block_unknown == 0
+
+
+def test_build_projects_gives_every_expenditure_the_block_it_belongs_to():
+    """支出が属するブロック(`inBlock`の材料)が付くこと。
+
+    何があれば落ちるか: ブロック番号を支出側に伝えない実装だと全件None。
+    **段が付かない支出は段を区別せず合計されるので、29.9兆円の二重計上に
+    そのまま戻る。**
+    """
+    rows = list(rs.parse_rs(_block_connection_fixture_paths()))
+    result = rs.build_projects(rows, {}, {}, {})
+    assert result.expenditures, "支出が1件も無い"
+    assert {(e.project_id, e.seq): e.block_id for e in result.expenditures} == {
+        ("1", 0): "A", ("11", 0): "C", ("284", 0): "F", ("177", 0): "F", ("1409", 0): "A",
+    }
+    # 張り先が必ずブロックとして実在すること(参照整合ゲートが見る条件)
+    known = {(b.project_id, b.fiscal_year, b.block_id) for b in result.blocks}
+    for exp in result.expenditures:
+        if exp.block_id is not None:
+            assert (exp.project_id, exp.fiscal_year, exp.block_id) in known, exp
+
+
+def test_build_projects_leaves_the_expenditure_block_unset_without_the_connection_file():
+    """5-2が無いリリースでは`block_id`が全件Noneになり、警報にもならないこと。
+
+    何があれば落ちるか: 列の値をそのまま入れる実装だと、ブロックが1つも
+    emitされないのに`budget:inBlock`が張られ、参照整合ゲートが
+    リリース全体を止める。逆にこれを`expenditures_block_unknown`に数えると、
+    5-2を渡さない既存の呼び出し全部で異常件数が立ち続けて意味を失う。
+    """
+    rows = list(rs.parse_rs(_full_fixture_paths()))
+    result = rs.build_projects(rows, {}, {}, {})
+    assert result.blocks == ()
+    assert result.indirect_costs == ()
+    assert result.expenditures, "支出が1件も無い"
+    assert [e.block_id for e in result.expenditures] == [None] * len(result.expenditures)
+    assert result.stats.expenditures_block_unknown == 0
+
+
+def test_build_projects_counts_an_expenditure_whose_block_cannot_be_assembled(tmp_path: Path):
+    """同じ事業に他のブロックはあるのに、その支出のブロック番号だけ解決できない
+
+    場合は`inBlock`を張らず、件数を`expenditures_block_unknown`に数えること
+    (実測0件。存在しないブロックURIを張ると参照整合ゲートがリリースを止める)。
+
+    何があれば落ちるか: 列の値を無条件に使う実装だと件数0のまま`block_id`が
+    'Z'になる(=グラフに型の無いURIが出る)。逆に黙って落とす実装だと
+    `block_id`はNoneになるが件数が0のままで、段の付いていない支出の存在が
+    誰にも見えない(欠陥型4)。
+    """
+    paths = _write_five_files(
+        tmp_path,
+        project_id="999999",
+        project_name="合成: 支出先行のブロック番号がブロックに無い",
+        ministry_name="内閣府",
+        payee_rows=[
+            _block_row({
+                "project_id": "999999", "fiscal_year": "2025", "block_number": "A",
+                "block_name": "実在するブロック", "block_amount": "1000",
+            }),
+            _block_row({
+                "project_id": "999999", "fiscal_year": "2025", "block_number": "A",
+                "recipient_name": "株式会社ウルフスタイル",
+                "recipient_houjin_bangou": "3010001137944",
+                "recipient_other_flag": "FALSE", "expenditure_amount": "1000",
+            }),
+            # ブロックZは5-1にも5-2にもブロックとして現れない(金額行も辺も無い)
+            _block_row({
+                "project_id": "999999", "fiscal_year": "2025", "block_number": "Z",
+                "recipient_name": "株式会社日本政策金融公庫",
+                "recipient_houjin_bangou": "8010001120391",
+                "recipient_other_flag": "FALSE", "expenditure_amount": "2000",
+            }),
+        ],
+        connection_rows=[
+            _connection_row({
+                "project_id": "999999", "fiscal_year": "2025",
+                "block_from_name": "内閣府", "paid_by_government": "TRUE",
+                "block_to": "A", "block_to_name": "実在するブロック",
+            })
+        ],
+    )
+    rows = list(rs.parse_rs(paths))
+    assert [b.block_id for b in rows[0].blocks] == ["A"]
+    # parse段階では列の値をそのまま持つ(verbatim)
+    assert [line.block_id for line in rows[0].expenditures] == ["A", "Z"]
+
+    result = rs.build_projects(rows, {}, {}, {})
+    assert [e.block_id for e in result.expenditures] == ["A", None]
+    assert result.stats.expenditures_block_unknown == 1

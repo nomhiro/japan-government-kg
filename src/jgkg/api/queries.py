@@ -69,6 +69,14 @@ ENTITY_RELATIONSHIPS_MAX_LIMIT = 200
 #:   同じ理由をここでも適用した)
 #: - UnresolvedReferenceは`skos:prefLabel`を持たないため、そもそも一致しない
 #:   (emit.py確認済み)
+#: - **ExpenditureBlockも同じ理由で除外する**(裁定B97)。ブロックの
+#:   `skos:prefLabel`は「市町村」「児童手当受給者」「全国健康保険協会」等で、
+#:   **法人名と重複する**(実測: 5-1と5-2の両方に現れる18,988ブロックすべてで
+#:   ブロック名が一致し、その多くが支払先の法人名そのもの)。19,125件あり、
+#:   法人名で検索すると同じ名前が「法人」と「ブロック」の2種類で返って
+#:   利用者を混乱させる。**辿れる必要はあるが、検索の入口である必要はない**
+#: - IndirectCostも除外する。`skos:prefLabel`は「講師謝金」「委員等旅費」等の
+#:   費目名で、2,432件が同じような短い語で埋まる(名前を持つ「物」ではない)
 _SEARCHABLE_TYPES: tuple[str, ...] = (
     "org:Organization",
     "org:GovernmentOrgan",
@@ -96,6 +104,13 @@ _TYPE_SPECIFICITY: tuple[str, ...] = (
     "LawRevision",
     "Law",
     "Expenditure",
+    # 裁定B97で追加。資金の流れの段(ExpenditureBlock)と、支出先を介さない
+    # 国自身の支出(IndirectCost)。**検索対象には入れない**(上の注記参照)が、
+    # 型の表示名を解決する必要があるためここには入れる —— `/entity`と
+    # `/neighborhood`の属性・関係は述語の許可リストではなく除外リスト
+    # (`_TYPE_AND_LABEL_PREDICATES`)で動くので、データが入れば自動で辿れる
+    "ExpenditureBlock",
+    "IndirectCost",
     "BudgetProject",
     "UnresolvedReference",
 )

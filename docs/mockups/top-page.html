@@ -1177,7 +1177,7 @@ svg.graph.dragging { cursor: grabbing; }
       "<span>法令 <b>" + T.laws.toLocaleString("ja-JP") + "</b></span>" +
       "<span>法人 <b>" + T.orgs.toLocaleString("ja-JP") + "</b></span>" +
       "<span>支出の記録 <b>" + T.expenditures.toLocaleString("ja-JP") + "</b></span>" +
-      "<span>国が支払った額 <b>" + jpShort(OV.spending.governmentPaid) + "</b>以上</span></p>" +
+      "<span>国が支払った額 <b>" + jpShort(OV.spending.governmentPaid) + "</b></span></p>" +
       '<p class="ov-sub">前の年度は入っていないので、<b>増えた・減ったは分かりません</b>。' +
       "この画面が答えられるのは「いま、どの府省の、どの事業に、いくら付いていて、" +
       "それが誰に渡ったか」です。</p>";
@@ -1236,18 +1236,23 @@ svg.graph.dragging { cursor: grabbing; }
         '<p class="ov-lede"><b>' + jpShort(SP.governmentPaid) + "</b>" +
         '<span class="ov-sub" style="display:inline"> ——国が自ら支払った額</span></p>' +
         '<p class="ov-facts"><span>正確には <b>' + jpFull(SP.governmentPaid) + "</b></span>" +
-        "<span>これは<b>下限</b>です</span></p>" +
+        "<span>両方向にずれる要因があります（下の説明）</span></p>" +
         '<p class="ov-sub">支出の記録を素朴に全部足すと ' + jpShort(SP.naiveSum) +
         "になりますが、それは<b>同じお金を数えた分だけ多い</b>数字です。" +
         "国自身が支払った段（「担当組織からの支出」）だけを取ると " +
         jpShort(SP.governmentPaid) + "で、<b>差の " + jpShort(SP.duplicationRemoved) +
         "が重複でした</b>。</p>" +
-        '<p class="ov-sub"><b>下限である理由</b>: 一次データで入口の印が付いていない事業が ' +
-        SP.flagMissingProjects + "件あります。構造から補うと " +
+        '<p class="ov-sub">この数字がずれる要因は<b>両方向にあります</b>。' +
+        "<b>小さくする側</b>: 一次データで入口の印が付いていない事業が " +
+        SP.flagMissingProjects + "件あります（構造から補うと " +
         SP.inferredProjects + "件・" + jpShort(SP.inferredExtra) +
         "を足せて合計 " + jpShort(SP.inferredTotal) +
-        "になりますが、<b>それは我々の推論であって一次データの主張ではない</b>ので、" +
-        "上の数字には入れていません（残り " + SP.stillUnknownProjects + "件は決まりません）。</p>" +
+        "になりますが、<b>それは推論であって一次データの主張ではない</b>ので" +
+        "入れていません。残り " + SP.stillUnknownProjects + "件は決まりません）。" +
+        "<b>大きくする側</b>: 国からの支払いと他の段からの流入が混在するブロックが " +
+        SP.mixedBlocks + "件あり、内訳が一次データに無いため<b>最大 " +
+        jpShort(SP.mixedBlocksAmount) + "（0.05%）過大になりえます</b>。" +
+        "どちらが大きいかは分かりません。</p>" +
         '<p class="ov-sub">お金は最大 <b>5段</b>まで流れます（' +
         "1段 " + d["1"].toLocaleString("ja-JP") + " / 2段 " + d["2"].toLocaleString("ja-JP") +
         " / 3段 " + d["3"].toLocaleString("ja-JP") + " / 4段 " + d["4"] + " / 5段 " + d["5"] +

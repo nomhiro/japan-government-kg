@@ -114,6 +114,39 @@ def expenditure_uri(fiscal_year: str, project_id: str, seq: int) -> str:
     return f"{budget_uri(fiscal_year, project_id)}/{seq}"
 
 
+def expenditure_block_uri(fiscal_year: str, project_id: str, block_id: str) -> str:
+    """`budget:ExpenditureBlock`(資金の流れの1つの段)のURI。裁定B97。
+
+    `expenditure_uri` と違い**連番ではなくRSのブロック番号("A"/"B"/…/"AA"…)を
+    使う。** (fiscal_year, project_id, block_id)が自然キーとして一意である
+    ことが実測済みで(19,125ブロック全件。schema/budget.yaml の `blockId` の
+    docstring)、かつ**5-1と5-2という2つのファイルから同じブロックを指す必要が
+    ある**ため——連番にすると「5-2の[13]支出元ブロック='B'」を解決するために
+    行番号への対応表が別に要り、`budget:fundedBy` の張り先がファイルの行順に
+    依存してしまう。
+
+    `/block/` を挟むのは `expenditure_uri`(`{budget_uri}/{seq}`)との衝突を
+    避けるため。seqは常にASCII数字なので "block" という語と混ざることは無いが、
+    パスを分けておけばURIを見た人間にも種別が分かる。
+    """
+    if not block_id:
+        raise ValueError("block_id が空である")
+    return f"{budget_uri(fiscal_year, project_id)}/block/{quote(block_id, safe='')}"
+
+
+def indirect_cost_uri(fiscal_year: str, project_id: str, item: str) -> str:
+    """`budget:IndirectCost`(国自らが支出する間接経費)のURI。裁定B97。
+
+    鍵は項目名(「講師謝金」「委員等旅費」等)。(fiscal_year, project_id, 項目名)
+    の組が一意であることが実測済み(2,432行全件で重複0件。schema/budget.yaml の
+    `IndirectCost` のdocstring)。項目名は日本語の自由記述なので
+    `unresolved_basis_law_uri` と同じく `quote(..., safe="")` で符号化する。
+    """
+    if not item:
+        raise ValueError("item が空である")
+    return f"{budget_uri(fiscal_year, project_id)}/indirect-cost/{quote(item, safe='')}"
+
+
 def unresolved_budget_ministry_uri(fiscal_year: str, project_id: str, name: str) -> str:
     """予算事業→府省の解決に失敗した名称の `core:UnresolvedReference` ノードのURI。
 

@@ -309,14 +309,21 @@ def test_fixture_has_a_known_number_of_percent_encoded_entities(kg):
     (`UnresolvedReference`。NO_CANDIDATE)・`law/417M60000100021/...`×2
     (`LawRevision`)・`unresolved/jurisdiction/327M50000100010/...`
     (`UnresolvedReference`。OLD_MINISTRY)・`budget/.../unresolved/...`
-    (未解決の支出受取先)。**この6件のうち3件を、このファイルのB69系
+    (未解決の支出受取先)・`budget/.../indirect-cost/...`
+    (`IndirectCost`。裁定B97で追加。項目名をURIに使うため%を含む)。
+    **この7件のうち3件を、このファイルのB69系
     テスト3本がそれぞれ1件ずつ実際に検査対象にする**(検索→詳細/詳細→
     関係の相手→詳細/直接アドレス)。fixtureが変わって件数がずれたら、
     このテスト自身がそれを知らせる(意図的な固定であり、放置してよい
     失敗ではない)。
+
+    **7件目が増えた経緯(裁定B97)**: `IndirectCost`のURIは項目名を
+    パーセントエンコードする。実データでの長さは中央値36文字・最大495文字
+    (URI全体で最大556文字)で、B69の経路がそのまま効く範囲である
+    (schema/budget.yamlの`IndirectCost`のdocstringに実測を記録)。
     """
     iris = _percent_encoded_entity_iris(kg)
-    assert len(iris) == 6, f"fixtureの%含みIRIの件数が想定と異なる: {sorted(iris)}"
+    assert len(iris) == 7, f"fixtureの%含みIRIの件数が想定と異なる: {sorted(iris)}"
 
 
 def test_entity_detail_resolves_directly_for_a_percent_encoded_law_revision(app_and_spy, kg):

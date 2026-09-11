@@ -107,6 +107,7 @@ NO_CANDIDATE_NAME = "ダミー機関"
 PROJECT_CORE = "999901"  # 厚生労働省・FY2025・basisLaw有・支出3件(解決1/未解決1/束ね1)+sentinel1件
 PROJECT_MULTI_YEAR = "999902"  # 厚生労働省・FY2024・WOLFSTYLEへの2件目の支出(CQ3の年度別確認用)
 PROJECT_ROLE_DEMO = "999903"  # B20実演用。役割による二重計上を最小構成で示す
+PROJECT_FLOW_DEMO = "999904"  # 裁定B97実演用。段(ブロック)・入口フラグ・出どころ・間接経費
 
 ROGUE_REVISION_URI = URIRef(
     "https://jgkg.norr-tech.com/id/law/TEST-ROGUE-REVISION-NO-LAWID"
@@ -403,6 +404,75 @@ def build_budget_result() -> rs.BuildResult:
                 ),
             ),
         ),
+        # PROJECT_FLOW_DEMO: 裁定B97の実演。**B20が断念した「段の区別」が、
+        # 一次データの入口フラグと有向辺で解けることを最小構成で示す。**
+        #
+        # 実データの3つの形をそのまま縮めてある:
+        #   A 国が支払った(入口)            1,000,000  ← 児童手当型の1段目
+        #   B Aが出どころ・入口ではない      1,000,000  ← 同じお金の2段目(重複)
+        #   C 出どころも入口も無い             500,000  ← JICAの「財政融資資金
+        #                                               借入金」型。事業に流れ
+        #                                               込むが**国の支出ではない**
+        #   間接経費「デモ講師謝金」             7,000  ← 5-1に現れない支出
+        #
+        # **素朴なΣ(amount_jpy)は 2,500,000 + 7,000 になるが、
+        # 国が支払ったのは A + 間接経費 = 1,007,000 だけである。**
+        # CQ12がこの1,007,000を返すことを test_cq12_* が縛る。
+        #
+        # Cを入れているのは、**「入口ではない」と「出どころが無い」が
+        # 独立であること**を固定するため —— Cを入口として数える実装
+        # (流入辺0を入口とみなす素朴な規則)なら、CQ12の答えが1,507,000に
+        # なって落ちる。実データでも借入金ブロックを入口に数えれば
+        # 国の支出額が過大になる。
+        rs.RsRow(
+            project_id=PROJECT_FLOW_DEMO,
+            fiscal_year="2025",
+            project_name="(架空)資金の流れデモ事業",
+            ministry_name="厚生労働省",
+            budget_amount=3_000_000,
+            basis_law_citations=(),
+            expenditures=(
+                rs.ExpenditureLine(
+                    recipient_name="デモ一次受け手株式会社",
+                    recipient_houjin_bangou="1000000000003",
+                    is_bundled=False, amount=1_000_000, role="一次の受け手",
+                    block_id="A",
+                ),
+                rs.ExpenditureLine(
+                    recipient_name="デモ二次受け手株式会社",
+                    recipient_houjin_bangou="1000000000004",
+                    is_bundled=False, amount=1_000_000, role="次の段",
+                    block_id="B",
+                ),
+                rs.ExpenditureLine(
+                    recipient_name="デモ資金提供機構",
+                    recipient_houjin_bangou="1000000000005",
+                    is_bundled=False, amount=500_000, role="資金の出どころ",
+                    block_id="C",
+                ),
+            ),
+            blocks=(
+                rs.ExpenditureBlockLine(
+                    block_id="A", block_name="デモ一次の受け手", role="一次の受け手",
+                    amount=1_000_000, payee_count=1,
+                    paid_by_government=True, funded_by=(), flow_notes=(),
+                ),
+                rs.ExpenditureBlockLine(
+                    block_id="B", block_name="デモ次の段", role="次の段",
+                    amount=1_000_000, payee_count=1,
+                    paid_by_government=False, funded_by=("A",),
+                    flow_notes=("再委託",),
+                ),
+                rs.ExpenditureBlockLine(
+                    block_id="C", block_name="デモ借入金", role="資金の出どころ",
+                    amount=500_000, payee_count=1,
+                    paid_by_government=False, funded_by=(), flow_notes=(),
+                ),
+            ),
+            indirect_costs=(
+                rs.IndirectCostLine(item="デモ講師謝金", amount=7_000),
+            ),
+        ),
     ]
 
     return rs.build_projects(rows, ministry_ref, laws_by_id, laws_by_title={})
@@ -466,6 +536,11 @@ def build_dataset(out_dir: Path) -> Dataset:
         emit.emit_budget(
             budget_result.projects, budget_result.expenditures, budget_result.unresolved,
             "rs-system", DAY,
+            # **裁定B97で足した2つは既定が () なので、渡し忘れても例外にならない。**
+            # 渡し忘れるとブロックのトリプルが1つも出ず、CQ12/CQ13が0件になる
+            # (実際にここで踏んだ)。CQ12のテストがその状態を検出する。
+            blocks=budget_result.blocks,
+            indirect_costs=budget_result.indirect_costs,
         ),
     )
 

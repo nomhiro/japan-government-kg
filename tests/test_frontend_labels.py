@@ -265,7 +265,7 @@ def test_type_axes_walks_multiple_hops_to_reach_the_entity_anchor(tmp_path):
     assert "Entity" not in labels["typeAxes"]
 
 
-def test_type_axes_from_real_data_has_exactly_the_fifteen_expected_entries():
+def test_type_axes_from_real_data_has_exactly_the_seventeen_expected_entries():
     """実際の生成物(`schema/generated/all.owl.ttl`)に対する`typeAxes`が、
 
     件数まで含めて一致すること(裁定B82(4b)の`enumValues`テストと同じ方針
@@ -290,7 +290,12 @@ def test_type_axes_from_real_data_has_exactly_the_fifteen_expected_entries():
         "Concept": "Concept",
         "Event": "Event",
         "Expenditure": "MonetaryItem",
+        # 裁定B97で追加。資金の流れの段と、支出先を介さない国自身の支出。
+        # **どちらも「いくらで(金額)」軸である** —— 出来事(Event)ではない
+        # (時点を持たない)し、主体でも法令でもない。金額を持つ集計である
+        "ExpenditureBlock": "MonetaryItem",
         "GovernmentOrgan": "Agent",
+        "IndirectCost": "MonetaryItem",
         "Law": "Work",
         "LawRevision": "Event",
         "Ministry": "Agent",
@@ -300,7 +305,7 @@ def test_type_axes_from_real_data_has_exactly_the_fifteen_expected_entries():
         "UnresolvedReference": "UnresolvedReference",
         "Work": "Work",
     }
-    assert len(labels["typeAxes"]) == 15
+    assert len(labels["typeAxes"]) == 17
     # 列挙型(軸を持たない。ノードの型にはならない)が紛れ込んでいないこと
     assert "RecipientMatchCategoryEnum" not in labels["typeAxes"]
     assert "UnresolvedReasonEnum" not in labels["typeAxes"]

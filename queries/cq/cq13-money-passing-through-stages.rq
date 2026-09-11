@@ -1,0 +1,47 @@
+# CQ13: 同じお金が複数の段に記録されている事業はどれか。国が支払った段はどれか(裁定B97)
+#
+# CQ4(money-trace-to-ministry-and-law)は「支出先から府省・根拠法令へ遡る」
+# 問いだった。こちらは**事業の中を、お金が流れた向きに見る**問いである。
+#
+# **特定の事業に固定しない。** 固定するとfixture(架空の事業ID)と実データ
+# (実在の事業ID)の両方で成立せず、どちらか片方でしか検証できないCQになる
+# (CQ2がministryを実在URIで固定できているのは、fixtureが実在の法人番号を
+# 持っているからであり、事業IDでは同じ手が使えない)。
+#
+# **`fundedBy` を必須にすることが、この問いの定義そのものである** ——
+# 出どころを持つブロックは「国が直接払った先ではない、次の段」であり、
+# その額は前の段と重複して記録されている。実測(裁定B97): この重複の総額は
+# 約29.9兆円。
+#
+# 返る行の読み方:
+#   - `paidByGovernment` が false で `sourceId` を持つ = 通過金の段。
+#     この額を入口の額と足してはいけない
+#   - `paidByGovernment` が true で `sourceId` も持つ = 国からの支払いと
+#     他の段からの流入が混ざるブロック(実測9件のみ)。入口の合計に
+#     全額が入るため、その分だけ過大になりうる
+#
+# 実例(実測): 事業「児童手当等交付金に必要な経費」は
+# ブロックA「市町村」(国が支払った・1,741先)と
+# ブロックB「児童手当受給者」(Aが出どころ・7,789,939人)に
+# **同じ1,401,293,745,413円**を持つ。
+#
+# 国が実際に支払った総額はCQ12で数える(このCQは重複の在りかを見せる用途)。
+PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
+PREFIX core: <https://jgkg.norr-tech.com/def/core#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+
+SELECT ?projectName ?blockId ?blockName ?paidByGovernment ?amount ?sourceId ?sourceName
+WHERE {
+  ?block a budget:ExpenditureBlock ;
+         budget:project ?project ;
+         budget:blockId ?blockId ;
+         budget:paidByGovernment ?paidByGovernment ;
+         budget:fundedBy ?source ;
+         core:amount_jpy ?amount .
+  ?source budget:blockId ?sourceId .
+  ?project skos:prefLabel ?projectName .
+  OPTIONAL { ?block skos:prefLabel ?blockName }
+  OPTIONAL { ?source skos:prefLabel ?sourceName }
+}
+ORDER BY DESC(?amount) ?blockId ?sourceId
+LIMIT 20

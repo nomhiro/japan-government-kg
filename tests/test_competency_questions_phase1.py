@@ -128,18 +128,21 @@ def test_cq1_optional_successor_branch_fires_when_jurisdiction_target_is_abolish
 
 
 def test_cq2_ministry_budget_by_year(kg):
-    """厚生労働省の3事業(FY2025×2・FY2024×1)が年度別に正しく集計されること。
+    """厚生労働省の4事業(FY2025×3・FY2024×1)が年度別に正しく集計されること。
 
     何があれば落ちるか: ministryのURIがずれたら0件になる。年度でGROUP BYせず
     全事業を1本に合計したら年度が2行に分かれず1行になる。budgetAmountの
     代わりにExpenditureを合計する実装に変えたら、B20の役割二重計上
-    (PROJECT_ROLE_DEMO)の影響で2025年度の総額が狂う。
+    (PROJECT_ROLE_DEMO)とB97の段の二重計上(PROJECT_FLOW_DEMO)の影響で
+    2025年度の総額が狂う —— **このCQがbudgetAmountを読んでいる限り、
+    支出側にいくつ重複があっても影響を受けない**ことがここで固定される。
     """
     rows = _query(kg, "cq02-ministry-budget-by-year.rq")
     assert rows, "CQ2に答えられない"
     by_year = {int(y): (int(total), int(count)) for y, total, count in rows}
     assert by_year == {
-        2025: (100_000_000 + 10_000_000, 2),  # PROJECT_CORE + PROJECT_ROLE_DEMO
+        # PROJECT_CORE + PROJECT_ROLE_DEMO + PROJECT_FLOW_DEMO(裁定B97で追加)
+        2025: (100_000_000 + 10_000_000 + 3_000_000, 3),
         2024: (50_000_000, 1),  # PROJECT_MULTI_YEAR
     }, by_year
 
@@ -536,3 +539,101 @@ def test_cq11_does_not_include_the_still_unresolved_old_ministry_law(kg):
     rows = _query(kg, "cq11-succession-of-abolished-ministry.rq")
     laws = {str(law) for law, *_ in rows}
     assert str(_uri("law", fx.OLD_KOUSEISHO_LAW_ID)) not in laws, laws
+
+
+# =============================================================================
+# CQ12: 国が自ら支払った額は、年度ごとにいくらか(裁定B97)
+# =============================================================================
+
+
+def test_cq12_government_paid_total_excludes_the_pass_through_stage(kg):
+    """入口の段(A)と国自身の間接経費だけが数えられ、**次の段(B)と
+    国の支出ではない資金(C)が入らない**こと。
+
+    fixtureのPROJECT_FLOW_DEMOは意図的に3つのブロックを持つ:
+      A 1,000,000 国が支払った(入口)
+      B 1,000,000 Aが出どころ・入口ではない(= Aと同じお金の2段目)
+      C   500,000 出どころも無く入口でもない(借入金型。国の支出ではない)
+    加えて間接経費 7,000。**素朴なΣ(amount_jpy)は 2,507,000 になる。**
+
+    何があれば落ちるか:
+    - `budget:paidByGovernment true` のフィルタが外れたら B と C が入って
+      2,507,000 になる
+    - UNIONのIndirectCost側が落ちたら 1,000,000 になり、
+      **5-1に現れない支出を取りこぼす**(裁定B97が実データで32,896,230,966円と
+      実測した分がまるごと消える類の欠陥)
+    - 「流入辺が無いものを入口とする」という素朴な規則に実装を変えたら、
+      C(出どころが無い)が入って 1,507,000 になる
+    - 年度でGROUP BYしなくなったら、FY2024の事業と混ざって1行になる
+    """
+    rows = _query(kg, "cq12-government-paid-total.rq")
+    assert rows, "CQ12に答えられない"
+    by_year = {int(y): (int(total), int(count)) for y, total, count in rows}
+    # FY2025: ブロックA(1,000,000) + 間接経費(7,000) = 2件
+    assert by_year[2025] == (1_007_000, 2), by_year
+    # FY2024(PROJECT_MULTI_YEAR)はブロックを持たないので現れない
+    assert 2024 not in by_year, by_year
+
+
+def test_cq12_is_not_the_naive_sum_of_all_amounts(kg):
+    """**正のコントロール**: 同じfixtureに対する「型で絞らない素朴な合計」が
+    CQ12の答えより大きいことを、実際に両方数えて示す。
+
+    何があれば落ちるか: このテストが通らなくなるのは、fixtureから段の重複が
+    消えたとき —— つまり**CQ12が「重複を除いている」という主張の根拠が
+    fixtureから失われたとき**である。CQ12の期待値だけを直書きしていると、
+    fixtureが平坦になっても気づけない(欠陥型: 空虚なテスト)。
+    """
+    naive = list(kg.query(
+        "PREFIX core: <https://jgkg.norr-tech.com/def/core#> "
+        "SELECT (SUM(?a) AS ?t) WHERE { ?x core:amount_jpy ?a }"
+    ))
+    naive_total = int(naive[0][0])
+    cq12 = {int(y): int(total) for y, total, _ in _query(kg, "cq12-government-paid-total.rq")}
+    assert naive_total > cq12[2025], (
+        f"素朴な合計({naive_total})がCQ12の答え({cq12[2025]})を上回っていない"
+        " —— fixtureに段の重複が無くなっており、CQ12の主張を裏づけられない"
+    )
+
+
+# =============================================================================
+# CQ13: 同じお金が複数の段に記録されている事業はどれか(裁定B97)
+# =============================================================================
+
+
+def test_cq13_finds_the_pass_through_stage_and_not_the_entry(kg):
+    """出どころを持つブロック(B)だけが返り、入口(A)と孤立ブロック(C)が
+    返らないこと。返る行が「足してはいけない額」を指していること。
+
+    何があれば落ちるか: `budget:fundedBy` を必須にしている部分がOPTIONALに
+    変わると、AとCも返って「重複の在りか」を示す問いでなくなる。
+    fundedByの向きを逆に実装すると(出どころ側に張ると)、Aが返ってBが返らない。
+    """
+    rows = _query(kg, "cq13-money-passing-through-stages.rq")
+    assert rows, "CQ13に答えられない"
+    seen = {
+        str(block_id): (str(source_id), int(amount))
+        for _pn, block_id, _bn, _pbg, amount, source_id, _sn in rows
+    }
+    assert set(seen) == {"B"}, f"出どころを持つブロックはBだけのはず: {seen}"
+    assert seen["B"] == ("A", 1_000_000), seen
+
+
+def test_cq13_reports_whether_the_stage_was_paid_by_government(kg):
+    """返る行が `paidByGovernment` を持ち、Bについて偽であること。
+
+    **実データにはこれが真になるブロックが9件ある**(国からの支払いと他の段
+    からの流入が混在する。裁定B97・schema/budget.yamlの`paidByGovernment`
+    のdocstring)。その場合「入口の合計」に全額が入って過大になりうるため、
+    このCQは真偽をそのまま返して読み手に判断させる —— 列を落とすと、
+    混在ブロックを見分ける手段が画面から消える。
+
+    何があれば落ちるか: クエリから`?paidByGovernment`を消すとタプルの
+    形が変わって落ちる。emit側が偽のときに述語を出さない実装に戻すと、
+    未束縛になって None になる。
+    """
+    rows = _query(kg, "cq13-money-passing-through-stages.rq")
+    flags = {str(block_id): pbg for _pn, block_id, _bn, pbg, *_rest in rows}
+    assert "B" in flags, flags
+    assert flags["B"] is not None, "paidByGovernmentが未束縛(偽のとき出していない疑い)"
+    assert bool(flags["B"].toPython()) is False, flags["B"]

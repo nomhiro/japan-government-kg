@@ -148,3 +148,17 @@ export function groupByAxis(
       items: [...types].sort().map((type) => ({ type, color: colorOf(type) })),
     }));
 }
+
+// **軸に型を足すと、その軸の中で辞書順が後ろの型の明度がずれる(裁定B97で実測)。**
+// `colorForAxis` の明度は `siblingTypesInAxis` の並び(辞書順)の位置から決まる。
+// いくらで(MonetaryItem)軸に `ExpenditureBlock`/`IndirectCost` を足したとき、
+// 同軸の兄弟は ["Expenditure", "MonetaryItem"] から
+// ["Expenditure", "ExpenditureBlock", "IndirectCost", "MonetaryItem"] に変わり、
+// **`MonetaryItem` の色が index1 から index3 へ動いた**(`Expenditure` は
+// 辞書順の先頭なので不変)。
+//
+// これは上のdocstringが約束している安定性("いま画面に出ている型だけを数えて
+// 順番を振る"のを避ける)とは**別の軸の話**である——約束しているのは
+// 「表示中の集合に依存しない」ことであって、「オントロジーの変更に対して
+// 不変」ではない。オントロジーに型を足すのは稀で意図的な操作なので許容するが、
+// **「色が変わらない」と誤解しないためにここに書いておく。**

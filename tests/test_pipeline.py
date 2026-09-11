@@ -2,7 +2,7 @@ import datetime
 from pathlib import Path
 
 import pytest
-from rdflib import Dataset, URIRef
+from rdflib import RDF, Dataset, Literal, URIRef
 from zenken_rows import zenken_row, zipped
 
 from jgkg import lake, pipeline
@@ -1656,3 +1656,172 @@ def test_cli_rejects_an_unknown_corporations_scope_value(tmp_path):
             "--out-dir", str(tmp_path / "out"),
             "--corporations-scope", "everything",
         ])
+
+
+# =============================================================================
+# 裁定B97: 資金の流れ(支出先ブロック・国自らが支出する間接経費)の結線
+# =============================================================================
+
+
+def _rs_money_flow_groups() -> dict[str, list[list[str]]]:
+    """児童手当型の2段構造(同額が2ブロック)を持つ最小のrs-systemスナップショット。
+
+    project_id=6494(児童手当等交付金に必要な経費)の実データの形を、金額だけ
+    小さくして使う —— 段を区別せず合計すると1,000が2回数えられ、入口
+    (`paidByGovernment`)だけなら1回になる。
+    """
+    return {
+        "project_summary": [
+            _rs_row_for("project_summary", {
+                "project_id": "6494", "fiscal_year": "2025",
+                "project_name": "児童手当等交付金に必要な経費", "ministry_name": "厚生労働省",
+            }),
+        ],
+        "budget_summary": [
+            _rs_row_for("budget_summary", {
+                "project_id": "6494", "budget_fiscal_year": "2025",
+                "budget_amount": "1000", "executed_amount": "0",
+            }),
+        ],
+        "policy_measure_laws_and_regulations": [],
+        "payee_payment_information": [
+            _rs_row_for("payee_payment_information", {
+                "project_id": "6494", "block_number": "A", "block_name": "市町村",
+                "block_payee_count": "1741", "expenditure_role": "児童手当の支給事務",
+                "block_amount": "1000",
+            }),
+            _rs_row_for("payee_payment_information", {
+                "project_id": "6494", "block_number": "B", "block_name": "児童手当受給者",
+                "block_payee_count": "7789939", "expenditure_role": "児童手当の受給",
+                "block_amount": "1000",
+            }),
+            _rs_row_for("payee_payment_information", {
+                "project_id": "6494", "block_number": "A",
+                "recipient_name": "株式会社ウルフスタイル",
+                "recipient_houjin_bangou": WOLFSTYLE_BANGOU,
+                "expenditure_amount": "1000", "recipient_other_flag": "FALSE",
+            }),
+        ],
+        "payee_payment_block_connection": [
+            _rs_row_for("payee_payment_block_connection", {
+                "project_id": "6494", "block_from_name": "厚生労働省",
+                "paid_by_government": "TRUE", "block_to": "A", "block_to_name": "市町村",
+            }),
+            _rs_row_for("payee_payment_block_connection", {
+                "project_id": "6494", "block_from": "A", "block_from_name": "市町村",
+                "paid_by_government": "FALSE", "block_to": "B",
+                "block_to_name": "児童手当受給者",
+            }),
+            _rs_row_for("payee_payment_block_connection", {
+                "project_id": "6494", "indirect_flag": "間接経費",
+                "indirect_item": "講師謝金", "indirect_amount": "7",
+            }),
+        ],
+    }
+
+
+def test_run_wires_the_money_flow_into_the_rs_system_graph(houjin_with_a_company, tmp_path):
+    """5-2がレイクにあるとき、ブロック・間接経費がrs-systemグラフに入り、
+
+    件数がPipelineReportに載ること(裁定B97)。
+
+    何があれば落ちるか: `_rs_group_paths`が任意グループを拾わない、
+    `parse_rs`にパスを渡していない、`emit_budget`にblocks/indirect_costsを
+    渡していない、report結線を忘れた —— のいずれでも落ちる。**参照整合違反が
+    0であることも同時に見る**(`budget:fundedBy`/`budget:inBlock`はグラフを
+    跨ぐ参照の検査対象なので、ブロックを作り損なうとここで違反が出る)。
+    """
+    from jgkg import uris
+
+    _save_rs_snapshot(DAY, _rs_money_flow_groups())
+
+    report = pipeline.run(
+        {"houjin-bangou": DAY, "rs-system": DAY}, tmp_path / "out",
+        include_all_corporations=True,
+    )
+
+    assert report.reference_violations == [], report.reference_violations
+    assert report.budget_block_connection_read is True
+    assert report.budget_blocks == 2
+    assert report.budget_blocks_paid_by_government == 1
+    assert report.budget_indirect_costs == 1
+    assert report.budget_expenditures_block_unknown == 0
+
+    kg = Dataset(default_union=True)
+    kg.parse(tmp_path / "out" / "kg.nq", format="nquads")
+    graph = URIRef(uris.graph_uri("rs-system", DAY))
+    budget = URIRef("https://jgkg.norr-tech.com/def/budget#")
+
+    block_a = URIRef(uris.expenditure_block_uri("2025", "6494", "A"))
+    block_b = URIRef(uris.expenditure_block_uri("2025", "6494", "B"))
+    cost = URIRef(uris.indirect_cost_uri("2025", "6494", "講師謝金"))
+    assert (block_a, RDF.type, URIRef(f"{budget}ExpenditureBlock"), graph) in kg
+    assert (block_b, RDF.type, URIRef(f"{budget}ExpenditureBlock"), graph) in kg
+    assert (cost, RDF.type, URIRef(f"{budget}IndirectCost"), graph) in kg
+    # 入口はAだけ。Bは偽の値を**明示的に**持つ(トリプルの不在ではない)
+    assert (block_a, URIRef(f"{budget}paidByGovernment"), Literal(True), graph) in kg
+    assert (block_b, URIRef(f"{budget}paidByGovernment"), Literal(False), graph) in kg
+    assert (block_b, URIRef(f"{budget}fundedBy"), block_a, graph) in kg
+    # 支出が自分の段を指している
+    expenditure = URIRef(uris.expenditure_uri("2025", "6494", 0))
+    assert (expenditure, URIRef(f"{budget}inBlock"), block_a, graph) in kg
+
+    # 段を区別すれば1,000、区別しなければ2,000(二重計上)になること
+    amount = URIRef("https://jgkg.norr-tech.com/def/core#amount_jpy")
+    naive = sum(int(o) for o in kg.objects(block_a, amount)) + sum(
+        int(o) for o in kg.objects(block_b, amount)
+    )
+    entry = sum(int(o) for o in kg.objects(block_a, amount))
+    assert naive == 2000
+    assert entry == 1000
+
+
+def test_run_says_the_block_connection_file_was_absent_instead_of_reporting_zero_blocks(
+    houjin_with_a_company, tmp_path, capsys,
+):
+    """5-2がレイクに無いリリースでは、ブロック0件であることと**その理由**が
+
+    両方リリース記録に残ること(`budget_block_connection_read is False`)。
+
+    何があれば落ちるか: このフラグを載せない実装だと、
+    `budget_blocks == 0` が「資金の流れがデータに無かった」のか
+    「5-2を取得していないだけ」なのか区別できない —— 29.9兆円の重複を除く
+    手段が消えたリリースが、正常に見えてしまう。`_rs_group_paths`が任意
+    グループの欠落を実行ログに出すことも併せて確認する。
+    """
+    groups = _rs_money_flow_groups()
+    del groups["payee_payment_block_connection"]
+    _save_rs_snapshot(DAY, groups)
+
+    report = pipeline.run(
+        {"houjin-bangou": DAY, "rs-system": DAY}, tmp_path / "out",
+        include_all_corporations=True,
+    )
+
+    assert report.budget_block_connection_read is False
+    assert report.budget_blocks == 0
+    assert report.budget_blocks_paid_by_government == 0
+    assert report.budget_indirect_costs == 0
+    # 支出自体は落とさない(資金の流れだけが欠ける)
+    assert report.budget_expenditures == 1
+    assert report.reference_violations == [], report.reference_violations
+    assert "payee_payment_block_connection" in capsys.readouterr().out
+
+
+def test_run_reports_the_money_flow_fields_as_none_when_rs_system_is_not_included(
+    seeded_lake, tmp_path,
+):
+    """rs-systemを含まないリリースでは資金の流れのフィールドも`None`であること
+
+    (task-10-review.md要修正2と同じ規則: 未実行はNone、実行して0件は0)。
+
+    何があれば落ちるか: 既定値を0にする実装だと、rs-systemを含まない
+    リリースが「ブロック0件を測った」と主張する。
+    """
+    report = pipeline.run(FETCHED, tmp_path / "out")  # houjin-bangouのみ
+
+    assert report.budget_block_connection_read is None
+    assert report.budget_blocks is None
+    assert report.budget_blocks_paid_by_government is None
+    assert report.budget_indirect_costs is None
+    assert report.budget_expenditures_block_unknown is None

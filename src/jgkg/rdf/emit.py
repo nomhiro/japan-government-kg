@@ -16,12 +16,20 @@ from jgkg.transform.law import JurisdictionResult, LawRecord
 from jgkg.transform.ministry import Ministry, UnmatchedMinistry
 from jgkg.transform.ministry_succession import AbolishedMinistryRecord
 from jgkg.transform.organization import Organization
-from jgkg.transform.rs import BudgetProjectRecord, ExpenditureRecord, UnresolvedBudgetReference
+from jgkg.transform.rs import (
+    BudgetProjectRecord,
+    ExpenditureBlockRecord,
+    ExpenditureRecord,
+    IndirectCostRecord,
+    UnresolvedBudgetReference,
+)
 from jgkg.uris import (
     abolished_organ_uri,
     budget_uri,
+    expenditure_block_uri,
     expenditure_uri,
     graph_uri,
+    indirect_cost_uri,
     law_uri,
     law_version_uri,
     org_uri,
@@ -263,6 +271,8 @@ def emit_budget(
     fetched_on: datetime.date,
     sha256: str | Iterable[str] | None = None,
     recorded_on: datetime.date | None = None,
+    blocks: Iterable[ExpenditureBlockRecord] = (),
+    indirect_costs: Iterable[IndirectCostRecord] = (),
 ) -> Dataset:
     """`rs.build_projects` の出力を `budget:BudgetProject` / `budget:Expenditure`
 
@@ -270,15 +280,20 @@ def emit_budget(
     変換とemitの分離(emit自身は解決ロジックを持たない)。
 
     `sha256` は複数件を受ける(RSは1つのグラフが project_summary/budget_summary/
-    policy_measure_laws_and_regulations/payee_payment_information の4本の
-    物理ファイルから作られるため。`provenance_graph` の複数件対応を実際に使う
-    唯一の呼び出し元)。
+    policy_measure_laws_and_regulations/payee_payment_information の4本(裁定B97
+    以降は payee_payment_block_connection も加えて5本)の物理ファイルから
+    作られるため。`provenance_graph` の複数件対応を実際に使う唯一の呼び出し元)。
 
     `unresolved` は3種類が混在する(`UnresolvedBudgetReference.kind`)。
     ministry/basis_law は主体がBudgetProject、recipientは主体がExpenditureで、
     それぞれ別のURI関数(`uris.unresolved_budget_ministry_uri` 等)を使う
     (law.pyのunresolved_jurisdiction_uriと同じ理由 — 同じ未解決の名称/IDを
     指す事業が複数あっても1ノードに収束させない)。
+
+    **`blocks`/`indirect_costs`(裁定B97)は既定が空**——5-2
+    (payee_payment_block_connection)を渡していない呼び出し元(既存のテスト等)を
+    壊さないため。`projects`/`expenditures`と同じ名前付きグラフに入れる
+    (同じ一次資料の同じ取得日から作る事実であり、置換の単位も同じ)。
     """
     ns = _ns()
     ds, data = _new_dataset(source_id, fetched_on, sha256, recorded_on)
@@ -321,6 +336,69 @@ def emit_budget(
             data.add((node, ns["core"]["unresolved_key"], Literal(u.key)))
             data.add((node, ns["core"]["unresolvedFor"], s))
 
+    # =========================================================================
+    # 裁定B97: 資金の流れ。支出(Expenditure)だけでは同じお金を段ごとに何度も
+    # 数えてしまう(実測29.9兆円の重複)。ブロックと`paidByGovernment`があれば
+    # 入口だけを合計できる(schema/budget.yaml の ExpenditureBlock 参照)
+    # =========================================================================
+    for block in blocks:
+        s = URIRef(expenditure_block_uri(block.fiscal_year, block.project_id, block.block_id))
+        data.add((s, RDF.type, ns["budget"]["ExpenditureBlock"]))
+        # ブロック名は core:label(実際の述語は skos:prefLabel。Expenditureの
+        # labelと同じ理由 — `ns["core"]["label"]`は閉じたシェイプに存在しない)。
+        # 5-1にも5-2にも名前が無いブロックは空文字になるので書かない
+        # (§8.2「欠損を空文字列で表現しない」)
+        if block.block_name:
+            data.add((s, SKOS.prefLabel, Literal(block.block_name, lang="ja")))
+        data.add((s, ns["budget"]["blockId"], Literal(block.block_id)))
+        data.add(
+            (s, ns["budget"]["project"], URIRef(budget_uri(block.fiscal_year, block.project_id)))
+        )
+        data.add((s, ns["budget"]["fiscalYear"], Literal(int(block.fiscal_year))))
+        # roleはExpenditure側と同じverbatim・plain(lang無し)。空なら書かない
+        if block.role:
+            data.add((s, ns["budget"]["role"], Literal(block.role)))
+        # 支出先の数・金額は5-2にしか現れないブロック(実測1,357件)ではNone。
+        # **0は有効な値**なので`is not None`で判定する(budgetAmountと同じ判断)
+        if block.payee_count is not None:
+            data.add((s, ns["budget"]["payeeCount"], Literal(block.payee_count)))
+        if block.amount is not None:
+            data.add((s, ns["core"]["amount_jpy"], Literal(block.amount)))
+        # **偽のときも必ず書く。** 「国が払っていない」ことは欠損ではなく情報
+        # であり(借入金・回収金のブロックがまさにそれ)、トリプルを省略すると
+        # 「調べていない」と区別できなくなる。入口の合計を出すクエリは
+        # `paidByGovernment true`で絞るので、偽の値自体は集計を汚さない
+        data.add((s, ns["budget"]["paidByGovernment"], Literal(block.paid_by_government)))
+        # 出どころは同じ事業内の別ブロック。`build_projects`が「実在する
+        # ブロック番号だけ」を保証しているのでそのままURIにできる
+        # (rs.ExpenditureBlockRecord の docstring)
+        for source_block_id in block.funded_by:
+            data.add(
+                (
+                    s,
+                    ns["budget"]["fundedBy"],
+                    URIRef(
+                        expenditure_block_uri(
+                            block.fiscal_year, block.project_id, source_block_id
+                        )
+                    ),
+                )
+            )
+        # flowNoteもroleと同じverbatim・plain(budget.yaml参照)。重複除去は
+        # parse側で済んでいる
+        for note in block.flow_notes:
+            data.add((s, ns["budget"]["flowNote"], Literal(note)))
+
+    for cost in indirect_costs:
+        s = URIRef(indirect_cost_uri(cost.fiscal_year, cost.project_id, cost.item))
+        data.add((s, RDF.type, ns["budget"]["IndirectCost"]))
+        data.add((s, SKOS.prefLabel, Literal(cost.item, lang="ja")))
+        data.add((s, ns["core"]["amount_jpy"], Literal(cost.amount)))
+        data.add(
+            (s, ns["budget"]["project"], URIRef(budget_uri(cost.fiscal_year, cost.project_id)))
+        )
+        data.add((s, ns["budget"]["fiscalYear"], Literal(int(cost.fiscal_year))))
+
     for exp in expenditures:
         s = URIRef(expenditure_uri(exp.fiscal_year, exp.project_id, exp.seq))
         data.add((s, RDF.type, ns["budget"]["Expenditure"]))
@@ -354,6 +432,21 @@ def emit_budget(
         # 書かない(§8.2「欠損を空文字列で表現しない」と同じ判断)
         if exp.role:
             data.add((s, ns["budget"]["role"], Literal(exp.role)))
+        # 裁定B97: どの段に属する支出か。`build_projects`が同じ事業の
+        # `blocks`に実在するブロック番号だけを入れている(無ければNoneにして
+        # `BuildStats.expenditures_block_unknown`に数えている)ので、ここで
+        # 存在確認をやり直さない — 参照整合ゲート(裁定B4)が検査する述語なので、
+        # 判定を2箇所に分けると片方だけ直した時に黙って壊れる
+        if exp.block_id is not None:
+            data.add(
+                (
+                    s,
+                    ns["budget"]["inBlock"],
+                    URIRef(
+                        expenditure_block_uri(exp.fiscal_year, exp.project_id, exp.block_id)
+                    ),
+                )
+            )
 
         for u in unresolved_for_expenditure.get((exp.fiscal_year, exp.project_id, exp.seq), []):
             node = URIRef(unresolved_recipient_uri(u.fiscal_year, u.project_id, u.seq, u.key))

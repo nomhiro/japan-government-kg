@@ -72,7 +72,7 @@
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:Literal ;
-            sh:order 8 ;
+            sh:order 9 ;
             sh:path skos:prefLabel ],
         [ sh:datatype xsd:string ;
             sh:description "RSの[16]事業を行う上での役割の文言をそのまま保存する(verbatim。 解釈しない — LangStringではなく識別子的なコード値に近い扱いとして plainなstringにする。B20裁定)。「一次支出先」「間接補助事業者」 「再委託」等の値が実データに現れ、事業内の支出額を段を区別せず単純合計 すると通過金を二重に数える(task-7-review.md指摘8)。この段を集計から どう扱うか(モデル化するか、一次支出先のみを対象にするか)はTask 9の 裁定事項であり、Task 7はデータを保存するだけにとどめる"@ja ;
@@ -86,8 +86,14 @@
             sh:maxCount 1 ;
             sh:name "金額(円)" ;
             sh:nodeKind sh:Literal ;
-            sh:order 6 ;
+            sh:order 7 ;
             sh:path <https://jgkg.norr-tech.com/def/core#amount_jpy> ],
+        [ sh:description "この支出(支出先1件分)が、どの支出先ブロック=資金の流れのどの段に 属するか。**これが無いと、支出を段の区別なく合計してしまう** (裁定B96で29.9兆円の重複として実測した誤りそのもの)。 `role`は従来Expenditure側にも伝播させているが(B20)、役割は一次データ上 ブロック行にしか現れない属性であり、本来の持ち主はブロック側である"@ja ;
+            sh:maxCount 1 ;
+            sh:name "属する支出先ブロック" ;
+            sh:nodeKind sh:IRI ;
+            sh:order 6 ;
+            sh:path <https://jgkg.norr-tech.com/def/budget#inBlock> ],
         [ sh:datatype xsd:integer ;
             sh:description "このExpenditureが属するBudgetProjectと同じRSレビューシートの年度 (URIの構成要素でもある。`uris.expenditure_uri`)。**支出の実際の 支払年度ではない** — task-7-review.md指摘7の実測: RS 2025シートの 支出先ファイルは実はFY2024の執行実績であり(事業ごとのΣ[23]と budget_summaryのFY2024執行額[19]の比較で、中央比1.0000・完全一致 32.3%を確認)、支出先ファイル自身の事業年度列は193,912行すべて '2025'固定でFY2024/2025を区別する列を持たない。したがって `budgetAmount`(FY2025当初予算)と`Σ amount_jpy`(FY2024執行)を 同じBudgetProjectの下で単純に比較すると、年度の異なる2つの値を 比べることになる(URIのキーとリテラルの意味を分けるモデル変更は Task 7の範囲外。controllerの裁定を仰いだ懸念として報告書に記載)"@ja ;
             sh:maxCount 1 ;
@@ -109,11 +115,6 @@
             sh:nodeKind sh:IRI ;
             sh:order 1 ;
             sh:path <https://jgkg.norr-tech.com/def/budget#recipient> ],
-        [ sh:description "このリソースのURI"@ja ;
-            sh:maxCount 1 ;
-            sh:nodeKind sh:IRI ;
-            sh:order 7 ;
-            sh:path <https://jgkg.norr-tech.com/def/core#id> ],
         [ sh:datatype rdf:langString ;
             sh:description "支払先の表示名(RS上の名称。「個人Ａ」等)。`recipient`がセンチネル 法人番号(B18)により未設定になったExpenditureだけが持つ — 束ね行は core:label(skos:prefLabel)で表示名を既に持つため重複させず、 解決に失敗した行(NO_CANDIDATE/AMBIGUOUS)はcore:unresolved_textが 同じ役割を果たすため、このスロットは「照合対象ではないと分かっている」 行専用にする(task-7-review.md指摘1)"@ja ;
             sh:maxCount 1 ;
@@ -121,6 +122,11 @@
             sh:nodeKind sh:Literal ;
             sh:order 3 ;
             sh:path <https://jgkg.norr-tech.com/def/budget#payeeLabel> ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 8 ;
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ],
         [ sh:description "この支出が属する予算事業"@ja ;
             sh:maxCount 1 ;
             sh:minCount 1 ;
@@ -129,6 +135,131 @@
             sh:order 0 ;
             sh:path <https://jgkg.norr-tech.com/def/budget#project> ] ;
     sh:targetClass <https://jgkg.norr-tech.com/def/budget#Expenditure> .
+
+<https://jgkg.norr-tech.com/def/budget#ExpenditureBlock> a sh:NodeShape ;
+    rdfs:label "支出先ブロック" ;
+    rdfs:comment """資金の流れの1つの段。同じ役割を担う支出先をRSがまとめた単位で、 一次データの呼称は「支出先ブロック」(裁定B97)。 同一性は(fiscalYear, projectId, blockId)の組で決まる。\r
+**このクラスがナレッジグラフに必要な理由**: 支出(Expenditure)は 支出先1件分の金額を持つが、**同じお金が流れの段ごとに何度も記録される**。 実測(2026-09-11): 児童手当等交付金では1,401,293,745,413円が 「国→市町村(1,741先)」と「市町村→児童手当受給者(7,789,939人)」の 2ブロックに同額で現れる。段を区別せず合計すると全体で **29.9兆円**を二重に数える。このクラスと`paidByGovernment`があれば、 入口だけを合計して重複を除いた額を出せる。\r
+ブロックの合計支出額はMonetaryItemから継承する`amount_jpy`に持たせる (Expenditureと同じ扱い。budget独自のamountスロットは追加しない)。\r
+**危険: `amount_jpy`が3つの粒度に載る。** このクラスの追加により、 同じ述語がExpenditure(支出先1件分)・ExpenditureBlock(段の合計)・ IndirectCost(国自身の支出)の3種類の主語に付く。 `SELECT (SUM(?a)) WHERE { ?x core:amount_jpy ?a }` のような **型で絞らない合計は、以前より悪い答えを返す**(ブロックと支出を 両方数えるため約2倍になる)。国が支払った額を出す正しいクエリは `queries/cq/cq12-government-paid-total.rq` である。\r
+**不変条件(実測2026-09-11、19,125ブロック全件で完全一致・差0円)**: ブロックの`amount_jpy`は、そのブロックに属するExpenditureの `amount_jpy`の総和に等しい。一次データの列17(ブロックの合計支出額)と 列23(支出先の合計支出額)の関係そのものであり、**取り込みが ブロックへの割り当てを誤っていれば崩れる**ので、ビルド時の検査に使える。 ブロック名(「市町村」「児童手当受給者」等)はEntityから継承する `core:label`(skos:prefLabel)に持たせる。実測: 5-1と5-2の両方に現れる 18,988ブロックすべてで、2つのファイルのブロック名が**一致する** (食い違い0件)。""" ;
+    sh:closed true ;
+    sh:ignoredProperties ( rdf:type ) ;
+    sh:property [ sh:datatype rdf:langString ;
+            sh:description "人間が読む名称"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 10 ;
+            sh:path skos:prefLabel ],
+        [ sh:datatype xsd:boolean ;
+            sh:description "このブロックへ、担当組織(国)が自ら支払ったか(RSの[15]担当組織からの支出)。 **資金の流れの入口を機械的に判定する唯一の手がかりであり、裁定B97の核心 である。** 支出額を段の区別なく全部足すと29.9兆円の重複が出る(実測)が、 このスロットが真のブロックだけを合計すれば重複を除いた額になる。 実測(2026-09-11): この印が付く行は22列ファイルの23,381行中、 支出元ブロックが**必ず空**(例外0件)であり、「国が起点である」という 読み方と矛盾しない。ただし`fundedBy`と排他ではない — **国からの支払いと他ブロックからの流入が混在するブロックが9件ある** (実測)。したがって「入口の合計」はそれらのブロックの全額を含み、 その分だけ過大になりうる(9/13,172ブロック)"@ja ;
+            sh:maxCount 1 ;
+            sh:name "国自身が支払った" ;
+            sh:nodeKind sh:Literal ;
+            sh:order 5 ;
+            sh:path <https://jgkg.norr-tech.com/def/budget#paidByGovernment> ],
+        [ sh:datatype xsd:integer ;
+            sh:description "このブロックに含まれる支出先の数(RSの[15]支出先の数)。**法人の数とは 限らない** — 個人が対象のブロックでは人数が入る(実測: 児童手当等交付金の 「児童手当受給者」ブロックは7,789,939)。RSの表示名をそのまま使う"@ja ;
+            sh:maxCount 1 ;
+            sh:name "支出先の数" ;
+            sh:nodeKind sh:Literal ;
+            sh:order 4 ;
+            sh:path <https://jgkg.norr-tech.com/def/budget#payeeCount> ],
+        [ sh:datatype xsd:integer ;
+            sh:description "金額(円)"@ja ;
+            sh:maxCount 1 ;
+            sh:name "金額(円)" ;
+            sh:nodeKind sh:Literal ;
+            sh:order 8 ;
+            sh:path <https://jgkg.norr-tech.com/def/core#amount_jpy> ],
+        [ sh:datatype xsd:string ;
+            sh:description "RSの[16]事業を行う上での役割の文言をそのまま保存する(verbatim。 解釈しない — LangStringではなく識別子的なコード値に近い扱いとして plainなstringにする。B20裁定)。「一次支出先」「間接補助事業者」 「再委託」等の値が実データに現れ、事業内の支出額を段を区別せず単純合計 すると通過金を二重に数える(task-7-review.md指摘8)。この段を集計から どう扱うか(モデル化するか、一次支出先のみを対象にするか)はTask 9の 裁定事項であり、Task 7はデータを保存するだけにとどめる"@ja ;
+            sh:maxCount 1 ;
+            sh:name "役割" ;
+            sh:nodeKind sh:Literal ;
+            sh:order 3 ;
+            sh:path <https://jgkg.norr-tech.com/def/budget#role> ],
+        [ sh:description "このブロックの資金が、同じ事業内のどのブロックから流れてきたか (RSの[13]支出元の支出先ブロック → [16]支出先の支出先ブロック の辺を、 **受け取る側から見た向き**で持つ)。1ブロックが自分の出どころと 入口フラグの両方を自分の上に持つため、「このお金はどこから来たか」が 1つの主語だけで読める。実測の多重度は1が7,099・最大9。 **国が起点の場合はこのスロットを持たず`paidByGovernment`が真になる。** 借入金や回収金のように「国の支出ではないが事業に流れ込む資金」は 出どころ側のブロックとして現れ、入口フラグを持たない (実測: 独立行政法人国際協力機構有償資金協力部門への出資の 「財政融資資金借入金」ブロック)"@ja ;
+            sh:name "資金の出どころ" ;
+            sh:nodeKind sh:IRI ;
+            sh:order 6 ;
+            sh:path <https://jgkg.norr-tech.com/def/budget#fundedBy> ],
+        [ sh:datatype xsd:integer ;
+            sh:description "このブロックが属するBudgetProjectと同じRSレビューシートの年度 (URIの構成要素でもある)。**支出の実際の支払年度ではない** — Expenditureの同名スロットと同じ事情(RS 2025シートの支出先情報は 実はFY2024の執行実績である。budget.yamlのExpenditure.fiscalYear のdocstring参照)"@ja ;
+            sh:maxCount 1 ;
+            sh:minCount 1 ;
+            sh:name "予算年度" ;
+            sh:nodeKind sh:Literal ;
+            sh:order 2 ;
+            sh:path <https://jgkg.norr-tech.com/def/budget#fiscalYear> ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 9 ;
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ],
+        [ sh:datatype xsd:string ;
+            sh:description "RSの支出先ブロック番号(\"A\"/\"B\"/…/\"AA\"…)。**単独では一意でない** — 事業ごとに振り直されるため、ExpenditureBlockの同一性は (fiscalYear, projectId, blockId)の組で決まる(URIも3つを材料にする。 `uris.expenditure_block_uri`)。そのためprojectIdと同じ理由で `identifier: true`は付けない。実測(2026-09-11): 19,125ブロックすべてで (事業, ブロック番号)に対しブロック名とブロック合計支出額が一意に決まる"@ja ;
+            sh:maxCount 1 ;
+            sh:minCount 1 ;
+            sh:name "支出先ブロック番号" ;
+            sh:nodeKind sh:Literal ;
+            sh:order 0 ;
+            sh:path <https://jgkg.norr-tech.com/def/budget#blockId> ],
+        [ sh:datatype xsd:string ;
+            sh:description "RSの[18]資金の流れの補足情報をそのまま保存する(verbatim。解釈しない。 `role`とは別物である — 実測例: 同じブロックで役割が「システム開発・設計」、 補足情報が「再委託」)。**辺ではなくブロック側に持たせる** — 一次データでは(支出元, 支出先)の対に対して付くが、それを保つには 辺の実体化が必要になり、自由記述1つのために**7,300本の辺**を クラスにすることになる(実測2026-09-11: 辺の行7,494・重複を除いた (事業,支出元,支出先)が7,300・出どころを持つブロックが7,180。 **以前ここに書いていた「7,180本の辺」は辺ではなくブロックの数で、 単位を誤っていた** —— 実装者の指摘で訂正)。**実測: 同じブロックに異なる補足情報が複数付くのは 4,481ブロック中14件だけ**なので、multivaluedな集合として持ち、 「どの出どころに対応する補足か」は保持しない(意図的な逸脱)"@ja ;
+            sh:name "資金の流れの補足情報" ;
+            sh:nodeKind sh:Literal ;
+            sh:order 7 ;
+            sh:path <https://jgkg.norr-tech.com/def/budget#flowNote> ],
+        [ sh:description "この支出が属する予算事業"@ja ;
+            sh:maxCount 1 ;
+            sh:minCount 1 ;
+            sh:name "予算事業" ;
+            sh:nodeKind sh:IRI ;
+            sh:order 1 ;
+            sh:path <https://jgkg.norr-tech.com/def/budget#project> ] ;
+    sh:targetClass <https://jgkg.norr-tech.com/def/budget#ExpenditureBlock> .
+
+<https://jgkg.norr-tech.com/def/budget#IndirectCost> a sh:NodeShape ;
+    rdfs:label "国自らが支出する間接経費" ;
+    rdfs:comment """支出先を介さず国が自ら支払う間接経費(RSの[19][20][21])。一次データの 呼称をそのまま使う。**支出先の表(5-1)には現れないため、 ExpenditureとExpenditureBlockだけでは取りこぼす** — 実測 (2026-09-11): 2,432件・32,896,230,966円。「国が支払った額」を出すとき、 入口ブロックの合計にこれを加える必要がある(裁定B97)。\r
+金額はMonetaryItemから継承する`amount_jpy`、項目名(「講師謝金」 「委員等旅費」等)はEntityから継承する`core:label`に持たせる。 同一性は(fiscalYear, projectId, 項目名)で決まる — 実測: 2,432行すべてでこの組が一意(重複0件。空白を正規化しても一意)。 **項目名をURIに使うため長くなる**が、実測で許容範囲: パーセント エンコード後の項目名は中央値36文字・最大495文字で、URI全体の最大は 556文字(一般的な上限2,000文字の27.8%)。連番にすればURIは短くなるが、 RS側の行順が変わるとIDが動く —— 項目名は一意で意味を持つ自然キーなので そちらを採る(`unresolved_*_uri`が名称をエンコードするのと同じ立場)。""" ;
+    sh:closed true ;
+    sh:ignoredProperties ( rdf:type ) ;
+    sh:property [ sh:datatype rdf:langString ;
+            sh:description "人間が読む名称"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:Literal ;
+            sh:order 4 ;
+            sh:path skos:prefLabel ],
+        [ sh:datatype xsd:integer ;
+            sh:description "金額(円)"@ja ;
+            sh:maxCount 1 ;
+            sh:name "金額(円)" ;
+            sh:nodeKind sh:Literal ;
+            sh:order 2 ;
+            sh:path <https://jgkg.norr-tech.com/def/core#amount_jpy> ],
+        [ sh:datatype xsd:integer ;
+            sh:description "この記述が対応する事業年度(RSのレビューシート自体の年度)。 budgetAmountは同じ年度の当初予算(合計)を指す (budget_summaryの「予算年度」列がこの値と一致する集計行)。RSは 1シートに直近5年度分の予算履歴を束ねて持つが、Task 7はレビューシート 自体の年度分のみを1つのBudgetProjectとしてモデル化する(過去4年度分の 履歴は対象外。Task 7報告書の逸脱台帳を参照)"@ja ;
+            sh:maxCount 1 ;
+            sh:minCount 1 ;
+            sh:name "予算年度" ;
+            sh:nodeKind sh:Literal ;
+            sh:order 1 ;
+            sh:path <https://jgkg.norr-tech.com/def/budget#fiscalYear> ],
+        [ sh:description "このリソースのURI"@ja ;
+            sh:maxCount 1 ;
+            sh:nodeKind sh:IRI ;
+            sh:order 3 ;
+            sh:path <https://jgkg.norr-tech.com/def/core#id> ],
+        [ sh:description "この支出が属する予算事業"@ja ;
+            sh:maxCount 1 ;
+            sh:minCount 1 ;
+            sh:name "予算事業" ;
+            sh:nodeKind sh:IRI ;
+            sh:order 0 ;
+            sh:path <https://jgkg.norr-tech.com/def/budget#project> ] ;
+    sh:targetClass <https://jgkg.norr-tech.com/def/budget#IndirectCost> .
 
 <https://jgkg.norr-tech.com/def/core#Agent> a sh:NodeShape ;
     rdfs:label "誰が(主体)" ;
@@ -169,7 +300,7 @@
 <https://jgkg.norr-tech.com/def/core#Entity> a sh:NodeShape ;
     rdfs:comment "本KGが扱うすべての事物の基底" ;
     sh:closed false ;
-    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/budget#basisLaw> <https://jgkg.norr-tech.com/def/budget#budgetAmount> <https://jgkg.norr-tech.com/def/budget#fiscalYear> <https://jgkg.norr-tech.com/def/budget#ministry> <https://jgkg.norr-tech.com/def/budget#payeeLabel> <https://jgkg.norr-tech.com/def/budget#project> <https://jgkg.norr-tech.com/def/budget#projectId> <https://jgkg.norr-tech.com/def/budget#projectName> <https://jgkg.norr-tech.com/def/budget#recipient> <https://jgkg.norr-tech.com/def/budget#recipientMatchCategory> <https://jgkg.norr-tech.com/def/budget#role> <https://jgkg.norr-tech.com/def/core#amount_jpy> <https://jgkg.norr-tech.com/def/core#involves_agent> <https://jgkg.norr-tech.com/def/core#occurred_on> <https://jgkg.norr-tech.com/def/core#unresolvedFor> <https://jgkg.norr-tech.com/def/core#unresolved_key> <https://jgkg.norr-tech.com/def/core#unresolved_reason> <https://jgkg.norr-tech.com/def/core#unresolved_text> <https://jgkg.norr-tech.com/def/law#abbrev> <https://jgkg.norr-tech.com/def/law#amendmentEnforcementDate> <https://jgkg.norr-tech.com/def/law#amendmentLawNum> <https://jgkg.norr-tech.com/def/law#jurisdiction> <https://jgkg.norr-tech.com/def/law#lawId> <https://jgkg.norr-tech.com/def/law#lawNum> <https://jgkg.norr-tech.com/def/law#lawNumType> <https://jgkg.norr-tech.com/def/law#lawTitle> <https://jgkg.norr-tech.com/def/law#promulgationDate> <https://jgkg.norr-tech.com/def/law#repealStatus> <https://jgkg.norr-tech.com/def/law#revisionStatus> <https://jgkg.norr-tech.com/def/org#abolitionDate> <https://jgkg.norr-tech.com/def/org#cityName> <https://jgkg.norr-tech.com/def/org#houjinBangou> <https://jgkg.norr-tech.com/def/org#ministryCode> <https://jgkg.norr-tech.com/def/org#organizationKindCode> <https://jgkg.norr-tech.com/def/org#prefectureName> <https://jgkg.norr-tech.com/def/org#succeededBy> ) ;
+    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/budget#basisLaw> <https://jgkg.norr-tech.com/def/budget#blockId> <https://jgkg.norr-tech.com/def/budget#budgetAmount> <https://jgkg.norr-tech.com/def/budget#fiscalYear> <https://jgkg.norr-tech.com/def/budget#flowNote> <https://jgkg.norr-tech.com/def/budget#fundedBy> <https://jgkg.norr-tech.com/def/budget#inBlock> <https://jgkg.norr-tech.com/def/budget#ministry> <https://jgkg.norr-tech.com/def/budget#paidByGovernment> <https://jgkg.norr-tech.com/def/budget#payeeCount> <https://jgkg.norr-tech.com/def/budget#payeeLabel> <https://jgkg.norr-tech.com/def/budget#project> <https://jgkg.norr-tech.com/def/budget#projectId> <https://jgkg.norr-tech.com/def/budget#projectName> <https://jgkg.norr-tech.com/def/budget#recipient> <https://jgkg.norr-tech.com/def/budget#recipientMatchCategory> <https://jgkg.norr-tech.com/def/budget#role> <https://jgkg.norr-tech.com/def/core#amount_jpy> <https://jgkg.norr-tech.com/def/core#involves_agent> <https://jgkg.norr-tech.com/def/core#occurred_on> <https://jgkg.norr-tech.com/def/core#unresolvedFor> <https://jgkg.norr-tech.com/def/core#unresolved_key> <https://jgkg.norr-tech.com/def/core#unresolved_reason> <https://jgkg.norr-tech.com/def/core#unresolved_text> <https://jgkg.norr-tech.com/def/law#abbrev> <https://jgkg.norr-tech.com/def/law#amendmentEnforcementDate> <https://jgkg.norr-tech.com/def/law#amendmentLawNum> <https://jgkg.norr-tech.com/def/law#jurisdiction> <https://jgkg.norr-tech.com/def/law#lawId> <https://jgkg.norr-tech.com/def/law#lawNum> <https://jgkg.norr-tech.com/def/law#lawNumType> <https://jgkg.norr-tech.com/def/law#lawTitle> <https://jgkg.norr-tech.com/def/law#promulgationDate> <https://jgkg.norr-tech.com/def/law#repealStatus> <https://jgkg.norr-tech.com/def/law#revisionStatus> <https://jgkg.norr-tech.com/def/org#abolitionDate> <https://jgkg.norr-tech.com/def/org#cityName> <https://jgkg.norr-tech.com/def/org#houjinBangou> <https://jgkg.norr-tech.com/def/org#ministryCode> <https://jgkg.norr-tech.com/def/org#organizationKindCode> <https://jgkg.norr-tech.com/def/org#prefectureName> <https://jgkg.norr-tech.com/def/org#succeededBy> ) ;
     sh:property [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;
@@ -217,7 +348,7 @@
     rdfs:label "いくらで(金額)" ;
     rdfs:comment "「いくらで」の軸。予算科目・支出の上位" ;
     sh:closed true ;
-    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/budget#fiscalYear> <https://jgkg.norr-tech.com/def/budget#payeeLabel> <https://jgkg.norr-tech.com/def/budget#project> <https://jgkg.norr-tech.com/def/budget#recipient> <https://jgkg.norr-tech.com/def/budget#recipientMatchCategory> <https://jgkg.norr-tech.com/def/budget#role> ) ;
+    sh:ignoredProperties ( rdf:type <https://jgkg.norr-tech.com/def/budget#blockId> <https://jgkg.norr-tech.com/def/budget#fiscalYear> <https://jgkg.norr-tech.com/def/budget#flowNote> <https://jgkg.norr-tech.com/def/budget#fundedBy> <https://jgkg.norr-tech.com/def/budget#inBlock> <https://jgkg.norr-tech.com/def/budget#paidByGovernment> <https://jgkg.norr-tech.com/def/budget#payeeCount> <https://jgkg.norr-tech.com/def/budget#payeeLabel> <https://jgkg.norr-tech.com/def/budget#project> <https://jgkg.norr-tech.com/def/budget#recipient> <https://jgkg.norr-tech.com/def/budget#recipientMatchCategory> <https://jgkg.norr-tech.com/def/budget#role> ) ;
     sh:property [ sh:datatype rdf:langString ;
             sh:description "人間が読む名称"@ja ;
             sh:maxCount 1 ;

@@ -185,3 +185,89 @@ def test_unresolved_uri_helpers_reject_empty_parts():
         uris.unresolved_basis_law_uri("2025", "", "省")
     with pytest.raises(ValueError):
         uris.unresolved_recipient_uri("2025", "1", 0, "")
+
+
+# =============================================================================
+# 資金の流れ(裁定B97): 支出先ブロック・国自らが支出する間接経費
+# =============================================================================
+
+
+def test_expenditure_block_uri_is_keyed_by_the_rs_block_number_not_a_sequence():
+    """ブロックのURIがRSのブロック番号("A"/"B")そのものから決まること。
+
+    何があれば落ちるか: `expenditure_uri`と同じ連番方式にすると、5-2が
+    「支出元ブロック='B'」と書いている辺を張るために行順→連番の対応表が
+    必要になる。ここはブロック番号を直接URIに埋めることを固定する。
+    """
+    assert (
+        uris.expenditure_block_uri("2025", "6494", "A")
+        == f"{TEST_BASE}/id/budget/2025/6494/block/A"
+    )
+
+
+def test_expenditure_block_uri_distinguishes_blocks_within_the_same_project():
+    """児童手当等交付金の2つの段(A=市町村 / B=児童手当受給者)が別ノードになること。
+
+    同額(1,401,293,745,413円)が2ブロックに現れる実データなので、ここが
+    同じURIに潰れると「段を区別して合計する」ことが原理的にできなくなる。
+    """
+    a = uris.expenditure_block_uri("2025", "6494", "A")
+    b = uris.expenditure_block_uri("2025", "6494", "B")
+    assert a != b
+
+
+def test_expenditure_block_uri_is_keyed_by_project_and_fiscal_year_too():
+    """ブロック番号は事業ごとに振り直されるので、事業/年度が違えば別ノードになること
+    (budget.yaml の `blockId` docstring: 単独では一意でない)。
+    """
+    assert uris.expenditure_block_uri("2025", "6494", "A") != uris.expenditure_block_uri(
+        "2025", "1406", "A"
+    )
+    assert uris.expenditure_block_uri("2025", "6494", "A") != uris.expenditure_block_uri(
+        "2024", "6494", "A"
+    )
+
+
+def test_expenditure_block_uri_does_not_collide_with_an_expenditure_uri():
+    """支出(連番)とブロック(`/block/`配下)のURI空間が交わらないこと。
+
+    何があれば落ちるか: `/block/`を挟まずブロック番号を直付けする実装にすると、
+    ブロック番号が数字のRS更新が来た瞬間に支出の連番と衝突する。
+    """
+    block_uris = {uris.expenditure_block_uri("2025", "1", b) for b in ("A", "B", "0", "1")}
+    expenditure_uris = {uris.expenditure_uri("2025", "1", s) for s in range(4)}
+    assert not (block_uris & expenditure_uris)
+
+
+def test_indirect_cost_uri_is_keyed_by_the_item_name():
+    """間接経費のURIが項目名から決まり、同じ事業の別項目が別ノードになること
+    (実測: 2,432行すべてで(年度, 事業, 項目名)が一意)。
+    """
+    a = uris.indirect_cost_uri("2025", "1", "講師謝金")
+    b = uris.indirect_cost_uri("2025", "1", "委員等旅費")
+    assert a != b
+    assert a.startswith(f"{TEST_BASE}/id/budget/2025/1/indirect-cost/")
+
+
+def test_indirect_cost_uri_percent_encodes_the_item_name():
+    """項目名は日本語の自由記述なので、URIに生のまま入らないこと。
+
+    何があれば落ちるか: `quote(..., safe="")`を外すと、スラッシュを含む項目名
+    (「旅費/謝金」のような書き方)がパスを1段増やして別の事業のURI空間に
+    侵入し得る。
+    """
+    uri = uris.indirect_cost_uri("2025", "1", "旅費/謝金")
+    assert "旅費" not in uri
+    assert "/謝金" not in uri
+    assert uri.rsplit("/", 1)[0] == f"{TEST_BASE}/id/budget/2025/1/indirect-cost"
+
+
+def test_block_and_indirect_cost_uris_reject_empty_keys():
+    with pytest.raises(ValueError):
+        uris.expenditure_block_uri("2025", "1", "")
+    with pytest.raises(ValueError):
+        uris.indirect_cost_uri("2025", "1", "")
+    with pytest.raises(ValueError):
+        uris.expenditure_block_uri("", "1", "A")
+    with pytest.raises(ValueError):
+        uris.indirect_cost_uri("2025", "", "講師謝金")

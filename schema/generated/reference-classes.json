@@ -4,6 +4,14 @@
     "path": "https://jgkg.norr-tech.com/def/budget#basisLaw"
   },
   {
+    "expected_class": "https://jgkg.norr-tech.com/def/budget#ExpenditureBlock",
+    "path": "https://jgkg.norr-tech.com/def/budget#fundedBy"
+  },
+  {
+    "expected_class": "https://jgkg.norr-tech.com/def/budget#ExpenditureBlock",
+    "path": "https://jgkg.norr-tech.com/def/budget#inBlock"
+  },
+  {
     "expected_class": "https://jgkg.norr-tech.com/def/org#Organization",
     "path": "https://jgkg.norr-tech.com/def/budget#ministry"
   },

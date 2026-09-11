@@ -1,4 +1,5 @@
 """生成物の整合性テスト。設計書§10の必須項目。"""
+import re
 from pathlib import Path
 
 import pytest
@@ -591,30 +592,42 @@ def test_government_organ_shape_wording_names_every_literal_segment_the_code_acc
 # 裁定B78: 日本語の表示名(dcterms:title)の対象範囲
 # =============================================================================
 
-#: `/entity/{id}`・`/neighborhood/{id}`が実際に返す述語(`rdf:type`・
-#: `skos:prefLabel`を除く。`queries._TYPE_AND_LABEL_PREDICATES`が除外する2つと
-#: 同じ)。`src/jgkg/rdf/emit.py`が書くトリプルの述語を数え上げたもの
-#: (`grep -o 'ns\["[a-z]*"\]\["[a-zA-Z_]*"\]' src/jgkg/rdf/emit.py | sort -u`で
-#: 確認済み——クラス名(大文字始まり)を除いた残りがこの34件)。
-#: 手で列挙してはいるが、生成元はemit.pyの実際のトリプル出力であり、
-#: このテストが集合の両方向の一致(不足/余剰)を見ることで、対象の付け忘れ
-#: (再発欠陥3「部分適用」)と関係の無い箇所への付けすぎの両方を検出する。
-_EXPECTED_TITLED_PREDICATE_LOCAL_IRIS = frozenset({
-    # org.yaml(emit_organizations/emit_ministries/emit_abolished_ministries)
-    "org#houjinBangou", "org#organizationKindCode", "org#ministryCode",
-    "org#prefectureName", "org#succeededBy", "org#abolitionDate", "org#cityName",
-    # law.yaml(emit_laws)
-    "law#lawId", "law#lawNum", "law#lawNumType", "law#lawTitle", "law#abbrev",
-    "law#promulgationDate", "law#repealStatus", "law#jurisdiction",
-    "law#amendmentLawNum", "law#amendmentEnforcementDate", "law#revisionStatus",
-    # budget.yaml(emit_budget)
-    "budget#projectId", "budget#projectName", "budget#fiscalYear", "budget#ministry",
-    "budget#budgetAmount", "budget#basisLaw", "budget#project", "budget#recipient",
-    "budget#payeeLabel", "budget#role", "budget#recipientMatchCategory",
-    # core.yaml(UnresolvedReferenceの汎用スロット・MonetaryItemのamount_jpy)
-    "core#amount_jpy", "core#unresolved_text", "core#unresolved_reason",
-    "core#unresolved_key", "core#unresolvedFor",
-})
+#: **emit.pyが実際に書く述語から導出する(裁定B97で手書きをやめた)。**
+#:
+#: 以前はここに34件を手で並べ、docstringに「生成元はemit.pyの実際のトリプル
+#: 出力であり、`grep -o 'ns\["[a-z]*"\]\["[a-zA-Z_]*"\]' src/jgkg/rdf/emit.py`で
+#: 確認済み」と書いていた。**確認方法がコメントに書いてあるなら、それは
+#: コードにできる**(再発欠陥1「導出すべき値を手書きする」)。実際、オントロジーに
+#: 新しい述語を6つ足したとき、この一覧の更新を忘れてもテストは落ちなかった
+#: ——落ちたのは「余剰」側(titleを付けたのに期待集合に無い)であって、
+#: 「emitしているのにtitleが無い」側は手書き一覧が古いままなら検出できない。
+#:
+#: 導出は2段:
+#:   (1) emit.pyのソースから `ns["<module>"]["<name>"]` を全部拾う
+#:       (先頭大文字=クラス名は除く)
+#:   (2) **オントロジーが自分の名前空間で宣言しているプロパティだけに絞る**
+#:       —— `core:label`はLinkMLが`skos:prefLabel`へ写すため
+#:       `def/core#label`というIRIは存在せず、titleの対象にもならない
+#:
+#: (2)で落ちたものは「emitが書いているのにオントロジーが定義していない述語」
+#: であり、それ自体が欠陥の徴候なので、**落ちた集合が既知の1件だけである
+#: ことを検査する**(下の`test_...`内)。
+_EMIT_PY = Path("src/jgkg/rdf/emit.py")
+_NS_CALL_RE = re.compile(r'ns\["([a-z]+)"\]\["([A-Za-z_]+)"\]')
+
+#: `core:label`は LinkML が `skos:prefLabel` へ写すので、
+#: `def/core#label` というIRIは生成物に存在しない(実測)。
+#: **ここに項目が増えたら、それは「emitがオントロジー外の述語を書いている」
+#: という新しい事実であり、黙って通してはいけない。**
+_EMITTED_BUT_NOT_OWN_PROPERTY = frozenset({"core#label"})
+
+
+def _predicates_written_by_emit() -> set[str]:
+    """`emit.py` が書く述語のローカルIRI(`<module>#<name>`)。クラス名は除く。"""
+    src = _EMIT_PY.read_text(encoding="utf-8")
+    found = {f"{mod}#{name}" for mod, name in _NS_CALL_RE.findall(src)}
+    # 先頭大文字は rdf:type の目的語(クラス)なので述語ではない
+    return {x for x in found if not x.split("#", 1)[1][0].isupper()}
 
 
 def test_display_names_cover_exactly_the_api_visible_types_and_predicates():
@@ -663,7 +676,32 @@ def test_display_names_cover_exactly_the_api_visible_types_and_predicates():
     }
 
     base = "https://jgkg.norr-tech.com/def/"
-    expected_predicates = {base + local for local in _EXPECTED_TITLED_PREDICATE_LOCAL_IRIS}
+
+    # **emit.pyが書く述語を導出し、オントロジーが自分で宣言しているものだけに絞る。**
+    written = _predicates_written_by_emit()
+    assert len(written) >= 35, (
+        f"emit.pyから拾えた述語が少なすぎる({len(written)}件) —— "
+        "正規表現(_NS_CALL_RE)が壊れている疑い。手書き一覧をやめた代償として、"
+        "ここが黙って空になるとテスト全体が空虚になる"
+    )
+    own_properties = {
+        str(s)
+        for prop_type in (OWL.ObjectProperty, OWL.DatatypeProperty, OWL.AnnotationProperty)
+        for s in g.subjects(RDF.type, prop_type)
+        if str(s).startswith(base)
+    }
+    expected_predicates = {base + local for local in written if base + local in own_properties}
+    # **絞り込みで落ちたものは「emitが書いているのにオントロジーが定義していない
+    # 述語」であり、既知の1件(core:label → skos:prefLabel)以外は欠陥である。**
+    dropped = {local for local in written if base + local not in own_properties}
+    assert dropped == _EMITTED_BUT_NOT_OWN_PROPERTY, (
+        "emit.pyが書いている述語のうち、オントロジーが自分の名前空間で宣言して"
+        "いないものの集合が変わった。"
+        f" 増えた: {sorted(dropped - _EMITTED_BUT_NOT_OWN_PROPERTY)}"
+        f" 減った: {sorted(_EMITTED_BUT_NOT_OWN_PROPERTY - dropped)}"
+        " —— 増えた場合は(a)スキーマに足し忘れたか(b)生成物の再生成を"
+        "忘れたかのどちらか。減った場合はこの既知集合を更新すること"
+    )
 
     # _SEARCHABLE_TYPES(prefix:Name形式)が_TYPE_SPECIFICITY(ローカル名のみ)の
     # 部分集合であることを確認してから、後者だけを型の期待集合の入力に使う
@@ -774,7 +812,8 @@ def test_display_names_cover_exactly_the_api_visible_enum_permissible_values():
     g = _load(GENERATED / "all.owl.ttl")
 
     base = "https://jgkg.norr-tech.com/def/"
-    api_predicates = {URIRef(base + local) for local in _EXPECTED_TITLED_PREDICATE_LOCAL_IRIS}
+    # 手書き一覧をやめたので(裁定B97)、ここも同じ導出を使う
+    api_predicates = {URIRef(base + local) for local in _predicates_written_by_emit()}
 
     def _is_enum_value_shaped(iri) -> bool:
         # 裁定B66: 許容値IRIは単一の"#"の後に"/"を持つ(区切り文字を

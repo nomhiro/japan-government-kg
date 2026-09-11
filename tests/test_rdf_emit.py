@@ -905,3 +905,312 @@ def test_emit_budget_missing_recipient_match_category_fails_shacl():
     # provenanceグラフの合格1件で常にFalseになってしまう)
     failing = [r for r in results if not r.conforms]
     assert failing, "recipientMatchCategoryを除いたのにSHACLが検出しなかった"
+
+
+# =============================================================================
+# emit_budget: 資金の流れ(支出先ブロック・国自らが支出する間接経費。裁定B97)
+#
+# 実データ由来の実例(R45): 6494 児童手当等交付金(同額が2ブロック)/
+# 1406 独立行政法人国際協力機構有償資金協力部門への出資(出どころ3つ・
+# 借入金ブロックは国の支出ではない)
+# =============================================================================
+
+JIDOU_TEATE_AMOUNT = 1401293745413
+
+
+def _block(**overrides) -> rs.ExpenditureBlockRecord:
+    defaults = {
+        "project_id": "6494", "fiscal_year": "2025", "block_id": "A",
+        "block_name": "市町村", "role": "児童手当の支給事務",
+        "amount": JIDOU_TEATE_AMOUNT, "payee_count": 1741,
+        "paid_by_government": True, "funded_by": (), "flow_notes": (),
+    }
+    defaults.update(overrides)
+    return rs.ExpenditureBlockRecord(**defaults)
+
+
+def _indirect_cost(**overrides) -> rs.IndirectCostRecord:
+    defaults = {
+        "project_id": "1", "fiscal_year": "2025", "item": "講師謝金", "amount": 1034000,
+    }
+    defaults.update(overrides)
+    return rs.IndirectCostRecord(**defaults)
+
+
+def test_emit_budget_writes_the_expenditure_block_with_all_its_fields():
+    """ブロックの型・ラベル・blockId・事業・年度・役割・支出先の数・金額が出ること。
+
+    何があれば落ちるか: どのトリプル1本を落としてもここで落ちる。ラベルは
+    `core:label`(実際の述語はskos:prefLabel)であり、`budget:blockName`の
+    ような独自述語を書くと閉じたシェイプに存在せずSHACLが落とす。
+    """
+    ds = emit.emit_budget([], [], [], "rs-system", DAY, blocks=[_block()])
+
+    s = URIRef(uris.expenditure_block_uri("2025", "6494", "A"))
+    budget = emit.NS["budget"]
+    core = emit.NS["core"]
+    assert (s, RDF.type, budget["ExpenditureBlock"]) in ds
+    assert (s, SKOS.prefLabel, Literal("市町村", lang="ja")) in ds
+    assert (s, budget["blockId"], Literal("A")) in ds
+    assert (s, budget["project"], URIRef(uris.budget_uri("2025", "6494"))) in ds
+    assert (s, budget["fiscalYear"], Literal(2025)) in ds
+    assert (s, budget["role"], Literal("児童手当の支給事務")) in ds
+    assert (s, budget["payeeCount"], Literal(1741)) in ds
+    assert (s, core["amount_jpy"], Literal(JIDOU_TEATE_AMOUNT)) in ds
+
+
+def test_emit_budget_writes_paid_by_government_even_when_it_is_false():
+    """`paidByGovernment`は**偽のときも必ず出る**こと。
+
+    「国が払っていない」は欠損ではなく情報である(借入金・回収金のブロックが
+    まさにそれ)。何があれば落ちるか: `if block.paid_by_government:` のような
+    真偽値チェックで省略する実装だと、偽のブロックがトリプルを持たず
+    「調べていない」と区別できなくなる。
+    """
+    budget = emit.NS["budget"]
+    ds = emit.emit_budget(
+        [], [], [], "rs-system", DAY,
+        blocks=[
+            _block(block_id="A", paid_by_government=True),
+            _block(
+                project_id="1406", block_id="B", block_name="財政融資資金借入金",
+                role="財政融資資金借入金", amount=1033400000000, payee_count=1,
+                paid_by_government=False,
+            ),
+        ],
+    )
+    entry = URIRef(uris.expenditure_block_uri("2025", "6494", "A"))
+    loan = URIRef(uris.expenditure_block_uri("2025", "1406", "B"))
+    assert list(ds.objects(entry, budget["paidByGovernment"])) == [Literal(True)]
+    assert list(ds.objects(loan, budget["paidByGovernment"])) == [Literal(False)]
+
+
+def test_emit_budget_funded_by_points_at_other_blocks_of_the_same_project():
+    """`fundedBy`が**同じ事業内の別ブロックのURI**を指し、複数値になること。
+
+    JICA型(project_id=1406)のブロックDは A一般会計出資金 / B財政融資資金借入金 /
+    C回収金等 の3つから流入する。
+
+    何があれば落ちるか: 張り先を文字列リテラルにする実装(sh:nodeKind sh:IRI
+    違反)、別の事業のURIを作る実装(project_idを取り違える)、単値にする実装
+    のいずれでも落ちる。
+    """
+    block_d = _block(
+        project_id="1406", block_id="D", block_name="独立行政法人国際協力機構",
+        role="有償資金協力業務の実施", amount=1826971152858, payee_count=1,
+        paid_by_government=False, funded_by=("A", "B", "C"),
+    )
+    ds = emit.emit_budget([], [], [], "rs-system", DAY, blocks=[block_d])
+
+    s = URIRef(uris.expenditure_block_uri("2025", "1406", "D"))
+    sources = set(ds.objects(s, emit.NS["budget"]["fundedBy"]))
+    assert sources == {
+        URIRef(uris.expenditure_block_uri("2025", "1406", b)) for b in ("A", "B", "C")
+    }
+    # 別の事業のブロックURIを指していないこと(鍵の取り違えの検出)
+    assert URIRef(uris.expenditure_block_uri("2025", "6494", "A")) not in sources
+
+
+def test_emit_budget_writes_every_flow_note():
+    """`flowNote`が複数値でverbatim(langタグ無し)に出ること。
+
+    何があれば落ちるか: `role`と同じ扱いにせずLangStringにする実装
+    (Literal(..., lang='ja'))だと、SHACLのsh:datatype xsd:stringに違反する。
+    1つだけ書く実装でも落ちる。
+    """
+    block = _block(
+        project_id="1409", block_id="B", block_name="信用保証協会", role="",
+        amount=None, payee_count=None, paid_by_government=False, funded_by=("A",),
+        flow_notes=("保険金支払", "代位弁済"),
+    )
+    ds = emit.emit_budget([], [], [], "rs-system", DAY, blocks=[block])
+
+    s = URIRef(uris.expenditure_block_uri("2025", "1409", "B"))
+    notes = set(ds.objects(s, emit.NS["budget"]["flowNote"]))
+    assert notes == {Literal("保険金支払"), Literal("代位弁済")}
+
+
+def test_emit_budget_omits_the_block_amount_and_payee_count_when_missing():
+    """5-2にしか現れないブロック(金額・支出先の数がNone)は、その2本を書かないこと。
+
+    何があれば落ちるか: `Literal(None)` を書く実装だと、KGに"None"という
+    文字列リテラルが実在してしまう(裁定B12のministry_codeと同じ「欠落の
+    表現として最悪の形」)。ブロック自体は落とさないことも同時に見る。
+    """
+    block = _block(
+        project_id="1409", block_id="C", block_name="金融機関", role="",
+        amount=None, payee_count=None, paid_by_government=False, funded_by=("B",),
+    )
+    ds = emit.emit_budget([], [], [], "rs-system", DAY, blocks=[block])
+
+    s = URIRef(uris.expenditure_block_uri("2025", "1409", "C"))
+    budget = emit.NS["budget"]
+    assert (s, RDF.type, budget["ExpenditureBlock"]) in ds
+    assert list(ds.objects(s, emit.NS["core"]["amount_jpy"])) == []
+    assert list(ds.objects(s, budget["payeeCount"])) == []
+    assert list(ds.objects(s, budget["role"])) == []
+    assert (s, SKOS.prefLabel, Literal("金融機関", lang="ja")) in ds
+
+
+def test_emit_budget_writes_a_zero_block_amount_instead_of_treating_it_as_absent():
+    """ブロックの合計支出額0は有効な値であり、Noneと同じ扱いで省略しないこと。
+
+    何があれば落ちるか: `if block.amount:` のような真偽値チェックだと0が消える
+    (budgetAmountに同じテストがある。同じ判定形をブロックにも揃える)。
+    """
+    ds = emit.emit_budget([], [], [], "rs-system", DAY, blocks=[_block(amount=0, payee_count=0)])
+    s = URIRef(uris.expenditure_block_uri("2025", "6494", "A"))
+    assert (s, emit.NS["core"]["amount_jpy"], Literal(0)) in ds
+    assert (s, emit.NS["budget"]["payeeCount"], Literal(0)) in ds
+
+
+def test_emit_budget_writes_the_indirect_cost_with_its_amount_and_label():
+    """国自らが支出する間接経費が型・ラベル・金額・事業・年度を持って出ること。
+
+    **この金額は5-1(支出先_支出情報)に現れない**ので、ExpenditureとBlockだけ
+    では取りこぼす(実測2,432件・32,896,230,966円)。何があれば落ちるか:
+    このループ自体が無い実装、または項目名をラベルに載せない実装。
+    """
+    ds = emit.emit_budget([], [], [], "rs-system", DAY, indirect_costs=[_indirect_cost()])
+
+    s = URIRef(uris.indirect_cost_uri("2025", "1", "講師謝金"))
+    budget = emit.NS["budget"]
+    assert (s, RDF.type, budget["IndirectCost"]) in ds
+    assert (s, SKOS.prefLabel, Literal("講師謝金", lang="ja")) in ds
+    assert (s, emit.NS["core"]["amount_jpy"], Literal(1034000)) in ds
+    assert (s, budget["project"], URIRef(uris.budget_uri("2025", "1"))) in ds
+    assert (s, budget["fiscalYear"], Literal(2025)) in ds
+
+
+def test_emit_budget_writes_in_block_on_the_expenditure():
+    """支出が`budget:inBlock`で自分の段を指すこと。
+
+    **これが無いと支出を段の区別なく合計してしまう**(裁定B96で29.9兆円の
+    重複として実測した誤りそのもの)。何があれば落ちるか: このトリプルを
+    書かない実装、または張り先のブロックURIの鍵を取り違える実装。
+    """
+    exp = _expenditure(project_id="6494", seq=0, block_id="A")
+    ds = emit.emit_budget([], [exp], [], "rs-system", DAY, blocks=[_block()])
+
+    s = URIRef(uris.expenditure_uri("2025", "6494", 0))
+    block = URIRef(uris.expenditure_block_uri("2025", "6494", "A"))
+    assert (s, emit.NS["budget"]["inBlock"], block) in ds
+    assert (block, RDF.type, emit.NS["budget"]["ExpenditureBlock"]) in ds
+
+
+def test_emit_budget_omits_in_block_when_the_expenditure_has_no_block():
+    """`block_id`がNone(5-2を渡していないリリース等)なら`inBlock`を書かないこと。
+
+    何があれば落ちるか: Noneをそのままquoteする実装だと
+    `.../block/None` という実在しないURIが出て、参照整合ゲート(裁定B4。
+    `budget:inBlock`はreference-classes.jsonに載る)がリリース全体を止める。
+    """
+    ds = emit.emit_budget([], [_expenditure()], [], "rs-system", DAY)
+    s = URIRef(uris.expenditure_uri("2025", "1", 0))
+    assert list(ds.objects(s, emit.NS["budget"]["inBlock"])) == []
+
+
+def _graph_ids(ds: Dataset, pattern) -> set[URIRef]:
+    """`pattern`に一致するクアッドが、どの名前付きグラフに入っているかを返す。
+
+    rdflibのバージョンによって`Dataset.quads`の4要素目が`Graph`でも`URIRef`でも
+    受けられるようにする(`ds.graphs()`は`Graph`を返すのに対し、`quads`は
+    実装依存。既存のテストが`g.identifier`前提で書かれていたため明示する)。
+    """
+    return {
+        getattr(g, "identifier", g) for _s, _p, _o, g in ds.quads(pattern)
+    }
+
+
+def test_emit_budget_puts_blocks_and_indirect_costs_in_the_same_named_graph():
+    """ブロック・間接経費が支出と**同じ名前付きグラフ**に入ること。
+
+    同じ一次資料の同じ取得日から作る事実であり、置換の単位も同じ。
+    何があれば落ちるか: 別グラフに入れる実装だと、`fundedBy`/`inBlock`が
+    グラフを跨ぎ、rs-systemグラフだけを差し替えたときに片方が取り残される。
+    """
+    expected = URIRef(uris.graph_uri("rs-system", DAY))
+    ds = emit.emit_budget(
+        [_project(project_id="6494")], [_expenditure(project_id="6494", block_id="A")], [],
+        "rs-system", DAY, blocks=[_block()], indirect_costs=[_indirect_cost(project_id="6494")],
+    )
+    budget = emit.NS["budget"]
+    subjects = {
+        URIRef(uris.expenditure_block_uri("2025", "6494", "A")),
+        URIRef(uris.indirect_cost_uri("2025", "6494", "講師謝金")),
+        URIRef(uris.expenditure_uri("2025", "6494", 0)),
+    }
+    for s in subjects:
+        graphs = _graph_ids(ds, (s, RDF.type, None, None))
+        assert graphs == {expected}, (s, graphs)
+    # inBlockの辺も同じグラフにあること
+    assert _graph_ids(
+        ds, (URIRef(uris.expenditure_uri("2025", "6494", 0)), budget["inBlock"], None, None)
+    ) == {expected}
+
+
+def test_emit_budget_with_the_money_flow_conforms_to_shacl():
+    """ブロック・間接経費・inBlock・fundedBy を含むデータセットがSHACLを通ること。
+
+    何があれば落ちるか: 閉じたシェイプに無い述語を書いた、langタグの有無を
+    間違えた、必須(blockId/project/fiscalYear)を落とした、のいずれでも
+    不合格になる。**上の個別テストが述語名だけを見ているのに対し、ここは
+    スキーマ側の制約(datatype/maxCount/closed)を実際のpyshaclで通す。**
+    """
+    from jgkg import validate
+
+    projects = [_project(project_id="1406", project_name="独立行政法人国際協力機構有償資金協力部門への出資")]
+    blocks = [
+        _block(
+            project_id="1406", block_id="A", block_name="一般会計出資金",
+            role="一般会計出資金", amount=81330000000, payee_count=1,
+            paid_by_government=True,
+        ),
+        _block(
+            project_id="1406", block_id="B", block_name="財政融資資金借入金",
+            role="財政融資資金借入金", amount=1033400000000, payee_count=1,
+            paid_by_government=False,
+        ),
+        _block(
+            project_id="1406", block_id="D", block_name="独立行政法人国際協力機構",
+            role="有償資金協力業務の実施", amount=1826971152858, payee_count=1,
+            paid_by_government=False, funded_by=("A", "B"),
+            flow_notes=("再委託",),
+        ),
+    ]
+    expenditures = [
+        _expenditure(
+            project_id="1406", seq=0, recipient_houjin_bangou=None, is_bundled=True,
+            label="一般会計出資金", amount=81330000000,
+            recipient_match_category="bundled", block_id="A",
+        )
+    ]
+    indirect_costs = [_indirect_cost(project_id="1406", item="事務費", amount=12345)]
+    ds = emit.emit_budget(
+        projects, expenditures, [], "rs-system", DAY, sha256="deadbeef",
+        blocks=blocks, indirect_costs=indirect_costs,
+    )
+
+    results = validate.validate_dataset(ds, Path("schema/generated"))
+    failing = [r for r in results if not r.conforms]
+    assert not failing, f"SHACL違反: {[r.report_text for r in failing]}"
+
+
+def test_emit_budget_a_dangling_in_block_is_caught_by_the_reference_integrity_gate():
+    """壊し確認: 存在しないブロックを指す`inBlock`が参照整合ゲートに拾われること。
+
+    `build_projects`が`block_id`を「同じ事業のblocksに実在するものだけ」に
+    絞っている理由そのもの(裁定B4)。この絞り込みを外した実装を再現するため、
+    ブロックを渡さずに`block_id`付きの支出をemitする。
+
+    何があれば落ちるか: `budget:inBlock`がreference-classes.jsonから外れた
+    (=グラフを跨ぐ参照の検査対象から抜けた)場合、違反が0件になってここが落ちる。
+    """
+    from jgkg import validate
+
+    exp = _expenditure(project_id="6494", seq=0, block_id="A")
+    ds = emit.emit_budget([_project(project_id="6494")], [exp], [], "rs-system", DAY)
+
+    violations = validate.check_reference_integrity(ds, Path("schema/generated"))
+    paths = {str(v.path) for v in violations}
+    assert "https://jgkg.norr-tech.com/def/budget#inBlock" in paths, violations
