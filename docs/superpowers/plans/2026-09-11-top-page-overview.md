@@ -780,6 +780,128 @@ git commit -m "feat(api): GET /overview を足し、第1層の数字をCQの答�
 
 ---
 
+## Task 2b: CQ19(素朴な合計と入口だけの合計)を足し、`/overview`に載せる
+
+**なぜこのタスクがあるか(裁定B103の追記)**: モックの第4節は`spending`17項目と
+`sumProblem`5項目を読んでいたが、CQ12が返すのは3つだけだった。
+**第4節の中心の主張「予算123.1兆に対し支出の記録を全部足すと156.8兆。
+合いません」にはCQ1本で足りる**ので、それだけを足す。
+残り(推論に基づく所見)は画面に出さない —— 理由は裁定B103の追記にある。
+
+**Files:**
+- Create: `queries/cq/cq19-naive-sum-vs-entry-only.rq`
+- Modify: `schema/competency-questions.md`
+- Modify: `tests/test_competency_questions_phase1.py`
+- Modify: `src/jgkg/api/overview.py`(`OVERVIEW_QUERIES`に1行・パーサ1本)
+- Modify: `src/jgkg/api/models.py`(`NaiveSumVsEntryOnly` + `OverviewResponse`に1項目)
+- Modify: `tests/test_api_overview.py`
+
+**Interfaces:**
+- Consumes: Task 2の`OVERVIEW_QUERIES`・`build_overview`・モデルの作法
+- Produces: 列名 `?y ?naiveSum ?entryOnly ?blockCount`、
+  `OverviewResponse.naive_sum_vs_entry_only: list[NaiveSumVsEntryOnly]`
+
+- [ ] **Step 1: CQ19 を書く**
+
+`queries/cq/cq19-naive-sum-vs-entry-only.rq`。**controllerが実測して
+モックの値を完全再現したクエリである。そのまま使うこと:**
+
+```sparql
+# CQ19: 支出の記録を素朴に全部足すといくらで、国が自ら支出した分だけだと
+# いくらか。年度ごとに(裁定B103の追記)
+#
+# **この2つの差が、この製品がいちばん説明しなければならないものである。**
+# 予算(当初123.1兆)に対し、素朴な合計は156.8兆になる——差の33兆は
+# 予算の不足ではなく**二重計上**である。RSの支出先ブロックは
+# 「国→市町村→受給者」のような資金の流れを段ごとに記録するので、
+# 全段を足すと同じお金を何度も数える(裁定B97)。
+#
+# `budget:paidByGovernment`が真のブロック=**入口**(国自身が支出した段)。
+# それだけを足したものが`entryOnly`である。
+# **国が自ら支払った額(CQ12)は`entryOnly` + 間接経費**であり、
+# このクエリの`entryOnly`とは別の値になる(CQ12のヘッダ参照)。
+#
+# 実測(2026-09-11。本番と同じ索引1,438,620トリプル・1.390秒):
+#   2025年度: naiveSum=156,775,926,742,671 / entryOnly=126,878,845,988,981
+#             blockCount=19,125
+# **この3つはモック用にCSVを全走査して出した値と一致する**
+# (`docs/mockups/mock-data.js`の`overview.sumProblem.allBlocks`・
+#  `overview.spending.naiveSum`/`entryTrue`)。
+# blockCountはパイプラインの`budget_block_amount_checked`とも一致する。
+#
+# **`amount_jpy`は`core:`名前空間である**(`budget:`ではない)。
+PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
+PREFIX core: <https://jgkg.norr-tech.com/def/core#>
+SELECT ?y
+       (SUM(?all) AS ?naiveSum)
+       (SUM(IF(?entry, ?all, 0)) AS ?entryOnly)
+       (COUNT(?b) AS ?blockCount)
+WHERE {
+  ?b a budget:ExpenditureBlock ;
+     budget:fiscalYear ?y ;
+     core:amount_jpy ?all ;
+     budget:paidByGovernment ?entry .
+}
+GROUP BY ?y
+ORDER BY ?y
+```
+
+- [ ] **Step 2: fixtureに対して実測する(手で書かない)**
+
+Task 1のStep 5と同じ形で測る(`JGKG_LAKE_DIR`を設定すること)。
+出力をテストと`competency-questions.md`の期待値に使う。
+
+- [ ] **Step 3: テストを書き、わざと壊して確認する**
+
+**`SUM(IF(?entry, ?all, 0))`が効いていることを固定する。**
+`entryOnly < naiveSum` を見るだけでは弱い(fixtureのブロックが
+たまたまそうなっているだけかもしれない)。
+**入口フラグが真のブロックの金額合計と一致すること**を、
+別の経路(`budget_result`か、fixtureの`ExpenditureBlockLine`の定義)から
+導いて突き合わせること。
+
+壊し確認: `IF(?entry, ?all, 0)` を `?all` にすると
+`naiveSum == entryOnly` になって落ちる、を示す。
+
+- [ ] **Step 4: `schema/competency-questions.md` に CQ19 を足す**
+
+「答えの例」テーブルにも1行。**CQ12との違い**(CQ12=入口+間接経費)を明記する。
+
+- [ ] **Step 5: `/overview` に載せる**
+
+`models.py`に足す:
+
+```python
+class NaiveSumVsEntryOnly(_Envelope):
+    """CQ19の1行。**この2つの差が二重計上である**(裁定B97)。
+
+    `entry_only`は`budget:paidByGovernment`が真のブロックだけの合計。
+    **CQ12の「国が自ら支払った額」は`entry_only` + 間接経費**なので、
+    この値とは一致しない——表示側で混同しないこと。
+    """
+
+    fiscal_year: int
+    naive_sum: int
+    entry_only: int
+    block_count: int
+```
+
+`OVERVIEW_QUERIES`に `"naive_sum_vs_entry_only": "cq19-naive-sum-vs-entry-only.rq"`、
+`OverviewResponse`に項目、パーサ1本。**手書きのSPARQLは書かない**(Task 2と同じ規律。
+spyテストが落ちる)。
+
+- [ ] **Step 6: 型を再生成し、ゲートを回して commit**
+
+```bash
+bash scripts/generate-frontend-types.sh
+uv run ruff check src tests scripts
+uv run pytest -q
+```
+
+`frontend/openapi.json`と`openapi-types.ts`も一緒にコミットする。
+
+---
+
 ## Task 3: 第1層の骨格と「規模」「府省ごとの予算額」「5年分の予算と執行」
 
 **Files:**
@@ -881,13 +1003,33 @@ CQ16は年度をずらさずに返す(Task 1参照)。**表示側で
 **この対応付けをテストで固定する**——ずれを間違えると
 「要求より多く付いた」ように見える。
 
-- [ ] **Step 2: 「国が自ら支払った額」を出す**
+- [ ] **Step 2: 「国が自ら支払った額」を出す(出す数字を絞る。裁定B103の追記)**
 
-CQ12の値(実データで126,911,742,219,947円)。
-**この数字は下限であり、両方向に誤差がある**ことを画面に書く
-(`queries/cq/cq12-government-paid-total.rq`のヘッダに理由がある。
-32事業がフラグ無しで下振れ、9事業の混在ブロックで上振れ、
-上限は63,863,635,000円=0.050%)。**「正確な総額」と書いてはいけない。**
+出すのは**3つだけ**:
+
+1. **CQ19の`naiveSum`**(素朴に全部足すと156.8兆)
+2. **CQ19の`entryOnly`**(入口だけだと126.9兆)
+3. **CQ12の`governmentPaid`**(= 入口 + 間接経費。126,911,742,219,947円)
+
+**この3つの並びが第4節の主張である** ——
+「予算123.1兆(CQ14の当初予算)に対し、支出の記録を全部足すと156.8兆。
+差は予算の不足ではなく二重計上である。」
+
+**書かなければならない限界**(`cq12-*.rq`のヘッダに理由がある):
+この数字は**下限であり、両方向に誤差がある**。32事業がフラグ無しで下振れ、
+9事業の混在ブロックで上振れ、上限は63,863,635,000円(0.050%)。
+**「正確な総額」と書いてはいけない。**
+
+**出さないもの**: `inferredTotal`・`depths`・`mismatchExample`等の
+推論に基づく所見(裁定B103の追記に一覧と理由)。
+**代わりに節の末尾から`docs/decision-log.md`の裁定B97へ辿れるようにする。**
+
+- [ ] **Step 2b: 段を通る資金の例を1件出す(CQ13。新しいCQは要らない)**
+
+CQ13は「同じ金額が複数の段に記録されている事業」を20件返す。
+**その1件目を描く。** モックの`flowDiagram`/`dupExample`は
+まさにこの形のデータである(`docs/mockups/top-page.html`の該当節を読む)。
+**事業を手で選ばない** ——CQ13が返す順の1件目を使う。
 
 - [ ] **Step 3: 「支払先はどこまで特定できているか」を出す**
 
