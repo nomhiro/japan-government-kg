@@ -10,10 +10,16 @@
 #
 # **controllerは一度この列を「集計行すべてで空」と誤記録した**(裁定B99の訂正)。
 # 実際は23,036件すべて非空で、`'45013000.0'`のような小数表記だった。
+#
+# **`?a a budget:AnnualBudget`で型を束縛する**(修正ラウンド1。CQ14と同じ形)。
+# CQ14自身のテストが警告した壊れ方(`initialBudget`/`nextYearRequest`を
+# 別のクラスの述語に統合すると`SUM`が粒度をまたいで二重に数える。5,794件 対
+# 23,036件)への保険をCQ16にも及ぼす。
 PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
 SELECT ?y (SUM(?req) AS ?requested) (SUM(?init) AS ?initial) (COUNT(?a) AS ?recordCount)
 WHERE {
-  ?a budget:budgetFiscalYear ?y ;
+  ?a a budget:AnnualBudget ;
+     budget:budgetFiscalYear ?y ;
      budget:nextYearRequest ?req ;
      budget:initialBudget ?init .
 }

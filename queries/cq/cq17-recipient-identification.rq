@@ -5,8 +5,28 @@
 # いう嘘の答えが画面に出る。
 #
 # 区分の意味は`schema/budget.yaml`の`RecipientMatchCategory`を参照。
-# **表示名は列挙値に付いた`dcterms:title @ja`から取る**(裁定B88)ので、
-# ここでは区分のIRIをそのまま返す——表示名の解決は呼び出し側の仕事。
+#
+# **`?category`はIRIではなく、型なしの文字列リテラルである**
+# (`resolved`等。`src/jgkg/rdf/emit.py`の`Literal(exp.recipient_match_category)`
+# が書く。修正ラウンド1で判明——「区分のIRIをそのまま返す」という以前の
+# この節の記述は誤りだった)。
+#
+# **表示名はSPARQLでは辿れない。** 列挙値の`dcterms:title @ja`
+# (例: `resolved`→「法人番号で特定できた」。裁定B88)は
+# `schema/generated/all.owl.ttl`には確かに乗っているが、**このTTLは
+# トリプルストアに入っていない**——名前付きグラフはソース別のデータグラフ
+# だけ(`src/jgkg/uris.py`の`graph_uri`)で、`schema/generated`のコピー先は
+# APIイメージの`/chat`ツール用(`docker/api.Dockerfile`)である。
+# `?category dcterms:title ?label`のようにSPARQL側で解決しようとすると
+# **0件**になる(この節が以前警告した「間違えても0件・エラーにならない」
+# と同じ壊れ方を、今度はこの節自身のコメントが誘発していた)。
+#
+# **実際の表示名解決経路はビルド時のJSON書き出しである**
+# (`src/jgkg/frontend_labels.py`の`enumValues`。裁定B82(4b))。
+# フロントエンドは`frontend/src/generated/labels.json`の
+# `enumValues.recipientMatchCategory["resolved"]`を`frontend/src/labels.ts`の
+# `enumValueLabel()`で引く——クエリではない。呼び出し側はこの値(裸の
+# 区分名)をキーにして、その経路で表示名を引く。
 PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
 PREFIX core: <https://jgkg.norr-tech.com/def/core#>
 SELECT ?category (SUM(?amount) AS ?totalAmount) (COUNT(?e) AS ?expenditureCount)

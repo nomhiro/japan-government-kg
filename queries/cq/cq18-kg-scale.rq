@@ -6,7 +6,6 @@
 #
 # **`?type`を絞らない。** 「6軸のうちどれ」のような絞りを入れると、
 # 型が増えたときに黙って落ちる。全部返して、表示側が並べ方を決める。
-PREFIX core: <https://jgkg.norr-tech.com/def/core#>
 SELECT ?type (COUNT(?s) AS ?instanceCount)
 WHERE {
   ?s a ?type .

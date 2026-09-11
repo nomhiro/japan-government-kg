@@ -803,39 +803,75 @@ def test_cq16_returns_request_and_initial_side_by_side(kg):
     )
 
 
-def test_cq17_sums_amounts_from_the_core_namespace(kg):
+def test_cq17_sums_amounts_from_the_core_namespace(kg, budget_result):
     """照合区分ごとの金額が返ること。**`core:amount_jpy`を読んでいる**こと。
 
     何があれば落ちるか: `budget:amount_jpy`(存在しない)に書き換えると
     **エラーにならず0件**になる。そのとき「支払先の特定は0件」という
-    嘘が画面に出る——だから件数が非0であることを固定する。
+    嘘が画面に出る——だから金額の合計が非0であることを固定する。
 
-    **修正ラウンド(task-1-report.md参照)**: ブリーフ原案は
-    `count == 4`(「fixtureの支出は4件のはず」)だったが、これは
-    `PROJECT_CORE`単体の4件だけを見た誤った仮定だった。CQ17はプロジェクトを
-    絞らない全件クエリなので、fixture全体の支出(10件。CQ18の
-    `Expenditure`カウントと一致)が答えになる——Step 5の実測で判明。
+    **修正ラウンド1(task-1-review.md指摘1・3)**: 以前は件数の期待値を
+    手書きの定数にしていた(ブリーフ原案の`count == 4`→実測に合わせた
+    `count == 10`)。これは「導出できる値を手書きする」という同じ罠を
+    別の数字で再演していただけで、fixtureに支出を1件足せばクエリが
+    正しくても落ちる。`test_cq6_totals_match_task7_build_stats`(このファイル
+    L334の前例)に倣い、`budget_result.stats`(本番の`BuildStats`)から
+    期待値を導く。あわせて区分の**名前**そのもの(件数だけでなく)を
+    突き合わせる——4区分返れば中身が何でも緑になる、という弱いアサートを閉じる。
+
+    このテストはCQ6(事業ごと)の「KG全体」版でもある。CQ6が一致していても
+    CQ17が一致しない状態(例: `core:amount_jpy`を持たない支出が1件でもある)
+    は、「支払先はどこまで特定できているか」というデータ品質パネル自身が
+    自分の欠損を隠していることを意味する。
     """
     rows = _query(kg, "cq17-recipient-identification.rq")
     assert rows, "CQ17に答えられない(述語の名前空間を間違えている疑い)"
     total = sum(int(r[1]) for r in rows)
-    count = sum(int(r[2]) for r in rows)
     assert total > 0, f"金額の合計が0(core:amount_jpyを読めていない): {rows}"
-    assert count == 10, f"fixture全体の支出は10件のはず(CQ18のExpenditure数と一致): {count}"
-    categories = {str(r[0]).rsplit("/", 1)[-1].rsplit("#", 1)[-1] for r in rows}
-    assert len(categories) == 4, f"4区分すべてが出るはず(CQ6と同じ内訳): {categories}"
+
+    counts = {str(r[0]).rsplit("/", 1)[-1].rsplit("#", 1)[-1]: int(r[2]) for r in rows}
+    stats = budget_result.stats
+    resolved_total = stats.recipients_resolved_by_houjin_bangou + stats.recipients_resolved_by_name
+    assert counts == {
+        "resolved": resolved_total,
+        "unresolved": stats.recipients_unresolved,
+        "bundled": stats.expenditures_bundled,
+        "sentinel_or_nonexistent_houjin_bangou": (
+            stats.recipients_sentinel + stats.recipients_nonexistent_houjin_bangou
+        ),
+    }, (counts, stats)
 
 
 def test_cq18_counts_instances_across_named_graphs(kg):
-    """型ごとの件数が、**名前付きグラフをまたいで**数えられること。
+    """型ごとの件数が、**名前付きグラフをまたいで、二重に数えずに**返ること。
 
     何があれば落ちるか: `GRAPH ?g { ... }` を付けると rdflib の
     `default_union=True` では二重に数える形になりうる。逆に
     データを既定グラフだけに探しに行く形にすると0件になる。
-    ここでは「主要な型が全部出る」ことで、どちらの壊れ方も捕まえる。
+
+    **修正ラウンド1(task-1-review.md指摘3)**: 以前は`counts.get(expected, 0) > 0`
+    だけを見ていたため、前者(二重計上)を検出できなかった——名前付きグラフの
+    データが残っている限り主要な型はどれも非0のままなので、
+    `GRAPH ?g { ?s a ?type }` を付けても緑になってしまう。CQ18は
+    「このKGには何が何件入っているか」という**件数そのものが答え**のCQなので、
+    Step 5の実測値(`schema/competency-questions.md`「答えの例」と同じ値)を
+    そのまま固定する——`Expenditure`の10件はCQ17テストが`budget_result.stats`
+    から導く支出の内訳合計とも一致する。
     """
     rows = _query(kg, "cq18-kg-scale.rq")
     assert rows, "CQ18に答えられない"
     counts = {str(r[0]).rsplit("#", 1)[-1]: int(r[1]) for r in rows}
-    for expected in ("BudgetProject", "Expenditure", "Law", "Ministry", "AnnualBudget"):
-        assert counts.get(expected, 0) > 0, f"{expected} が0件: {counts}"
+    assert counts == {
+        "GovernmentOrgan": 40,
+        "Ministry": 40,
+        "Expenditure": 10,
+        "BudgetProject": 5,
+        "Law": 4,
+        "UnresolvedReference": 3,
+        "LawRevision": 3,
+        "ExpenditureBlock": 3,
+        "AnnualBudget": 2,
+        "Organization": 1,
+        "AbolishedGovernmentOrgan": 1,
+        "IndirectCost": 1,
+    }, counts
