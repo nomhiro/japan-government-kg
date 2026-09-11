@@ -541,6 +541,36 @@
         "title": "MoneyThroughStage",
         "type": "object"
       },
+      "NaiveSumVsEntryOnly": {
+        "additionalProperties": false,
+        "description": "CQ19の1行。**この2つの差が二重計上である**(裁定B97)。\n\n`entry_only`は`budget:paidByGovernment`が真のブロックだけの合計。\n**CQ12の「国が自ら支払った額」は`entry_only` + 間接経費**なので、\nこの値とは一致しない——表示側で混同しないこと。",
+        "properties": {
+          "block_count": {
+            "title": "Block Count",
+            "type": "integer"
+          },
+          "entry_only": {
+            "title": "Entry Only",
+            "type": "integer"
+          },
+          "fiscal_year": {
+            "title": "Fiscal Year",
+            "type": "integer"
+          },
+          "naive_sum": {
+            "title": "Naive Sum",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fiscal_year",
+          "naive_sum",
+          "entry_only",
+          "block_count"
+        ],
+        "title": "NaiveSumVsEntryOnly",
+        "type": "object"
+      },
       "NeighborhoodResponse": {
         "additionalProperties": false,
         "description": "近傍サブグラフ(仕様§9.1「指定ノードから深さ1-2のノード/エッジ」)。\n\n**既知の限界(観察O10)**: `LawRevision`(実データで9,550件)は\n**グラフの辺を1本も持たない** —— 法令への結びつきは`lawId`という\nリテラルとIRIのパスに埋まった法令IDだけで、辺として存在しない。\n**したがって法令の近傍に改正は一度も現れない。**\n利用者が「この法令の近傍にはこれしか無い」と読むのは誤りである\n(辺を足すのはPhase 2の課題)。**黙っていないためにここに書く**\n(このプロジェクトの再発欠陥6: 報告が嘘をつく)。",
@@ -653,6 +683,13 @@
             "title": "Money Through Stages",
             "type": "array"
           },
+          "naive_sum_vs_entry_only": {
+            "items": {
+              "$ref": "#/components/schemas/NaiveSumVsEntryOnly"
+            },
+            "title": "Naive Sum Vs Entry Only",
+            "type": "array"
+          },
           "recipient_identification": {
             "items": {
               "$ref": "#/components/schemas/RecipientIdentification"
@@ -691,7 +728,8 @@
           "recipient_identification",
           "type_counts",
           "government_paid",
-          "money_through_stages"
+          "money_through_stages",
+          "naive_sum_vs_entry_only"
         ],
         "title": "OverviewResponse",
         "type": "object"

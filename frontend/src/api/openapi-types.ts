@@ -383,6 +383,24 @@ export interface components {
             source_name: string | null;
         };
         /**
+         * NaiveSumVsEntryOnly
+         * @description CQ19の1行。**この2つの差が二重計上である**(裁定B97)。
+         *
+         *     `entry_only`は`budget:paidByGovernment`が真のブロックだけの合計。
+         *     **CQ12の「国が自ら支払った額」は`entry_only` + 間接経費**なので、
+         *     この値とは一致しない——表示側で混同しないこと。
+         */
+        NaiveSumVsEntryOnly: {
+            /** Block Count */
+            block_count: number;
+            /** Entry Only */
+            entry_only: number;
+            /** Fiscal Year */
+            fiscal_year: number;
+            /** Naive Sum */
+            naive_sum: number;
+        };
+        /**
          * NeighborhoodResponse
          * @description 近傍サブグラフ(仕様§9.1「指定ノードから深さ1-2のノード/エッジ」)。
          *
@@ -440,6 +458,8 @@ export interface components {
             ministries: components["schemas"]["MinistryBudget"][];
             /** Money Through Stages */
             money_through_stages: components["schemas"]["MoneyThroughStage"][];
+            /** Naive Sum Vs Entry Only */
+            naive_sum_vs_entry_only: components["schemas"]["NaiveSumVsEntryOnly"][];
             /** Recipient Identification */
             recipient_identification: components["schemas"]["RecipientIdentification"][];
             /** Request And Initial */
