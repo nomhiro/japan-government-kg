@@ -7615,7 +7615,13 @@ sumProblem: allBlocks blockAOnly exactDuplicateAcrossBlocks
 `mismatchExample`・`blockAOnly`・`exactDuplicateAcrossBlocks`・
 `projectsWithMultipleBlocks`/`WithOneBlock`。
 
-**理由: これらは測定ではなく推論である。** 「フラグが無い32事業のうち10事業は
+**理由(訂正。追記6を参照)**: 当初ここには「これらは測定ではなく推論である」
+と書いたが、**それは理由の一部にすぎない。より基本的な理由は
+「画面に出す数字はCQの答えでなければならない」である**(裁定B103そのもの)。
+`flagMissingProjects`(32)や`mixedBlocksAmount`(63,863,635,000)は
+**推論ではなく測定値**だが、**CQの答えではない** ——
+画面に書けば手書きの導出値になる(再発欠陥1)。
+以下の段落は「推論を出すな」という当初の説明である(それも正しいが従属的): 「フラグが無い32事業のうち10事業は
 入口と推定できる」「段の深さの分布」「経産省の例」は、裁定B97の調査過程で
 得た所見であって、KGに問えば出る値ではない。**公開のトップページに
 推論を数字として並べると、測定と推論の区別が読者から見えなくなる。**
