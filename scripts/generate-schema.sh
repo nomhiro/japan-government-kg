@@ -50,5 +50,33 @@ for src in schema/*.yaml; do
   uv run python -m jgkg.schema_lang "${OUT}/${module}.owl.ttl" "${OUT}/${module}.shacl.ttl"
 done
 
+# **生成物はLinuxで作ること。WindowsとLinuxで並び順が変わる(裁定B100)。**
+#
+# 実測(2026-09-11): 同じ `schema/budget.yaml` から生成しても、Windowsと
+# Linuxで `schema/generated/{all,budget}.{owl,shacl}.ttl` の**プロパティ形状の
+# 並び順が変わる**(150行が入れ替わる。内容は同じ)。`sh:order` を持つのに
+# rdflib のシリアライズ順が違う —— 日本語の長い `sh:description` を持つ
+# 形状どうしが入れ替わった。
+#
+# **症状はローカル緑・CI赤である。** Windowsで生成→Windowsで再生成すると
+# 同じ順になるので `git status` は何も言わない。CI(Linux)で再生成すると
+# 別の順になり「生成物がコミットされたものと異なる」で落ちる。
+# 実際にそれで CI run 34564101411 が失敗した。
+#
+# **正はLinuxの出力とする**(CIがそれで検査するため)。Windowsで再生成した
+# 場合は、コミット前に次でLinuxの出力に置き換えること:
+#
+#   docker run --rm -v "$(pwd -W):/w" -w /w -e PYTHONUTF8=1 #     -e UV_PROJECT_ENVIRONMENT=/tmp/venv python:3.12-slim #     bash -c 'pip install -q uv && uv sync --quiet && bash ./scripts/generate-schema.sh'
+#
+# **`UV_PROJECT_ENVIRONMENT` を必ず渡すこと** —— 省くとコンテナの `uv sync` が
+# マウントした `.venv` をLinux用に上書きし、ホスト側の環境が壊れる(実際に踏んだ)。
+case "$(uname -s 2>/dev/null || echo unknown)" in
+  Linux*) ;;
+  *)
+    echo "警告: Linux以外で生成した。**コミットする前にLinuxで生成し直すこと**" >&2
+    echo "      (WindowsとLinuxでTurtleの並び順が変わる。上のコメント参照)" >&2
+    ;;
+esac
+
 echo "generated files:"
 ls -1 "$OUT"

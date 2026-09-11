@@ -10,3 +10,25 @@ schema/generated/** text eol=lf
 # 参照表の改行もLFに固定する。内容ハッシュ(sources.py の sha256)を
 # Gitの改行設定に依存させないため
 data/reference/*.csv text eol=lf
+
+# **スキーマのYAMLもLFに固定する(裁定B100のCI調査で判明)。**
+#
+# 生成物側の改行だけを固定しても足りない —— 生成器への**入力の改行も固定する**。
+# `description: >-` の中に空行を置くとLinkMLは畳まずに改行を残すので、入力が
+# CRLFなら、生成されるTurtleの`"""…"""`リテラルの**中身としてCRが入りうる**。
+# 文字列の中のCRは行末ではなく内容なので、`schema/generated/** text eol=lf`では
+# 取り除けない。
+#
+# **ただし、実際に起きたCI失敗(裁定B100)の原因はこれではなかった。**
+# 生成物のバイトを数えるとCRは0個で、差分は150行の純粋な並び替え ——
+# rdflibのシリアライズ順がWindowsとLinuxで違う、というのが真因だった。
+# ここでLFに固定するのは、**そのCRの罠を将来踏まないための予防**である
+# (観測された不具合への対処ではない)。
+schema/*.yaml text eol=lf
+
+# **シェルスクリプトはLFに固定する(裁定B99のCI調査で判明)。**
+# CRLFのままLinuxで実行すると、シェバンが `bash` と解釈されて
+# `env: 'bash': No such file or directory` で落ちる(実測: Windowsの
+# 作業ツリーをそのままLinuxコンテナにマウントしたとき)。CIが動いているのは
+# チェックアウト時の変換に救われているだけで、作業ツリーの形が壊れている。
+*.sh text eol=lf

@@ -6,19 +6,19 @@
 
 <https://jgkg.norr-tech.com/def/budget#AnnualBudget> a sh:NodeShape ;
     rdfs:label "年度ごとの予算と執行" ;
-    rdfs:comment """1つの予算事業の、1つの会計年度についての予算と執行の記録(裁定B99)。 同一性は(fiscalYear, projectId, budgetFiscalYear)の組で決まる —— 「どのレビューシートが、どの事業の、どの年度について言っているか」。\r
-**このクラスが必要な理由**: BudgetProjectは`budgetAmount`(レビュー シート年度の当初予算)しか持たず、**「増えた・減った」に答えられない**。 ところがRSのbudget_summaryは**直近5年度分(2021〜2025)の予算履歴を 既に持っていた**(実測2026-09-11)。裁定B96の追記で「経年比較には 2024年度の配布ファイルが必要」と書いたのは誤りで、**取得は不要だった**。\r
-**`amount_jpy`(MonetaryItemから継承)は使わない。** このクラスは 名前の付いた金額を8つ持つので、そのうち1つを汎用スロットに載せると `SUM(?amount_jpy)`の意味がまた変わる(`ExpenditureBlock`のdocstringに 書いた「3粒度に載る」危険をこれ以上広げない)。**軸はMonetaryItemの ままにする** —— 金額についての記録であり、出来事でも主体でもない。\r
-**恒等式(実測: 5年度すべてで差0円)**:\r
-\r
-    initialBudget + supplementaryBudget\r
-      + carriedOverFromPreviousYear + reserveFund\r
-    = totalBudgetAvailable\r
-\r
-ビルド時に検査する。この恒等式が、2021年度の「当初予算107.1兆円に 対し執行額128.1兆円」という一見異常な並びを説明する(実際の分母は 150.2兆円、執行率85.3%)。\r
-**金額は負値を取りうる。非負を仮定してはいけない(実測2026-09-11。 集計行23,036件を検査)**:\r
-| スロット | 負値の件数 | 最小 | |---|---:|---:| | `supplementaryBudget` | 589 | -24,609,169,000円(事業648 FY2021) | | `reserveFund` | 825 | **-518,000,000,000円**(事業2617 FY2021) | | `carriedOverFromPreviousYear` | 1 | -3,197,015,000円(事業3788 FY2023) | | `carriedOverToNextYear` | 1 | -3,197,015,000円(事業3788 FY2022) | | `initialBudget` / `totalBudgetAvailable` / `executedAmount` / `nextYearRequest` | **0** | — |\r
-減額補正・予備費の配分替えが負の値として現れる。**`minimum_value: 0` やSHACLの非負制約を後から足すと、実データの1,416件が弾かれる。** 集計・UI・棒グラフの描画も負値で壊れうる(棒の長さを負にできない)。 恒等式(下記)は負値を含んだまま差0円で成立する。\r
+    rdfs:comment """1つの予算事業の、1つの会計年度についての予算と執行の記録(裁定B99)。 同一性は(fiscalYear, projectId, budgetFiscalYear)の組で決まる —— 「どのレビューシートが、どの事業の、どの年度について言っているか」。
+**このクラスが必要な理由**: BudgetProjectは`budgetAmount`(レビュー シート年度の当初予算)しか持たず、**「増えた・減った」に答えられない**。 ところがRSのbudget_summaryは**直近5年度分(2021〜2025)の予算履歴を 既に持っていた**(実測2026-09-11)。裁定B96の追記で「経年比較には 2024年度の配布ファイルが必要」と書いたのは誤りで、**取得は不要だった**。
+**`amount_jpy`(MonetaryItemから継承)は使わない。** このクラスは 名前の付いた金額を8つ持つので、そのうち1つを汎用スロットに載せると `SUM(?amount_jpy)`の意味がまた変わる(`ExpenditureBlock`のdocstringに 書いた「3粒度に載る」危険をこれ以上広げない)。**軸はMonetaryItemの ままにする** —— 金額についての記録であり、出来事でも主体でもない。
+**恒等式(実測: 5年度すべてで差0円)**:
+
+    initialBudget + supplementaryBudget
+      + carriedOverFromPreviousYear + reserveFund
+    = totalBudgetAvailable
+
+ビルド時に検査する。この恒等式が、2021年度の「当初予算107.1兆円に 対し執行額128.1兆円」という一見異常な並びを説明する(実際の分母は 150.2兆円、執行率85.3%)。
+**金額は負値を取りうる。非負を仮定してはいけない(実測2026-09-11。 集計行23,036件を検査)**:
+| スロット | 負値の件数 | 最小 | |---|---:|---:| | `supplementaryBudget` | 589 | -24,609,169,000円(事業648 FY2021) | | `reserveFund` | 825 | **-518,000,000,000円**(事業2617 FY2021) | | `carriedOverFromPreviousYear` | 1 | -3,197,015,000円(事業3788 FY2023) | | `carriedOverToNextYear` | 1 | -3,197,015,000円(事業3788 FY2022) | | `initialBudget` / `totalBudgetAvailable` / `executedAmount` / `nextYearRequest` | **0** | — |
+減額補正・予備費の配分替えが負の値として現れる。**`minimum_value: 0` やSHACLの非負制約を後から足すと、実データの1,416件が弾かれる。** 集計・UI・棒グラフの描画も負値で壊れうる(棒の長さを負にできない)。 恒等式(下記)は負値を含んだまま差0円で成立する。
 **翌年度要求額(RSの[22])もモデル化する(`nextYearRequest`)。** controllerは当初これを「集計行23,036件すべてで空」と記録していたが、 **それは誤りだった** —— 実際は23,036件すべてが非空で、 `'45013000.0'` のような小数表記を取る(このファイルで唯一の形)。 controllerの測定スクリプトが`.isdigit()`で判定していたため、 **値のある列を「空」と誤認していた**(実装者の指摘で訂正)。 空なのは明細行側の列41「翌年度要求額」の方である。""" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
@@ -29,16 +29,6 @@
             sh:nodeKind sh:Literal ;
             sh:order 4 ;
             sh:path <https://jgkg.norr-tech.com/def/budget#supplementaryBudget> ],
-        [ sh:datatype xsd:integer ;
-            sh:description """翌年度について要求した額(合計)。RSの[22]翌年度要求額（合計）。 **この列だけが小数表記を取る**(`'45013000.0'`)。値そのものは 全件が整数(実測: 23,036件すべてで小数部0)なので`integer`で持つ。 `transform.rs.normalize_amount`が末尾の`.0`を落とす実装になっており (Task 7の時点でこの形が記録されていた)、取り込み側の対応は済んでいる。\r
-**これが答えられるようにする問い**: 「いくら要求して、いくら付いたか」。 年度Yの`nextYearRequest`は年度Y+1の`initialBudget`と対応する。 実測(両年度に存在する事業に限る):\r
-| | 要求 | 実際に付いた当初予算 | 比 | |---|---:|---:|---:| | 2021→2022 | 111.3兆 | 107.8兆 | 96.9% | | 2022→2023 | 112.3兆 | 111.5兆 | 99.2% | | 2023→2024 | 122.1兆 | 120.8兆 | 98.9% | | 2024→2025 | 123.5兆 | 122.8兆 | 99.4% |\r
-**事業単位では一致を仮定しない**(完全一致は年度あたり1,243〜2,307件で、 両年度にある事業の3〜4割)。事業の分割・統合・査定があるため。"""@ja ;
-            sh:maxCount 1 ;
-            sh:name "翌年度要求額" ;
-            sh:nodeKind sh:Literal ;
-            sh:order 10 ;
-            sh:path <https://jgkg.norr-tech.com/def/budget#nextYearRequest> ],
         [ sh:datatype xsd:integer ;
             sh:description "金額(円)"@ja ;
             sh:maxCount 1 ;
@@ -53,17 +43,15 @@
             sh:order 13 ;
             sh:path skos:prefLabel ],
         [ sh:datatype xsd:integer ;
-            sh:description """その年度に実際に使える額の合計(歳出予算現額)。RSの[18]計（歳出予算現額合計）。\r
-**執行額を比べるべき分母はこれであり、当初予算ではない(裁定B99)。** 実測(2026-09-11、5年度すべて)で次の恒等式が**差0円で成立する**:\r
-\r
-    当初予算 + 補正予算 + 前年度からの繰越し + 予備費等 = 歳出予算現額\r
-\r
-この列が無いと、2021年度の「当初予算107.1兆円に対し執行額128.1兆円」 という一見異常な並びを説明できない —— 実際の分母は歳出予算現額 150.2兆円で、執行率は85.3%である。**裁定B96が「予算額と支出額を 並べるな」と言ったのは正しかったが、正しい分母がこの列にあった。**"""@ja ;
+            sh:description """翌年度について要求した額(合計)。RSの[22]翌年度要求額（合計）。 **この列だけが小数表記を取る**(`'45013000.0'`)。値そのものは 全件が整数(実測: 23,036件すべてで小数部0)なので`integer`で持つ。 `transform.rs.normalize_amount`が末尾の`.0`を落とす実装になっており (Task 7の時点でこの形が記録されていた)、取り込み側の対応は済んでいる。
+**これが答えられるようにする問い**: 「いくら要求して、いくら付いたか」。 年度Yの`nextYearRequest`は年度Y+1の`initialBudget`と対応する。 実測(両年度に存在する事業に限る):
+| | 要求 | 実際に付いた当初予算 | 比 | |---|---:|---:|---:| | 2021→2022 | 111.3兆 | 107.8兆 | 96.9% | | 2022→2023 | 112.3兆 | 111.5兆 | 99.2% | | 2023→2024 | 122.1兆 | 120.8兆 | 98.9% | | 2024→2025 | 123.5兆 | 122.8兆 | 99.4% |
+**事業単位では一致を仮定しない**(完全一致は年度あたり1,243〜2,307件で、 両年度にある事業の3〜4割)。事業の分割・統合・査定があるため。"""@ja ;
             sh:maxCount 1 ;
-            sh:name "歳出予算現額" ;
+            sh:name "翌年度要求額" ;
             sh:nodeKind sh:Literal ;
-            sh:order 7 ;
-            sh:path <https://jgkg.norr-tech.com/def/budget#totalBudgetAvailable> ],
+            sh:order 10 ;
+            sh:path <https://jgkg.norr-tech.com/def/budget#nextYearRequest> ],
         [ sh:datatype xsd:integer ;
             sh:description "翌年度へ繰り越した額(合計)。RSの[21]翌年度への繰越し(合計）。 ある年度の`carriedOverToNextYear`は、次の年度の `carriedOverFromPreviousYear`と対応するはずだが、**事業単位では 一致を仮定しない**(事業の分割・統合・終了があるため)。"@ja ;
             sh:maxCount 1 ;
@@ -85,17 +73,20 @@
             sh:order 12 ;
             sh:path <https://jgkg.norr-tech.com/def/core#id> ],
         [ sh:datatype xsd:integer ;
-            sh:description """その年度に実際に執行された額(合計)。RSの[19]執行額（合計）。\r
-**この列は資金の流れ(ExpenditureBlock)の計算に一切使っていないため、 独立した検証のオラクルになる(裁定B98)。** 実測: FY2024の執行額 128,407,860,724,145円に対し、CQ12(入口ブロック+間接経費)が98.83%、 構造からの推論を含めると100.086%で一致した。裁定B20が挙げた 「比が正確に2.0/3.0になる245事業」のうち243事業が比1.0に直った。\r
-**レビューシート年度(2025)の執行額は0である**(まだ執行されていない。 実測: 5,794事業すべて)。欠損ではなく「その時点でまだ無い」。"""@ja ;
+            sh:description """その年度に実際に使える額の合計(歳出予算現額)。RSの[18]計（歳出予算現額合計）。
+**執行額を比べるべき分母はこれであり、当初予算ではない(裁定B99)。** 実測(2026-09-11、5年度すべて)で次の恒等式が**差0円で成立する**:
+
+    当初予算 + 補正予算 + 前年度からの繰越し + 予備費等 = 歳出予算現額
+
+この列が無いと、2021年度の「当初予算107.1兆円に対し執行額128.1兆円」 という一見異常な並びを説明できない —— 実際の分母は歳出予算現額 150.2兆円で、執行率は85.3%である。**裁定B96が「予算額と支出額を 並べるな」と言ったのは正しかったが、正しい分母がこの列にあった。**"""@ja ;
             sh:maxCount 1 ;
-            sh:name "執行額" ;
+            sh:name "歳出予算現額" ;
             sh:nodeKind sh:Literal ;
-            sh:order 8 ;
-            sh:path <https://jgkg.norr-tech.com/def/budget#executedAmount> ],
+            sh:order 7 ;
+            sh:path <https://jgkg.norr-tech.com/def/budget#totalBudgetAvailable> ],
         [ sh:datatype xsd:integer ;
-            sh:description """その予算年度の当初予算(合計)。RSの[14]当初予算（合計）。\r
-**`budgetAmount`とは意図的に別のスロットにしている(裁定B99)。** 両者は同じ列を出典とするが粒度が違う —— `budgetAmount`は BudgetProjectが持つ「レビューシート年度の予算額」(5,794件)で、 こちらはAnnualBudgetが持つ「各予算年度の当初予算」(23,036件)。 **同じスロット名にすると`SUM(?budgetAmount)`が粒度をまたいで 二重に数える**(`ExpenditureBlock`で`amount_jpy`が3粒度に載った のと同じ危険。`ExpenditureBlock`のdocstring参照)。 表示名も「予算額」と「当初予算」で区別する(RS自身が列14を 「当初予算（合計）」と呼ぶ)。\r
+            sh:description """その予算年度の当初予算(合計)。RSの[14]当初予算（合計）。
+**`budgetAmount`とは意図的に別のスロットにしている(裁定B99)。** 両者は同じ列を出典とするが粒度が違う —— `budgetAmount`は BudgetProjectが持つ「レビューシート年度の予算額」(5,794件)で、 こちらはAnnualBudgetが持つ「各予算年度の当初予算」(23,036件)。 **同じスロット名にすると`SUM(?budgetAmount)`が粒度をまたいで 二重に数える**(`ExpenditureBlock`で`amount_jpy`が3粒度に載った のと同じ危険。`ExpenditureBlock`のdocstring参照)。 表示名も「予算額」と「当初予算」で区別する(RS自身が列14を 「当初予算（合計）」と呼ぶ)。
 **不変条件(実測)**: BudgetProjectの`budgetAmount`は、同じ事業の レビューシート年度のAnnualBudgetの`initialBudget`に等しい (どちらも`find_budget_aggregate_row`が選ぶ同じ行の同じ列から来る)。 ビルド時に検査する。"""@ja ;
             sh:maxCount 1 ;
             sh:name "当初予算" ;
@@ -109,6 +100,15 @@
             sh:nodeKind sh:Literal ;
             sh:order 5 ;
             sh:path <https://jgkg.norr-tech.com/def/budget#carriedOverFromPreviousYear> ],
+        [ sh:datatype xsd:integer ;
+            sh:description """その年度に実際に執行された額(合計)。RSの[19]執行額（合計）。
+**この列は資金の流れ(ExpenditureBlock)の計算に一切使っていないため、 独立した検証のオラクルになる(裁定B98)。** 実測: FY2024の執行額 128,407,860,724,145円に対し、CQ12(入口ブロック+間接経費)が98.83%、 構造からの推論を含めると100.086%で一致した。裁定B20が挙げた 「比が正確に2.0/3.0になる245事業」のうち243事業が比1.0に直った。
+**レビューシート年度(2025)の執行額は0である**(まだ執行されていない。 実測: 5,794事業すべて)。欠損ではなく「その時点でまだ無い」。"""@ja ;
+            sh:maxCount 1 ;
+            sh:name "執行額" ;
+            sh:nodeKind sh:Literal ;
+            sh:order 8 ;
+            sh:path <https://jgkg.norr-tech.com/def/budget#executedAmount> ],
         [ sh:datatype xsd:integer ;
             sh:description "予備費等(合計)。RSの[17]予備費等（合計）"@ja ;
             sh:maxCount 1 ;
@@ -267,10 +267,10 @@
 
 <https://jgkg.norr-tech.com/def/budget#ExpenditureBlock> a sh:NodeShape ;
     rdfs:label "支出先ブロック" ;
-    rdfs:comment """資金の流れの1つの段。同じ役割を担う支出先をRSがまとめた単位で、 一次データの呼称は「支出先ブロック」(裁定B97)。 同一性は(fiscalYear, projectId, blockId)の組で決まる。\r
-**このクラスがナレッジグラフに必要な理由**: 支出(Expenditure)は 支出先1件分の金額を持つが、**同じお金が流れの段ごとに何度も記録される**。 実測(2026-09-11): 児童手当等交付金では1,401,293,745,413円が 「国→市町村(1,741先)」と「市町村→児童手当受給者(7,789,939人)」の 2ブロックに同額で現れる。段を区別せず合計すると全体で **29.9兆円**を二重に数える。このクラスと`paidByGovernment`があれば、 入口だけを合計して重複を除いた額を出せる。\r
-ブロックの合計支出額はMonetaryItemから継承する`amount_jpy`に持たせる (Expenditureと同じ扱い。budget独自のamountスロットは追加しない)。\r
-**危険: `amount_jpy`が3つの粒度に載る。** このクラスの追加により、 同じ述語がExpenditure(支出先1件分)・ExpenditureBlock(段の合計)・ IndirectCost(国自身の支出)の3種類の主語に付く。 `SELECT (SUM(?a)) WHERE { ?x core:amount_jpy ?a }` のような **型で絞らない合計は、以前より悪い答えを返す**(ブロックと支出を 両方数えるため約2倍になる)。国が支払った額を出す正しいクエリは `queries/cq/cq12-government-paid-total.rq` である。\r
+    rdfs:comment """資金の流れの1つの段。同じ役割を担う支出先をRSがまとめた単位で、 一次データの呼称は「支出先ブロック」(裁定B97)。 同一性は(fiscalYear, projectId, blockId)の組で決まる。
+**このクラスがナレッジグラフに必要な理由**: 支出(Expenditure)は 支出先1件分の金額を持つが、**同じお金が流れの段ごとに何度も記録される**。 実測(2026-09-11): 児童手当等交付金では1,401,293,745,413円が 「国→市町村(1,741先)」と「市町村→児童手当受給者(7,789,939人)」の 2ブロックに同額で現れる。段を区別せず合計すると全体で **29.9兆円**を二重に数える。このクラスと`paidByGovernment`があれば、 入口だけを合計して重複を除いた額を出せる。
+ブロックの合計支出額はMonetaryItemから継承する`amount_jpy`に持たせる (Expenditureと同じ扱い。budget独自のamountスロットは追加しない)。
+**危険: `amount_jpy`が3つの粒度に載る。** このクラスの追加により、 同じ述語がExpenditure(支出先1件分)・ExpenditureBlock(段の合計)・ IndirectCost(国自身の支出)の3種類の主語に付く。 `SELECT (SUM(?a)) WHERE { ?x core:amount_jpy ?a }` のような **型で絞らない合計は、以前より悪い答えを返す**(ブロックと支出を 両方数えるため約2倍になる)。国が支払った額を出す正しいクエリは `queries/cq/cq12-government-paid-total.rq` である。
 **不変条件(実測2026-09-11、19,125ブロック全件で完全一致・差0円)**: ブロックの`amount_jpy`は、そのブロックに属するExpenditureの `amount_jpy`の総和に等しい。一次データの列17(ブロックの合計支出額)と 列23(支出先の合計支出額)の関係そのものであり、**取り込みが ブロックへの割り当てを誤っていれば崩れる**ので、ビルド時の検査に使える。 ブロック名(「市町村」「児童手当受給者」等)はEntityから継承する `core:label`(skos:prefLabel)に持たせる。実測: 5-1と5-2の両方に現れる 18,988ブロックすべてで、2つのファイルのブロック名が**一致する** (食い違い0件)。""" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
@@ -351,7 +351,7 @@
 
 <https://jgkg.norr-tech.com/def/budget#IndirectCost> a sh:NodeShape ;
     rdfs:label "国自らが支出する間接経費" ;
-    rdfs:comment """支出先を介さず国が自ら支払う間接経費(RSの[19][20][21])。一次データの 呼称をそのまま使う。**支出先の表(5-1)には現れないため、 ExpenditureとExpenditureBlockだけでは取りこぼす** — 実測 (2026-09-11): 2,432件・32,896,230,966円。「国が支払った額」を出すとき、 入口ブロックの合計にこれを加える必要がある(裁定B97)。\r
+    rdfs:comment """支出先を介さず国が自ら支払う間接経費(RSの[19][20][21])。一次データの 呼称をそのまま使う。**支出先の表(5-1)には現れないため、 ExpenditureとExpenditureBlockだけでは取りこぼす** — 実測 (2026-09-11): 2,432件・32,896,230,966円。「国が支払った額」を出すとき、 入口ブロックの合計にこれを加える必要がある(裁定B97)。
 金額はMonetaryItemから継承する`amount_jpy`、項目名(「講師謝金」 「委員等旅費」等)はEntityから継承する`core:label`に持たせる。 同一性は(fiscalYear, projectId, 項目名)で決まる — 実測: 2,432行すべてでこの組が一意(重複0件。空白を正規化しても一意)。 **項目名をURIに使うため長くなる**が、実測で許容範囲: パーセント エンコード後の項目名は中央値36文字・最大495文字で、URI全体の最大は 556文字(一般的な上限2,000文字の27.8%)。連番にすればURIは短くなるが、 RS側の行順が変わるとIDが動く —— 項目名は一意で意味を持つ自然キーなので そちらを採る(`unresolved_*_uri`が名称をエンコードするのと同じ立場)。""" ;
     sh:closed true ;
     sh:ignoredProperties ( rdf:type ) ;
