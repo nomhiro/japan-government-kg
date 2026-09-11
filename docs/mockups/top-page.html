@@ -194,6 +194,17 @@ svg.graph.dragging { cursor: grabbing; }
 #ov-match .good { color: var(--found); font-weight: 600; }
 
 
+/* 要求と査定(裁定B99) */
+#ov-request { overflow-x: auto; }
+#ov-request table { border-collapse: collapse; font-size: 0.84rem; width: 100%; }
+#ov-request th, #ov-request td { border-bottom: 1px solid var(--rule); padding: 0.3rem 0.5rem 0.3rem 0; text-align: left; }
+#ov-request thead th { color: var(--muted); font-weight: 600; font-size: 0.78rem; text-align: right; }
+#ov-request thead th:first-child, #ov-request thead th:nth-child(2) { text-align: left; }
+#ov-request tbody th { white-space: nowrap; font-weight: 600; }
+#ov-request td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#ov-request td.track { width: 22%; min-width: 6rem; background: var(--surface-2); border-radius: 2px; padding: 0; }
+#ov-request .fill { display: block; height: 0.7rem; background: var(--accent); border-radius: 2px; }
+
 /* 年度ごとの予算と執行(裁定B99) */
 #ov-history { overflow-x: auto; }
 #ov-history table { border-collapse: collapse; font-size: 0.84rem; width: 100%; }
@@ -312,6 +323,9 @@ svg.graph.dragging { cursor: grabbing; }
 
   <h2 class="ov-h">予算はいくら付いて、いくら使われたか（5年分）</h2>
   <div id="ov-history"></div>
+
+  <h2 class="ov-h">いくら要求して、いくら付いたか</h2>
+  <div id="ov-request"></div>
 
   <h2 class="ov-h">国が自ら支払った額（2025年度）</h2>
   <div id="ov-spend"></div>
@@ -1262,6 +1276,33 @@ svg.graph.dragging { cursor: grabbing; }
       wire(".bar", "data-ministry");
     }
 
+    // いくら要求して、いくら付いたか(裁定B99)。
+    //
+    // **この列はcontrollerが「集計行すべてで空」と誤って捨てようとしていた。**
+    // 原因は測定スクリプトが`.isdigit()`で判定していたこと —— 一次データは
+    // `'45013000.0'`という小数表記で、整数判定では「空」に見える。
+    // 実装者が実測で訂正した(23,036件すべて非空)。
+    function renderRequestVsGranted() {
+      var R = OV.requestVsGranted;
+      var rows = R.map(function (r) {
+        var pct = (r.granted / r.requested) * 100;
+        return "<tr><th>" + r.from + "年度に要求 → " + r.to + "年度に付いた</th>" +
+          '<td class="track"><span class="fill" style="width:' + pct.toFixed(2) + '%"></span></td>' +
+          '<td class="n">' + jpShort(r.requested) + "</td>" +
+          '<td class="n">' + jpShort(r.granted) + "</td>" +
+          '<td class="n">' + pct.toFixed(1) + "%</td>" +
+          '<td class="n">' + r.exactMatches.toLocaleString("ja-JP") + " / " +
+          r.projects.toLocaleString("ja-JP") + "</td></tr>";
+      }).join("");
+      document.getElementById("ov-request").innerHTML =
+        "<table><thead><tr><th></th><th></th><th>要求額</th><th>付いた当初予算</th>" +
+        "<th>割合</th><th>額が完全一致した事業</th></tr></thead><tbody>" + rows +
+        "</tbody></table>" +
+        '<p class="ov-sub">全体では要求の <b>96.9〜99.4%</b> が付いています。' +
+        "ただし<b>事業ごとに見ると完全一致は3〜4割</b>なので、" +
+        "「ほぼ満額」と読むのは全体の話に限ります（両方の年度に存在する事業だけを数えています）。</p>";
+    }
+
     // 年度ごとの予算と執行(裁定B99)。**この製品が今まで答えられなかった問い。**
     //
     // **正しい分母は歳出予算現額であり、当初予算ではない。** 当初予算と執行額を
@@ -1495,6 +1536,7 @@ svg.graph.dragging { cursor: grabbing; }
     wire(".ex button", "data-goto");
 
     renderHistory();
+    renderRequestVsGranted();
     renderSpending();
     renderBars("all");
     var sa = document.getElementById("scale-all"), sr = document.getElementById("scale-rest");
