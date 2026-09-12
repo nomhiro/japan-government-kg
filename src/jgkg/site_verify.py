@@ -36,6 +36,7 @@ URLを導出する(`served_files`)。拡張子なしのモジュールエイリ�
 """
 import hashlib
 import re
+import secrets
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -560,6 +561,110 @@ def run_all_checks(
         check(f"{path} が 200", fr.status == 200, str(fr.status))
 
     return Report(results)
+
+
+# =============================================================================
+# 配備の伝播待ち(裁定B107)
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class DeploymentWait:
+    """`wait_until_deployment_is_live()`の結果。"""
+
+    live: bool
+    attempts_used: int
+    #: 最後の試行で配信元の応答がビルド成果物と一致しなかったパス。
+    mismatched: tuple[str, ...] = ()
+
+
+def probe_origin(client: httpx.Client, origin: str, url_path: str, *, nonce: str) -> FetchResult:
+    """**CDNのキャッシュを迂回して**`url_path`を取得する。
+
+    クエリ文字列を足すとCloudflareのキャッシュキーが変わり、問い合わせが
+    配信元(Pages)まで届く(実測 2026-09-02。裁定B85)。`nonce`を毎回
+    変えるのは、この迂回用URL自身がキャッシュされても次の試行に影響しない
+    ようにするため。
+
+    **この関数が作るキャッシュ項目は、実利用者のURL(クエリ無し)とは
+    別のキーになる**——だから待ち合わせに使っても実配信を汚さない。
+    """
+    sep = "&" if "?" in url_path else "?"
+    return fetch(client, origin, f"{url_path}{sep}jgkg-deploy-probe={nonce}")
+
+
+def comparable_paths(out_dir: Path) -> dict[str, Path]:
+    """sha256で突き合わせられるパス(非HTML)だけのURL→ファイル対応。
+
+    HTMLを除くのは`run_all_checks`と同じ理由(裁定B65: Cloudflareが
+    HTML応答にスクリプトを挿入するのでバイト比較できない)。
+    """
+    return {u: p for u, p in served_files(out_dir).items() if not is_html_path(u)}
+
+
+def wait_until_deployment_is_live(
+    client: httpx.Client,
+    origin: str,
+    out_dir: Path,
+    *,
+    attempts: int = 1,
+    delay_seconds: float = 15.0,
+    sleep: Callable[[float], None] = time.sleep,
+    on_wait: Callable[[int, int, tuple[str, ...]], None] | None = None,
+    nonce: Callable[[], str] | None = None,
+) -> DeploymentWait:
+    """**素の取得を一度もせずに**、配信元が`out_dir`の内容を配り始めるまで待つ。
+
+    **なぜ必要か(裁定B107。裁定B84の対処の訂正)**: Cloudflare Pagesは
+    存在しないパスに`index.html`を**200 text/html**で返す(実測
+    2026-08-23)。配備が伝播する前にそのパスを**素のURLで**取得すると、
+    CloudflareはそのHTML応答を**実利用者と同じキャッシュキー**に保存する。
+    保存期間は実測で`max-age=14400`(4時間。`_headers`の宣言は3600だが
+    エッジにキャッシュされる応答ではCloudflareが自分の値に置き換える。
+    裁定B85の実測)。
+
+    **その最初の取得をしていたのは、この検証そのものだった。**
+    2026-09-12、`/assets/index-Cmis3__R.js`(内容ハッシュ付きの新しい名前
+    ——配備前に誰も要求しえない)で次が観測された:
+
+    - 配信直後の1回目の取得が **200 + HTML** を受け取り、
+    - 以後10回・5分間、同じHTMLのsha256を返し続け、
+    - 同時刻にクエリ文字列付きで取ると**正しいバイト列が返った**。
+
+    つまり**窓を広げる対処(裁定B84で6回×10秒→10回×30秒にした)は
+    原理的に効かない**——最初の一瞥が破損を作るのだから、待つ回数を
+    増やしても同じ破損を読み続けるだけである。しかも被害はCIに留まらない:
+    そのPoPを使う実利用者は、JavaScriptの代わりにHTMLを受け取り、
+    アプリが起動しない。
+
+    だから**伝播待ちはキャッシュを迂回した取得で行い、素の取得は
+    「配信元が正しいものを配っている」と分かってから1回だけ行う。**
+    素の取得を残す理由は、検査の目的が「実利用者が受け取るもの」の
+    検証であること——迂回した取得だけで緑にすると、CDNに居座った古い
+    応答(裁定B85)を見逃す。
+
+    合格条件は「非HTMLの全パスについて、配信元の応答がビルド成果物と
+    sha256一致」。`attempts=1`(既定)なら待たずに1回確かめるだけ。
+    """
+    expected = {u: build.file_sha256(p) for u, p in sorted(comparable_paths(out_dir).items())}
+    make_nonce = nonce if nonce is not None else lambda: secrets.token_hex(6)
+
+    attempt = 1
+    while True:
+        mismatched: list[str] = []
+        token = make_nonce()
+        for url_path, want in expected.items():
+            fr = probe_origin(client, origin, url_path, nonce=token)
+            if fr.status != 200 or hashlib.sha256(fr.body).hexdigest() != want:
+                mismatched.append(url_path)
+        if not mismatched:
+            return DeploymentWait(True, attempt, ())
+        if attempt >= attempts:
+            return DeploymentWait(False, attempt, tuple(mismatched))
+        if on_wait is not None:
+            on_wait(attempt, attempts, tuple(mismatched))
+        sleep(delay_seconds)
+        attempt += 1
 
 
 def run_all_checks_with_retries(

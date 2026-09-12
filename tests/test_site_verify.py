@@ -694,3 +694,158 @@ def test_byte_match_detail_stays_quiet(tmp_path):
     for r in asset_checks:
         assert r.detail.startswith("sha256="), r.detail
         assert "本文" not in r.detail, r.detail
+
+
+# =============================================================================
+# 配備の伝播待ち(裁定B107): **検証が自分でキャッシュを汚さないこと**
+# =============================================================================
+
+_FALLBACK_HTML = b'<!doctype html><html><head><title>JGKG</title></head><body>fallback</body></html>'
+
+
+def _self_poisoning_transport(live_dir: Path, state: dict):
+    """本番で起きたことを模擬する配信元。
+
+    Cloudflare Pages は存在しないパスに `index.html` を **200 text/html** で
+    返し(実測 2026-08-23)、Cloudflare はその応答を**実利用者と同じ
+    キャッシュキー**に保存する(実測 2026-09-12。裁定B107)。
+
+    - `state["live"]` が偽のあいだ、配信元はどのパスにもフォールバックHTMLを返す
+    - **クエリ文字列が無い取得**の応答は `state["cache"]` に焼き付き、
+      以後 `live` が真になっても**そのパスは古い応答を返し続ける**
+    - クエリ文字列付きの取得はキャッシュキーが別なので、常に配信元の
+      いまの状態を返す
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        bare = not request.url.query
+        if bare and path in state["cache"]:
+            body = state["cache"][path]
+        else:
+            local = _local_path_for(live_dir, path)
+            if state["live"] and local.is_file():
+                body = local.read_bytes()
+            else:
+                body = _FALLBACK_HTML
+            if bare:
+                state["cache"][path] = body
+        state["asked"].append(str(request.url))
+        headers = {"content-type": _content_type_for(path)}
+        if path.startswith("/def/"):
+            headers["access-control-allow-origin"] = "*"
+        return httpx.Response(200, content=body, headers=headers)
+
+    return httpx.MockTransport(handler)
+
+
+def _poisoning_setup(tmp_path: Path):
+    _full_build(tmp_path)
+    live = tmp_path.parent / (tmp_path.name + "-live")
+    shutil.copytree(tmp_path, live)
+    state = {"live": False, "cache": {}, "asked": []}
+    return live, state, httpx.Client(transport=_self_poisoning_transport(live, state))
+
+
+def test_the_wait_never_requests_a_bare_url(tmp_path):
+    """**待ち合わせの取得は必ずクエリ文字列を付ける。**
+
+    素のURLで取ると、伝播前の応答が実利用者と同じキャッシュキーに焼き付く。
+    """
+    live, state, client = _poisoning_setup(tmp_path)
+    site_verify.wait_until_deployment_is_live(
+        client, "https://jgkg.norr-tech.com", tmp_path, attempts=1,
+    )
+    assert state["asked"], "前提: 取得が行われている"
+    bare = [u for u in state["asked"] if "?" not in u]
+    assert bare == [], bare
+    assert state["cache"] == {}, "素の取得をしていないのだからキャッシュは空"
+
+
+def test_the_wait_uses_a_different_nonce_each_attempt(tmp_path):
+    """迂回用URL自身がキャッシュされても次の試行に影響しないこと。"""
+    live, state, client = _poisoning_setup(tmp_path)
+    site_verify.wait_until_deployment_is_live(
+        client, "https://jgkg.norr-tech.com", tmp_path,
+        attempts=3, delay_seconds=0, sleep=lambda _s: None,
+    )
+    queries = {u.split("?", 1)[1] for u in state["asked"]}
+    assert len(queries) == 3, queries
+
+
+def test_the_wait_becomes_live_when_the_deployment_propagates(tmp_path):
+    """伝播が終われば合格し、何回目で確かめられたかを返すこと。"""
+    live, state, client = _poisoning_setup(tmp_path)
+
+    def propagate(_seconds: float) -> None:
+        state["live"] = True
+
+    wait = site_verify.wait_until_deployment_is_live(
+        client, "https://jgkg.norr-tech.com", tmp_path,
+        attempts=5, delay_seconds=0, sleep=propagate,
+    )
+    assert wait.live
+    assert wait.attempts_used == 2
+    assert wait.mismatched == ()
+
+
+def test_the_wait_reports_the_paths_that_do_not_match(tmp_path):
+    """伝播しないまま試行を使い切ったら、一致しなかったパスを返すこと。"""
+    live, state, client = _poisoning_setup(tmp_path)
+    wait = site_verify.wait_until_deployment_is_live(
+        client, "https://jgkg.norr-tech.com", tmp_path,
+        attempts=2, delay_seconds=0, sleep=lambda _s: None,
+    )
+    assert not wait.live
+    assert wait.attempts_used == 2
+    assert "/assets/index-fakehash123.js" in wait.mismatched
+    assert all(not site_verify.is_html_path(p) for p in wait.mismatched)
+
+
+def test_the_wait_lets_the_real_checks_pass_after_propagation(tmp_path):
+    """**先に待てば、検査は通る。** 裁定B107の対処が効くことの確認。"""
+    live, state, client = _poisoning_setup(tmp_path)
+
+    def propagate(_seconds: float) -> None:
+        state["live"] = True
+
+    wait = site_verify.wait_until_deployment_is_live(
+        client, "https://jgkg.norr-tech.com", tmp_path,
+        attempts=5, delay_seconds=0, sleep=propagate,
+    )
+    assert wait.live
+    report = site_verify.run_all_checks("https://jgkg.norr-tech.com", tmp_path, GENERATED, client)
+    assert report.ok, [f"{r.label}: {r.detail}" for r in report.failures]
+
+
+def test_fetching_before_propagation_poisons_the_cache_permanently(tmp_path):
+    """**待たずに素の取得をすると、伝播が終わっても永久に一致しない。**
+
+    2026-09-12に本番で起きたことそのもの(CI実行 34707640573): 配信直後の
+    1回目が「200 + HTML」を受け取り、以後10回・5分間同じsha256を返し続けた。
+    **窓を広げる対処が効かない**ことを、この検査が固定する。
+    """
+    live, state, client = _poisoning_setup(tmp_path)
+
+    # 伝播前に素の取得をしてしまう(裁定B84までのCIの振る舞い)。
+    first = site_verify.run_all_checks("https://jgkg.norr-tech.com", tmp_path, GENERATED, client)
+    assert not first.ok
+
+    # 配備は届いた。それでも素のURLは古いHTMLを返し続ける。
+    state["live"] = True
+    after = site_verify.run_all_checks("https://jgkg.norr-tech.com", tmp_path, GENERATED, client)
+    assert not after.ok, "待てば直る、という想定が誤りであることの確認"
+    # 2本の資産(js/css)がどちらも焼き付いている。診断文は「配信元は正しい」
+    # ——つまり待つのではなく、内容ハッシュを変えるかキャッシュを消すしかない。
+    poisoned = [
+        r for r in after.failures if "同一バイト列" in r.label and "/assets/" in r.label
+    ]
+    assert len(poisoned) == 2, [r.label for r in after.failures]
+    for r in poisoned:
+        assert "配信元には正しいバイト列がある" in r.detail, r.detail
+
+    # 同じ状態でも、迂回した取得なら配信元の正しさが分かる。
+    wait = site_verify.wait_until_deployment_is_live(
+        client, "https://jgkg.norr-tech.com", tmp_path, attempts=1,
+    )
+    assert wait.live

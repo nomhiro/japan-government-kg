@@ -2,7 +2,7 @@
 
     uv run python scripts/verify-site.py                       # ローカル再現(wrangler)
     uv run python scripts/verify-site.py https://jgkg.norr-tech.com   # 公開先
-    uv run python scripts/verify-site.py https://jgkg.norr-tech.com --attempts 6 --delay-seconds 10
+    uv run python scripts/verify-site.py https://jgkg.norr-tech.com --wait-attempts 20 --wait-delay-seconds 15
 
 **「ファイルが置けたか」ではなく「利用者が解釈できるか」、かつ「配信物が
 いま手元でビルドした内容と同じか」を検査する。** 比較ロジックの本体は
@@ -48,6 +48,17 @@ def main(argv: list[str]) -> int:
         "--delay-seconds", type=float, default=10.0,
         help="リトライ間隔(秒。--attemptsが1のときは使われない)",
     )
+    parser.add_argument(
+        "--wait-attempts", type=int, default=1,
+        help=(
+            "検査の前に、CDNを迂回した取得で配備の伝播を待つ回数"
+            "(既定1=待たずに1回確かめるだけ。裁定B107)"
+        ),
+    )
+    parser.add_argument(
+        "--wait-delay-seconds", type=float, default=15.0,
+        help="伝播待ちの間隔(秒。--wait-attemptsが1のときは使われない)",
+    )
     args = parser.parse_args(argv[1:])
     origin = args.origin.rstrip("/")
     print(f"検証先: {origin}\n")
@@ -55,7 +66,45 @@ def main(argv: list[str]) -> int:
     def on_retry(attempt: int, attempts: int) -> None:
         print(f"検査が通らない。{args.delay_seconds:.0f}秒待って再試行する({attempt}/{attempts})")
 
+    def on_wait(attempt: int, attempts: int, mismatched: tuple[str, ...]) -> None:
+        print(
+            f"配備がまだ伝播していない({len(mismatched)}件)。"
+            f"{args.wait_delay_seconds:.0f}秒待って再確認する({attempt}/{attempts})"
+        )
+
     with httpx.Client(timeout=20.0) as client:
+        # **素の取得より先に、CDNを迂回した取得で伝播を待つ**(裁定B107)。
+        # 伝播前に素のURLを取ると、Cloudflareが「200 + HTML」を実利用者と
+        # 同じキャッシュキーに最大4時間保存する——検証が破損を作ってしまう。
+        wait = site_verify.wait_until_deployment_is_live(
+            client, origin, args.out_dir,
+            attempts=args.wait_attempts, delay_seconds=args.wait_delay_seconds,
+            on_wait=on_wait,
+        )
+        if not wait.live:
+            print(
+                f"配信元がビルド成果物を配っていない({wait.attempts_used}回確認。"
+                f"キャッシュを迂回した取得で不一致 {len(wait.mismatched)}件):"
+            )
+            for path in wait.mismatched:
+                print("  -", path)
+            print()
+            print(
+                "**素の取得はしていない**"
+                "(伝播前に取るとCDNがHTMLフォールバックを保存するため。裁定B107)。"
+            )
+            print(
+                "考えられる原因は3つ: (1) 配備がまだ届いていない "
+                "(2) 配信漏れ "
+                "(3) **手元の site/ が配信済みより古い**"
+                "——`site/` を作り直してから比べること(裁定B101: "
+                "『本番が古い』と6日間言い続けたが、古いのは検査の基準だった)。"
+            )
+            return 1
+        if args.wait_attempts > 1:
+            print(f"配信元がビルド成果物を配っている({wait.attempts_used}回目で確認)")
+            print()
+
         report = site_verify.run_all_checks_with_retries(
             origin, args.out_dir, args.generated_dir, client,
             attempts=args.attempts, delay_seconds=args.delay_seconds, on_retry=on_retry,
