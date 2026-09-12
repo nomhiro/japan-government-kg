@@ -29,7 +29,8 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 _DECISION_LOG = _REPO_ROOT / "docs" / "decision-log.md"
 
 # 本文を持つテキストファイルだけを見る(バイナリと生成物の.ttlは除く)。
-_TEXT_SUFFIXES = {".md", ".py", ".sh", ".yaml", ".yml", ".ts", ".rq", ".json", ".html"}
+# .tsx/.css はフロント再設計(裁定B104)で増えた。参照を書けるファイルは全部見る。
+_TEXT_SUFFIXES = {".md", ".py", ".sh", ".yaml", ".yml", ".ts", ".tsx", ".css", ".rq", ".json", ".html"}
 
 # 「裁定B97」「裁定 B97」「Ruling B31」。全角スペースは実際には現れないので見ない。
 _REFERENCE_RE = re.compile(r"(?:裁定|Ruling)\s?(B\d+)")
