@@ -1,21 +1,18 @@
-// 画面全体で使う小さな表示ヘルパー。KGの値(法令名・機関名等)は利用者の
-// 入力ではないが、外部データである以上エスケープを徹底する。
+// 画面全体で使う小さな表示ヘルパー(純粋関数だけ)。
 //
-// **この中でも`describePathResult`は特に重い(裁定B82(3))。** `found=false`を
+// **HTML文字列を返す関数はここに置かない。** React化(裁定B106)で
+// `esc`/`provenanceHtml`/`attributeValueHtml`/`chatSourceHtml`/
+// `toolCallLogEntryHtml`/`truncationNotice` は不要になったので削除した ——
+// エスケープはReactがやり、出典・打ち切り・型バッジの描画は
+// `components/ui.tsx` の部品(`SourceNote`/`Truncation`/`TypeBadge`)が持つ。
+// それらが縛っていた不変条件(available=false で空リンクを描かない、
+// truncated=false で何も出さない等)は部品のテストが引き継いでいる。
+//
+// **`describePathResult`は特に重い(裁定B82(3))。** `found=false`を
 // 「無い」と描くのは、このプロジェクトが繰り返し最も重い欠陥として扱って
-// きた「報告が嘘をつく」型そのもの——DOM組み立てから分離した純粋関数にして、
+// きた「報告が嘘をつく」型そのもの——描画から分離した純粋関数にして、
 // `format.test.ts`で「文言の選択」だけを直接検査できるようにしてある。
-import type { AttributeValue, ChatResponse, ChatSource, EntityDetailResponse, PathResponse, Provenance } from "./api/client";
-import { enumValueLabel, typeLabel } from "./labels";
-
-export function esc(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+import type { PathResponse } from "./api/client";
 
 /**
  * 円を「兆/億/万円」に丸めて表示する(第1層。裁定B103)。
@@ -66,30 +63,6 @@ export function formatAmountFull(yen: number): string {
 }
 
 /**
- * 出典(一次資料へのリンクと取得日時。仕様§9.2)を描く。
- *
- * `available === false`(裁定D-4)のときは**空リンクを描かない**——
- * 「出典が取れていない」と明示する(D-5ブリーフ拘束条件(d))。空文字列の
- * `source`をそのまま`<a href="">`にすると、リンクらしき見た目だけが残り、
- * 「取れていない」ことが黙って隠れる。
- */
-export function provenanceHtml(prov: Provenance | undefined): string {
-  if (!prov || !prov.available) {
-    return '<span class="jgkg-muted">出典が取れていない</span>';
-  }
-  return (
-    `<a href="${esc(prov.source)}" target="_blank" rel="noopener noreferrer">一次資料</a>` +
-    `<span class="jgkg-muted"> (取得: ${esc(prov.fetched_on)} / ${esc(prov.license)})</span>`
-  );
-}
-
-/** 件数系の打ち切り通知(仕様§9.2「黙って切らない」)。truncatedが真のときだけ表示する。 */
-export function truncationNotice(truncated: boolean, limit: number, what: string): string {
-  if (!truncated) return "";
-  return `<p class="jgkg-notice">${esc(what)}が${limit}件を超えています。すべてではなく先頭${limit}件を表示しています。</p>`;
-}
-
-/**
  * 近傍グラフのステータス行(「ノードN件・辺M件」+ 打ち切りの通知)。
  *
  * **このプロジェクトで最も高くついた欠陥の型(欠陥型10・裁定B77: 打ち切りが
@@ -120,35 +93,6 @@ export function neighborhoodStatusText(s: NeighborhoodStatus): string {
 }
 
 /**
- * 属性の1つの値(`AttributeValue`)を、値そのものと出典リンクで描く。
- *
- * 元は`entity.ts`にあった(裁定B82(4a))。グラフのノードをクリックしたときの
- * 概要パネル(裁定B92のE-1)でも同じ描画が必要になったため、DOM文字列を
- * 組み立てる純粋関数としてここに移し、両方の画面から使う——手書きの重複を
- * 避ける(このモジュールの他の関数と同じ「表示の判断を1箇所に置く」方針)。
- *
- * **`available === false`のときは空リンクを描かない**(`provenanceHtml`が
- * 既に守る。裁定B82)。`graphs`が複数あれば(同じ値を複数の名前付きグラフが
- * 主張する場合)一次資料リンクを複数並べる。
- *
- * **`pred`(述語のローカル名)を`enumValueLabel`に渡して列挙型の許容値を
- * 日本語に引き当てる**(裁定B82(4b))。列挙型を範囲に持たない述語の値は
- * 表示名が無いので`av.value`がそのまま返る(フォールバックは
- * `enumValueLabel`自身が持つ)。
- */
-export function attributeValueHtml(
-  pred: string,
-  av: AttributeValue,
-  graphs: EntityDetailResponse["graphs"],
-): string {
-  const provenances = av.graphs.map((g) => provenanceHtml(graphs[g])).join(" / ");
-  return (
-    `<span class="jgkg-attr-value">${esc(enumValueLabel(pred, av.value))}</span>` +
-    `<span class="jgkg-muted jgkg-attr-prov"> (${provenances})</span>`
-  );
-}
-
-/**
  * パス探索の`found=false`をどう読むかの判定(裁定B77の族。裁定B82(3))。
  *
  * **`exhaustive=true`のときだけ「経路は存在しない」と言ってよい。**
@@ -172,41 +116,3 @@ export function describePathResult(res: PathResponse): PathResultDescription {
   return { kind: "not-found-inconclusive", reasons };
 }
 
-/**
- * チャット(E-2。裁定B92)の出典1件を描く。
- *
- * **`source.graphs`が空なら、出典なしと明示する(空リンクを描かない)。**
- * `provenanceHtml(undefined)`が既に守る規則をそのまま使う——`search_entities`
- * だけを使った回答は出典グラフを持たない(`queries.py`の`SearchHit`参照)ので、
- * この経路は実際に起こる(捏造ではなく、道具の限界を正直に表す)。
- * 複数のグラフがあれば(`get_entity`の関係のように)一次資料リンクを複数並べる
- * ——`attributeValueHtml`と同じ形。
- */
-export function chatSourceHtml(source: ChatSource, graphs: ChatResponse["graphs"]): string {
-  const provenances =
-    source.graphs.length > 0
-      ? source.graphs.map((g) => provenanceHtml(graphs[g])).join(" / ")
-      : provenanceHtml(undefined);
-  return (
-    `<span class="jgkg-type-badge">${esc(typeLabel(source.type))}</span>` +
-    `<span class="jgkg-chat-source-label">${esc(source.label ?? "(表示名なし)")}</span>` +
-    `<span class="jgkg-muted jgkg-chat-source-prov"> (${provenances})</span>`
-  );
-}
-
-/**
- * 道具呼び出し履歴1件(裁定B92裁定2(3): 調査の過程を監査できる)。
- *
- * 引数はJSONで表示する(道具ごとに引数の形が違うため、専用の整形を型ごとに
- * 作らない——監査目的の生の記録として見せれば十分)。
- */
-export function toolCallLogEntryHtml(entry: ChatResponse["tool_calls"][number]): string {
-  const args = Object.entries(entry.arguments)
-    .map(([k, v]) => `${k}=${String(v)}`)
-    .join(", ");
-  return (
-    `<code class="jgkg-tool-name">${esc(entry.tool)}</code>` +
-    `<span class="jgkg-muted">(${esc(args)})</span>` +
-    ` → ${entry.result_count}件`
-  );
-}

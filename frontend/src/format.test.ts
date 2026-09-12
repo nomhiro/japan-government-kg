@@ -1,12 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type {
-  AttributeValue,
-  ChatResponse,
-  ChatSource,
-  EntityDetailResponse,
   EntityRef,
   PathResponse,
-  Provenance,
 } from "./api/client";
 
 // labels.test.tsと同じ理由(このファイルの先頭コメント参照): 表示名がある/
@@ -22,15 +17,10 @@ vi.mock("./generated/labels.json", () => ({
 }));
 
 import {
-  attributeValueHtml,
-  chatSourceHtml,
   describePathResult,
   formatAmountFull,
   formatAmountRounded,
   neighborhoodStatusText,
-  provenanceHtml,
-  toolCallLogEntryHtml,
-  truncationNotice,
 } from "./format";
 
 const REF: EntityRef = { id: "https://jgkg.norr-tech.com/id/x", id_path: "x", type: "Law", label: "テスト法令" };
@@ -117,54 +107,6 @@ describe("describePathResult", () => {
 });
 
 // =============================================================================
-// truncationNotice: truncatedが真のときだけ出す(仕様§9.2「黙って切らない」)
-// =============================================================================
-
-describe("truncationNotice", () => {
-  it("truncated=false のときは何も表示しない(空文字列)", () => {
-    expect(truncationNotice(false, 50, "関係")).toBe("");
-  });
-
-  it("truncated=true のとき、上限件数と対象名を含む注記を出す", () => {
-    const html = truncationNotice(true, 50, "関係");
-    expect(html).toContain("50");
-    expect(html).toContain("関係");
-  });
-});
-
-// =============================================================================
-// provenanceHtml: available=falseのとき空リンクを描かない(D-5ブリーフ拘束条件(d))
-// =============================================================================
-
-describe("provenanceHtml", () => {
-  const AVAILABLE: Provenance = {
-    graph: "g1",
-    source: "https://laws.e-gov.go.jp/api/2/laws",
-    fetched_on: "2026-08-25",
-    license: "PDL1.0",
-    available: true,
-  };
-
-  it("available=false のとき、リンクを描かず「出典が取れていない」と明示する", () => {
-    const html = provenanceHtml({ ...AVAILABLE, available: false, source: "" });
-    expect(html).not.toContain("<a ");
-    expect(html).toContain("出典が取れていない");
-  });
-
-  it("provenanceが無い(undefined)ときも同じく空リンクを描かない", () => {
-    const html = provenanceHtml(undefined);
-    expect(html).not.toContain("<a ");
-    expect(html).toContain("出典が取れていない");
-  });
-
-  it("available=true のとき、一次資料へのリンクと取得日時を出す", () => {
-    const html = provenanceHtml(AVAILABLE);
-    expect(html).toContain(`<a href="${AVAILABLE.source}"`);
-    expect(html).toContain(AVAILABLE.fetched_on);
-  });
-});
-
-// =============================================================================
 // neighborhoodStatusText: 近傍グラフのステータス行(裁定B92のE-1)。
 // 打ち切りのフラグが立っているのに文言が出ない状態を作ると落ちるように、
 // フラグの組み合わせごとに厳密な文字列一致で検査する(「1件以上」にしない)。
@@ -204,79 +146,6 @@ describe("neighborhoodStatusText", () => {
       "ノード100件・辺200件(ノード数の上限で一部を省略)(エッジ数の上限で一部を省略)" +
         "。7件のノードで分岐数の上限に達しています(⋯マーク。クリックで続きを見られます)",
     );
-  });
-});
-
-// =============================================================================
-// attributeValueHtml: 属性値+出典リンク(裁定B82(4a)。グラフのノード詳細
-// パネルと`entity.ts`の両方から使う共通関数になった。裁定B92のE-1)
-// =============================================================================
-
-describe("attributeValueHtml", () => {
-  const GRAPHS: EntityDetailResponse["graphs"] = {
-    g1: { graph: "g1", source: "https://example.test/a", fetched_on: "2026-08-01", license: "PDL1.0", available: true },
-    g2: { graph: "g2", source: "https://example.test/b", fetched_on: "2026-08-02", license: "PDL1.0", available: true },
-  };
-
-  it("値と出典リンクを描く", () => {
-    const av: AttributeValue = { value: "厚生労働省", graphs: ["g1"] };
-    const html = attributeValueHtml("ministry", av, GRAPHS);
-    expect(html).toContain("厚生労働省");
-    expect(html).toContain("https://example.test/a");
-  });
-
-  it("複数のグラフが同じ値を主張するとき、出典リンクを複数並べる", () => {
-    const av: AttributeValue = { value: "厚生労働省", graphs: ["g1", "g2"] };
-    const html = attributeValueHtml("ministry", av, GRAPHS);
-    expect(html).toContain("https://example.test/a");
-    expect(html).toContain("https://example.test/b");
-  });
-
-  it("列挙型の許容値は表示名に置き換える(裁定B82(4b))", () => {
-    const av: AttributeValue = { value: "resolved", graphs: ["g1"] };
-    const html = attributeValueHtml("recipientMatchCategory", av, GRAPHS);
-    expect(html).toContain("法人番号で特定できた");
-    expect(html).not.toContain(">resolved<");
-  });
-
-  it("出典が取れていない(available=false)値は、空リンクを描かない", () => {
-    const graphs: EntityDetailResponse["graphs"] = {
-      g1: { graph: "g1", source: "", fetched_on: "", license: "", available: false },
-    };
-    const av: AttributeValue = { value: "厚生労働省", graphs: ["g1"] };
-    const html = attributeValueHtml("ministry", av, graphs);
-    expect(html).not.toContain("<a ");
-    expect(html).toContain("出典が取れていない");
-  });
-});
-
-// =============================================================================
-// chatSourceHtml / toolCallLogEntryHtml: チャット(E-2。裁定B92)の出典と
-// 道具呼び出し履歴の描画。捏造しない(裁定2)ことをここでも直接検査する。
-// =============================================================================
-
-describe("chatSourceHtml", () => {
-  const GRAPHS: ChatResponse["graphs"] = {
-    g1: { graph: "g1", source: "https://example.test/a", fetched_on: "2026-08-01", license: "PDL1.0", available: true },
-  };
-
-  it("graphsが空(searchだけを使った参照)のとき、空リンクを描かず出典なしと明示する", () => {
-    const source: ChatSource = { id: "x", id_path: "x", type: "Ministry", label: "厚生労働省", graphs: [] };
-    const html = chatSourceHtml(source, {});
-    expect(html).not.toContain("<a ");
-    expect(html).toContain("出典が取れていない");
-    expect(html).toContain("厚生労働省");
-  });
-
-  it("graphsが1件以上あるとき、一次資料へのリンクを描く", () => {
-    const source: ChatSource = { id: "x", id_path: "x", type: "Ministry", label: "厚生労働省", graphs: ["g1"] };
-    const html = chatSourceHtml(source, GRAPHS);
-    expect(html).toContain('<a href="https://example.test/a"');
-  });
-
-  it("labelが無いとき「(表示名なし)」と表示する(空文字を描かない)", () => {
-    const source: ChatSource = { id: "x", id_path: "x", type: "Law", label: null, graphs: [] };
-    expect(chatSourceHtml(source, {})).toContain("(表示名なし)");
   });
 });
 
@@ -345,16 +214,3 @@ describe("formatAmountFull", () => {
   });
 });
 
-describe("toolCallLogEntryHtml", () => {
-  it("道具名・引数・件数を含む", () => {
-    const html = toolCallLogEntryHtml({ tool: "search_entities", arguments: { q: "厚生労働省", limit: 20 }, result_count: 2 });
-    expect(html).toContain("search_entities");
-    expect(html).toContain("厚生労働省");
-    expect(html).toContain("2件");
-  });
-
-  it("**核心**: 件数0のときも0件と正確に表示する(1件以上に丸めない)", () => {
-    const html = toolCallLogEntryHtml({ tool: "get_entity", arguments: { id_path: "x" }, result_count: 0 });
-    expect(html).toContain("0件");
-  });
-});

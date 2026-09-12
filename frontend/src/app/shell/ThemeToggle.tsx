@@ -52,7 +52,7 @@ export function ThemeToggle(): JSX.Element {
   return (
     <button
       type="button"
-      className="jgkg-theme-toggle"
+      className="jg-theme-toggle"
       aria-label={`表示を${targetLabel}に切り替える`}
       onClick={() => setPref(target)}
     >
