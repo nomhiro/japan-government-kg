@@ -85,9 +85,3 @@ export function routeToHash(route: Route): string {
 export function navigate(route: Route): void {
   location.hash = routeToHash(route);
 }
-
-export function onRouteChange(handler: (route: Route) => void): void {
-  const fire = () => handler(parseHash(location.hash));
-  window.addEventListener("hashchange", fire);
-  fire();
-}
