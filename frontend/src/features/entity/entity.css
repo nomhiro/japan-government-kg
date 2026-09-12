@@ -1,0 +1,39 @@
+/* エンティティ画面(裁定: 型別レイアウト・出典の畳み方)専用の小さな調整。
+   値・寸法は tokens.css の変数から。ここで新しい色を作らない。 */
+
+.entity-breadcrumb { padding-top: var(--sp-4); }
+.entity-breadcrumb a { color: var(--ink-2); }
+
+.entity-header__body { padding-block: var(--sp-4) var(--sp-6); }
+
+.entity-main { min-width: 0; }
+
+.entity-facts { align-self: start; position: sticky; top: var(--sp-5); }
+
+.entity-facts__table th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  padding: var(--sp-2) var(--sp-3) var(--sp-2) 0;
+  vertical-align: top;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--rule);
+}
+.entity-facts__table td {
+  padding: var(--sp-2) 0;
+  vertical-align: top;
+  border-bottom: 1px solid var(--rule);
+}
+.entity-facts__table tr:last-child th,
+.entity-facts__table tr:last-child td { border-bottom: 0; }
+
+.entity-facts__marker { margin-left: 2px; color: var(--muted); font-size: 0.75em; }
+
+.entity-facts__sources { border-top: 1px solid var(--rule); padding-top: var(--sp-3); margin: 0; }
+
+.entity-rel-group table.jg-table { min-width: 28rem; }
+
+@media (max-width: 900px) {
+  .entity-facts { position: static; }
+}
