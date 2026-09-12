@@ -1,0 +1,223 @@
+/* トップページ再設計(裁定B103・第1層)。色・寸法は tokens.css の変数から
+   取る。ここで新しい色を作らない——タイルの色は --axis-agent の濃淡、
+   支払先の色は既存の --ok/--muted/--signal 系トーンだけを使う。 */
+
+.jg-top { padding-block: var(--sp-6) var(--sp-9); }
+
+/* --- ヒーロー ------------------------------------------------------------ */
+
+.jg-hero__stats { align-items: stretch; }
+
+.jg-hero__scale {
+  gap: var(--sp-6);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--rule);
+}
+.jg-hero__scale-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.jg-hero__scale-item > b { font-size: var(--fs-h2); }
+
+/* --- 府省ツリーマップ ----------------------------------------------------- */
+
+.jg-treemap { width: 100%; }
+.jg-treemap__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1200 / 440;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.jg-treemap__tile rect {
+  stroke: var(--paper);
+  stroke-width: 2;
+  cursor: pointer;
+}
+.jg-treemap__tile rect:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: -3px;
+}
+.jg-treemap__tile rect:hover { filter: brightness(1.08); }
+.jg-treemap__name {
+  fill: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+.jg-treemap__amount {
+  fill: #fff;
+  font-size: 13px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.jg-treemap__mobile-list { display: none; }
+.jg-treemap__mobile-row {
+  display: grid;
+  grid-template-columns: 7em 1fr auto;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: var(--tap);
+  padding: var(--sp-1) 0;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  cursor: pointer;
+}
+.jg-treemap__mobile-name { font-size: var(--fs-sm); }
+.jg-treemap__mobile-bar {
+  display: block;
+  height: 10px;
+  min-width: 2px;
+  background: var(--axis-agent);
+  border-radius: 999px;
+}
+.jg-treemap__mobile-amount { font-size: var(--fs-sm); white-space: nowrap; }
+
+@media (max-width: 640px) {
+  .jg-treemap__svg { display: none; }
+  .jg-treemap__mobile-list { display: block; }
+}
+
+/* --- 資金の流れ ------------------------------------------------------------ */
+
+.jg-flow {
+  padding: var(--sp-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.jg-flow__title {
+  align-self: flex-start;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--primary);
+  font-weight: 700;
+  font-size: var(--fs-body);
+  text-align: left;
+  cursor: pointer;
+}
+.jg-flow__title:hover { text-decoration: underline; }
+
+.jg-flow__diagram {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.jg-flow__step { display: flex; align-items: center; gap: var(--sp-3); }
+.jg-flow__arrow { font-size: 1.25rem; color: var(--muted); }
+.jg-flow__col { display: flex; flex-direction: column; gap: var(--sp-2); }
+.jg-flow__node {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 9em;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+}
+.jg-flow__node-name { font-size: var(--fs-sm); font-weight: 700; }
+.jg-flow__node-amount { font-size: var(--fs-sm); }
+
+@media (max-width: 640px) {
+  .jg-flow__diagram { flex-direction: column; align-items: stretch; }
+  .jg-flow__step { flex-direction: column; align-items: stretch; }
+  .jg-flow__arrow { align-self: center; transform: rotate(90deg); }
+}
+
+/* --- 年度の推移 ------------------------------------------------------------ */
+
+.jg-history { display: flex; flex-direction: column; gap: var(--sp-3); }
+.jg-history__row {
+  display: grid;
+  grid-template-columns: 9em 1fr 5em;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.jg-history__track {
+  position: relative;
+  display: block;
+  height: 22px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.jg-history__fill { display: block; height: 100%; background: var(--axis-money); }
+.jg-history__tick {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--ink);
+}
+.jg-history__rate { text-align: right; }
+
+.jg-request { display: flex; flex-direction: column; gap: var(--sp-3); }
+.jg-request__row {
+  display: grid;
+  grid-template-columns: 12em 1fr auto auto auto;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.jg-request__track {
+  display: block;
+  height: 14px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.jg-request__fill { display: block; height: 100%; background: var(--axis-agent); }
+
+@media (max-width: 640px) {
+  .jg-history__row, .jg-request__row {
+    grid-template-columns: 1fr;
+    gap: var(--sp-1);
+  }
+}
+
+/* --- 支払先 ---------------------------------------------------------------- */
+
+.jg-recipient-bar {
+  display: flex;
+  width: 100%;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.jg-recipient-bar__seg { display: block; height: 100%; }
+
+.jg-recipient-legend { display: flex; flex-direction: column; gap: var(--sp-2); }
+.jg-recipient-legend__item {
+  display: grid;
+  grid-template-columns: auto 10em auto auto 1fr;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+@media (max-width: 640px) {
+  .jg-recipient-legend__item { grid-template-columns: auto 1fr auto; }
+}
+
+/* --- 入口 -------------------------------------------------------------- */
+
+.jg-entrance-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  align-items: flex-start;
+  text-align: left;
+  cursor: pointer;
+  background: var(--surface);
+}
+.jg-entrance-card:hover { background: var(--surface-2); }
+.jg-entrance-card__cta { color: var(--primary); font-weight: 700; }
