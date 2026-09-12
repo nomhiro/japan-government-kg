@@ -201,7 +201,7 @@ git commit -m "frontend: React 19 と jsdom/Testing Library を導入し、React
 
 ```tsx
 // @vitest-environment jsdom
-import { act, renderHook } from "@testing-library/react";
+import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { useRoute } from "./useRoute";
 
@@ -215,7 +215,10 @@ function setHash(hash: string): void {
   });
 }
 
+// vitest は globals 無しなので Testing Library の自動 cleanup は効かない。明示する
+// (前のレンダーが残ると後のテストが二重購読・複数一致で偽の結果になる)。
 afterEach(() => {
+  cleanup();
   window.location.hash = "";
 });
 
@@ -322,9 +325,12 @@ git commit -m "frontend: useRoute — hashchange を useSyncExternalStore で購
 
 ```tsx
 // @vitest-environment jsdom
-import { render } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, render } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { LegacyView, type LegacyMount } from "./LegacyView";
+
+// vitest は globals 無しなので Testing Library の自動 cleanup は効かない。明示する。
+afterEach(cleanup);
 
 describe("LegacyView(旧 innerHTML ビューを React ツリーに載せる橋)", () => {
   it("マウント時に mount(el) を1回呼び、el は DOM 上の要素である", () => {
@@ -720,12 +726,15 @@ Expected: PASS(9件)
 
 ```tsx
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { AppShell } from "./AppShell";
 
+// vitest は globals 無しなので Testing Library の自動 cleanup は効かない。明示する
+// (残った <main> が2つあると getByRole("main") が複数一致で落ちる)。
 afterEach(() => {
+  cleanup();
   window.location.hash = "";
   document.documentElement.removeAttribute("data-theme");
   window.localStorage.clear();
