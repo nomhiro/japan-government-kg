@@ -1,0 +1,174 @@
+/* =============================================================================
+   土台とレイアウト原始部品(裁定B106)。
+   色・寸法はすべて tokens.css の変数から取る。ここで新しい色を作らない。
+   ============================================================================= */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+html, body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  font-feature-settings: "palt" 1;   /* 日本語の約物を詰める */
+}
+
+h1, h2, h3, h4 { margin: 0; line-height: var(--lh-tight); font-weight: 700; }
+p { margin: 0; }
+ul, ol { margin: 0; padding: 0; list-style: none; }
+table { border-collapse: collapse; }
+
+a { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+button { font: inherit; color: inherit; }
+
+/* 数字は必ず等幅に揃える。桁の揺れは比較を壊す。 */
+.jg-num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+
+/* --- レイアウト --------------------------------------------------------- */
+
+/* 全幅の帯。中の .jg-inner が内容の幅を決める。 */
+.jg-band { width: 100%; }
+.jg-band--sunken { background: var(--surface-2); }
+.jg-band--ruled { border-top: 1px solid var(--rule); }
+
+.jg-inner {
+  width: 100%;
+  max-width: var(--content);
+  margin: 0 auto;
+  padding-inline: var(--sp-5);
+}
+.jg-inner--wide { max-width: var(--content-wide); }
+.jg-inner--full { max-width: none; }
+
+.jg-stack { display: flex; flex-direction: column; }
+.jg-stack--2 { gap: var(--sp-2); }
+.jg-stack--3 { gap: var(--sp-3); }
+.jg-stack--4 { gap: var(--sp-4); }
+.jg-stack--5 { gap: var(--sp-5); }
+.jg-stack--6 { gap: var(--sp-6); }
+.jg-stack--7 { gap: var(--sp-7); }
+
+.jg-row { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.jg-row--tight { gap: var(--sp-2); }
+.jg-row--between { justify-content: space-between; }
+.jg-row--baseline { align-items: baseline; }
+.jg-spacer { margin-left: auto; }
+
+.jg-grid { display: grid; gap: var(--sp-5); }
+.jg-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.jg-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.jg-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.jg-grid--sidebar { grid-template-columns: minmax(0, 1fr) 22rem; }
+
+@media (max-width: 900px) {
+  .jg-grid--2, .jg-grid--3, .jg-grid--4, .jg-grid--sidebar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 表と図だけは、はみ出しを自前の横スクロールで受ける。
+   ページ全体が横に伸びるのは許さない。 */
+.jg-scroll-x { overflow-x: auto; overscroll-behavior-x: contain; }
+
+/* --- 見出し ------------------------------------------------------------- */
+.jg-h1 { font-size: var(--fs-h1); letter-spacing: -0.02em; }
+.jg-h2 { font-size: var(--fs-h2); letter-spacing: -0.01em; }
+.jg-h3 { font-size: var(--fs-h3); }
+.jg-display {
+  font-size: var(--fs-display);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+.jg-eyebrow {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.jg-lead { font-size: 1.0625rem; color: var(--ink-2); max-width: 46em; }
+.jg-sm { font-size: var(--fs-sm); }
+.jg-xs { font-size: var(--fs-xs); }
+.jg-muted { color: var(--muted); }
+.jg-ink2 { color: var(--ink-2); }
+
+/* --- 操作要素 ----------------------------------------------------------- */
+.jg-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: var(--sp-2);
+  min-height: var(--tap); padding: 0 var(--sp-4);
+  border: 1px solid var(--rule-strong); border-radius: var(--radius);
+  background: var(--surface); color: var(--ink);
+  font-size: var(--fs-sm); cursor: pointer;
+  text-decoration: none;
+}
+.jg-btn:hover { background: var(--surface-2); text-decoration: none; }
+.jg-btn--primary {
+  background: var(--primary); color: var(--primary-ink); border-color: var(--primary);
+  font-weight: 700;
+}
+.jg-btn--primary:hover { filter: brightness(1.08); background: var(--primary); }
+.jg-btn--quiet { border-color: transparent; background: transparent; }
+.jg-btn--quiet:hover { background: var(--surface-2); }
+.jg-btn--sm { min-height: 32px; padding: 0 var(--sp-3); font-size: var(--fs-xs); }
+
+/* 切替(単一選択)。押されている側は反転。 */
+.jg-toggle { display: inline-flex; border: 1px solid var(--rule-strong); border-radius: var(--radius); overflow: hidden; }
+.jg-toggle > button {
+  min-height: 36px; padding: 0 var(--sp-3);
+  border: 0; background: var(--surface); color: var(--ink-2);
+  font-size: var(--fs-xs); cursor: pointer; white-space: nowrap;
+}
+.jg-toggle > button + button { border-left: 1px solid var(--rule); }
+.jg-toggle > button[aria-pressed="true"] { background: var(--ink); color: var(--paper); font-weight: 700; }
+
+.jg-chip {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  min-height: 32px; padding: 0 var(--sp-3);
+  border: 1px solid var(--rule); border-radius: 999px;
+  background: var(--surface); color: var(--ink-2);
+  font-size: var(--fs-xs); cursor: pointer; white-space: nowrap;
+}
+.jg-chip[aria-pressed="false"] { opacity: 0.55; }
+.jg-chip__dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+
+/* --- 面 ----------------------------------------------------------------- */
+.jg-card {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: var(--sp-5);
+}
+.jg-card--flush { padding: 0; overflow: hidden; }
+
+/* --- フォーカス(WCAG 1.4.11: 二重リングでどの地色でも3:1を超える) ----- */
+:where(a, button, input, select, textarea, [tabindex], summary):focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--ink);
+}
+/* スクロール用に tabindex を持つ器と main はリングを出さない。 */
+.jg-scroll-x:focus-visible,
+main:focus-visible { outline: none; box-shadow: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* スクリーンリーダー専用。図の代替や見出しの補足に使う。 */
+.jg-sr {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}

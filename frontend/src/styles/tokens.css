@@ -1,62 +1,202 @@
-/* デザイントークン(仕様 §3。裁定B105: デジタル庁デザインシステムの寸法と原則を
-   参考にする。公式ブランド色・ロゴは使わない)。
-   変数名のうち --paper --ink --muted --rule --signal --signal-bg --accent --surface-2 は
-   旧 style.css から引き継ぐ——旧ビュー(views/*.ts)と graph-theme.ts(Sigma のラベル色を
-   --ink/--muted から読む。裁定B95)がこの名前に依存しているため、名前は変えず値だけ更新する。
+/* =============================================================================
+   デザイントークン(裁定B105・B106)。
+   デジタル庁デザインシステムの寸法・原則を参考にし、公式ブランド色とロゴは
+   使わない(このサイトは「政府とは無関係」と告知している)。
+
+   **このアプリの色はオントロジーの6軸である。** --axis-* は
+   `src/graph-colors.ts` の `colorForAxis()` が `schema/core.yaml` の軸順から
+   導く色相と同じ設計(210°から60°刻み)を CSS 側に写したもので、
+   グラフだけでなくバッジ・見出し・凡例まで同じ色体系で塗る。
+   「色が意味を持つ」ことがこの製品の見た目の骨格である。
+
+   変数名 --paper --ink --muted --rule --signal --signal-bg --accent --surface-2
+   は旧 style.css から引き継ぐ(`graph-theme.ts` が --ink/--muted を
+   getComputedStyle で読む。裁定B95)。
 
    テーマの契約(app/theme.ts と対):
-   - :root = ライト
-   - OS がダークで、かつ明示ライトでない → ダーク
-   - data-theme="dark" → ダーク(トグルの明示)
-   色の唯一の定義場所はこのファイル。@media や [data-theme] の中だけで定義される色を作らない。 */
-:root {
-  --font-sans: "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", system-ui, sans-serif;
+   - :root                                                    = ライト
+   - @media (prefers-color-scheme: dark) :root:not([data-theme="light"]) = OSダーク
+   - :root[data-theme="dark"]                                  = 明示ダーク
+   色の唯一の定義場所はこのファイル。@media や [data-theme] の中だけで
+   定義される色を作らない。
+   ============================================================================= */
 
-  --paper: #ffffff;
-  --surface: #f5f6f8;
-  --surface-2: #eceef2;
-  --ink: #1a1a1a;
-  --muted: #5b6472;
-  --rule: #d0d5dd;
-  --primary: #1a4fb8;
-  --accent: #1a4fb8;
-  --signal: #b42318;
-  --signal-bg: #fdecea;
-  --focus: #ffd23f;
+:root {
+  /* --- 書体 -------------------------------------------------------------
+     Webフォントは読み込まない。日本語のNoto Sans JPは1ウェイト数百KBで、
+     この製品の価値(データの信頼性と読みやすさ)に対して割に合わない。
+     OS標準の日本語ゴシックを優先し、数字だけ tabular に揃える。 */
+  --font-sans: "Yu Gothic UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN",
+    "Noto Sans JP", "Meiryo", system-ui, sans-serif;
+  --font-num: "Yu Gothic UI", "Hiragino Sans", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "Consolas", monospace;
+
+  /* --- 文字サイズ(1.25倍の階段) --------------------------------------- */
+  --fs-display: 2.75rem;  /* 44px 数字ひとつで語る場面だけ */
+  --fs-h1: 1.875rem;      /* 30px */
+  --fs-h2: 1.3125rem;     /* 21px */
+  --fs-h3: 1rem;          /* 16px */
+  --fs-body: 1rem;        /* 16px 本文の下限 */
+  --fs-sm: 0.875rem;      /* 14px 補助 */
+  --fs-xs: 0.75rem;       /* 12px ラベル・出典。これより小さくしない */
+
+  --lh-tight: 1.25;
+  --lh-body: 1.7;
+
+  /* --- 余白(8pxグリッド) ---------------------------------------------- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --sp-8: 64px;
+  --sp-9: 96px;
 
   --radius: 8px;
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --space-6: 32px;
+  --radius-sm: 4px;
+  --radius-lg: 14px;
+  --tap: 44px;              /* タップ領域の下限 */
+  --content: 1200px;        /* 読み物の幅 */
+  --content-wide: 1560px;   /* 可視化の幅 */
+
+  /* --- 地と文字 --------------------------------------------------------- */
+  --paper: #fbfbfa;         /* わずかに暖かい白 */
+  --surface: #ffffff;       /* カードの面 */
+  --surface-2: #f1f2f4;     /* 帯のtrack・沈んだ面 */
+  --surface-3: #e6e8ec;
+  --ink: #14171c;
+  --ink-2: #3d4450;         /* 副見出し */
+  --muted: #616a78;         /* 補助・出典 */
+  --rule: #d9dde3;          /* 罫線 */
+  --rule-strong: #b9c0ca;
+
+  /* --- 主色・状態 ------------------------------------------------------- */
+  --primary: #14509b;
+  --primary-ink: #ffffff;
+  --primary-weak: #e8f0fa;
+  --accent: #14509b;        /* 旧名。リンク色として維持 */
+  --signal: #a4291c;        /* 注記・限界・エラー */
+  --signal-bg: #fdeeeb;
+  --focus: #ffd23f;
+  --ok: #1c6b45;
+
+  /* --- 6軸(オントロジー由来。graph-colors.ts と同じ設計) --------------
+     Agent 210° / Work 270° / Place 330° / Event 30° / MonetaryItem 90° /
+     Concept 150°。UnresolvedReference は無彩色(軸の一員に見せない)。 */
+  --axis-agent: #2f6fb8;
+  --axis-agent-bg: #e9f1fa;
+  --axis-work: #6b46c1;
+  --axis-work-bg: #f0eafb;
+  --axis-place: #b8447e;
+  --axis-place-bg: #fbeaf3;
+  --axis-event: #a8631b;
+  --axis-event-bg: #fbf1e4;
+  --axis-money: #2f7d4f;
+  --axis-money-bg: #e7f4ec;
+  --axis-concept: #17786f;
+  --axis-concept-bg: #e4f3f1;
+  --axis-unresolved: #6d7480;
+  --axis-unresolved-bg: #eef0f2;
+
+  /* --- グラフ ----------------------------------------------------------- */
+  --graph-bg: #fdfdfc;
+  --graph-grid: #eceef1;
+  --graph-edge: #a9b1bd;
+  --graph-edge-strong: #14171c;
+  --graph-dim: 0.14;        /* 絞り込みで外れたものの不透明度 */
 }
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #14161a;
-    --surface: #1c1f25;
-    --surface-2: #22262c;
-    --ink: #e7e4de;
-    --muted: #a1a8b2;
-    --rule: #2f343b;
-    --primary: #7ba7f7;
-    --accent: #7ba7f7;
-    --signal: #f19a8a;
-    --signal-bg: #2c1d19;
+    --paper: #101318;
+    --surface: #171b21;
+    --surface-2: #1f242c;
+    --surface-3: #2a3038;
+    --ink: #e9eaec;
+    --ink-2: #bcc2cc;
+    --muted: #98a0ac;
+    --rule: #2c323b;
+    --rule-strong: #414954;
+
+    --primary: #7fb0ee;
+    --primary-ink: #0d1117;
+    --primary-weak: #16243a;
+    --accent: #7fb0ee;
+    --signal: #f0988a;
+    --signal-bg: #2d1a17;
     --focus: #ffd23f;
+    --ok: #6cc294;
+
+    --axis-agent: #74a9e4;
+    --axis-agent-bg: #16243a;
+    --axis-work: #a98ce8;
+    --axis-work-bg: #231c3a;
+    --axis-place: #e08ab6;
+    --axis-place-bg: #35192a;
+    --axis-event: #d9a05c;
+    --axis-event-bg: #2f2214;
+    --axis-money: #6fc08d;
+    --axis-money-bg: #14291d;
+    --axis-concept: #62bdb2;
+    --axis-concept-bg: #10292a;
+    --axis-unresolved: #9aa2ae;
+    --axis-unresolved-bg: #23272e;
+
+    --graph-bg: #12161b;
+    --graph-grid: #1c2128;
+    --graph-edge: #57606d;
+    --graph-edge-strong: #e9eaec;
+    --graph-dim: 0.12;
   }
 }
+
 :root[data-theme="dark"] {
-  --paper: #14161a;
-  --surface: #1c1f25;
-  --surface-2: #22262c;
-  --ink: #e7e4de;
-  --muted: #a1a8b2;
-  --rule: #2f343b;
-  --primary: #7ba7f7;
-  --accent: #7ba7f7;
-  --signal: #f19a8a;
-  --signal-bg: #2c1d19;
+  --paper: #101318;
+  --surface: #171b21;
+  --surface-2: #1f242c;
+  --surface-3: #2a3038;
+  --ink: #e9eaec;
+  --ink-2: #bcc2cc;
+  --muted: #98a0ac;
+  --rule: #2c323b;
+  --rule-strong: #414954;
+
+  --primary: #7fb0ee;
+  --primary-ink: #0d1117;
+  --primary-weak: #16243a;
+  --accent: #7fb0ee;
+  --signal: #f0988a;
+  --signal-bg: #2d1a17;
   --focus: #ffd23f;
+  --ok: #6cc294;
+
+  --axis-agent: #74a9e4;
+  --axis-agent-bg: #16243a;
+  --axis-work: #a98ce8;
+  --axis-work-bg: #231c3a;
+  --axis-place: #e08ab6;
+  --axis-place-bg: #35192a;
+  --axis-event: #d9a05c;
+  --axis-event-bg: #2f2214;
+  --axis-money: #6fc08d;
+  --axis-money-bg: #14291d;
+  --axis-concept: #62bdb2;
+  --axis-concept-bg: #10292a;
+  --axis-unresolved: #9aa2ae;
+  --axis-unresolved-bg: #23272e;
+
+  --graph-bg: #12161b;
+  --graph-grid: #1c2128;
+  --graph-edge: #57606d;
+  --graph-edge-strong: #e9eaec;
+  --graph-dim: 0.12;
+}
+
+/* ダークでフォームコントロールとスクロールバーもテーマに従わせる。 */
+:root[data-theme="dark"] { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { color-scheme: dark; }
 }

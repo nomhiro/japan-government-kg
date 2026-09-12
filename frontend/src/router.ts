@@ -11,7 +11,7 @@
 // 実在するファイルへのリクエストはCloudflareが`_redirects`より先に
 // 静的ファイルを返す設計だが、この前提を確かめずに導入するのは危険が
 // 大きい。ハッシュはサーバに送られないので、この種のインフラ変更が
-// 一切不要になる(この判断の根拠はD-5報告に明記する)。
+// 一切不要になる。
 //
 // **`id_path`をハッシュに入れるときのエンコード方針**: `id_path`(パス
 // セグメント用の値)はAPIに渡すときと同じ形(そのまま。裁定B59/B69)で
@@ -22,10 +22,13 @@
 // `URLSearchParams`は使わない——`+`とスペースの扱いが食い違うため)。
 
 export type Route =
+  | { name: "top" }
   | { name: "search"; q: string }
   | { name: "entity"; idPath: string }
   | { name: "path"; from?: string; to?: string }
-  | { name: "chat" };
+  | { name: "chat" }
+  | { name: "data" }
+  | { name: "notFound"; hash: string };
 
 function parseQuery(qs: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -48,40 +51,131 @@ function buildQuery(params: Record<string, string | undefined>): string {
   return parts.join("&");
 }
 
-export function parseHash(hash: string): Route {
+function splitHash(hash: string): { segments: string[]; query: string } {
   const body = hash.replace(/^#\/?/, "");
   const [pathPart = "", queryPart = ""] = body.split("?");
-  const segments = pathPart.split("/").filter((s) => s.length > 0);
+  return {
+    segments: pathPart.split("/").filter((s) => s.length > 0),
+    query: queryPart,
+  };
+}
 
+export function parseHash(hash: string): Route {
+  const { segments, query } = splitHash(hash);
+
+  if (segments.length === 0) {
+    return { name: "top" };
+  }
   if (segments[0] === "entity" && segments.length > 1) {
     // id_pathは複数セグメントを含む(例: unresolved/jurisdiction/...)。
     // 先頭の"entity"だけを外し、残りを"/"で結合し直して元のid_pathに戻す。
     return { name: "entity", idPath: segments.slice(1).join("/") };
   }
+  if (segments[0] === "search") {
+    return { name: "search", q: parseQuery(query).q ?? "" };
+  }
   if (segments[0] === "path") {
-    const q = parseQuery(queryPart);
+    const q = parseQuery(query);
     return { name: "path", from: q.from, to: q.to };
   }
   if (segments[0] === "chat") {
     return { name: "chat" };
   }
-  const q = parseQuery(queryPart);
-  return { name: "search", q: q.q ?? "" };
+  if (segments[0] === "data") {
+    return { name: "data" };
+  }
+  // **知らないハッシュは検索に落とさない。** 黙ってトップに戻すと、
+  // 打ち間違いや古いリンクが「何も無かった」ように見える(旧実装の挙動)。
+  return { name: "notFound", hash };
 }
 
 export function routeToHash(route: Route): string {
   switch (route.name) {
+    case "top":
+      return "#/";
     case "search":
-      return route.q ? `#/?${buildQuery({ q: route.q })}` : "#/";
+      return route.q ? `#/search?${buildQuery({ q: route.q })}` : "#/search";
     case "entity":
       return `#/entity/${route.idPath}`;
     case "path":
       return `#/path?${buildQuery({ from: route.from, to: route.to })}`;
     case "chat":
       return "#/chat";
+    case "data":
+      return "#/data";
+    case "notFound":
+      return route.hash;
   }
 }
 
 export function navigate(route: Route): void {
   location.hash = routeToHash(route);
+}
+
+// ---------------------------------------------------------------------------
+// グラフの状態(エンティティ画面)
+// ---------------------------------------------------------------------------
+//
+// **グラフの見え方はURLに載せる。** 深さ・並べ方・軸の絞り込み・選択中の
+// ノードを共有・復元できるようにする(仕様§2.3「状態はURLに」)。
+// `Route` の形は変えない —— `parseHash` の entity 分岐の戻り値に任意の
+// フィールドを足すと `router.test.ts` が縛っている往復の不変条件に
+// 余計な自由度が入るため、グラフの状態は別の関数で読む。
+
+export type GraphLayout = "lanes" | "force";
+
+export interface GraphParams {
+  /** 近傍の深さ。APIの上限(1〜2)は呼び出し側が `api/limits.ts` から与える。 */
+  readonly depth: number;
+  readonly layout: GraphLayout;
+  /** 表示する軸。空配列は「すべて」を意味する(絞り込みなし)。 */
+  readonly axes: readonly string[];
+  /** 選択中のノードの id_path。 */
+  readonly selected?: string;
+}
+
+export const DEFAULT_GRAPH_PARAMS: GraphParams = {
+  depth: 1,
+  layout: "lanes",
+  axes: [],
+};
+
+export function parseGraphParams(hash: string): GraphParams {
+  const q = parseQuery(splitHash(hash).query);
+  const depth = Number.parseInt(q.d ?? "", 10);
+  const layout: GraphLayout = q.lay === "force" ? "force" : "lanes";
+  const axes = (q.ax ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  return {
+    depth: Number.isFinite(depth) && depth > 0 ? depth : DEFAULT_GRAPH_PARAMS.depth,
+    layout,
+    axes,
+    selected: q.sel && q.sel.length > 0 ? q.sel : undefined,
+  };
+}
+
+/** エンティティ画面のハッシュを、グラフの状態つきで組み立てる。 */
+export function entityHash(idPath: string, params: GraphParams): string {
+  const q = buildQuery({
+    d: params.depth === DEFAULT_GRAPH_PARAMS.depth ? undefined : String(params.depth),
+    lay: params.layout === DEFAULT_GRAPH_PARAMS.layout ? undefined : params.layout,
+    ax: params.axes.length > 0 ? params.axes.join(",") : undefined,
+    sel: params.selected,
+  });
+  return q ? `#/entity/${idPath}?${q}` : `#/entity/${idPath}`;
+}
+
+/**
+ * グラフの状態だけを差し替える(履歴を積まない)。
+ * 深さや絞り込みの操作で「戻る」が使い物にならなくなるのを避ける。
+ */
+export function replaceGraphParams(idPath: string, params: GraphParams): void {
+  const next = entityHash(idPath, params);
+  if (next === location.hash) return;
+  history.replaceState(null, "", next);
+  // replaceState は hashchange を発火しない。購読側(useRoute/useGraphParams)に
+  // 知らせるため、同じ形のイベントを自分で投げる。
+  window.dispatchEvent(new HashChangeEvent("hashchange"));
 }

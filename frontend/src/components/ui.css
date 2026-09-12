@@ -1,0 +1,86 @@
+/* 共通小部品。値は tokens.css の変数から。 */
+
+.jg-section { padding-block: var(--sp-7); }
+.jg-section__head { align-items: flex-end; }
+.jg-section__note { max-width: 62em; }
+
+.jg-badge {
+  display: inline-flex; align-items: center;
+  padding: 2px var(--sp-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs); font-weight: 700; line-height: 1.5;
+  white-space: nowrap;
+}
+.jg-badge--sm { font-size: 11px; padding: 1px 6px; }
+
+.jg-stat {
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  padding: var(--sp-5);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+.jg-stat--caution { border-color: var(--signal); background: var(--signal-bg); }
+.jg-stat__unit { font-size: var(--fs-h2); font-weight: 700; margin-left: 2px; letter-spacing: 0; }
+
+.jg-limit-tag {
+  display: inline-flex; align-items: center;
+  margin-left: var(--sp-2); padding: 1px 6px;
+  border: 1px solid var(--signal); border-radius: var(--radius-sm);
+  color: var(--signal); font-size: var(--fs-xs); font-weight: 700;
+  vertical-align: middle;
+}
+
+.jg-caveat {
+  display: flex; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--signal-bg);
+  border: 1px solid var(--signal);
+  border-radius: var(--radius);
+  color: var(--ink);
+}
+.jg-caveat > svg { flex: none; margin-top: 3px; color: var(--signal); }
+
+.jg-trunc {
+  margin: 0; padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  color: var(--ink-2);
+}
+
+.jg-source { margin: 0; }
+.jg-source__missing { color: var(--signal); }
+.jg-source__license { color: var(--muted); }
+
+.jg-loading { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-5) 0; }
+.jg-loading__bar {
+  width: 96px; height: 4px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--surface-3) 25%, var(--rule-strong) 50%, var(--surface-3) 75%);
+  background-size: 200% 100%;
+  animation: jg-shimmer 1.1s linear infinite;
+}
+@keyframes jg-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+.jg-error {
+  padding: var(--sp-4);
+  background: var(--signal-bg);
+  border: 1px solid var(--signal);
+  border-radius: var(--radius);
+  color: var(--ink);
+}
+
+/* --- 表(関係の一覧・内訳) ---------------------------------------------- */
+.jg-table { width: 100%; font-size: var(--fs-sm); }
+.jg-table th {
+  text-align: left; font-size: var(--fs-xs); font-weight: 700; color: var(--muted);
+  padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--rule-strong);
+  white-space: nowrap;
+}
+.jg-table td {
+  padding: var(--sp-3); border-bottom: 1px solid var(--rule); vertical-align: top;
+}
+.jg-table tbody tr:hover { background: var(--surface-2); }
+.jg-table__num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
