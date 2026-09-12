@@ -67,6 +67,13 @@ async function renderReady() {
   await screen.findByRole("button", { name: /Ministry.*厚生労働省|厚生労働省/ });
 }
 
+function parseViewBox(svg: SVGSVGElement): { x: number; y: number; w: number; h: number } {
+  const [x = 0, y = 0, w = 0, h = 0] = (svg.getAttribute("viewBox") ?? "")
+    .split(/\s+/)
+    .map(Number);
+  return { x, y, w, h };
+}
+
 describe("GraphView(厚労省の実サンプル: 26ノード・25辺)", () => {
   it("中心と事業のカードが実テキストとして描かれ、状態行が件数を報告する(打ち切りの告知も含む)", async () => {
     await renderReady();
@@ -163,19 +170,38 @@ describe("GraphView(厚労省の実サンプル: 26ノード・25辺)", () => {
     expect(container.querySelectorAll(".jg-graph-lane-title").length).toBeGreaterThan(0);
   });
 
-  it("ズーム: 「＋」でviewBoxが縮小(拡大表示)、「フィット」で元に戻る", async () => {
+  it("既定の表示は器の幅に合わせ、拡大率は1.0を超えない(カードが読める大きさで描かれる)", async () => {
+    const { container } = render(<Harness />);
+    await screen.findByRole("button", { name: /厚生労働省/ });
+    const svg = container.querySelector("svg.jg-graph-svg") as SVGSVGElement;
+    const { w, h } = parseViewBox(svg);
+
+    // **全体を収めない。** 1レーンに25枚のカードが縦に並ぶ実データで全体を収めると
+    // 0.5倍程度まで縮み、カードの文字が読めなくなる(実ブラウザで確認した欠陥)。
+    // 器(jsdomでは既定の1000x600)と同じ大きさのviewBox = 拡大率1.0 で描く。
+    expect(w).toBe(1000);
+    expect(h).toBe(600);
+  });
+
+  it("ズーム: 「＋」でviewBoxが縮小(拡大表示)。「全体をフィット」は全体を収める(=縦に広がる)", async () => {
     const user = userEvent.setup();
     const { container } = render(<Harness />);
     await screen.findByRole("button", { name: /厚生労働省/ });
     const svg = container.querySelector("svg.jg-graph-svg") as SVGSVGElement;
-    const initial = svg.getAttribute("viewBox");
+    const initial = parseViewBox(svg);
 
     await user.click(screen.getByRole("button", { name: "拡大" }));
-    const afterZoom = svg.getAttribute("viewBox");
-    expect(afterZoom).not.toBe(initial);
+    expect(parseViewBox(svg).w).toBeLessThan(initial.w);
 
+    // 「フィット」は既定に戻すのではなく**全体を収める**。この実サンプルは
+    // 器より縦に長い(事業25件が1レーンに並ぶ)ので、viewBoxは縦に広がる。
     await user.click(screen.getByRole("button", { name: "全体をフィット" }));
-    expect(svg.getAttribute("viewBox")).toBe(initial);
+    const fitted = parseViewBox(svg);
+    expect(fitted.h).toBeGreaterThan(initial.h);
+
+    // 冪等: もう一度押しても同じ。
+    await user.click(screen.getByRole("button", { name: "全体をフィット" }));
+    expect(parseViewBox(svg)).toEqual(fitted);
   });
 
   it("「すべての関係を表で」を押すと、辺と同じ本数の行を持つ表が現れる", async () => {

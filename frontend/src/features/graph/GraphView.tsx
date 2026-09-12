@@ -224,16 +224,51 @@ export function GraphView(props: GraphViewProps): JSX.Element {
   );
 
   // --- ズーム・パン(SVGのviewBoxを直接操作) -------------------------------------
-  const fitViewBox: ViewBox = useMemo(
+  //
+  // **既定は「幅に合わせる。ただし縮小だけ」。全体を収めない。**
+  // 全体を収める(高さにも合わせる)と、1レーンに25枚のカードが縦に並ぶ実データで
+  // 0.5倍程度まで縮み、**カードの文字が読めなくなる**(実ブラウザで確認した)。
+  // 読めることを収まることより優先し、縦はスクロール/パンで辿る。
+  // 利用者が「フィット」を押したときだけ全体を収める(下の fitAllViewBox)。
+  const [svgSize, setSvgSize] = useState({ w: 1000, h: 600 });
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect;
+      if (r && r.width > 0 && r.height > 0) setSvgSize({ w: r.width, h: r.height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const contentW = layoutResult.width + VIEWBOX_PAD * 2;
+  const contentH = layoutResult.height + VIEWBOX_PAD * 2;
+
+  /** 既定の見え方。viewBoxの縦横比は器に揃えるので、余白(letterbox)は出ない。 */
+  const defaultViewBox: ViewBox = useMemo(() => {
+    const scale = Math.min(svgSize.w / Math.max(contentW, 1), 1);
+    return {
+      x: -VIEWBOX_PAD,
+      y: -VIEWBOX_PAD,
+      w: Math.max(svgSize.w / scale, MIN_VIEWBOX),
+      h: Math.max(svgSize.h / scale, MIN_VIEWBOX),
+    };
+  }, [contentW, svgSize.w, svgSize.h]);
+
+  /** 「フィット」ボタン用。全体を1画面に収める(縮小を許す)。 */
+  const fitAllViewBox: ViewBox = useMemo(
     () => ({
       x: -VIEWBOX_PAD,
       y: -VIEWBOX_PAD,
-      w: Math.max(layoutResult.width + VIEWBOX_PAD * 2, MIN_VIEWBOX),
-      h: Math.max(layoutResult.height + VIEWBOX_PAD * 2, MIN_VIEWBOX),
+      w: Math.max(contentW, MIN_VIEWBOX),
+      h: Math.max(contentH, MIN_VIEWBOX),
     }),
-    [layoutResult.width, layoutResult.height],
+    [contentW, contentH],
   );
-  const viewBox = manualViewBox ?? fitViewBox;
+
+  const fitViewBox = defaultViewBox;
+  const viewBox = manualViewBox ?? defaultViewBox;
 
   const zoomBy = useCallback(
     (factor: number) => {
@@ -311,7 +346,7 @@ export function GraphView(props: GraphViewProps): JSX.Element {
         onAxesChange={handleAxesChange}
         onZoomIn={() => zoomBy(0.8)}
         onZoomOut={() => zoomBy(1.25)}
-        onFit={() => setManualViewBox(null)}
+        onFit={() => setManualViewBox(fitAllViewBox)}
         showTable={showTable}
         onToggleTable={() => setShowTable((s) => !s)}
         status={status}

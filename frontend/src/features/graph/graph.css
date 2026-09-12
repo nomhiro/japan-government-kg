@@ -77,7 +77,11 @@
 
 .jg-graph-view__body {
   display: flex;
-  flex-direction: row-reverse;
+  /* DOMの順は svg → Inspector(読み上げの順序として図が先)。
+     見た目も同じ順(図が左・インスペクタが右)にする ——
+     row-reverse にすると空のインスペクタが画面の左1/4を占め、
+     主役のグラフが右へ押し出される(実ブラウザで確認した)。 */
+  flex-direction: row;
   gap: var(--sp-4);
   align-items: flex-start;
 }
@@ -86,8 +90,8 @@
   flex: 1 1 auto;
   min-width: 0;
   width: 100%;
-  height: 60vh;
-  min-height: 360px;
+  height: min(78vh, 900px);
+  min-height: 420px;
   background: var(--graph-bg);
   border: 1px solid var(--rule);
   border-radius: var(--radius);
@@ -301,7 +305,8 @@
 
 /* --- 400px幅でも成立させる ---------------------------------------------------- */
 
-@media (max-width: 640px) {
+@media (max-width: 900px) {
+  /* 図を上、インスペクタを下へ(DOMの順のまま縦に積む)。 */
   .jg-graph-view__body {
     flex-direction: column;
   }
@@ -310,6 +315,6 @@
     flex: none;
   }
   .jg-graph-svg {
-    height: 70vh;
+    height: min(62vh, 620px);
   }
 }
