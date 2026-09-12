@@ -1,36 +1,10 @@
-/* 最小限のスタイル。投資の中心はUIに置かない(controllerの設計1)ため、
-   デザインシステムやCSSフレームワークは入れず、読みやすさに必要な分だけ書く。 */
-:root {
-  --paper: #f7f6f3;
-  --ink: #16191d;
-  --muted: #5c636d;
-  --rule: #dcd8d1;
-  --signal: #8a2b1c;
-  --signal-bg: #f6ece9;
-  --accent: #2563eb;
-  /* トップページ第1層(裁定B103)の帯グラフ track用。`docs/mockups/top-page.html`の
-     `--surface-2`と同じ値(レビュー済みの見た目をそのまま使う)。 */
-  --surface-2: #efece7;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --paper: #14161a;
-    --ink: #e7e4de;
-    --muted: #a1a8b2;
-    --rule: #2f343b;
-    --signal: #dd8570;
-    --signal-bg: #2c1d19;
-    --accent: #7ba7f7;
-    --surface-2: #22262c;
-  }
-}
+/* 旧ビュー(views/*.ts)が使うスタイル。色は styles/tokens.css の変数だけを使う(裁定B105)。Phase 3 で旧ビューが消えるまで残す。 */
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--paper); color: var(--ink); }
 body {
-  font-family: "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  font-family: var(--font-sans);
   line-height: 1.7;
 }
-#app { max-width: 60rem; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
 
 /* データ検索が未配備のとき(裁定B82(2))に主動線へ格上げする2つのリンク。
    フッターの二次リンクより目立たせる必要があるため、通常のjgkg-secondaryとは

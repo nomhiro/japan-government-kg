@@ -1,0 +1,56 @@
+/* 共通シェル。色・寸法はすべて styles/tokens.css の変数から(裁定B105)。
+   タップ領域は 44px 以上、フォーカスリングは太く高コントラスト(--focus)。 */
+.jgkg-shell { min-height: 100vh; display: flex; flex-direction: column; }
+
+.jgkg-skip {
+  position: absolute; left: var(--space-2); top: var(--space-2);
+  transform: translateY(-200%);
+  padding: var(--space-2) var(--space-4); min-height: 44px;
+  background: var(--ink); color: var(--paper); border: 0; border-radius: var(--radius);
+  font: inherit;
+}
+.jgkg-skip:focus-visible { transform: none; outline: 3px solid var(--focus); outline-offset: 2px; z-index: 10; }
+
+.jgkg-shell-header {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-5);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper);
+}
+.jgkg-brand { display: flex; flex-direction: column; line-height: 1.25; text-decoration: none; color: var(--ink); min-height: 44px; justify-content: center; }
+.jgkg-brand-name { font-weight: 700; font-size: 1rem; }
+.jgkg-brand-sub { font-size: 0.75rem; color: var(--muted); }
+
+.jgkg-omnibox { flex: 1 1 18rem; max-width: 36rem; }
+.jgkg-omnibox-input {
+  width: 100%; min-height: 44px; padding: 0 var(--space-3);
+  border: 1px solid var(--rule); border-radius: var(--radius);
+  background: var(--surface); color: var(--ink); font: inherit; font-size: 1rem;
+}
+
+.jgkg-shell-nav { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-left: auto; }
+.jgkg-shell-nav a {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 var(--space-3);
+  color: var(--ink); text-decoration: none; border-bottom: 2px solid transparent; font-size: 0.95rem;
+}
+.jgkg-shell-nav a[aria-current="page"] { border-bottom-color: var(--ink); font-weight: 600; }
+.jgkg-shell-nav a:hover { color: var(--primary); }
+
+.jgkg-theme-toggle {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  min-height: 44px; padding: 0 var(--space-3);
+  border: 1px solid var(--rule); border-radius: var(--radius);
+  background: var(--paper); color: var(--ink); font: inherit; font-size: 0.9rem; cursor: pointer;
+}
+
+.jgkg-shell-main { max-width: 60rem; width: 100%; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
+.jgkg-shell-main:focus { outline: none; }
+
+/* フォーカスリングはシェル配下の全操作要素に共通(旧ビューの要素も含む)。 */
+.jgkg-shell :is(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid var(--focus); outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jgkg-shell * { transition: none !important; animation: none !important; }
+}

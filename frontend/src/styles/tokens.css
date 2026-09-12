@@ -1,0 +1,62 @@
+/* デザイントークン(仕様 §3。裁定B105: デジタル庁デザインシステムの寸法と原則を
+   参考にする。公式ブランド色・ロゴは使わない)。
+   変数名のうち --paper --ink --muted --rule --signal --signal-bg --accent --surface-2 は
+   旧 style.css から引き継ぐ——旧ビュー(views/*.ts)と graph-theme.ts(Sigma のラベル色を
+   --ink/--muted から読む。裁定B95)がこの名前に依存しているため、名前は変えず値だけ更新する。
+
+   テーマの契約(app/theme.ts と対):
+   - :root = ライト
+   - OS がダークで、かつ明示ライトでない → ダーク
+   - data-theme="dark" → ダーク(トグルの明示)
+   色の唯一の定義場所はこのファイル。@media や [data-theme] の中だけで定義される色を作らない。 */
+:root {
+  --font-sans: "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", system-ui, sans-serif;
+
+  --paper: #ffffff;
+  --surface: #f5f6f8;
+  --surface-2: #eceef2;
+  --ink: #1a1a1a;
+  --muted: #5b6472;
+  --rule: #d0d5dd;
+  --primary: #1a4fb8;
+  --accent: #1a4fb8;
+  --signal: #b42318;
+  --signal-bg: #fdecea;
+  --focus: #ffd23f;
+
+  --radius: 8px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #14161a;
+    --surface: #1c1f25;
+    --surface-2: #22262c;
+    --ink: #e7e4de;
+    --muted: #a1a8b2;
+    --rule: #2f343b;
+    --primary: #7ba7f7;
+    --accent: #7ba7f7;
+    --signal: #f19a8a;
+    --signal-bg: #2c1d19;
+    --focus: #ffd23f;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #14161a;
+  --surface: #1c1f25;
+  --surface-2: #22262c;
+  --ink: #e7e4de;
+  --muted: #a1a8b2;
+  --rule: #2f343b;
+  --primary: #7ba7f7;
+  --accent: #7ba7f7;
+  --signal: #f19a8a;
+  --signal-bg: #2c1d19;
+  --focus: #ffd23f;
+}

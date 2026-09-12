@@ -5,6 +5,7 @@ import { renderEntity } from "../views/entity";
 import { renderPath } from "../views/path";
 import { renderSearch } from "../views/search";
 import { LegacyView, type LegacyController } from "./LegacyView";
+import { AppShell } from "./shell/AppShell";
 import { useRoute } from "./useRoute";
 
 // ルート → 画面の対応表。Phase 0 では全ルートが旧ビュー(LegacyView 経由)。
@@ -30,5 +31,9 @@ export function App(): JSX.Element {
   // ハッシュ文字列を key にする = ハッシュが変わるたびに旧ビューを破棄して描き直す
   // (旧 main.ts と同じ挙動(ハッシュが変わるたびに破棄して描き直す))。検索ビューは入力中にハッシュを書き換えない
   // (views/search.ts はクリック時の navigate だけ)ので、入力途中で再マウントされることはない。
-  return <LegacyView key={routeToHash(route)} mount={(el) => mountLegacy(el, route)} />;
+  return (
+    <AppShell route={route}>
+      <LegacyView key={routeToHash(route)} mount={(el) => mountLegacy(el, route)} />
+    </AppShell>
+  );
 }
