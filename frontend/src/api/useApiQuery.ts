@@ -31,7 +31,14 @@ export function useApiQuery<T>(key: string | null, fetcher: () => Promise<T>): Q
   fetcherRef.current = fetcher;
 
   useEffect(() => {
-    if (key === null) return;
+    if (key === null) {
+      // **`key === null` は「問い合わせない」であって「前の結果を持ち続ける」ではない。**
+      // 何もせず抜けると、検索語を消した・選択を外したときに直前の応答が画面に
+      // 残り続ける(実装者が SearchPage / EntityPicker / PathPage の3か所で踏み、
+      // 1件は実ブラウザでしか出なかった)。結果を空に戻す。
+      setState({ status: "ready", data: undefined as T });
+      return;
+    }
     let cancelled = false;
     setState({ status: "loading" });
     fetcherRef.current().then(
