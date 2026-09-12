@@ -1,0 +1,315 @@
+/* レーン流れ図(裁定B106)。色・寸法は tokens.css の変数から。 */
+
+.jg-graph-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+/* --- ツールバー ----------------------------------------------------------- */
+
+.jg-graph-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.jg-graph-toolbar__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.jg-graph-toolbar__group {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+.jg-graph-toolbar__group legend {
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+  margin-right: var(--sp-1);
+  padding: 0;
+}
+
+.jg-graph-toolbar__btn {
+  padding: 4px var(--sp-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.jg-graph-toolbar__btn[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--surface);
+  border-color: var(--ink);
+}
+
+.jg-graph-toolbar__axes {
+  gap: var(--sp-2);
+}
+
+.jg-graph-chip {
+  padding: 2px var(--sp-3);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: transparent;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  cursor: pointer;
+}
+.jg-graph-chip--clear {
+  border-style: dashed;
+  color: var(--ink-2);
+}
+
+.jg-graph-toolbar__status {
+  color: var(--ink-2);
+}
+
+/* --- 本体(SVG + インスペクタ) --------------------------------------------- */
+
+.jg-graph-view__body {
+  display: flex;
+  flex-direction: row-reverse;
+  gap: var(--sp-4);
+  align-items: flex-start;
+}
+
+.jg-graph-svg {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  height: 60vh;
+  min-height: 360px;
+  background: var(--graph-bg);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  touch-action: none;
+  cursor: grab;
+}
+.jg-graph-svg:active {
+  cursor: grabbing;
+}
+
+.jg-graph-inspector {
+  flex: 0 0 20rem;
+  width: 20rem;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.jg-graph-inspector__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.jg-graph-inspector__center-tag {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--ink-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--sp-2);
+}
+
+.jg-graph-inspector__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.jg-graph-inspector__actions button {
+  padding: 4px var(--sp-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+}
+.jg-graph-inspector__actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.jg-graph-inspector__section {
+  border-top: 1px solid var(--rule);
+  padding-top: var(--sp-3);
+}
+
+.jg-graph-inspector__attrs {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--sp-1) var(--sp-3);
+  margin: 0;
+}
+.jg-graph-inspector__attr {
+  display: contents;
+}
+.jg-graph-inspector__attrs dt {
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+}
+.jg-graph-inspector__attrs dd {
+  margin: 0;
+}
+
+.jg-graph-inspector__rel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.jg-graph-inspector__rel-list button {
+  width: 100%;
+  text-align: left;
+  padding: 4px var(--sp-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+}
+.jg-graph-inspector__rel-list button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* --- ノード(角丸の小さなカード) -------------------------------------------- */
+
+.jg-graph-node {
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+.jg-graph-node.is-dim {
+  opacity: var(--graph-dim);
+}
+.jg-graph-node__card {
+  fill: var(--surface);
+  stroke: var(--graph-edge);
+  stroke-width: 1;
+}
+.jg-graph-node.is-selected .jg-graph-node__card {
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+.jg-graph-node.is-center .jg-graph-node__card {
+  stroke-width: 3;
+}
+.jg-graph-node__label {
+  font-size: 12px;
+  fill: var(--ink);
+  pointer-events: none;
+}
+.jg-graph-node__type {
+  font-size: 10px;
+  fill: var(--ink-2);
+  pointer-events: none;
+}
+.jg-graph-node__more {
+  font-size: 12px;
+  fill: var(--ink-2);
+  pointer-events: none;
+}
+.jg-graph-node__center-tag {
+  font-size: 10px;
+  font-weight: 700;
+  fill: var(--ink-2);
+  pointer-events: none;
+}
+.jg-graph-node--more rect {
+  fill: var(--surface-2);
+  stroke: var(--rule);
+  stroke-dasharray: 3 2;
+}
+.jg-graph-node--more text {
+  font-size: 12px;
+  fill: var(--ink-2);
+  pointer-events: none;
+}
+
+/* --- 辺 --------------------------------------------------------------------- */
+
+.jg-graph-edge {
+  transition: opacity 120ms ease;
+}
+.jg-graph-edge.is-dim {
+  opacity: var(--graph-dim);
+}
+.jg-graph-edge__path {
+  fill: none;
+  stroke: var(--graph-edge);
+  stroke-width: 2;
+}
+.jg-graph-edge:hover .jg-graph-edge__path {
+  stroke: var(--graph-edge-strong);
+}
+.jg-graph-arrow {
+  fill: var(--graph-edge);
+}
+.jg-graph-edge__label {
+  font-size: 10px;
+  fill: var(--ink-2);
+  paint-order: stroke;
+  stroke: var(--graph-bg);
+  stroke-width: 3px;
+  pointer-events: none;
+}
+
+.jg-graph-lane-title {
+  font-size: 12px;
+  font-weight: 700;
+  fill: var(--ink-2);
+}
+.jg-graph-aside-divider {
+  stroke: var(--rule);
+  stroke-dasharray: 4 3;
+}
+
+/* --- 表(図の代替) ------------------------------------------------------------ */
+
+.jg-graph-table-wrap {
+  overflow-x: auto;
+}
+.jg-graph-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+.jg-graph-table caption {
+  text-align: left;
+  color: var(--ink-2);
+  padding-bottom: var(--sp-2);
+}
+.jg-graph-table th,
+.jg-graph-table td {
+  border-bottom: 1px solid var(--rule);
+  padding: var(--sp-1) var(--sp-2);
+  text-align: left;
+}
+
+/* --- 400px幅でも成立させる ---------------------------------------------------- */
+
+@media (max-width: 640px) {
+  .jg-graph-view__body {
+    flex-direction: column;
+  }
+  .jg-graph-inspector {
+    width: 100%;
+    flex: none;
+  }
+  .jg-graph-svg {
+    height: 70vh;
+  }
+}
