@@ -37,3 +37,8 @@
 @media (max-width: 900px) {
   .entity-facts { position: static; }
 }
+
+/* グラフの帯。この画面で最も広い場所をグラフに与える(EntityPage.tsx のコメント参照)。 */
+.entity-graph-band {
+  padding-block: var(--sp-6) var(--sp-5);
+}

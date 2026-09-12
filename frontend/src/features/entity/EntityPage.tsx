@@ -104,21 +104,28 @@ export function EntityPage({ idPath }: { idPath: string }): JSX.Element {
   return (
     <>
       <EntityHeader entity={entity} idPath={idPath} kind={kind} ministryRef={ministryRef} />
+
+      {/* **グラフは独立した全幅の帯に置く。** サイドの「事実」とグラフ自身の
+          インスペクタに挟むと、5レーンの流れ図が幅641pxまで圧され、カードの
+          文字が読めなくなる(実ブラウザで確認した)。流れ図は左右方向に読む図なので
+          横幅が命であり、この画面で最も広い場所を与える。 */}
+      <Band full wide>
+        <div id="graph" className="jg-stack jg-stack--4 entity-graph-band">
+          <h2 className="jg-h2">つながりで見る</h2>
+          <GraphView
+            center={centerRef}
+            params={graphParams}
+            onParamsChange={(next) => replaceGraphParams(idPath, next)}
+            onRecenter={(nextIdPath) => navigate({ name: "entity", idPath: nextIdPath })}
+            onUseAsPathStart={(nextIdPath) => navigate({ name: "path", from: nextIdPath })}
+          />
+          <Caveat>{graphCaveatText(kind)}</Caveat>
+        </div>
+      </Band>
+
       <Band full>
         <div className="jg-grid jg-grid--sidebar entity-layout">
           <div className="jg-stack jg-stack--7 entity-main">
-            <div id="graph" className="jg-stack jg-stack--4">
-              <h2 className="jg-h2">つながりで見る</h2>
-              <GraphView
-                center={centerRef}
-                params={graphParams}
-                onParamsChange={(next) => replaceGraphParams(idPath, next)}
-                onRecenter={(nextIdPath) => navigate({ name: "entity", idPath: nextIdPath })}
-                onUseAsPathStart={(nextIdPath) => navigate({ name: "path", from: nextIdPath })}
-              />
-              <Caveat>{graphCaveatText(kind)}</Caveat>
-            </div>
-
             <Truncation truncated={entity.relationships_truncated} limit={entity.relationships_limit} what="関係">
               {canLoadMore ? (
                 <button

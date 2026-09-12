@@ -5,12 +5,33 @@
 import type { JSX } from "react";
 import type { EntityDetailResponse } from "../../api/client";
 import type { QueryState } from "../../api/useApiQuery";
-import { attributeValueHtml } from "../../format";
 import { predicateLabel, typeLabel } from "../../labels";
 import { axisBgVarForType, axisColorVarForType } from "../../lib/ontology-view";
-import { SourceNote } from "../../components/ui";
+import { Amount, SourceNote } from "../../components/ui";
 import type { PlacedNode } from "./types";
 import { displayLabel } from "./graph-model";
+
+/** 金額の述語は丸めて出し、正確な値を title と読み上げに添える(`Amount`)。 */
+const AMOUNT_PREDICATES = new Set([
+  "amount_jpy",
+  "budgetAmount",
+  "initialBudget",
+  "supplementaryBudget",
+  "carriedOverFromPreviousYear",
+  "reserveFund",
+  "totalBudgetAvailable",
+  "executedAmount",
+  "carriedOverToNextYear",
+  "nextYearRequest",
+]);
+
+function AttributeValueText({ predicate, value }: { predicate: string; value: string }): JSX.Element {
+  if (AMOUNT_PREDICATES.has(predicate)) {
+    const n = Number(value);
+    if (Number.isFinite(n)) return <Amount yen={n} />;
+  }
+  return <>{value}</>;
+}
 
 export interface InspectorProps {
   readonly node: PlacedNode | null;
@@ -105,9 +126,15 @@ function InspectorDetail({
               <div key={pred} className="jg-graph-inspector__attr">
                 <dt>{predicateLabel(pred)}</dt>
                 <dd>
+                  {/* **出典を値ごとに繰り返さない。** 節の下に1行でまとめる
+                      (`SourceNote`)。旧実装は1つの値のうしろに
+                      「(一次資料 (取得: … / 公共データ利用規約…))」を毎回付け、
+                      出典が値より長くなっていた。 */}
                   {detail.attributes[pred]?.map((av, i) => (
-                    // eslint-disable-next-line react/no-danger
-                    <span key={i} dangerouslySetInnerHTML={{ __html: attributeValueHtml(pred, av, detail.graphs) }} />
+                    <span key={i} className="jg-graph-inspector__val">
+                      {i > 0 ? "、" : ""}
+                      <AttributeValueText predicate={pred} value={av.value} />
+                    </span>
                   )) ?? null}
                 </dd>
               </div>
