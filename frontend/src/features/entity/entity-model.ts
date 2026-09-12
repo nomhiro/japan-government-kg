@@ -10,6 +10,11 @@
 // 裁定B78/B88)・DOM/JSXの組み立て(呼び出し側のコンポーネントの仕事)。
 import type { AttributeValue, EntityDetailResponse, EntityRef, Relationship } from "../../api/client";
 import { sourceLines, type SourceLine } from "../../components/provenance";
+import {
+  NO_LABEL as SHARED_NO_LABEL,
+  displayName,
+  type Nameable,
+} from "../../lib/display-name";
 
 // ---------------------------------------------------------------------------
 // 型からの表示分岐
@@ -224,10 +229,16 @@ export function markerGlyph(n: number): string {
 // ---------------------------------------------------------------------------
 
 /** 表示名が無いノードの既定文言(裁定B78/B88: 名前を合成しない)。 */
-export const NO_LABEL = "(表示名なし)";
+/**
+ * 表示名も見分けのための属性も無いときの文言。
+ *
+ * **規則の本体は `lib/display-name.ts`(裁定B108)。** こことグラフ側が
+ * 同じ文言を別々に持っていたのを1本にした。
+ */
+export const NO_LABEL = SHARED_NO_LABEL;
 
-export function displayLabel(ref: EntityRef): string {
-  return ref.label ?? NO_LABEL;
+export function displayLabel(ref: Nameable): string {
+  return displayName(ref);
 }
 
 /** 関係の向きを表す矢印(旧実装と同じ規則。incoming = 相手からこちらへ)。 */

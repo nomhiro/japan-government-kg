@@ -49,6 +49,31 @@ class _Envelope(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class DescribingValue(_Envelope):
+    """表示名を持たないエンティティを**見分けるため**の、述語1つとその値。
+
+    **これは表示名ではない(裁定B108)。** 表示名の出所はオントロジー側だけ
+    (`skos:prefLabel`)で、持たない型について**合成はしない**(裁定B78/B88)。
+    しかし「名前が無い」ことと「見分けられない」ことは別である。
+
+    `AnnualBudget` は一次データに固有の名前を持たないので `skos:prefLabel`
+    が無く、本番の府省グラフでは**100ノードのうち17件が同じ「表示名なし」**
+    として並んでいた(2026-09-13に私が実測)。年度は
+    `budget:budgetFiscalYear` としてKGにあるのに、APIがノードの型とラベル
+    しか返していなかったので画面が使えなかった。
+
+    **だから名前ではなく「述語と値」の対で返す。** 画面はこれを名前として
+    出さず、述語のラベルを添えて出す(「予算年度 2021」)。合成した名前を
+    名前として出すことと、属性を属性として出すことは違う——後者は
+    エンティティ詳細の属性表が既にやっていることである。
+    """
+
+    #: 述語のローカル名(`budgetFiscalYear` 等)。日本語の表示は
+    #: `labels.json`(オントロジー由来)が持つので、ここでは訳さない。
+    predicate: str
+    value: str
+
+
 class EntityRef(_Envelope):
     """一覧・関係に出す最小限のエンティティ参照。"""
 
@@ -99,6 +124,9 @@ class EntityRef(_Envelope):
     id_path: str
     type: str
     label: str | None
+    #: `label`が`None`のときだけ入る「見分けのための属性」(`DescribingValue`
+    #: 参照)。宣言の無い型では`None`のまま——**無い理由を推測して埋めない**。
+    described_by: DescribingValue | None = None
 
 
 class SearchHit(EntityRef):
@@ -313,6 +341,9 @@ class EntityDetailResponse(_Envelope):
     id_path: str
     type: str
     label: str | None
+    #: `label`が`None`のときだけ入る「見分けのための属性」(`DescribingValue`
+    #: 参照)。宣言の無い型では`None`のまま——**無い理由を推測して埋めない**。
+    described_by: DescribingValue | None = None
     #: 述語(ローカル名)→値のリスト。1述語が複数値を持つことがあるため
     #: 常にlistにする(単値/多値で応答の形が変わると消費者側の分岐が増える)。
     #:

@@ -28,7 +28,7 @@ export interface LaneLayoutOptions {
 }
 
 function sortKey(n: ModelNode): [number, string, string] {
-  return [-n.degree, displayLabel(n.label), n.id];
+  return [-n.degree, displayLabel(n), n.id];
 }
 
 function compareNodes(a: ModelNode, b: ModelNode): number {
@@ -136,6 +136,7 @@ function toPlacedNode(n: ModelNode, x: number, y: number): PlacedNode {
     idPath: n.idPath,
     type: n.type,
     label: n.label,
+    describedBy: n.describedBy,
     axis: n.axis,
     laneKey: n.laneKey,
     hop: n.hop,

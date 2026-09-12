@@ -11,6 +11,7 @@ import { search, type SearchHit } from "../../api/client";
 import { useApiQuery, useDebounced } from "../../api/useApiQuery";
 import { TypeBadge } from "../../components/ui";
 import "./search.css";
+import { displayName } from "../../lib/display-name";
 
 export interface EntityPickerValue {
   readonly idPath: string;
@@ -64,7 +65,7 @@ export function EntityPicker({
         <span className="jg-eyebrow">{label}</span>
         <div className="jg-row jg-picker__selected">
           <TypeBadge type={selected.type} size="sm" />
-          <span className="jg-picker__label">{selected.label ?? "(表示名なし)"}</span>
+          <span className="jg-picker__label">{displayName(selected)}</span>
           <button type="button" className="jg-btn jg-btn--quiet jg-btn--sm" onClick={() => onChange(null)}>
             変更
           </button>
@@ -110,7 +111,7 @@ export function EntityPicker({
                   onClick={() => onChange({ idPath: hit.id_path, type: hit.type, label: hit.label })}
                 >
                   <TypeBadge type={hit.type} size="sm" />
-                  <span>{hit.label ?? "(表示名なし)"}</span>
+                  <span>{displayName(hit)}</span>
                 </button>
               </li>
             ))}

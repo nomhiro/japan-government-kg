@@ -7,8 +7,9 @@
 // (`null`もそのまま)を運ぶだけで、「(表示名なし)」という文言は描画側
 // (`GraphView.tsx`)の仕事にする —— この段は「データが無い」という事実と
 // 「無いときにどう見せるか」という表示判断を分けておく。
-import type { EntityRef, GraphEdge, Relationship } from "../../api/client";
+import type { DescribingValue, EntityRef, GraphEdge, Relationship } from "../../api/client";
 import { axisForType } from "../../labels";
+import { NO_LABEL, displayName } from "../../lib/display-name";
 import { ASIDE_LANE, laneKeyForType } from "../../lib/ontology-view";
 
 // ---------------------------------------------------------------------------
@@ -174,6 +175,9 @@ export interface ModelNode {
   readonly idPath: string;
   readonly type: string;
   readonly label: string | null;
+  /** 表示名が無い型を見分けるための属性(裁定B108)。APIが `label === null`
+   *  のときだけ入れる。`lib/display-name.ts` が描き方を決める。 */
+  readonly describedBy: DescribingValue | null;
   readonly axis: string | undefined;
   readonly laneKey: string;
   /** 中心からのホップ数(無向)。中心自身は0。到達できない場合は`Infinity`。 */
@@ -232,6 +236,7 @@ export function buildGraphModel(params: BuildGraphModelParams): GraphModel {
     idPath: n.id_path,
     type: n.type,
     label: n.label,
+    describedBy: n.described_by ?? null,
     axis: axisForType(n.type),
     laneKey: lanes.get(n.id) ?? ASIDE_LANE.key,
     hop: hops.get(n.id) ?? Number.POSITIVE_INFINITY,
@@ -254,11 +259,29 @@ export function buildGraphModel(params: BuildGraphModelParams): GraphModel {
 // 表示名(合成しない。無いときの文言だけをここに1箇所で決める)
 // ---------------------------------------------------------------------------
 
-/** 表示名が無いノードの文言(裁定B78/B88: 名前を合成しない)。 */
-export const NO_LABEL_TEXT = "(表示名なし)";
+/**
+ * 表示名が無いノードの文言(裁定B78/B88: 名前を合成しない)。
+ *
+ * **規則の本体は `lib/display-name.ts` に1本化した(裁定B108)。** ここと
+ * `features/entity/entity-model.ts` が同じ文言を別々に持っていたので、
+ * 「表示名が無いときどう出すか」を2箇所で決めていた。
+ */
+export const NO_LABEL_TEXT = NO_LABEL;
 
-export function displayLabel(label: string | null): string {
-  return label ?? NO_LABEL_TEXT;
+/**
+ * ノードの1行を返す。表示名が無ければ見分けのための属性を、それも無ければ
+ * 「(表示名なし)」を返す。
+ *
+ * `label`だけを渡す旧シグネチャも受け付ける(呼び出し側の都合で文字列しか
+ * 持っていない箇所が残っている)。
+ */
+export function displayLabel(
+  node: string | null | { readonly label: string | null; readonly describedBy: DescribingValue | null },
+): string {
+  if (node === null || typeof node === "string") return displayName({ label: node });
+  // グラフのモデルはcamelCase、APIはsnake_case。**境界でだけ変換する**
+  // (どちらかに寄せて全部書き換えるより、対応表が1行で済む)。
+  return displayName({ label: node.label, described_by: node.describedBy });
 }
 
 export interface TruncatedText {

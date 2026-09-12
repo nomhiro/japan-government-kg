@@ -15,6 +15,7 @@ import { predicateLabel } from "../../labels";
 import { navigate } from "../../router";
 import { EntityPicker, type EntityPickerValue } from "../search/EntityPicker";
 import "./path.css";
+import { displayName } from "../../lib/display-name";
 
 /** `id_path`を`/entity`から解決して`EntityPickerValue`に写す(URL共有で開いたときの表示名解決)。 */
 function useResolvedEntity(idPath: string | undefined): QueryState<EntityPickerValue | null> {
@@ -180,7 +181,7 @@ function PathResultView({ res }: { res: PathResponse }): JSX.Element {
               <div className="jg-path-chain__item" key={node.id}>
                 <div className="jg-path-node">
                   <TypeBadge type={node.type} size="sm" />
-                  <a href={`#/entity/${node.id_path}`}>{node.label ?? "(表示名なし)"}</a>
+                  <a href={`#/entity/${node.id_path}`}>{displayName(node)}</a>
                 </div>
                 {edge ? (
                   <div className="jg-path-hop">

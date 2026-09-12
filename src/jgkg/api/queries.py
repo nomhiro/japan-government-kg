@@ -18,6 +18,7 @@ from jgkg.api.kgclient import (
 )
 from jgkg.api.models import (
     AttributeValue,
+    DescribingValue,
     EntityDetailResponse,
     EntityRef,
     GraphEdge,
@@ -80,6 +81,35 @@ ENTITY_RELATIONSHIPS_MAX_LIMIT = 200
 #: - **AnnualBudgetも除外する**(裁定B99)。`skos:prefLabel`を**そもそも持たない**
 #:   ——「2025年度のシートが2023年度について言っていること」という記録に
 #:   固有の名前は無い。UnresolvedReferenceと同じ理由でそもそも一致しない
+#: **表示名を持たない型を、何で見分けさせるか**(裁定B108)。
+#: 型のローカル名 → 述語のCURIE。
+#:
+#: **なぜ手書きの表なのか。** この選択はスキーマから導出できない——
+#: 「どの属性が兄弟を見分けるか」はデータの意味の話で、LinkMLのスロット定義に
+#: その印は無い(`schema/*.yaml` は `annotations` を1つも使っていない)。
+#: 印を足すには生成物の再生成が必要で、それはLinuxでしか正しく走らない
+#: (裁定B100)。**同じ形の選択を既に手書きしている前例が隣にある**
+#: (`_SEARCHABLE_TYPES`)ので、それに揃える。
+#:
+#: **腐らせないための縛り**: `tests/test_api_queries.py` が、ここに挙げた
+#: 述語と型が `schema/generated/all.owl.ttl` に実在することを検査する。
+#: 名前を変えたらテストが落ちる。
+#:
+#: `AnnualBudget` に `fiscalYear`(レビュー年度)ではなく
+#: `budgetFiscalYear`(その予算が属する年度)を選ぶ理由: 同じ事業の下に
+#: 並ぶ兄弟を区別するのは後者である(IRIの末尾も後者。
+#: 例 `budget/2025/2841/annual/2021` は fiscalYear=2025・budgetFiscalYear=2021)。
+IDENTIFYING_PREDICATES: dict[str, str] = {
+    "AnnualBudget": "budget:budgetFiscalYear",
+    "UnresolvedReference": "core:unresolved_text",
+}
+
+
+def _identifying_predicate_local_names() -> tuple[str, ...]:
+    """宣言した述語のローカル名。SPARQLの行から値を拾うときの鍵になる。"""
+    return tuple(curie.split(":", 1)[1] for curie in IDENTIFYING_PREDICATES.values())
+
+
 _SEARCHABLE_TYPES: tuple[str, ...] = (
     "org:Organization",
     "org:GovernmentOrgan",
@@ -354,11 +384,17 @@ _TYPE_AND_LABEL_PREDICATES = frozenset({
 
 
 def _build_own_type_query(base_uri: str, entity_iri: str) -> str:
+    """エンティティ自身の型・表示名・見分けのための属性(裁定B108)。
+
+    関係先(`_build_related_labels_query`)と**同じ節**を使う——詳細ページの
+    見出しだけ「表示名なし」のまま残る、という食い違いを作らない。
+    """
+    describe = _describe_optional_clause().replace("?entity ", f"{entity_iri} ")
     return _prefixes(base_uri) + f"""
-SELECT ?type ?label WHERE {{
+SELECT ?type ?label ?describePredicate ?describeValue WHERE {{
   {entity_iri} a ?type .
   OPTIONAL {{ {entity_iri} skos:prefLabel ?label }}
-}}
+{describe}}}
 """
 
 
@@ -443,13 +479,36 @@ LIMIT {fetch_limit}
 
 
 def _build_related_labels_query(base_uri: str, uris: Iterable[str]) -> str:
+    """型・表示名と、**表示名が無い型を見分けるための属性**を1回で引く。
+
+    `?describePredicate`/`?describeValue` を足したのは裁定B108。
+    **別クエリにしない**: `_hydrate_entity_refs` のdocstringが言う
+    「同じことを3箇所で別々に書かない」がそのまま当てはまる
+    (近傍・詳細・パスの3経路がこの1本を通る)。
+
+    宣言(`IDENTIFYING_PREDICATES`)が空なら OPTIONAL 自体を出さない
+    ——空の `VALUES` はSPARQLの構文として成立しない。
+    """
     values = " ".join(f"<{u}>" for u in uris)
+    describe = _describe_optional_clause()
     return _prefixes(base_uri) + f"""
-SELECT ?entity ?type ?label WHERE {{
+SELECT ?entity ?type ?label ?describePredicate ?describeValue WHERE {{
   VALUES ?entity {{ {values} }}
   OPTIONAL {{ ?entity a ?type }}
   OPTIONAL {{ ?entity skos:prefLabel ?label }}
-}}
+{describe}}}
+"""
+
+
+def _describe_optional_clause() -> str:
+    """見分けのための属性を引く OPTIONAL 節。宣言が空なら空文字列。"""
+    if not IDENTIFYING_PREDICATES:
+        return ""
+    curies = " ".join(f"({curie})" for curie in sorted(set(IDENTIFYING_PREDICATES.values())))
+    return f"""  OPTIONAL {{
+    VALUES (?describePredicate) {{ {curies} }}
+    ?entity ?describePredicate ?describeValue .
+  }}
 """
 
 
@@ -473,6 +532,12 @@ def get_entity_detail(
     own_types = [_local_name(_value(r, "type")) for r in own_rows if _value(r, "type")]
     own_label = next((_value(r, "label") for r in own_rows if _value(r, "label")), None)
     type_local = _most_specific_type(own_types)
+    # 見分けのための属性(裁定B108)。関係先と**同じ規則**を通すので、
+    # 一覧では見分けられるのに詳細の見出しだけ「表示名なし」になる、
+    # という食い違いが起きない。
+    own_describes: dict[str, str] = {}
+    for row in own_rows:
+        _collect_describing(row, own_describes)
 
     attribute_rows = client.query(_build_attributes_query(base_uri, entity_iri))
     attributes: dict[str, list[AttributeValue]] = {}
@@ -557,6 +622,7 @@ def get_entity_detail(
         id_path=_id_path(base_uri, entity_uri),
         type=type_local,
         label=own_label,
+        described_by=_describing_value(type_local, own_label, own_describes),
         attributes=attributes,
         relationships=relationships,
         graphs=graphs,
@@ -594,26 +660,69 @@ def _hydrate_entity_refs(
     if not wanted:
         return {}
     rows = client.query(_build_related_labels_query(base_uri, wanted))
-    acc: dict[str, tuple[list[str], str | None]] = {}
+    acc: dict[str, tuple[list[str], str | None, dict[str, str]]] = {}
     for row in rows:
         uri = _value(row, "entity")
         if uri is None:
             continue
-        types, label = acc.get(uri, ([], None))
+        types, label, describes = acc.get(uri, ([], None, {}))
         type_uri = _value(row, "type")
+        # **同じ型を2度入れない。** 見分け用のOPTIONALを足した分、1つの
+        # エンティティにつき行数が増える(型×値の組で返る)ため、素に
+        # appendすると型が重複する(裁定B108)。
         if type_uri:
-            types.append(_local_name(type_uri))
+            type_local = _local_name(type_uri)
+            if type_local not in types:
+                types.append(type_local)
         label = label or _value(row, "label")
-        acc[uri] = (types, label)
-    return {
-        uri: EntityRef(
+        _collect_describing(row, describes)
+        acc[uri] = (types, label, describes)
+    out: dict[str, EntityRef] = {}
+    for uri, (types, label, describes) in acc.items():
+        type_local = _most_specific_type(types)
+        out[uri] = EntityRef(
             id=uri,
             id_path=_id_path(base_uri, uri),
-            type=_most_specific_type(types),
+            type=type_local,
             label=label,
+            described_by=_describing_value(type_local, label, describes),
         )
-        for uri, (types, label) in acc.items()
-    }
+    return out
+
+
+def _collect_describing(row: Row, into: dict[str, str]) -> None:
+    """1行から `?describePredicate`/`?describeValue` を拾う(裁定B108)。
+
+    **先に来た値を優先する。** 同じ述語が複数値を持つ実データは今のところ
+    無いが、あったときに行順で結果が揺れるより、最初の1つに固定した方が
+    応答が決定的になる。
+    """
+    predicate_uri = _value(row, "describePredicate")
+    value = _value(row, "describeValue")
+    if not predicate_uri or value is None or value == "":
+        return
+    into.setdefault(_local_name(predicate_uri), value)
+
+
+def _describing_value(
+    type_local: str, label: str | None, describes: dict[str, str]
+) -> DescribingValue | None:
+    """表示名が無い型について、宣言した述語の値を返す(裁定B108)。
+
+    **表示名がある型には付けない。** 「`label`が`None`のときだけ入る」と
+    いう契約にしておくと、消費側が「名前があるのに見分け属性も出ている」
+    という曖昧な状態を扱わなくて済む。
+    """
+    if label is not None:
+        return None
+    curie = IDENTIFYING_PREDICATES.get(type_local)
+    if curie is None:
+        return None
+    predicate = curie.split(":", 1)[1]
+    value = describes.get(predicate)
+    if value is None:
+        return None
+    return DescribingValue(predicate=predicate, value=value)
 
 
 def _build_provenance_query(base_uri: str, graph_uris: Iterable[str]) -> str:

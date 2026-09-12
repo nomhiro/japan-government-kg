@@ -497,7 +497,7 @@ export function GraphView(props: GraphViewProps): JSX.Element {
                 const isNeighborOfHover = hoveredId ? adjacency.get(hoveredId)?.has(n.id) ?? false : false;
                 const passesAxisFilter = !axisFilterActive || (n.axis !== undefined && params.axes.includes(n.axis));
                 const dim = hoveredId ? !(isHovered || isNeighborOfHover) : !passesAxisFilter;
-                const { text, full } = truncateForWidth(displayLabel(n.label), LABEL_MAX_CHARS);
+                const { text, full } = truncateForWidth(displayLabel(n), LABEL_MAX_CHARS);
                 return (
                   <g
                     key={n.id}
@@ -513,7 +513,7 @@ export function GraphView(props: GraphViewProps): JSX.Element {
                     role="button"
                     tabIndex={0}
                     aria-pressed={isSelected}
-                    aria-label={`${typeLabel(n.type)}: ${displayLabel(n.label)}`}
+                    aria-label={`${typeLabel(n.type)}: ${displayLabel(n)}`}
                     onClick={() => handleNodeClick(n)}
                     onKeyDown={(e) => handleNodeKeyDown(e, n)}
                     onMouseEnter={() => setHoveredId(n.id)}

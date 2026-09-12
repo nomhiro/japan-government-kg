@@ -11,6 +11,7 @@ import { SEARCH_LIMIT } from "../../api/limits";
 import { useApiQuery, useDebounced } from "../../api/useApiQuery";
 import { TypeBadge } from "../../components/ui";
 import { navigate, routeToHash } from "../../router";
+import { displayName } from "../../lib/display-name";
 
 const DEBOUNCE_MS = 250;
 /** 候補は少なく出す。全部見たい人は「すべての結果」へ行く。 */
@@ -188,7 +189,7 @@ export function Omnibox(): JSX.Element {
                     }}
                   >
                     <TypeBadge type={hit.type} size="sm" />
-                    <span className="jg-omnibox__label">{hit.label ?? "(表示名なし)"}</span>
+                    <span className="jg-omnibox__label">{displayName(hit)}</span>
                     {hit.summary ? (
                       <span className="jg-omnibox__summary">{hit.summary}</span>
                     ) : null}

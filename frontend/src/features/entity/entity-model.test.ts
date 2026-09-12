@@ -178,8 +178,20 @@ describe("firstAttributeValue / isAmountPredicate", () => {
 
 describe("displayLabel / directionArrow / NO_LABEL", () => {
   it("labelがnullなら既定文言(表示名を合成しない)", () => {
-    expect(displayLabel({ id: "x", id_path: "x", label: null, type: "AnnualBudget" })).toBe(NO_LABEL);
-    expect(displayLabel({ id: "x", id_path: "x", label: "厚生労働省", type: "Ministry" })).toBe("厚生労働省");
+    expect(displayLabel({ label: null })).toBe(NO_LABEL);
+    expect(displayLabel({ label: "厚生労働省" })).toBe("厚生労働省");
+  });
+
+  it("labelが無くても見分けのための属性があれば、述語のラベルを添えて出す(裁定B108)", () => {
+    expect(
+      displayLabel({ label: null, described_by: { predicate: "budgetFiscalYear", value: "2024" } }),
+    ).toBe("予算年度 2024");
+  });
+
+  it("表示名があれば、見分けのための属性より表示名が勝つ", () => {
+    expect(
+      displayLabel({ label: "厚生労働省", described_by: { predicate: "budgetFiscalYear", value: "2024" } }),
+    ).toBe("厚生労働省");
   });
 
   it("incoming=← / outgoing=→", () => {

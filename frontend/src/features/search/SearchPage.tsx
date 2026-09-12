@@ -12,6 +12,7 @@ import { Band, ErrorBox, Loading, Section, Truncation, TypeBadge } from "../../c
 import { typeLabel } from "../../labels";
 import { axisColorVarForType } from "../../lib/ontology-view";
 import "./search.css";
+import { displayName } from "../../lib/display-name";
 
 // 検索対象の型(`src/jgkg/api/queries.py`の`_SEARCHABLE_TYPES`と同じ6種)。
 // APIはこの一覧自体を応答に含まないため、ここに固定する——表示名は必ず
@@ -169,7 +170,7 @@ export function SearchPage({ q }: { q: string }): JSX.Element {
                 <li key={hit.id_path} className="jg-search-hit">
                   <a href={`#/entity/${hit.id_path}`} className="jg-search-hit__link">
                     <TypeBadge type={hit.type} size="sm" />
-                    <span className="jg-search-hit__label">{hit.label ?? "(表示名なし)"}</span>
+                    <span className="jg-search-hit__label">{displayName(hit)}</span>
                     {hit.summary ? <span className="jg-search-hit__summary">{hit.summary}</span> : null}
                   </a>
                 </li>

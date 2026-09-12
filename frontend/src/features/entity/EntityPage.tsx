@@ -19,7 +19,7 @@ import { GraphView } from "../graph/GraphView";
 import { navigate, parseGraphParams, replaceGraphParams, routeToHash, type GraphParams } from "../../router";
 import { EntityHeader } from "./EntityHeader";
 import { FactsPanel } from "./FactsPanel";
-import { NO_LABEL, breadcrumbMinistryRef, graphCaveatText, kindOf } from "./entity-model";
+import { breadcrumbMinistryRef, graphCaveatText, kindOf } from "./entity-model";
 import { ExpenditureBody } from "./kinds/ExpenditureBody";
 import { GenericBody } from "./kinds/GenericBody";
 import { LawBody } from "./kinds/LawBody";
@@ -27,6 +27,7 @@ import { MinistryBody } from "./kinds/MinistryBody";
 import { OrganizationBody } from "./kinds/OrganizationBody";
 import { ProjectBody } from "./kinds/ProjectBody";
 import "./entity.css";
+import { displayName } from "../../lib/display-name";
 
 export function EntityPage({ idPath }: { idPath: string }): JSX.Element {
   // ハッシュの変化(グラフの状態。深さ・並べ方・軸の絞り込み・選択)を
@@ -49,7 +50,7 @@ export function EntityPage({ idPath }: { idPath: string }): JSX.Element {
           ? "読み込みに失敗しました"
           : state.data === null
             ? "見つかりませんでした"
-            : (state.data.label ?? NO_LABEL),
+            : displayName(state.data),
     ),
   );
 

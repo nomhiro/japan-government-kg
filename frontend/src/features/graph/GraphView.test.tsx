@@ -236,3 +236,111 @@ describe("GraphView(厚労省の実サンプル: 26ノード・25辺)", () => {
     expect(onRecenter).toHaveBeenCalledWith("budget/2025/18695");
   });
 });
+
+describe("表示名を持たないノード(裁定B108)", () => {
+  /**
+   * 実サンプル(`neighborhood-ministry.json`)は `described_by` を持たない
+   * ——APIに足す前に本番から取った応答なので、この場面だけ合成データを足す
+   * (本番の応答を手で書き換えると「実サンプル」でなくなる)。
+   *
+   * 足すのは**同じ型の名前なしノード2件**。「見分けられること」が要求なので、
+   * 1件では検査にならない。
+   */
+  function nbhdWithNamelessNodes() {
+    const base = nbhdMinistry();
+    const centerId = base.center.id;
+    // 出典グラフは実サンプルの値を使う(架空のグラフ名を作らない)。
+    const graph = base.edges[0]?.graph ?? "";
+    return {
+      ...base,
+      nodes: [
+        ...base.nodes,
+        {
+          id: "https://jgkg.norr-tech.com/id/b/annual/2024",
+          id_path: "b/annual/2024",
+          type: "AnnualBudget",
+          label: null,
+          described_by: { predicate: "budgetFiscalYear", value: "2024" },
+        },
+        {
+          id: "https://jgkg.norr-tech.com/id/b/annual/2025",
+          id_path: "b/annual/2025",
+          type: "AnnualBudget",
+          label: null,
+          described_by: { predicate: "budgetFiscalYear", value: "2025" },
+        },
+      ],
+      edges: [
+        ...base.edges,
+        {
+          source: centerId,
+          target: "https://jgkg.norr-tech.com/id/b/annual/2024",
+          predicate: "project",
+          graph,
+        },
+        {
+          source: centerId,
+          target: "https://jgkg.norr-tech.com/id/b/annual/2025",
+          predicate: "project",
+          graph,
+        },
+      ],
+    };
+  }
+
+  function stubFetchWith(nbhd: unknown): void {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes("/neighborhood/")) {
+          return new Response(JSON.stringify(nbhd), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url.includes("/entity/")) {
+          return new Response(JSON.stringify(DETAIL), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response("not found", { status: 404 });
+      }),
+    );
+  }
+
+  it("カードに「述語のラベル 値」が出て、同じ「表示名なし」が並ばない", async () => {
+    stubFetchWith(nbhdWithNamelessNodes());
+    render(<Harness />);
+    // SVGのカードは可視テキストと `<title>`(全文)の2箇所に同じ文字列を持つ。
+    await screen.findAllByText("予算年度 2024");
+    expect(screen.getAllByText("予算年度 2025").length).toBeGreaterThan(0);
+    expect(screen.queryByText("(表示名なし)")).toBeNull();
+  });
+
+  it("読み上げ用のラベルも同じ1行を使う(型: 値)", async () => {
+    stubFetchWith(nbhdWithNamelessNodes());
+    render(<Harness />);
+    await screen.findAllByText("予算年度 2024");
+    expect(
+      screen.getByRole("button", { name: "年度ごとの予算と執行: 予算年度 2024" }),
+    ).toBeTruthy();
+  });
+
+  it("見分けのための属性が無ければ、今までどおり「(表示名なし)」と言う", async () => {
+    const nbhd = nbhdWithNamelessNodes();
+    const stripped = {
+      ...nbhd,
+      nodes: nbhd.nodes.map((n) =>
+        n.type === "AnnualBudget" ? { ...n, described_by: null } : n,
+      ),
+    };
+    stubFetchWith(stripped);
+    render(<Harness />);
+    const cards = await screen.findAllByRole("button", { name: /年度ごとの予算と執行/ });
+    expect(cards.length).toBe(2);
+    // 可視テキストと `<title>` の2箇所 × 2ノード。
+    expect(screen.getAllByText("(表示名なし)").length).toBe(4);
+  });
+});

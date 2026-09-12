@@ -11,6 +11,7 @@ import { ApiError, apiUnavailableReason, chat } from "../../api/client";
 import { Band, ErrorBox, Section, SourceNote, TypeBadge } from "../../components/ui";
 import { historyForWire, loadChatTurns, saveChatTurns, type ChatTurn } from "./chat-storage";
 import "./chat.css";
+import { displayName } from "../../lib/display-name";
 
 // よくある問いのカード(UI文言。自分の言葉で書く——データの値ではない)。
 const FAQ_QUESTIONS = [
@@ -256,7 +257,7 @@ function ChatSourceRow({ source, graphs }: { source: ChatSource; graphs: ChatRes
   return (
     <li className="jg-chat-source">
       <TypeBadge type={source.type} size="sm" />
-      <span>{source.label ?? "(表示名なし)"}</span>
+      <span>{displayName(source)}</span>
       {source.graphs.length > 0 ? (
         <SourceNote graphs={graphs} onlyGraphs={source.graphs} />
       ) : (

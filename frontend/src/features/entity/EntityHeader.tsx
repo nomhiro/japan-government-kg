@@ -77,7 +77,7 @@ export function EntityHeader({
       <div className="jg-stack jg-stack--3 entity-header__body">
         <TypeBadge type={entity.type} />
         <h1 className="jg-h1">
-          {displayLabel({ id: entity.id, id_path: entity.id_path, label: entity.label, type: entity.type })}
+          {displayLabel(entity)}
         </h1>
         <p className="jg-lead">{kindOneLiner(kind)}</p>
         <div className="jg-row jg-row--tight">

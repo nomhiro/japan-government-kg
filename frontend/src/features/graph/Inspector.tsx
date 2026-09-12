@@ -67,7 +67,7 @@ export function Inspector(props: InspectorProps): JSX.Element {
         </span>
         {isCenter ? <span className="jg-graph-inspector__center-tag">中心</span> : null}
       </div>
-      <h3 className="jg-h3">{displayLabel(node.label)}</h3>
+      <h3 className="jg-h3">{displayLabel(node)}</h3>
       <p className="jg-sm jg-muted">
         接続{node.degree}件・中心から{Number.isFinite(node.hop) ? `${node.hop}ホップ` : "到達不明"}
         {node.hasMore ? "・この先にまだ関係があります" : ""}

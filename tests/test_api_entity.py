@@ -6,6 +6,7 @@ basisLaw1件——出典・関係の向き・グループ化・上限のすべ�
 確認できる)。値の出典は`tests/phase1_fixture.py`のdocstringを正とする。
 """
 import datetime
+from pathlib import Path
 
 import phase1_fixture as fx
 import pytest
@@ -15,6 +16,7 @@ from jgkg.api.kgclient import RdflibKGClient
 from jgkg.api.queries import get_entity_detail
 
 BASE = "https://jgkg.norr-tech.com"
+REPO_ROOT = Path(__file__).resolve().parent.parent
 PROJECT_CORE_ID = f"budget/2025/{fx.PROJECT_CORE}"
 #: 厚生労働省。**属性の出典グラフ(houjin-bangou)が関係の出典グラフ
 #: (rs-system/egov-law/egov-law-data)のいずれとも重ならない**——
@@ -368,3 +370,86 @@ def test_entity_detail_relationships_truncate_with_a_small_limit(client):
     assert detail.relationships_truncated is True
     total = sum(len(v) for v in detail.relationships.values())
     assert total == 2, detail.relationships
+
+
+# =============================================================================
+# 表示名を持たない型の「見分けのための属性」(裁定B108)
+# =============================================================================
+
+
+def test_entity_detail_carries_the_attribute_that_tells_nameless_records_apart(client):
+    """**詳細ページの見出しも、一覧と同じ規則で見分けられること。**
+
+    一覧(近傍・関係)だけ直して詳細を直さないと、リンクを押した先で
+    また「表示名なし」に戻る。同じ `_describing_value` を通す。
+    """
+    detail = get_entity_detail(client, BASE, f"{PROJECT_CORE_ID}/annual/2024", limit=50)
+    assert detail is not None
+    assert detail.type == "AnnualBudget"
+    assert detail.label is None, "前提: この型は表示名を持たない"
+    assert detail.described_by is not None
+    assert detail.described_by.predicate == "budgetFiscalYear"
+    assert detail.described_by.value == "2024"
+
+
+def test_entity_detail_of_a_named_entity_has_no_describing_attribute(client):
+    detail = get_entity_detail(client, BASE, MINISTRY_ID, limit=50)
+    assert detail is not None
+    assert detail.label is not None, "前提: 府省は表示名を持つ"
+    assert detail.described_by is None
+
+
+def test_relationship_targets_carry_the_describing_attribute(client):
+    """関係一覧の相手側(事業ページの「年度予算」節が描く行)にも入ること。"""
+    detail = get_entity_detail(client, BASE, PROJECT_CORE_ID, limit=50)
+    assert detail is not None
+    annual_rows = [
+        r
+        for group in detail.relationships.values()
+        for r in group
+        if r.related.type == "AnnualBudget"
+    ]
+    assert annual_rows, "前提: この事業は年度予算を持つ"
+    years = {r.related.described_by.value for r in annual_rows if r.related.described_by}
+    assert years == {"2024", "2025", "2026"}, years
+
+
+def test_every_declared_identifying_predicate_exists_in_the_published_ontology():
+    """**宣言を腐らせない。**
+
+    `IDENTIFYING_PREDICATES` は手書きの表である(理由は宣言のコメント)。
+    手書きの表が腐る形はこのプロジェクトで既に起きている
+    (`verify-site.py` の `MODULES = ("core","org","all")` が法令・予算
+    モジュールを載せていなかった。裁定B64)。**型名と述語名が公開
+    オントロジーに実在することを、生成物そのものに突き合わせる。**
+    """
+    from rdflib import Graph, URIRef
+
+    from jgkg.api.queries import IDENTIFYING_PREDICATES
+
+    ontology = Graph()
+    ontology.parse(REPO_ROOT / "schema" / "generated" / "all.owl.ttl", format="turtle")
+    subjects = {str(s) for s in ontology.subjects()}
+
+    assert IDENTIFYING_PREDICATES, "宣言が空なら、この検査は何も確かめていない"
+    for type_local, curie in IDENTIFYING_PREDICATES.items():
+        module, predicate_local = curie.split(":", 1)
+        type_iri = f"{BASE}/def/{module_of_type(ontology, type_local)}#{type_local}"
+        predicate_iri = f"{BASE}/def/{module}#{predicate_local}"
+        assert type_iri in subjects, f"{type_local} がオントロジーに無い: {type_iri}"
+        assert predicate_iri in subjects, f"{curie} がオントロジーに無い: {predicate_iri}"
+        assert (URIRef(type_iri), None, None) in ontology
+
+
+def module_of_type(ontology, type_local: str) -> str:
+    """型のローカル名から、それを定義しているモジュール名を引く。
+
+    型と述語が同じモジュールに居るとは限らない(`UnresolvedReference` は
+    `core`、その述語も `core`。`AnnualBudget` は `budget`)。**モジュール名を
+    テスト側で手書きしない**ために、オントロジーから引く。
+    """
+    for subject in ontology.subjects():
+        text = str(subject)
+        if text.endswith(f"#{type_local}") and "/def/" in text:
+            return text.split("/def/", 1)[1].split("#", 1)[0]
+    raise AssertionError(f"{type_local} を定義しているモジュールが見つからない")

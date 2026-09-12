@@ -33,10 +33,10 @@ export function GraphTable({ model }: GraphTableProps): JSX.Element {
             const target = nodeById.get(e.target);
             return (
               <tr key={e.key}>
-                <td>{source ? displayLabel(source.label) : e.source}</td>
+                <td>{source ? displayLabel(source) : e.source}</td>
                 <td>{source ? typeLabel(source.type) : ""}</td>
                 <td>{predicateLabel(e.predicate)}</td>
-                <td>{target ? displayLabel(target.label) : e.target}</td>
+                <td>{target ? displayLabel(target) : e.target}</td>
                 <td>{target ? typeLabel(target.type) : ""}</td>
               </tr>
             );

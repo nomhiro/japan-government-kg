@@ -257,17 +257,6 @@ describe("EntityPage(予算事業。実データ)", () => {
     expect(screen.getAllByText("(表示名なし)").length).toBeGreaterThan(0);
   });
 
-  it("AnnualBudgetはlabelを持たないため一覧はすべて「(表示名なし)」になる(既知の未修正問題)", async () => {
-    render(<EntityPage idPath="budget/2025/2841" />);
-    await screen.findByRole("heading", { level: 1 });
-    const heading = screen.getByRole("heading", { name: /年度予算/ });
-    const section = heading.closest("section")!;
-    const rows = within(section).getAllByRole("row").slice(1); // 見出し行を除く
-    expect(rows.length).toBeGreaterThan(0);
-    for (const row of rows) {
-      expect(within(row).getByText("(表示名なし)")).toBeTruthy();
-    }
-  });
 });
 
 describe("EntityPage(読み込み中・見つからない・失敗の各状態)", () => {
@@ -440,5 +429,95 @@ describe("EntityPage(組織・法令・支出・汎用: 型分岐の配線を確
     render(<EntityPage idPath="org/test" />);
     await screen.findByRole("heading", { level: 1, name: "(表示名なし)" });
     expect(document.title).toBe("(表示名なし) — 日本政府ナレッジグラフ");
+  });
+  it("AnnualBudgetはlabelを持たないが、見分けのための属性で年度が出る(裁定B108)", async () => {
+    // **実サンプル(`entity-project.json`)は `described_by` を持たない**
+    // ——APIに足す前に本番から取った応答なので、この場面だけ合成データを使う
+    // (本番の応答を手で書き換えると「実サンプル」でなくなる)。値は年度を
+    // 見分けられることだけを言う最小限にする。
+    mockedEntityDetail.mockResolvedValue(
+      minimalEntity({
+        type: "BudgetProject",
+        label: "テスト事業",
+        relationships: {
+          AnnualBudget: [
+            {
+              predicate: "project",
+              direction: "incoming",
+              related: {
+                id: "https://example.jp/id/b/annual/2024",
+                id_path: "b/annual/2024",
+                type: "AnnualBudget",
+                label: null,
+                described_by: { predicate: "budgetFiscalYear", value: "2024" },
+              },
+              graph: "g/1",
+            },
+            {
+              predicate: "project",
+              direction: "incoming",
+              related: {
+                id: "https://example.jp/id/b/annual/2025",
+                id_path: "b/annual/2025",
+                type: "AnnualBudget",
+                label: null,
+                described_by: { predicate: "budgetFiscalYear", value: "2025" },
+              },
+              graph: "g/1",
+            },
+          ],
+        },
+      }),
+    );
+    render(<EntityPage idPath="budget/2025/2841" />);
+    await screen.findByRole("heading", { level: 1 });
+    const section = screen.getByRole("heading", { name: /年度予算/ }).closest("section")!;
+    // **「表示名なし」が1件も無いこと**が要求(同じ文言が並ぶのをやめる)。
+    expect(within(section).queryByText("(表示名なし)")).toBeNull();
+    expect(within(section).getByRole("link", { name: "予算年度 2024" })).toBeTruthy();
+    expect(within(section).getByRole("link", { name: "予算年度 2025" })).toBeTruthy();
+  });
+
+  it("見分けのための属性も無ければ、今までどおり「(表示名なし)」と言う", async () => {
+    mockedEntityDetail.mockResolvedValue(
+      minimalEntity({
+        type: "BudgetProject",
+        label: "テスト事業",
+        relationships: {
+          AnnualBudget: [
+            {
+              predicate: "project",
+              direction: "incoming",
+              related: {
+                id: "https://example.jp/id/b/annual/2024",
+                id_path: "b/annual/2024",
+                type: "AnnualBudget",
+                label: null,
+              },
+              graph: "g/1",
+            },
+          ],
+        },
+      }),
+    );
+    render(<EntityPage idPath="budget/2025/2841" />);
+    await screen.findByRole("heading", { level: 1 });
+    const section = screen.getByRole("heading", { name: /年度予算/ }).closest("section")!;
+    expect(within(section).getByText("(表示名なし)")).toBeTruthy();
+  });
+
+  it("見出しとタブ名も見分けのための属性を使う(リンク先で「表示名なし」に戻らない)", async () => {
+    mockedEntityDetail.mockResolvedValue(
+      minimalEntity({
+        id: "https://example.jp/id/b/annual/2024",
+        id_path: "b/annual/2024",
+        type: "AnnualBudget",
+        label: null,
+        described_by: { predicate: "budgetFiscalYear", value: "2024" },
+      }),
+    );
+    render(<EntityPage idPath="b/annual/2024" />);
+    await screen.findByRole("heading", { level: 1, name: "予算年度 2024" });
+    expect(document.title).toBe("予算年度 2024 — 日本政府ナレッジグラフ");
   });
 });

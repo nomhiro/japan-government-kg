@@ -607,22 +607,26 @@ Phase 0 の全体レビューで出た指摘のうち、マージ前に直さず
 - **隔離されたソースの出典記述が `kg.nq` に残る。** `--allow-partial` で出荷したKGは、SPARQLで問えば
   隔離済みソースについて「この日付に生成された」と答える(manifest 側は修正済み)
 - **`MIN_ACCEPT_RATIO` は 50% のまま。** 実データの棄却率を見て決め直す判断が必要
-- **`AnnualBudget` に `dcterms:title` が無く、グラフ画面に「(表示名なし)」が
-  5個並ぶ**(2026-09-11の本番反映で判明。未修正)。
-  本番実測: 予算事業`budget/2025/2999`の近傍17ノードのうち
-  `AnnualBudget` 5件すべてが `label=None`
-  (`ExpenditureBlock` 4件は支出先名が入っていて問題ない)。
-  描画側が `(表示名なし)` にフォールバックする(`frontend/src/features/graph/graph-model.ts:258`
-  の `NO_LABEL_TEXT` と `frontend/src/features/entity/entity-model.ts:227` の `NO_LABEL`。
-  2026-09-13の作り替えで旧 `views/graph.ts` は削除したが、KG側が直っていないので症状は同じ。
-  `EntityPage.test.tsx` の「AnnualBudgetはlabelを持たないため一覧はすべて『(表示名なし)』に
-  なる(既知の未修正問題)」がこの状態をテストで固定している)。
-  **直し方は決まっている**: 裁定B78/B88の「`dcterms:title @ja` が表示名の
-  唯一の出所」に従い、`emit.py` が `AnnualBudget` に
-  `budgetFiscalYear` から導出した題(例: 「2024年度」)を書く。
-  **フロント側で合成してはいけない** —— 出所が2つになる。
-  ただし**KGの作り直し・リリース公開・イメージ再作成・再配備が要る**ので、
-  表示名だけのために同じ日に2つ目のリリースを作るかは判断が必要
+- ~~**`AnnualBudget` に表示名が無く、画面に「(表示名なし)」が並ぶ**~~ →
+  **2026-09-13に対処(裁定B108)。** 本番実測では府省グラフの100ノードのうち
+  17件、事業グラフの48ノードのうち7件がこれだった。
+  **`skos:prefLabel` は付けない**と決めた —— この型のトリプルは
+  `graph/rs-system/2026-09-11`(行政事業レビュー由来)に入るので、
+  「2021年度」と書けば政府がそう呼んでいるという主張になる。一次データに
+  その欄は無い。**本文書が以前書いていた「`budgetFiscalYear` から導出した
+  題を `emit.py` が書く」は誤りだったので訂正した。**
+  代わりにAPIが `described_by: {predicate, value}` を返し、画面が
+  「予算年度 2024」のように**述語のラベルを添えて**出す
+  (`frontend/src/lib/display-name.ts`)。`UnresolvedReference` も同じ経路で
+  元の記述が出る。**配備後に本番で確かめるまでは実データ未検証**(統制9)
+- **`labels.json` で `fiscalYear` と `budgetFiscalYear` が同じ「予算年度」
+  になっている**(裁定B108の途中で発見)。`AnnualBudget` では前者がレビュー
+  年度、後者がその予算の年度で意味が違う。オントロジー側の表示名の問題なので、
+  スキーマ再生成を伴う変更としてまとめて直す
+- **`UnresolvedReference` は `core.yaml` で `label` スロットを宣言していない**
+  ので、`skos:prefLabel` を足すと閉じたSHACLシェイプに違反する。KGに本物の
+  名前を持たせるならスキーマ再生成(Linuxのみ。裁定B100)とKGの作り直しが要る。
+  表示は裁定B108で直っているので急がない
 - **生成器がプラットフォーム依存のまま**(裁定B100)。rdflibのTurtle
   シリアライズ順がWindowsとLinuxで違う。直したのは**手順**
   (コミットする生成物はLinuxで作る)であって、生成器ではない。

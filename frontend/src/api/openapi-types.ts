@@ -264,12 +264,38 @@ export interface components {
             /** Type */
             type: string;
         };
+        /**
+         * DescribingValue
+         * @description 表示名を持たないエンティティを**見分けるため**の、述語1つとその値。
+         *
+         *     **これは表示名ではない(裁定B108)。** 表示名の出所はオントロジー側だけ
+         *     (`skos:prefLabel`)で、持たない型について**合成はしない**(裁定B78/B88)。
+         *     しかし「名前が無い」ことと「見分けられない」ことは別である。
+         *
+         *     `AnnualBudget` は一次データに固有の名前を持たないので `skos:prefLabel`
+         *     が無く、本番の府省グラフでは**100ノードのうち17件が同じ「表示名なし」**
+         *     として並んでいた(2026-09-13に私が実測)。年度は
+         *     `budget:budgetFiscalYear` としてKGにあるのに、APIがノードの型とラベル
+         *     しか返していなかったので画面が使えなかった。
+         *
+         *     **だから名前ではなく「述語と値」の対で返す。** 画面はこれを名前として
+         *     出さず、述語のラベルを添えて出す(「予算年度 2021」)。合成した名前を
+         *     名前として出すことと、属性を属性として出すことは違う——後者は
+         *     エンティティ詳細の属性表が既にやっていることである。
+         */
+        DescribingValue: {
+            /** Predicate */
+            predicate: string;
+            /** Value */
+            value: string;
+        };
         /** EntityDetailResponse */
         EntityDetailResponse: {
             /** Attributes */
             attributes: {
                 [key: string]: components["schemas"]["AttributeValue"][];
             };
+            described_by?: components["schemas"]["DescribingValue"] | null;
             /** Graphs */
             graphs: {
                 [key: string]: components["schemas"]["Provenance"];
@@ -296,6 +322,7 @@ export interface components {
          * @description 一覧・関係に出す最小限のエンティティ参照。
          */
         EntityRef: {
+            described_by?: components["schemas"]["DescribingValue"] | null;
             /** Id */
             id: string;
             /** Id Path */
@@ -636,6 +663,7 @@ export interface components {
          * @description 検索結果の1件。`summary`だけが検索固有(エンティティ詳細には出さない)。
          */
         SearchHit: {
+            described_by?: components["schemas"]["DescribingValue"] | null;
             /** Id */
             id: string;
             /** Id Path */

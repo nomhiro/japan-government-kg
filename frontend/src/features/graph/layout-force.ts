@@ -127,6 +127,7 @@ export function layoutForce(model: GraphModel, options: ForceLayoutOptions = {})
       idPath: n.idPath,
       type: n.type,
       label: n.label,
+      describedBy: n.describedBy,
       axis: n.axis,
       laneKey: n.laneKey,
       hop: n.hop,

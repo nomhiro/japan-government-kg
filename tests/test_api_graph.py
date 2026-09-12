@@ -598,3 +598,63 @@ def test_neighborhood_marks_a_graph_whose_provenance_is_missing(kg):
     )
     assert prov["source"] == ""
     assert prov["graph"] == target_graph, "キーだけ落として消費者に不在を扱わせていない"
+
+
+# =============================================================================
+# 表示名を持たない型の「見分けのための属性」(裁定B108)
+# =============================================================================
+
+
+def test_nodes_without_a_label_carry_the_attribute_that_tells_them_apart(client):
+    """**同じ「表示名なし」が並ぶのをやめる。**
+
+    `AnnualBudget` は一次データに固有の名前を持たない(`emit.py` が
+    `skos:prefLabel` を意図的に付けない。原則7)。本番の府省グラフでは
+    100ノードのうち17件がこの型で、すべて同じ「表示名なし」として
+    並んでいた(2026-09-13実測)。年度は `budget:budgetFiscalYear` として
+    KGにあるのに、APIが型とラベルしか返していなかった。
+
+    **名前は合成しない。** 返すのは述語と値の対で、画面はそれを述語の
+    ラベルと一緒に出す(裁定B78/B88に触れない。裁定B108)。
+    """
+    res = client.get(f"/neighborhood/{HUB_PROJECT}", params={"depth": 1})
+    assert res.status_code == 200
+    annuals = [n for n in res.json()["nodes"] if n["type"] == "AnnualBudget"]
+    assert annuals, "前提: fixtureにAnnualBudgetが居る"
+
+    years = set()
+    for node in annuals:
+        assert node["label"] is None, "前提: この型は表示名を持たない"
+        described = node["described_by"]
+        assert described is not None, node
+        assert described["predicate"] == "budgetFiscalYear", described
+        years.add(described["value"])
+
+    # **見分けられることが要求**なので、値が全件同じでは意味が無い。
+    assert len(years) == len(annuals), years
+    assert years == {"2024", "2025", "2026"}, years
+
+
+def test_nodes_that_have_a_label_do_not_carry_a_describing_attribute(client):
+    """表示名がある型には付けない(契約を「labelが無いときだけ」に固定する)。"""
+    res = client.get(f"/neighborhood/{MINISTRY}", params={"depth": 1})
+    assert res.status_code == 200
+    labelled = [n for n in res.json()["nodes"] if n["label"] is not None]
+    assert labelled, "前提: 表示名を持つノードが居る"
+    for node in labelled:
+        assert node["described_by"] is None, node
+
+
+def test_a_type_with_no_declaration_stays_without_a_describing_attribute(client):
+    """**宣言の無い型は埋めない。** 無い理由を推測して何かを出すことはしない。"""
+    res = client.get(f"/neighborhood/{HUB_PROJECT}", params={"depth": 2})
+    assert res.status_code == 200
+    from jgkg.api.queries import IDENTIFYING_PREDICATES
+
+    undeclared = [
+        n
+        for n in res.json()["nodes"]
+        if n["label"] is None and n["type"] not in IDENTIFYING_PREDICATES
+    ]
+    for node in undeclared:
+        assert node["described_by"] is None, node

@@ -1,6 +1,6 @@
 // グラフ部品の契約(裁定B106)。この形だけがエンティティ画面との境界であり、
 // グラフの内部(レイアウトの計算・描画)は外から見えない。
-import type { EntityRef } from "../../api/client";
+import type { DescribingValue, EntityRef } from "../../api/client";
 import type { GraphParams } from "../../router";
 
 export interface GraphViewProps {
@@ -25,6 +25,8 @@ export interface PlacedNode {
   readonly idPath: string;
   readonly type: string;
   readonly label: string | null;
+  /** 表示名が無い型を見分けるための属性(裁定B108)。 */
+  readonly describedBy: DescribingValue | null;
   readonly axis: string | undefined;
   readonly laneKey: string;
   /** 中心からのホップ数(0 = 中心)。 */

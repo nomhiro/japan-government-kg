@@ -8,6 +8,7 @@ export type SearchHit = components["schemas"]["SearchHit"];
 export type EntityRef = components["schemas"]["EntityRef"];
 export type EntityDetailResponse = components["schemas"]["EntityDetailResponse"];
 export type AttributeValue = components["schemas"]["AttributeValue"];
+export type DescribingValue = components["schemas"]["DescribingValue"];
 export type NeighborhoodResponse = components["schemas"]["NeighborhoodResponse"];
 export type GraphEdge = components["schemas"]["GraphEdge"];
 export type Provenance = components["schemas"]["Provenance"];
