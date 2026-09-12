@@ -946,13 +946,17 @@ import {
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
+// jsdom(vitest)には window.matchMedia が無い。無い環境では「OSはライト」とみなし、
+// 購読もしない——テストのためだけに matchMedia をモックで生やすより、
+// 部品が無い環境でも壊れないほうを採る。
 function subscribeSystemDark(onChange: () => void): () => void {
+  if (typeof window.matchMedia !== "function") return () => undefined;
   const mq = window.matchMedia(DARK_QUERY);
   mq.addEventListener("change", onChange);
   return () => mq.removeEventListener("change", onChange);
 }
 function getSystemDark(): boolean {
-  return window.matchMedia(DARK_QUERY).matches;
+  return typeof window.matchMedia === "function" && window.matchMedia(DARK_QUERY).matches;
 }
 
 function safeStorage(): Pick<Storage, "getItem" | "setItem"> {
