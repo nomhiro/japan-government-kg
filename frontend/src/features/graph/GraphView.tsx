@@ -234,13 +234,25 @@ export function GraphView(props: GraphViewProps): JSX.Element {
   useEffect(() => {
     const el = svgRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = (w: number, h: number) => {
+      if (w > 0 && h > 0) setSvgSize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
+    };
+    // 初回は自分で測る。ResizeObserver は最初の1回も呼ぶが、
+    // 呼ばれる前の1フレームを既定値(1000x600)で描くと器と縦横比が食い違い、
+    // preserveAspectRatio="xMidYMid meet" が内容を上下中央に寄せてしまう
+    // (実ブラウザで、グラフが器の下寄りに描かれる形で現れた)。
+    const rect = el.getBoundingClientRect();
+    measure(rect.width, rect.height);
     const ro = new ResizeObserver((entries) => {
       const r = entries[0]?.contentRect;
-      if (r && r.width > 0 && r.height > 0) setSvgSize({ w: r.width, h: r.height });
+      if (r) measure(r.width, r.height);
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+    // **model を依存に入れる。** SVGは model が来てから初めてマウントされるので、
+    // 依存を空にすると svgRef.current が null のまま一度も観測されない
+    // (これで実際に上の症状が出た)。
+  }, [model]);
 
   const contentW = layoutResult.width + VIEWBOX_PAD * 2;
   const contentH = layoutResult.height + VIEWBOX_PAD * 2;
