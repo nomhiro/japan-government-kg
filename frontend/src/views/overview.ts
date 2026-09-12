@@ -44,7 +44,7 @@ import {
   sumMinistryBudgets,
   topMinistryDominancePhrase,
   typeInstanceCount,
-} from "./overview-format";
+} from "../lib/overview-format";
 
 type Scale = "all" | "rest";
 

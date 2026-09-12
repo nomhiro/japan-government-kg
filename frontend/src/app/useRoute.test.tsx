@@ -30,7 +30,7 @@ describe("useRoute", () => {
   it("hashchange で Route が更新される", () => {
     window.location.hash = "#/";
     const { result } = renderHook(() => useRoute());
-    expect(result.current).toEqual({ name: "search", q: "" });
+    expect(result.current).toEqual({ name: "top" });
     setHash("#/entity/org/6000012070001");
     expect(result.current).toEqual({ name: "entity", idPath: "org/6000012070001" });
   });
@@ -49,6 +49,6 @@ describe("useRoute", () => {
     unmount();
     // 購読が残っていれば React が警告を出す/例外になる。ここでは例外が出ないことだけ固定する。
     expect(() => setHash("#/chat")).not.toThrow();
-    expect(result.current).toEqual({ name: "search", q: "" });
+    expect(result.current).toEqual({ name: "top" });
   });
 });

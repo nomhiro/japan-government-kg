@@ -1,61 +1,180 @@
-/* 共通シェル。色・寸法はすべて styles/tokens.css の変数から(裁定B105)。
-   タップ領域は 44px 以上、フォーカスリングは太く高コントラスト(--focus)。 */
-.jgkg-shell { min-height: 100vh; display: flex; flex-direction: column; }
+/* 共通シェル。色・寸法はすべて tokens.css の変数から(裁定B105)。 */
 
-.jgkg-skip {
-  position: absolute; left: var(--space-2); top: var(--space-2);
-  transform: translateY(-200%);
-  padding: var(--space-2) var(--space-4); min-height: 44px;
-  background: var(--ink); color: var(--paper); border: 0; border-radius: var(--radius);
-  font: inherit;
+.jg-shell { min-height: 100vh; display: flex; flex-direction: column; }
+.jg-main { flex: 1 1 auto; }
+.jg-main:focus { outline: none; }
+
+/* --- 告知 -----------------------------------------------------------------
+   クラス名 .jgkg-notice は index.html(静的HTML)側の要素のもの。
+   `scripts/verify-site.py` が本番の "/" を取得してこの文言の有無を検査するので、
+   **要素も文言も動かさない**。ここでやるのは見た目だけ。
+   旧実装は赤枠の箱がヘッダより上で大きく場所を取っていた。細い帯にする。 */
+.jgkg-notice {
+  margin: 0;
+  padding: 6px var(--sp-5);
+  background: var(--signal-bg);
+  color: var(--ink);
+  border-bottom: 1px solid var(--signal);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  text-align: center;
 }
-.jgkg-skip:focus-visible { transform: none; outline: 3px solid var(--focus); outline-offset: 2px; z-index: 10; }
 
-.jgkg-shell-header {
-  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-5);
-  padding: var(--space-3) var(--space-5);
-  border-bottom: 1px solid var(--rule);
+/* --- スキップ ------------------------------------------------------------- */
+.jg-skip {
+  position: fixed; left: var(--sp-3); top: var(--sp-3); z-index: 30;
+  transform: translateY(-250%);
+  min-height: var(--tap); padding: 0 var(--sp-4);
+  border: 0; border-radius: var(--radius);
+  background: var(--ink); color: var(--paper);
+  font-size: var(--fs-sm); cursor: pointer;
+}
+.jg-skip:focus-visible { transform: none; }
+
+/* --- ヘッダ --------------------------------------------------------------- */
+.jg-header {
+  position: sticky; top: 0; z-index: 20;
   background: var(--paper);
+  border-bottom: 1px solid var(--rule);
 }
-.jgkg-brand { display: flex; flex-direction: column; line-height: 1.25; text-decoration: none; color: var(--ink); min-height: 44px; justify-content: center; }
-.jgkg-brand-name { font-weight: 700; font-size: 1rem; }
-.jgkg-brand-sub { font-size: 0.75rem; color: var(--muted); }
-
-.jgkg-omnibox { flex: 1 1 18rem; max-width: 36rem; }
-.jgkg-omnibox-input {
-  width: 100%; min-height: 44px; padding: 0 var(--space-3);
-  border: 1px solid var(--rule); border-radius: var(--radius);
-  background: var(--surface); color: var(--ink); font: inherit; font-size: 1rem;
+.jg-header__inner {
+  display: flex; align-items: center; gap: var(--sp-4);
+  width: 100%; max-width: var(--content-wide); margin: 0 auto;
+  padding: var(--sp-3) var(--sp-5);
 }
 
-.jgkg-shell-nav { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-left: auto; }
-.jgkg-shell-nav a {
-  display: inline-flex; align-items: center; min-height: 44px; padding: 0 var(--space-3);
-  color: var(--ink); text-decoration: none; border-bottom: 2px solid transparent; font-size: 0.95rem;
+.jg-brand {
+  display: flex; align-items: center; gap: var(--sp-3);
+  color: var(--ink); text-decoration: none; flex: none;
+  min-height: var(--tap);
 }
-.jgkg-shell-nav a[aria-current="page"] { border-bottom-color: var(--ink); font-weight: 600; }
-.jgkg-shell-nav a:hover { color: var(--primary); }
+.jg-brand:hover { text-decoration: none; }
+.jg-brand__mark { display: flex; flex: none; }
+.jg-brand__text { display: flex; flex-direction: column; line-height: 1.2; }
+.jg-brand__name { font-weight: 700; font-size: 0.9375rem; letter-spacing: -0.01em; }
+.jg-brand__sub { font-size: 11px; color: var(--muted); }
 
-.jgkg-theme-toggle {
-  display: inline-flex; align-items: center; gap: var(--space-2);
-  min-height: 44px; padding: 0 var(--space-3);
-  border: 1px solid var(--rule); border-radius: var(--radius);
-  background: var(--paper); color: var(--ink); font: inherit; font-size: 0.9rem; cursor: pointer;
+.jg-nav { display: flex; align-items: center; gap: 2px; margin-left: auto; flex: none; }
+.jg-nav > a {
+  display: inline-flex; align-items: center;
+  min-height: var(--tap); padding: 0 var(--sp-3);
+  color: var(--ink-2); text-decoration: none;
+  font-size: var(--fs-sm); border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+.jg-nav > a:hover { background: var(--surface-2); color: var(--ink); text-decoration: none; }
+.jg-nav > a[aria-current="page"] {
+  color: var(--ink); font-weight: 700;
+  box-shadow: inset 0 -2px 0 0 var(--ink);
 }
 
-.jgkg-shell-main { max-width: 60rem; width: 100%; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
+.jg-navtoggle { display: none; }
 
-/* フォーカスリングはシェル配下の全操作要素に共通(旧ビューの要素も含む)。
-   二重リング: 内側に --ink(地色と高コントラスト)、外側に --focus(黄)。
-   黄だけだと白地で 1.44:1 になり WCAG 1.4.11(3:1)を満たさない(最終レビューの指摘)。 */
-.jgkg-shell :is(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 3px solid var(--focus); outline-offset: 2px;
-  box-shadow: 0 0 0 2px var(--ink);
+/* --- オムニボックス ------------------------------------------------------- */
+.jg-omnibox { position: relative; flex: 1 1 20rem; max-width: 34rem; }
+.jg-omnibox__field {
+  display: flex; align-items: center; gap: var(--sp-2);
+  height: var(--tap); padding: 0 var(--sp-3);
+  border: 1px solid var(--rule-strong); border-radius: var(--radius);
+  background: var(--surface);
+}
+.jg-omnibox__field:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-weak);
+}
+.jg-omnibox__icon { flex: none; color: var(--muted); }
+.jg-omnibox__input {
+  flex: 1 1 auto; min-width: 0;
+  border: 0; background: transparent; color: var(--ink);
+  font: inherit; font-size: var(--fs-sm);
+}
+.jg-omnibox__input:focus { outline: none; }
+.jg-omnibox__input::placeholder { color: var(--muted); }
+.jg-omnibox__hint {
+  flex: none; padding: 1px 5px; border: 1px solid var(--rule); border-radius: var(--radius-sm);
+  font-size: 11px; color: var(--muted);
+}
+.jg-omnibox__clear {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; padding: 0;
+  border: 0; border-radius: var(--radius-sm); background: transparent;
+  color: var(--muted); cursor: pointer;
+}
+.jg-omnibox__clear:hover { background: var(--surface-2); color: var(--ink); }
+
+/* 候補。押せるものは本物の要素にする(旧実装は li + click でキーボード不可)。 */
+.jg-omnibox__panel {
+  position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 25;
+  max-height: min(60vh, 30rem); overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--rule-strong); border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.12);
+}
+.jg-omnibox__status { padding: var(--sp-3); font-size: var(--fs-sm); color: var(--muted); }
+.jg-omnibox__list { display: flex; flex-direction: column; }
+.jg-omnibox__item {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--sp-2) var(--sp-3);
+  align-items: center;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0; border-bottom: 1px solid var(--rule);
+  background: transparent; color: var(--ink);
+  font: inherit; text-align: left; cursor: pointer;
+  text-decoration: none;
+}
+.jg-omnibox__item:last-child { border-bottom: 0; }
+.jg-omnibox__item:hover,
+.jg-omnibox__item[data-active="true"] { background: var(--primary-weak); text-decoration: none; }
+.jg-omnibox__label { font-size: var(--fs-sm); font-weight: 600; overflow-wrap: anywhere; }
+.jg-omnibox__summary { grid-column: 2; font-size: var(--fs-xs); color: var(--muted); }
+.jg-omnibox__more {
+  display: block; width: 100%; padding: var(--sp-3);
+  border: 0; border-top: 1px solid var(--rule); background: var(--surface-2);
+  color: var(--primary); font: inherit; font-size: var(--fs-sm); cursor: pointer;
+  text-align: left;
 }
 
-.jgkg-shell .jgkg-shell-main:focus,
-.jgkg-shell .jgkg-shell-main:focus-visible { outline: none; box-shadow: none; }
+/* --- テーマ切替 ----------------------------------------------------------- */
+.jg-theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
+  min-height: var(--tap); min-width: var(--tap); padding: 0 var(--sp-3);
+  border: 1px solid var(--rule-strong); border-radius: var(--radius);
+  background: var(--surface); color: var(--ink-2);
+  font-size: var(--fs-xs); cursor: pointer; flex: none;
+}
+.jg-theme-toggle:hover { background: var(--surface-2); color: var(--ink); }
+.jg-theme-toggle > span { display: none; }
 
-@media (prefers-reduced-motion: reduce) {
-  .jgkg-shell * { transition: none !important; animation: none !important; }
+/* --- フッタ --------------------------------------------------------------- */
+.jg-footer {
+  margin-top: var(--sp-9);
+  background: var(--surface-2);
+  border-top: 1px solid var(--rule);
+}
+.jg-footer__inner {
+  display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--sp-7);
+  width: 100%; max-width: var(--content-wide); margin: 0 auto;
+  padding: var(--sp-7) var(--sp-5);
+}
+.jg-footer a { color: var(--primary); }
+
+/* --- 狭い画面 ------------------------------------------------------------- */
+@media (max-width: 1100px) {
+  .jg-brand__sub { display: none; }
+}
+@media (max-width: 900px) {
+  .jg-header__inner { flex-wrap: wrap; row-gap: var(--sp-2); }
+  .jg-navtoggle { display: inline-flex; margin-left: auto; }
+  .jg-nav {
+    display: none; order: 9; width: 100%; margin-left: 0;
+    flex-direction: column; align-items: stretch;
+    padding-bottom: var(--sp-2);
+  }
+  .jg-nav--open { display: flex; }
+  .jg-nav > a { justify-content: flex-start; }
+  .jg-nav > a[aria-current="page"] { box-shadow: inset 2px 0 0 0 var(--ink); }
+  .jg-omnibox { order: 10; flex-basis: 100%; max-width: none; }
+  .jg-footer__inner { grid-template-columns: minmax(0, 1fr); gap: var(--sp-5); }
+}
+@media (min-width: 1200px) {
+  .jg-theme-toggle > span { display: inline; }
 }
