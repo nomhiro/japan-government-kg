@@ -200,3 +200,32 @@ describe("AppShell(共通シェル)", () => {
     expect(window.location.hash).toBe("#/data");
   });
 });
+
+describe("タブの名前(document.title)", () => {
+  it("ルートごとに変わる(全画面が同じ名前だと、タブを並べて比べられない)", () => {
+    render(
+      <AppShell route={{ name: "top" }}>
+        <p>本文</p>
+      </AppShell>,
+    );
+    expect(document.title).toBe("全体を見る — 日本政府ナレッジグラフ");
+
+    cleanup();
+    render(
+      <AppShell route={{ name: "search", q: "年金" }}>
+        <p>本文</p>
+      </AppShell>,
+    );
+    expect(document.title).toBe("「年金」の検索結果 — 日本政府ナレッジグラフ");
+  });
+
+  it("エンティティ画面のときは題を書かない(EntityPageが表示名で書くため)", () => {
+    document.title = "厚生労働省 — 日本政府ナレッジグラフ";
+    render(
+      <AppShell route={{ name: "entity", idPath: "org/6000012070001" }}>
+        <p>本文</p>
+      </AppShell>,
+    );
+    expect(document.title).toBe("厚生労働省 — 日本政府ナレッジグラフ");
+  });
+});

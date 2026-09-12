@@ -425,4 +425,20 @@ describe("EntityPage(組織・法令・支出・汎用: 型分岐の配線を確
     render(<EntityPage idPath="org/test" />);
     await screen.findByRole("heading", { level: 1, name: "(表示名なし)" });
   });
+  it("タブの名前をこのエンティティの表示名にする(履歴やブックマークで区別できるように)", async () => {
+    document.title = "前の画面 — 日本政府ナレッジグラフ";
+    mockedEntityDetail.mockResolvedValue(entityMinistry());
+    render(<EntityPage idPath="org/6000012070001" />);
+    // 応答が来るまでは「読み込み中」と正直に言う。
+    expect(document.title).toBe("読み込み中 — 日本政府ナレッジグラフ");
+    await screen.findByRole("heading", { level: 1, name: "厚生労働省" });
+    expect(document.title).toBe("厚生労働省 — 日本政府ナレッジグラフ");
+  });
+
+  it("labelがnullならタブの名前も「(表示名なし)」(id_pathから名前を作らない)", async () => {
+    mockedEntityDetail.mockResolvedValue(minimalEntity({ type: "Organization", label: null }));
+    render(<EntityPage idPath="org/test" />);
+    await screen.findByRole("heading", { level: 1, name: "(表示名なし)" });
+    expect(document.title).toBe("(表示名なし) — 日本政府ナレッジグラフ");
+  });
 });

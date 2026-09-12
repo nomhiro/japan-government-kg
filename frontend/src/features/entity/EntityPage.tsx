@@ -12,13 +12,14 @@ import { useState, type JSX } from "react";
 import { entityDetail, type EntityRef } from "../../api/client";
 import { ENTITY_RELATIONSHIPS_LIMIT } from "../../api/limits";
 import { useApiQuery } from "../../api/useApiQuery";
+import { pageTitle, useDocumentTitle } from "../../app/document-title";
 import { useRoute } from "../../app/useRoute";
 import { Band, Caveat, ErrorBox, Loading, Truncation } from "../../components/ui";
 import { GraphView } from "../graph/GraphView";
 import { navigate, parseGraphParams, replaceGraphParams, routeToHash, type GraphParams } from "../../router";
 import { EntityHeader } from "./EntityHeader";
 import { FactsPanel } from "./FactsPanel";
-import { breadcrumbMinistryRef, graphCaveatText, kindOf } from "./entity-model";
+import { NO_LABEL, breadcrumbMinistryRef, graphCaveatText, kindOf } from "./entity-model";
 import { ExpenditureBody } from "./kinds/ExpenditureBody";
 import { GenericBody } from "./kinds/GenericBody";
 import { LawBody } from "./kinds/LawBody";
@@ -36,6 +37,21 @@ export function EntityPage({ idPath }: { idPath: string }): JSX.Element {
   const [limit, setLimit] = useState<number | undefined>(undefined);
   const queryKey = `${idPath}::${limit ?? "default"}`;
   const state = useApiQuery(queryKey, () => entityDetail(idPath, limit));
+
+  // タブの名前をこのエンティティの表示名にする(`AppShell` は entity の題を
+  // 書かない。document-title.ts 参照)。**表示名はAPIの `label` だけを使う**
+  // ——無ければ `(表示名なし)` と言う(裁定B78/B88)。
+  useDocumentTitle(
+    pageTitle(
+      state.status === "loading"
+        ? "読み込み中"
+        : state.status === "error"
+          ? "読み込みに失敗しました"
+          : state.data === null
+            ? "見つかりませんでした"
+            : (state.data.label ?? NO_LABEL),
+    ),
+  );
 
   if (state.status === "loading") {
     return (

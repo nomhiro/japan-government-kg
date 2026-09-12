@@ -740,11 +740,16 @@ def _self_poisoning_transport(live_dir: Path, state: dict):
 
 
 def _poisoning_setup(tmp_path: Path):
+    """配信元(`live_dir`)・可変状態・そこに繋がるクライアントを用意する。
+
+    戻すのは state と client だけ——`live_dir`はクライアント越しにしか
+    触らないので、呼び出し側に渡すと使われない変数になる。
+    """
     _full_build(tmp_path)
-    live = tmp_path.parent / (tmp_path.name + "-live")
-    shutil.copytree(tmp_path, live)
-    state = {"live": False, "cache": {}, "asked": []}
-    return live, state, httpx.Client(transport=_self_poisoning_transport(live, state))
+    live_dir = tmp_path.parent / (tmp_path.name + "-live")
+    shutil.copytree(tmp_path, live_dir)
+    state: dict = {"live": False, "cache": {}, "asked": []}
+    return state, httpx.Client(transport=_self_poisoning_transport(live_dir, state))
 
 
 def test_the_wait_never_requests_a_bare_url(tmp_path):
@@ -752,7 +757,7 @@ def test_the_wait_never_requests_a_bare_url(tmp_path):
 
     素のURLで取ると、伝播前の応答が実利用者と同じキャッシュキーに焼き付く。
     """
-    live, state, client = _poisoning_setup(tmp_path)
+    state, client = _poisoning_setup(tmp_path)
     site_verify.wait_until_deployment_is_live(
         client, "https://jgkg.norr-tech.com", tmp_path, attempts=1,
     )
@@ -764,7 +769,7 @@ def test_the_wait_never_requests_a_bare_url(tmp_path):
 
 def test_the_wait_uses_a_different_nonce_each_attempt(tmp_path):
     """迂回用URL自身がキャッシュされても次の試行に影響しないこと。"""
-    live, state, client = _poisoning_setup(tmp_path)
+    state, client = _poisoning_setup(tmp_path)
     site_verify.wait_until_deployment_is_live(
         client, "https://jgkg.norr-tech.com", tmp_path,
         attempts=3, delay_seconds=0, sleep=lambda _s: None,
@@ -775,7 +780,7 @@ def test_the_wait_uses_a_different_nonce_each_attempt(tmp_path):
 
 def test_the_wait_becomes_live_when_the_deployment_propagates(tmp_path):
     """伝播が終われば合格し、何回目で確かめられたかを返すこと。"""
-    live, state, client = _poisoning_setup(tmp_path)
+    state, client = _poisoning_setup(tmp_path)
 
     def propagate(_seconds: float) -> None:
         state["live"] = True
@@ -791,7 +796,7 @@ def test_the_wait_becomes_live_when_the_deployment_propagates(tmp_path):
 
 def test_the_wait_reports_the_paths_that_do_not_match(tmp_path):
     """伝播しないまま試行を使い切ったら、一致しなかったパスを返すこと。"""
-    live, state, client = _poisoning_setup(tmp_path)
+    _state, client = _poisoning_setup(tmp_path)
     wait = site_verify.wait_until_deployment_is_live(
         client, "https://jgkg.norr-tech.com", tmp_path,
         attempts=2, delay_seconds=0, sleep=lambda _s: None,
@@ -804,7 +809,7 @@ def test_the_wait_reports_the_paths_that_do_not_match(tmp_path):
 
 def test_the_wait_lets_the_real_checks_pass_after_propagation(tmp_path):
     """**先に待てば、検査は通る。** 裁定B107の対処が効くことの確認。"""
-    live, state, client = _poisoning_setup(tmp_path)
+    state, client = _poisoning_setup(tmp_path)
 
     def propagate(_seconds: float) -> None:
         state["live"] = True
@@ -825,7 +830,7 @@ def test_fetching_before_propagation_poisons_the_cache_permanently(tmp_path):
     1回目が「200 + HTML」を受け取り、以後10回・5分間同じsha256を返し続けた。
     **窓を広げる対処が効かない**ことを、この検査が固定する。
     """
-    live, state, client = _poisoning_setup(tmp_path)
+    state, client = _poisoning_setup(tmp_path)
 
     # 伝播前に素の取得をしてしまう(裁定B84までのCIの振る舞い)。
     first = site_verify.run_all_checks("https://jgkg.norr-tech.com", tmp_path, GENERATED, client)

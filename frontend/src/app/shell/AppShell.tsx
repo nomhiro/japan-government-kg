@@ -7,6 +7,7 @@
 // `#/data` として入れ、フッタを全画面に付けた。
 import { useEffect, useRef, useState, type JSX, type ReactNode } from "react";
 import { navigate, routeToHash, type Route } from "../../router";
+import { titleForRoute, useDocumentTitle } from "../document-title";
 import { Omnibox } from "./Omnibox";
 import { ThemeToggle } from "./ThemeToggle";
 // 土台のCSS(tokens → base)は main.tsx が読み込む。ここはシェル自身の分だけ。
@@ -36,6 +37,10 @@ const REPO_URL = "https://github.com/nomhiro/japan-government-kg";
 export function AppShell({ route, children }: { route: Route; children: ReactNode }): JSX.Element {
   const mainRef = useRef<HTMLElement>(null);
   const [navOpen, setNavOpen] = useState(false);
+
+  // タブ・履歴・ブックマークで画面を区別できるようにする
+  // (`entity` だけは EntityPage が表示名を使って書く。document-title.ts 参照)。
+  useDocumentTitle(titleForRoute(route));
 
   // ルートが変わったら本文の先頭へ戻す。旧実装は前の画面のスクロール位置が
   // 残り、遷移したのに同じ場所を見ているように見えることがあった。
