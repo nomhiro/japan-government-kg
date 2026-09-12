@@ -1,0 +1,67 @@
+/* 経路画面(裁定なし。利用者評価「今の状態は全然ダメ」からのやり直し)。 */
+
+.jg-path-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-5);
+  margin-bottom: var(--sp-4);
+}
+
+@media (max-width: 640px) {
+  .jg-path-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.jg-path-result {
+  margin-top: var(--sp-5);
+}
+
+/* 横一列のチェーン。400px幅でも折り返して縦積みになる(ページ全体は横に伸びない)。 */
+.jg-path-chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.jg-path-chain__item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.jg-path-node {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.jg-path-hop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding-inline: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+  text-align: center;
+}
+
+.jg-path-hop__arrow {
+  font-size: 1.1rem;
+  color: var(--muted);
+}
+
+.jg-path-hop__predicate {
+  font-weight: 700;
+}
+
+.jg-path-reasons {
+  padding-left: var(--sp-5);
+  list-style: disc;
+}

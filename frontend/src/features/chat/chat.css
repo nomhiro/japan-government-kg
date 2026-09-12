@@ -1,0 +1,133 @@
+/* 聞く(チャット)画面。値は tokens.css / ui.css の変数・部品を使う。 */
+
+.jg-chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: var(--sp-1);
+}
+
+.jg-chat-turn {
+  display: flex;
+}
+.jg-chat-turn--user {
+  justify-content: flex-end;
+}
+.jg-chat-turn--assistant {
+  justify-content: flex-start;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+
+.jg-chat-bubble {
+  max-width: 42rem;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--radius-lg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.jg-chat-turn--user .jg-chat-bubble {
+  background: var(--primary);
+  color: var(--primary-ink);
+}
+.jg-chat-turn--assistant .jg-chat-bubble {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.jg-chat-meta {
+  width: 100%;
+  max-width: 42rem;
+}
+
+.jg-chat-sources summary,
+.jg-chat-tool-log summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: var(--fs-sm);
+}
+.jg-chat-sources ul,
+.jg-chat-tool-log ul {
+  margin-top: var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.jg-chat-source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+
+/* **偽の進捗を出さない。** ここに出るのは実際の経過秒だけ——段階が
+   進んでいるように見せる作り物のステップは無い。 */
+.jg-chat-pending {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface-2);
+  border-radius: var(--radius-lg);
+  max-width: 42rem;
+}
+.jg-chat-pending .jg-loading__bar {
+  margin-top: 6px;
+}
+
+.jg-chat-faq {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-block: var(--sp-4);
+}
+.jg-chat-faq__cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.jg-chat-faq__card {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+  max-width: 22rem;
+}
+.jg-chat-faq__card:hover {
+  background: var(--surface-2);
+}
+
+.jg-chat-form {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: flex-end;
+  margin-top: var(--sp-3);
+}
+.jg-chat-input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  resize: vertical;
+}
+
+@media (max-width: 480px) {
+  .jg-chat-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .jg-chat-bubble {
+    max-width: 100%;
+  }
+}

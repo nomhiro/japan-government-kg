@@ -1,0 +1,118 @@
+/* 検索結果画面(裁定なし。利用者評価「今の状態は全然ダメ」からのやり直し)。
+   値は tokens.css / ui.css の変数・部品を使う。ここで新しい色を作らない。 */
+
+.jg-search-form {
+  margin-bottom: var(--sp-4);
+}
+
+.jg-search-input {
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 1.0625rem;
+}
+
+.jg-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.jg-search-hit {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+/* 本物のリンク。クリック専用の<li>にしない——キーボードで辿ってEnterで開ける。 */
+.jg-search-hit__link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  color: inherit;
+  text-decoration: none;
+}
+.jg-search-hit__link:hover {
+  background: var(--surface-2);
+  text-decoration: none;
+}
+.jg-search-hit__label {
+  font-weight: 700;
+}
+.jg-search-hit__summary {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+@media (max-width: 480px) {
+  .jg-search-hit__link {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-1);
+  }
+}
+
+/* --- EntityPicker(検索して1件選ぶ部品。SearchPage/PathPageの両方から) --- */
+
+.jg-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.jg-picker__input {
+  min-height: var(--tap);
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-body);
+}
+
+.jg-picker__results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  max-height: 14rem;
+  overflow-y: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.jg-picker__hit {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 var(--sp-3);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.jg-picker__hit:hover,
+.jg-picker__hit:focus-visible {
+  background: var(--surface-2);
+}
+
+.jg-picker__selected {
+  padding: var(--sp-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.jg-picker__label {
+  font-weight: 700;
+}
