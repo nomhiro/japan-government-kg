@@ -548,7 +548,7 @@ CQ16は年度Yの全要求と年度Y+1の全当初予算を足すので、
 
 | Phase | 内容 | 状態 |
 |---|---|---|
-| 0 | 土台: React + Testing Library、`App.tsx`/`useRoute`/`LegacyView`、トークンとシェル。既存4画面は旧ビューのまま動く。sha256 2回一致を React 入りで実証 | **未着手** |
+| 0 | 土台: React + Testing Library、`App.tsx`/`useRoute`/`LegacyView`、トークンとシェル。既存4画面は旧ビューのまま動く。sha256 2回一致を React 入りで実証 | **完了**(2026-09-12)。JS 442,456 B(gzip 128,007 B)/ CSS 11,506 B。旧 JS 195,517 B / CSS 5,023 B。**既知の制限**: テーマ切替で旧 entity 画面の Sigma ラベル色は追随しない(`views/graph.ts` が prefers-color-scheme のみ購読。Phase 3 で解消)。開発時 StrictMode で旧ビューが2回描かれる(本番では起きない)。**手元(Windows)では build-site.sh の生成物検査が通らず(裁定B100)、その段を除いた同手順で site/ を組んで確認した。本物の build-site.sh は CI が走らせる** |
 | 1 | 把握: 新トップ・`#/search`・`#/data`・404。API-A(出典拡充・鮮度CQ10を `/overview` に) | 未着手 |
 | 2 | 追跡: 型別ダッシュボード(府省/事業/法人/法令/汎用)。API-B(`/summary/{kind}/{id}` = 一般形CQ + `# @bind` 注入、述語フィルタ、近傍サマリ、Fusekiタイムアウト) | 未着手 |
 | 3 | 探索: ワークベンチ(レンズ・軸チップ・ForceAtlas2・インスペクタ・URL状態)、経路統合、旧ビュー削除 | 未着手 |
