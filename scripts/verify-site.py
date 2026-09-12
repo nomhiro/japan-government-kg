@@ -81,10 +81,18 @@ def main(argv: list[str]) -> int:
             attempts=args.wait_attempts, delay_seconds=args.wait_delay_seconds,
             on_wait=on_wait,
         )
+        if wait.probed == 0:
+            # 比較対象が0件。空集合に対する全称命題は自明に真なので、
+            # ここを合格にすると「何も確かめずに配信元は正しい」と言う。
+            print(
+                f"比較対象が0件だった(--out-dir={args.out_dir})。"
+                "ビルド成果物のディレクトリが違うか、まだビルドしていない。"
+            )
+            return 1
         if not wait.live:
             print(
                 f"配信元がビルド成果物を配っていない({wait.attempts_used}回確認。"
-                f"キャッシュを迂回した取得で不一致 {len(wait.mismatched)}件):"
+                f"{wait.probed}件を突き合わせて不一致 {len(wait.mismatched)}件):"
             )
             for path in wait.mismatched:
                 print("  -", path)
@@ -102,7 +110,10 @@ def main(argv: list[str]) -> int:
             )
             return 1
         if args.wait_attempts > 1:
-            print(f"配信元がビルド成果物を配っている({wait.attempts_used}回目で確認)")
+            print(
+                f"配信元がビルド成果物を配っている"
+                f"({wait.probed}件を突き合わせ、{wait.attempts_used}回目で確認)"
+            )
             print()
 
         report = site_verify.run_all_checks_with_retries(

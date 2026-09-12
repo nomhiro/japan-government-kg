@@ -576,6 +576,8 @@ class DeploymentWait:
     attempts_used: int
     #: 最後の試行で配信元の応答がビルド成果物と一致しなかったパス。
     mismatched: tuple[str, ...] = ()
+    #: 突き合わせたパスの数。**0 なら合格ではない**(下記参照)。
+    probed: int = 0
 
 
 def probe_origin(client: httpx.Client, origin: str, url_path: str, *, nonce: str) -> FetchResult:
@@ -643,10 +645,23 @@ def wait_until_deployment_is_live(
     検証であること——迂回した取得だけで緑にすると、CDNに居座った古い
     応答(裁定B85)を見逃す。
 
-    合格条件は「非HTMLの全パスについて、配信元の応答がビルド成果物と
-    sha256一致」。`attempts=1`(既定)なら待たずに1回確かめるだけ。
+    合格条件は「**1件以上の**非HTMLのパスについて、配信元の応答が
+    ビルド成果物と全件sha256一致」。`attempts=1`(既定)なら待たずに
+    1回確かめるだけ。**比較対象が0件のときは合格にしない**
+    (空集合に対する全称命題は自明に真——何も確かめずに「配っている」と
+    言えてしまう)。
     """
     expected = {u: build.file_sha256(p) for u, p in sorted(comparable_paths(out_dir).items())}
+
+    # **比べるものが無いのは合格ではない。**
+    # `run_all_checks` が「配信物(site/)に検査対象のファイルがある」を
+    # 最初に問うのと同じ理由: 空集合に対する全称命題は自明に真になり、
+    # 「配信元は正しいものを配っている」と**何も確かめずに言えてしまう**。
+    # 実際に踏んだ: `--out-dir` に存在しないパスを渡したら
+    # `live=True` が0.4秒で返った(2026-09-13)。
+    if not expected:
+        return DeploymentWait(False, 1, (), 0)
+
     make_nonce = nonce if nonce is not None else lambda: secrets.token_hex(6)
 
     attempt = 1
@@ -658,9 +673,9 @@ def wait_until_deployment_is_live(
             if fr.status != 200 or hashlib.sha256(fr.body).hexdigest() != want:
                 mismatched.append(url_path)
         if not mismatched:
-            return DeploymentWait(True, attempt, ())
+            return DeploymentWait(True, attempt, (), len(expected))
         if attempt >= attempts:
-            return DeploymentWait(False, attempt, tuple(mismatched))
+            return DeploymentWait(False, attempt, tuple(mismatched), len(expected))
         if on_wait is not None:
             on_wait(attempt, attempts, tuple(mismatched))
         sleep(delay_seconds)

@@ -854,3 +854,38 @@ def test_fetching_before_propagation_poisons_the_cache_permanently(tmp_path):
         client, "https://jgkg.norr-tech.com", tmp_path, attempts=1,
     )
     assert wait.live
+
+
+def test_the_wait_refuses_to_pass_when_there_is_nothing_to_compare(tmp_path):
+    """**比較対象が0件なら合格にしない。**
+
+    空集合に対する全称命題は自明に真なので、ここを合格にすると
+    「何も確かめずに配信元は正しいものを配っている」と言えてしまう
+    ——`run_all_checks` が「配信物(site/)に検査対象のファイルがある」を
+    最初に問うのと同じ理由。**実際に踏んだ**(2026-09-13。存在しない
+    `--out-dir` を渡したら `live=True` が0.4秒で返った)。
+    """
+    state, client = _poisoning_setup(tmp_path)
+    state["live"] = True
+    empty = tmp_path.parent / (tmp_path.name + "-empty")
+    empty.mkdir()
+
+    wait = site_verify.wait_until_deployment_is_live(
+        client, "https://jgkg.norr-tech.com", empty, attempts=3,
+        delay_seconds=0, sleep=lambda _s: None,
+    )
+    assert not wait.live
+    assert wait.probed == 0
+    assert state["asked"] == [], "1件も取得していないこと(待つ意味が無いので即座に返る)"
+
+
+def test_the_wait_reports_how_many_paths_it_compared(tmp_path):
+    """「配っている」と言うときは、何件突き合わせたのかを一緒に返すこと。"""
+    state, client = _poisoning_setup(tmp_path)
+    state["live"] = True
+    wait = site_verify.wait_until_deployment_is_live(
+        client, "https://jgkg.norr-tech.com", tmp_path, attempts=1,
+    )
+    assert wait.live
+    assert wait.probed == len(site_verify.comparable_paths(tmp_path))
+    assert wait.probed > 0
