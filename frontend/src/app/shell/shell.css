@@ -44,12 +44,17 @@
 }
 
 .jgkg-shell-main { max-width: 60rem; width: 100%; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
-.jgkg-shell-main:focus { outline: none; }
 
-/* フォーカスリングはシェル配下の全操作要素に共通(旧ビューの要素も含む)。 */
+/* フォーカスリングはシェル配下の全操作要素に共通(旧ビューの要素も含む)。
+   二重リング: 内側に --ink(地色と高コントラスト)、外側に --focus(黄)。
+   黄だけだと白地で 1.44:1 になり WCAG 1.4.11(3:1)を満たさない(最終レビューの指摘)。 */
 .jgkg-shell :is(a, button, input, select, textarea, [tabindex]):focus-visible {
   outline: 3px solid var(--focus); outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--ink);
 }
+
+.jgkg-shell .jgkg-shell-main:focus,
+.jgkg-shell .jgkg-shell-main:focus-visible { outline: none; box-shadow: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .jgkg-shell * { transition: none !important; animation: none !important; }

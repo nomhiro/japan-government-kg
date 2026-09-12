@@ -1,6 +1,7 @@
 {
   "name": "jgkg-frontend",
   "private": true,
+  "engines": { "node": ">=22.13" },
   "version": "0.0.0",
   "type": "module",
   "scripts": {
