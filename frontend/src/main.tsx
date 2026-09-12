@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles/tokens.css";
-import "./style.css";
+import "./styles/base.css";
 import { App } from "./app/App";
 
 const app = document.querySelector<HTMLElement>("#app");

@@ -9,9 +9,7 @@ import { useEffect, useRef, useState, type JSX, type ReactNode } from "react";
 import { navigate, routeToHash, type Route } from "../../router";
 import { Omnibox } from "./Omnibox";
 import { ThemeToggle } from "./ThemeToggle";
-// 土台のCSSはここから読み込む。移行中は `main.tsx` を実装者が一時的に
-// 書き換えて確認するため、あの入口を触らずに済ませる(統合時に main.tsx へ移す)。
-import "../../styles/base.css";
+// 土台のCSS(tokens → base)は main.tsx が読み込む。ここはシェル自身の分だけ。
 import "./shell.css";
 
 interface NavItem {

@@ -1,53 +1,40 @@
 import type { JSX } from "react";
-import { navigate, type Route } from "../router";
-import { renderChat } from "../views/chat";
-import { renderEntity } from "../views/entity";
-import { renderPath } from "../views/path";
-import { renderSearch } from "../views/search";
-import { LegacyView, type LegacyController } from "./LegacyView";
+import { ChatPage } from "../features/chat/ChatPage";
+import { DataPage } from "../features/data/DataPage";
+import { EntityPage } from "../features/entity/EntityPage";
+import { TopPage } from "../features/overview/TopPage";
+import { PathPage } from "../features/path/PathPage";
+import { SearchPage } from "../features/search/SearchPage";
+import { navigate } from "../router";
 import { AppShell } from "./shell/AppShell";
 import { useRoute } from "./useRoute";
 
-// **移行中の状態**(裁定B106)。新しい画面(features/*)を1つずつ差し替えている。
-// まだ React になっていないルートは LegacyView 経由で旧ビューを載せる。
-// 旧ビューが全部消えたら LegacyView と views/ ごと削除する。
-function mountLegacy(el: HTMLElement, route: Route): LegacyController | void {
-  switch (route.name) {
-    case "top":
-      // 新トップができるまでは旧検索画面(検索窓+第1層)を出す。
-      renderSearch(el, "");
-      return;
-    case "search":
-      renderSearch(el, route.q);
-      return;
-    case "entity":
-      return renderEntity(el, route.idPath);
-    case "path":
-      renderPath(el, route.from, route.to);
-      return;
-    case "chat":
-      renderChat(el);
-      return;
-    case "data":
-    case "notFound":
-      return;
-  }
-}
+// ルート → 画面。すべて React(裁定B106)。
+// 旧ビュー(`views/*.ts` の innerHTML 方式)と、それを載せていた `LegacyView` は
+// この結線と同時に削除した —— Strangler の橋はもう要らない。
 
 function NotFound({ hash }: { hash: string }): JSX.Element {
   return (
     <div className="jg-band">
-      <div className="jg-inner jg-stack jg-stack--4" style={{ paddingBlock: "var(--sp-9)" }}>
+      <div className="jg-inner jg-stack jg-stack--5 jg-notfound">
         <span className="jg-eyebrow">404</span>
         <h1 className="jg-h1">このページはありません</h1>
         <p className="jg-lead">
           <code>{hash || "(空)"}</code> に対応する画面がありません。リンクが古いか、URLが途中で切れている可能性があります。
         </p>
         <div className="jg-row">
-          <button type="button" className="jg-btn jg-btn--primary" onClick={() => navigate({ name: "top" })}>
+          <button
+            type="button"
+            className="jg-btn jg-btn--primary"
+            onClick={() => navigate({ name: "top" })}
+          >
             全体を見る
           </button>
-          <button type="button" className="jg-btn" onClick={() => navigate({ name: "search", q: "" })}>
+          <button
+            type="button"
+            className="jg-btn"
+            onClick={() => navigate({ name: "search", q: "" })}
+          >
             探す
           </button>
         </div>
@@ -56,30 +43,31 @@ function NotFound({ hash }: { hash: string }): JSX.Element {
   );
 }
 
-function Placeholder({ title }: { title: string }): JSX.Element {
-  return (
-    <div className="jg-band">
-      <div className="jg-inner jg-stack jg-stack--4" style={{ paddingBlock: "var(--sp-9)" }}>
-        <h1 className="jg-h1">{title}</h1>
-        <p className="jg-lead">この画面はいま作っています。</p>
-      </div>
-    </div>
-  );
+function Body({ route }: { route: ReturnType<typeof useRoute> }): JSX.Element {
+  switch (route.name) {
+    case "top":
+      return <TopPage />;
+    case "search":
+      return <SearchPage q={route.q} />;
+    case "entity":
+      // key を付けて、別のエンティティへ移ったら状態(選択・展開)を持ち越さない。
+      return <EntityPage key={route.idPath} idPath={route.idPath} />;
+    case "path":
+      return <PathPage from={route.from} to={route.to} />;
+    case "chat":
+      return <ChatPage />;
+    case "data":
+      return <DataPage />;
+    case "notFound":
+      return <NotFound hash={route.hash} />;
+  }
 }
 
 export function App(): JSX.Element {
   const route = useRoute();
-
-  let body: JSX.Element;
-  if (route.name === "notFound") {
-    body = <NotFound hash={route.hash} />;
-  } else if (route.name === "data") {
-    body = <Placeholder title="データとAPI" />;
-  } else {
-    // ハッシュ文字列を key にする = ハッシュが変わるたびに旧ビューを破棄して描き直す
-    // (旧 main.ts と同じ挙動)。
-    body = <LegacyView key={JSON.stringify(route)} mount={(el) => mountLegacy(el, route)} />;
-  }
-
-  return <AppShell route={route}>{body}</AppShell>;
+  return (
+    <AppShell route={route}>
+      <Body route={route} />
+    </AppShell>
+  );
 }
