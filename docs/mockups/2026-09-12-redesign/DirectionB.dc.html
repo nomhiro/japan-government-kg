@@ -1,0 +1,212 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body{margin:0;background:#f7f6f3;color:#16191d;font-family:"Hiragino Sans","Yu Gothic UI","Yu Gothic",system-ui,sans-serif;font-size:13px;line-height:1.5;}
+    a{color:#2563eb;text-decoration:none;} a:hover{color:#1d4ed8;text-decoration:underline;}
+    .num{font-variant-numeric:tabular-nums;}
+    .lbl{font-size:11px;color:#5c636d;text-transform:none;letter-spacing:0.02em;}
+    .opt{display:flex;align-items:center;gap:8px;height:36px;padding:0 10px;border-radius:6px;}
+    .opt.on{background:#efece7;font-weight:600;}
+    .chip{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border:1px solid #dcd8d1;border-radius:999px;background:#fffdf9;font-size:12px;}
+    .chip.on{background:#16191d;color:#f7f6f3;border-color:#16191d;}
+    .tool{display:flex;align-items:center;justify-content:center;height:36px;min-width:36px;padding:0 10px;border:1px solid #dcd8d1;border-radius:6px;background:#fffdf9;font-size:12px;}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 14px;border:1px solid #dcd8d1;border-radius:6px;background:#fffdf9;color:#16191d;font-size:13px;}
+    .btn.primary{background:#16191d;color:#f7f6f3;border-color:#16191d;}
+    .badge{font-size:11px;padding:1px 8px;border-radius:4px;color:#fff;}
+    .kv{display:grid;grid-template-columns:90px minmax(0,1fr);gap:4px 10px;font-size:12px;}
+    .kv .k{color:#5c636d;}
+    .src{font-size:11px;color:#5c636d;}
+    text{font-family:"Hiragino Sans","Yu Gothic UI","Yu Gothic",system-ui,sans-serif;}
+  </style>
+</helmet>
+
+<div style="width:1440px;height:900px;background:#f7f6f3;display:flex;flex-direction:column;overflow:hidden;">
+  <div style="display:flex;align-items:center;justify-content:center;height:26px;background:#f6ece9;color:#8a2b1c;font-size:11px;border-bottom:1px solid #eadbd6;">このプロジェクトは日本国政府とは無関係です。政府が公開するデータを第三者が構造化したものであり、判断の根拠には一次資料をご確認ください。</div>
+
+  <div style="display:flex;align-items:center;gap:20px;height:56px;padding:0 20px;border-bottom:1px solid #dcd8d1;">
+    <div style="font-size:15px;font-weight:700;">日本政府ナレッジグラフ</div>
+    <div style="display:flex;align-items:center;gap:10px;width:460px;height:40px;padding:0 12px;border:1px solid #dcd8d1;border-radius:8px;background:#fffdf9;color:#16191d;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5c636d" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+      <span style="flex-grow:1;">企業年金等の健全な育成に必要な経費</span>
+      <span class="src">中心を移す</span>
+    </div>
+    <div style="display:flex;gap:4px;margin-left:auto;align-items:center;">
+      <span class="tool" style="border:none;">聞く</span><span class="tool" style="border:none;">データとAPI</span>
+      <span class="tool"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16191d" stroke-width="2"><path d="M12 3a9 9 0 1 0 9 9c-5 0-9-4-9-9z"></path></svg></span>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:240px minmax(0,1fr) 340px;flex-grow:1;min-height:0;">
+    <!-- 左レール -->
+    <div style="display:flex;flex-direction:column;gap:20px;padding:16px 14px;border-right:1px solid #dcd8d1;background:#fffdf9;">
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <span class="lbl">レンズ</span>
+        <div class="opt on"><span style="width:8px;height:8px;border-radius:50%;background:#16191d;"></span>つながりで見る</div>
+        <div class="opt"><span style="width:8px;height:8px;border-radius:50%;border:1px solid #5c636d;"></span>予算で見る(府省の大きさ=予算額)</div>
+        <div class="opt"><span style="width:8px;height:8px;border-radius:50%;border:1px solid #5c636d;"></span>法令で見る</div>
+        <div class="opt"><span style="width:8px;height:8px;border-radius:50%;border:1px solid #5c636d;"></span>資金の流れで見る</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <span class="lbl">軸で絞る(一致しないものは薄く)</span>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          <span class="chip on">誰が</span><span class="chip on">何を</span><span class="chip on">いくらで</span><span class="chip">いつ</span><span class="chip">どこで</span><span class="chip">何について</span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <span class="lbl">深さ</span>
+        <div style="display:flex;gap:6px;"><span class="chip">1</span><span class="chip on">2</span></div>
+        <span class="src">深さ2は逐次クエリ18本・約1.1秒</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <span class="lbl">レイアウト</span>
+        <div style="display:flex;gap:6px;"><span class="chip on">力学(ForceAtlas2)</span><span class="chip">同心円</span></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <span class="lbl">辺のラベル</span>
+        <div style="display:flex;gap:6px;"><span class="chip on">選択時</span><span class="chip">常時</span></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:auto;">
+        <span class="lbl">凡例(いま画面にある型)</span>
+        <div style="display:flex;flex-direction:column;gap:4px;font-size:12px;">
+          <div style="display:flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;background:#2766a5;"></span>府省 <span style="color:#5c636d;">· 誰が</span></div>
+          <div style="display:flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;background:#1f5284;"></span>組織 <span style="color:#5c636d;">· 誰が</span></div>
+          <div style="display:flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;background:#a36adc;"></span>予算事業 <span style="color:#5c636d;">· 何を</span></div>
+          <div style="display:flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;background:#8f49d4;"></span>法令 <span style="color:#5c636d;">· 何を</span></div>
+          <div style="display:flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;background:#8fd449;"></span>支出 <span style="color:#5c636d;">· いくらで</span></div>
+          <div style="display:flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;background:#7ac62f;"></span>支出先ブロック <span style="color:#5c636d;">· いくらで</span></div>
+          <div style="display:flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;background:#808080;"></span>特定できなかった記述</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- キャンバス -->
+    <div style="position:relative;display:flex;flex-direction:column;min-height:0;">
+      <div style="position:absolute;left:16px;top:12px;display:flex;gap:8px;align-items:center;">
+        <span class="chip" style="background:#fffdf9;">中心: 企業年金等の健全な育成に必要な経費</span>
+        <span class="src">← 厚生労働省 ← 全体</span>
+      </div>
+      <svg viewBox="0 0 860 720" width="860" height="720" style="margin:auto;display:block;">
+        <!-- 辺 -->
+        <g stroke="#b9b3a9" stroke-width="3" fill="none">
+          <line x1="430" y1="360" x2="430" y2="120"></line>
+          <line x1="430" y1="360" x2="170" y2="250"></line>
+          <line x1="430" y1="360" x2="150" y2="360"></line>
+          <line x1="430" y1="360" x2="170" y2="470"></line>
+          <line x1="430" y1="360" x2="220" y2="600"></line>
+          <line x1="430" y1="360" x2="640" y2="300"></line>
+          <line x1="430" y1="360" x2="640" y2="440"></line>
+          <line x1="640" y1="300" x2="760" y2="250"></line>
+          <line x1="640" y1="440" x2="740" y2="380"></line>
+          <line x1="640" y1="440" x2="770" y2="430"></line>
+          <line x1="640" y1="440" x2="780" y2="480"></line>
+          <line x1="640" y1="440" x2="760" y2="530"></line>
+          <line x1="640" y1="440" x2="720" y2="580"></line>
+          <line x1="640" y1="440" x2="660" y2="620"></line>
+          <line x1="640" y1="440" x2="590" y2="640"></line>
+          <line x1="760" y1="250" x2="830" y2="220"></line>
+          <line x1="740" y1="380" x2="830" y2="360"></line>
+          <line x1="770" y1="430" x2="845" y2="430"></line>
+          <line x1="780" y1="480" x2="845" y2="500"></line>
+          <line x1="760" y1="530" x2="820" y2="570"></line>
+          <line x1="720" y1="580" x2="760" y2="640"></line>
+          <line x1="660" y1="620" x2="680" y2="690"></line>
+          <line x1="590" y1="640" x2="570" y2="700"></line>
+          <line x1="150" y1="360" x2="120" y2="120"></line>
+          <line x1="150" y1="360" x2="60" y2="200"></line>
+          <line x1="150" y1="360" x2="40" y2="300"></line>
+          <line x1="150" y1="360" x2="40" y2="430"></line>
+          <line x1="150" y1="360" x2="70" y2="540"></line>
+          <line x1="150" y1="360" x2="120" y2="640"></line>
+          <line x1="120" y1="120" x2="430" y2="120"></line>
+          <line x1="170" y1="250" x2="430" y2="120"></line>
+          <line x1="170" y1="470" x2="430" y2="120"></line>
+        </g>
+        <!-- 選択中の辺 -->
+        <line x1="430" y1="360" x2="430" y2="120" stroke="#16191d" stroke-width="3"></line>
+        <rect x="438" y="228" width="72" height="20" rx="4" fill="#16191d"></rect>
+        <text x="474" y="242" text-anchor="middle" font-size="11" fill="#f7f6f3">所管府省庁</text>
+
+        <!-- ノード -->
+        <circle cx="430" cy="120" r="16" fill="#2766a5"></circle><text x="430" y="96" text-anchor="middle" font-size="12" fill="#16191d">厚生労働省</text>
+        <circle cx="430" cy="360" r="20" fill="#a36adc" stroke="#16191d" stroke-width="3"></circle><text x="430" y="400" text-anchor="middle" font-size="12" font-weight="700" fill="#16191d">企業年金等の健全な育成に必要な経費</text>
+
+        <circle cx="170" cy="250" r="11" fill="#8f49d4"></circle><text x="170" y="234" text-anchor="middle" font-size="11" fill="#16191d">確定給付企業年金法</text>
+        <circle cx="150" cy="360" r="13" fill="#8f49d4"></circle><text x="150" y="388" text-anchor="middle" font-size="11" fill="#16191d">国民年金法 ⋯</text>
+        <circle cx="170" cy="470" r="11" fill="#8f49d4"></circle><text x="170" y="496" text-anchor="middle" font-size="11" fill="#16191d">確定拠出年金法</text>
+        <circle cx="220" cy="600" r="10" fill="#808080"></circle><text x="220" y="626" text-anchor="middle" font-size="11" fill="#5c636d">公的年金制度の健全性及び…(特定できず)</text>
+
+        <circle cx="640" cy="300" r="12" fill="#7ac62f"></circle><text x="640" y="282" text-anchor="middle" font-size="11" fill="#16191d">段A 5,478,000円</text>
+        <circle cx="640" cy="440" r="12" fill="#7ac62f"></circle><text x="640" y="470" text-anchor="middle" font-size="11" fill="#16191d">段B 12,367,954円</text>
+
+        <circle cx="760" cy="250" r="8" fill="#8fd449"></circle>
+        <circle cx="740" cy="380" r="8" fill="#8fd449"></circle>
+        <circle cx="770" cy="430" r="8" fill="#8fd449"></circle>
+        <circle cx="780" cy="480" r="8" fill="#8fd449"></circle>
+        <circle cx="760" cy="530" r="8" fill="#8fd449"></circle>
+        <circle cx="720" cy="580" r="8" fill="#8fd449"></circle>
+        <circle cx="660" cy="620" r="8" fill="#8fd449"></circle>
+        <circle cx="590" cy="640" r="8" fill="#8fd449"></circle>
+
+        <circle cx="830" cy="220" r="8" fill="#1f5284"></circle><text x="852" y="206" text-anchor="end" font-size="10" fill="#16191d">コーポレートインパクト</text>
+        <circle cx="830" cy="360" r="8" fill="#1f5284"></circle><text x="852" y="348" text-anchor="end" font-size="10" fill="#16191d">アビームコンサルティング</text>
+        <circle cx="845" cy="430" r="8" fill="#1f5284"></circle>
+        <circle cx="845" cy="500" r="8" fill="#1f5284"></circle>
+        <circle cx="820" cy="570" r="8" fill="#1f5284"></circle><text x="800" y="590" text-anchor="middle" font-size="10" fill="#16191d">企業年金連合会</text>
+        <circle cx="760" cy="640" r="8" fill="#1f5284"></circle>
+        <circle cx="680" cy="690" r="8" fill="#1f5284"></circle><text x="680" y="708" text-anchor="middle" font-size="10" fill="#16191d">国立印刷局</text>
+        <circle cx="570" cy="700" r="8" fill="#1f5284"></circle>
+
+        <circle cx="120" cy="120" r="9" fill="#a36adc"></circle><text x="120" y="104" text-anchor="middle" font-size="10" fill="#16191d">基礎年金給付に必要な経費</text>
+        <circle cx="60" cy="200" r="9" fill="#a36adc"></circle>
+        <circle cx="40" cy="300" r="9" fill="#a36adc"></circle><text x="40" y="288" text-anchor="middle" font-size="10" fill="#16191d">ねんきん定期便</text>
+        <circle cx="40" cy="430" r="9" fill="#a36adc"></circle>
+        <circle cx="70" cy="540" r="9" fill="#a36adc"></circle>
+        <circle cx="120" cy="640" r="9" fill="#a36adc"></circle><text x="120" y="664" text-anchor="middle" font-size="10" fill="#16191d">国民年金給付に必要な経費</text>
+      </svg>
+      <div style="position:absolute;left:16px;bottom:12px;right:16px;display:flex;align-items:center;gap:8px;">
+        <span class="tool">+</span><span class="tool">−</span><span class="tool">フィット</span><span class="tool">全ての関係を表で</span>
+        <span class="src" style="margin-left:auto;">ノード30 · 辺37 · 分岐上限に達したノード 1件(国民年金法 ⋯ クリックで続き)</span>
+      </div>
+    </div>
+
+    <!-- インスペクタ -->
+    <div style="display:flex;flex-direction:column;gap:16px;padding:16px;border-left:1px solid #dcd8d1;background:#fffdf9;">
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <span class="badge" style="background:#a36adc;align-self:flex-start;">予算事業 · 何を</span>
+        <div style="font-size:16px;font-weight:700;line-height:1.4;">企業年金等の健全な育成に必要な経費</div>
+        <div class="src">2025年度 · 厚生労働省 · 事業ID 2840</div>
+      </div>
+      <div class="kv">
+        <span class="k">予算額</span><span class="num">[budgetAmount]</span>
+        <span class="k">根拠法令</span><span>国民年金法 ほか2件 + 特定できず1件</span>
+        <span class="k">支払先</span><span>8件(すべて法人番号で特定)</span>
+        <span class="k">支出先ブロック</span><span>2段</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:#efece7;border-radius:6px;">
+        <span class="lbl">出典</span>
+        <a href="#" style="font-size:12px;">行政事業レビュー(RS) · 2026-09-11取得 · PDL1.0</a>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <span class="lbl">ここから展開</span>
+        <span class="btn">支払先 8 →</span>
+        <span class="btn">根拠法令 4 →</span>
+        <span class="btn">所管府省 1 →</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:auto;">
+        <span class="btn primary">このノードを中心にする</span>
+        <span class="btn">経路の始点にする</span>
+        <span class="btn">詳細ページを開く</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
