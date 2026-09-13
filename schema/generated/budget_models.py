@@ -386,7 +386,7 @@ class BudgetProject(Work):
 
     projectId: str = Field(default=..., title="事業ID", description="""行政事業レビュー(RS)の予算事業ID。**単独では一意でない** — 同じ projectIdが複数の予算年度に渡って存在するため(RSは1シートに直近5年度分の 予算履歴を束ねて持つ)、BudgetProjectの実際の同一性は (projectId, fiscalYear)の組で決まる(URIも両方を材料にする。 `uris.budget_uri`)。そのため law.yaml の lawId と違い、このスロットには `identifier: true` を付けない — 付けると「projectIdだけでインスタンスが 一意に決まる」という誤った制約をスキーマに刻んでしまう。同じ複合的な 同一性を持つ law.yaml の LawRevision(lawId + amendmentEnforcementDate + amendmentLawNum)も identifier を持たない、という既存の前例に揃える (Task 7 報告書の逸脱台帳を参照。ブリーフ本文は project_id(identifier)と 書いているが、この点だけ意図的に外した)""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject']} })
     projectName: Optional[str] = Field(default=None, title="事業名", description="""予算事業名(RSのレビューシートに記載された事業名)""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject']} })
-    fiscalYear: int = Field(default=..., title="予算年度", description="""この記述が対応する事業年度(RSのレビューシート自体の年度)。 budgetAmountは同じ年度の当初予算(合計)を指す (budget_summaryの「予算年度」列がこの値と一致する集計行)。RSは 1シートに直近5年度分の予算履歴を束ねて持つが、Task 7はレビューシート 自体の年度分のみを1つのBudgetProjectとしてモデル化する(過去4年度分の 履歴は対象外。Task 7報告書の逸脱台帳を参照)""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject',
+    fiscalYear: int = Field(default=..., title="レビューシート年度", description="""この記述が対応する事業年度(RSのレビューシート自体の年度)。 budgetAmountは同じ年度の当初予算(合計)を指す (budget_summaryの「予算年度」列がこの値と一致する集計行)。RSは 1シートに直近5年度分の予算履歴を束ねて持つが、Task 7はレビューシート 自体の年度分のみを1つのBudgetProjectとしてモデル化する(過去4年度分の 履歴は対象外。Task 7報告書の逸脱台帳を参照)""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject',
                        'Expenditure',
                        'ExpenditureBlock',
                        'IndirectCost',
@@ -427,7 +427,7 @@ class Expenditure(MonetaryItem):
                        'IndirectCost',
                        'AnnualBudget']} })
     recipient: Optional[str] = Field(default=None, title="支払先", description="""この支出の支払先。法人番号による直結を主とし、無い場合は名称正規化の 一意一致でフォールバックする。このスロットを設定しない場合が3つある: (1)「その他」等への束ね行(RSのその他支出先フラグ、またはその他支出先名。 rs_columns.py照合記録「検証7」参照) — 黙って支出自体を落とすわけではなく core:label に表示名を残す。(2) RSが「法人番号を持たない支払先」(個人・ 職員等)に使うセンチネル法人番号(`9999999999999`。法人番号の検査数字は 満たすが実在しない。task-7-review.md指摘1・B18裁定)— この場合も core:UnresolvedReferenceは立てない(照合すべき実体がそもそも存在しない ので「未解決」と呼ぶと嘘になる)代わりに`payeeLabel`に表示名を残す。 (3) 解決を試みて失敗した場合(束ね行・センチネルのいずれでもないのに 一致しない)は core:UnresolvedReference を別に立てる""", json_schema_extra = { "linkml_meta": {'domain_of': ['Expenditure']} })
-    fiscalYear: int = Field(default=..., title="予算年度", description="""このExpenditureが属するBudgetProjectと同じRSレビューシートの年度 (URIの構成要素でもある。`uris.expenditure_uri`)。**支出の実際の 支払年度ではない** — task-7-review.md指摘7の実測: RS 2025シートの 支出先ファイルは実はFY2024の執行実績であり(事業ごとのΣ[23]と budget_summaryのFY2024執行額[19]の比較で、中央比1.0000・完全一致 32.3%を確認)、支出先ファイル自身の事業年度列は193,912行すべて '2025'固定でFY2024/2025を区別する列を持たない。したがって `budgetAmount`(FY2025当初予算)と`Σ amount_jpy`(FY2024執行)を 同じBudgetProjectの下で単純に比較すると、年度の異なる2つの値を 比べることになる(URIのキーとリテラルの意味を分けるモデル変更は Task 7の範囲外。controllerの裁定を仰いだ懸念として報告書に記載)""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject',
+    fiscalYear: int = Field(default=..., title="レビューシート年度", description="""このExpenditureが属するBudgetProjectと同じRSレビューシートの年度 (URIの構成要素でもある。`uris.expenditure_uri`)。**支出の実際の 支払年度ではない** — task-7-review.md指摘7の実測: RS 2025シートの 支出先ファイルは実はFY2024の執行実績であり(事業ごとのΣ[23]と budget_summaryのFY2024執行額[19]の比較で、中央比1.0000・完全一致 32.3%を確認)、支出先ファイル自身の事業年度列は193,912行すべて '2025'固定でFY2024/2025を区別する列を持たない。したがって `budgetAmount`(FY2025当初予算)と`Σ amount_jpy`(FY2024執行)を 同じBudgetProjectの下で単純に比較すると、年度の異なる2つの値を 比べることになる(URIのキーとリテラルの意味を分けるモデル変更は Task 7の範囲外。controllerの裁定を仰いだ懸念として報告書に記載)""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject',
                        'Expenditure',
                        'ExpenditureBlock',
                        'IndirectCost',
@@ -465,7 +465,7 @@ class ExpenditureBlock(MonetaryItem):
                        'ExpenditureBlock',
                        'IndirectCost',
                        'AnnualBudget']} })
-    fiscalYear: int = Field(default=..., title="予算年度", description="""このブロックが属するBudgetProjectと同じRSレビューシートの年度 (URIの構成要素でもある)。**支出の実際の支払年度ではない** — Expenditureの同名スロットと同じ事情(RS 2025シートの支出先情報は 実はFY2024の執行実績である。budget.yamlのExpenditure.fiscalYear のdocstring参照)""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject',
+    fiscalYear: int = Field(default=..., title="レビューシート年度", description="""このブロックが属するBudgetProjectと同じRSレビューシートの年度 (URIの構成要素でもある)。**支出の実際の支払年度ではない** — Expenditureの同名スロットと同じ事情(RS 2025シートの支出先情報は 実はFY2024の執行実績である。budget.yamlのExpenditure.fiscalYear のdocstring参照)""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject',
                        'Expenditure',
                        'ExpenditureBlock',
                        'IndirectCost',
@@ -493,7 +493,7 @@ class IndirectCost(MonetaryItem):
                        'ExpenditureBlock',
                        'IndirectCost',
                        'AnnualBudget']} })
-    fiscalYear: int = Field(default=..., title="予算年度", description="""この記述が対応する事業年度(RSのレビューシート自体の年度)。 budgetAmountは同じ年度の当初予算(合計)を指す (budget_summaryの「予算年度」列がこの値と一致する集計行)。RSは 1シートに直近5年度分の予算履歴を束ねて持つが、Task 7はレビューシート 自体の年度分のみを1つのBudgetProjectとしてモデル化する(過去4年度分の 履歴は対象外。Task 7報告書の逸脱台帳を参照)""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject',
+    fiscalYear: int = Field(default=..., title="レビューシート年度", description="""この記述が対応する事業年度(RSのレビューシート自体の年度)。 budgetAmountは同じ年度の当初予算(合計)を指す (budget_summaryの「予算年度」列がこの値と一致する集計行)。RSは 1シートに直近5年度分の予算履歴を束ねて持つが、Task 7はレビューシート 自体の年度分のみを1つのBudgetProjectとしてモデル化する(過去4年度分の 履歴は対象外。Task 7報告書の逸脱台帳を参照)""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject',
                        'Expenditure',
                        'ExpenditureBlock',
                        'IndirectCost',
@@ -532,7 +532,7 @@ class AnnualBudget(MonetaryItem):
                        'ExpenditureBlock',
                        'IndirectCost',
                        'AnnualBudget']} })
-    fiscalYear: int = Field(default=..., title="予算年度", description="""この記録が載っている**レビューシート自体の年度**。 対象の会計年度は`budgetFiscalYear`が持つ。2025年のシートは 2021〜2025について語るので、この2つは一致しないのが普通である""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject',
+    fiscalYear: int = Field(default=..., title="レビューシート年度", description="""この記録が載っている**レビューシート自体の年度**。 対象の会計年度は`budgetFiscalYear`が持つ。2025年のシートは 2021〜2025について語るので、この2つは一致しないのが普通である""", json_schema_extra = { "linkml_meta": {'domain_of': ['BudgetProject',
                        'Expenditure',
                        'ExpenditureBlock',
                        'IndirectCost',

@@ -116,21 +116,21 @@
             sh:nodeKind sh:Literal ;
             sh:order 6 ;
             sh:path <https://jgkg.norr-tech.com/def/budget#reserveFund> ],
+        [ sh:datatype xsd:integer ;
+            sh:description "この記録が載っている**レビューシート自体の年度**。 対象の会計年度は`budgetFiscalYear`が持つ。2025年のシートは 2021〜2025について語るので、この2つは一致しないのが普通である"@ja ;
+            sh:maxCount 1 ;
+            sh:minCount 1 ;
+            sh:name "レビューシート年度" ;
+            sh:nodeKind sh:Literal ;
+            sh:order 1 ;
+            sh:path <https://jgkg.norr-tech.com/def/budget#fiscalYear> ],
         [ sh:description "この支出が属する予算事業"@ja ;
             sh:maxCount 1 ;
             sh:minCount 1 ;
             sh:name "予算事業" ;
             sh:nodeKind sh:IRI ;
             sh:order 0 ;
-            sh:path <https://jgkg.norr-tech.com/def/budget#project> ],
-        [ sh:datatype xsd:integer ;
-            sh:description "この記録が載っている**レビューシート自体の年度**。 対象の会計年度は`budgetFiscalYear`が持つ。2025年のシートは 2021〜2025について語るので、この2つは一致しないのが普通である"@ja ;
-            sh:maxCount 1 ;
-            sh:minCount 1 ;
-            sh:name "予算年度" ;
-            sh:nodeKind sh:Literal ;
-            sh:order 1 ;
-            sh:path <https://jgkg.norr-tech.com/def/budget#fiscalYear> ] ;
+            sh:path <https://jgkg.norr-tech.com/def/budget#project> ] ;
     sh:targetClass <https://jgkg.norr-tech.com/def/budget#AnnualBudget> .
 
 <https://jgkg.norr-tech.com/def/budget#BudgetProject> a sh:NodeShape ;
@@ -162,7 +162,7 @@
             sh:description "この記述が対応する事業年度(RSのレビューシート自体の年度)。 budgetAmountは同じ年度の当初予算(合計)を指す (budget_summaryの「予算年度」列がこの値と一致する集計行)。RSは 1シートに直近5年度分の予算履歴を束ねて持つが、Task 7はレビューシート 自体の年度分のみを1つのBudgetProjectとしてモデル化する(過去4年度分の 履歴は対象外。Task 7報告書の逸脱台帳を参照)"@ja ;
             sh:maxCount 1 ;
             sh:minCount 1 ;
-            sh:name "予算年度" ;
+            sh:name "レビューシート年度" ;
             sh:nodeKind sh:Literal ;
             sh:order 2 ;
             sh:path <https://jgkg.norr-tech.com/def/budget#fiscalYear> ],
@@ -227,7 +227,7 @@
             sh:description "このExpenditureが属するBudgetProjectと同じRSレビューシートの年度 (URIの構成要素でもある。`uris.expenditure_uri`)。**支出の実際の 支払年度ではない** — task-7-review.md指摘7の実測: RS 2025シートの 支出先ファイルは実はFY2024の執行実績であり(事業ごとのΣ[23]と budget_summaryのFY2024執行額[19]の比較で、中央比1.0000・完全一致 32.3%を確認)、支出先ファイル自身の事業年度列は193,912行すべて '2025'固定でFY2024/2025を区別する列を持たない。したがって `budgetAmount`(FY2025当初予算)と`Σ amount_jpy`(FY2024執行)を 同じBudgetProjectの下で単純に比較すると、年度の異なる2つの値を 比べることになる(URIのキーとリテラルの意味を分けるモデル変更は Task 7の範囲外。controllerの裁定を仰いだ懸念として報告書に記載)"@ja ;
             sh:maxCount 1 ;
             sh:minCount 1 ;
-            sh:name "予算年度" ;
+            sh:name "レビューシート年度" ;
             sh:nodeKind sh:Literal ;
             sh:order 2 ;
             sh:path <https://jgkg.norr-tech.com/def/budget#fiscalYear> ],
@@ -308,19 +308,19 @@
             sh:nodeKind sh:Literal ;
             sh:order 3 ;
             sh:path <https://jgkg.norr-tech.com/def/budget#role> ],
+        [ sh:datatype xsd:integer ;
+            sh:description "このブロックが属するBudgetProjectと同じRSレビューシートの年度 (URIの構成要素でもある)。**支出の実際の支払年度ではない** — Expenditureの同名スロットと同じ事情(RS 2025シートの支出先情報は 実はFY2024の執行実績である。budget.yamlのExpenditure.fiscalYear のdocstring参照)"@ja ;
+            sh:maxCount 1 ;
+            sh:minCount 1 ;
+            sh:name "レビューシート年度" ;
+            sh:nodeKind sh:Literal ;
+            sh:order 2 ;
+            sh:path <https://jgkg.norr-tech.com/def/budget#fiscalYear> ],
         [ sh:description "このブロックの資金が、同じ事業内のどのブロックから流れてきたか (RSの[13]支出元の支出先ブロック → [16]支出先の支出先ブロック の辺を、 **受け取る側から見た向き**で持つ)。1ブロックが自分の出どころと 入口フラグの両方を自分の上に持つため、「このお金はどこから来たか」が 1つの主語だけで読める。実測の多重度は1が7,099・最大9。 **国が起点の場合はこのスロットを持たず`paidByGovernment`が真になる。** 借入金や回収金のように「国の支出ではないが事業に流れ込む資金」は 出どころ側のブロックとして現れ、入口フラグを持たない (実測: 独立行政法人国際協力機構有償資金協力部門への出資の 「財政融資資金借入金」ブロック)"@ja ;
             sh:name "資金の出どころ" ;
             sh:nodeKind sh:IRI ;
             sh:order 6 ;
             sh:path <https://jgkg.norr-tech.com/def/budget#fundedBy> ],
-        [ sh:datatype xsd:integer ;
-            sh:description "このブロックが属するBudgetProjectと同じRSレビューシートの年度 (URIの構成要素でもある)。**支出の実際の支払年度ではない** — Expenditureの同名スロットと同じ事情(RS 2025シートの支出先情報は 実はFY2024の執行実績である。budget.yamlのExpenditure.fiscalYear のdocstring参照)"@ja ;
-            sh:maxCount 1 ;
-            sh:minCount 1 ;
-            sh:name "予算年度" ;
-            sh:nodeKind sh:Literal ;
-            sh:order 2 ;
-            sh:path <https://jgkg.norr-tech.com/def/budget#fiscalYear> ],
         [ sh:description "このリソースのURI"@ja ;
             sh:maxCount 1 ;
             sh:nodeKind sh:IRI ;
@@ -372,7 +372,7 @@
             sh:description "この記述が対応する事業年度(RSのレビューシート自体の年度)。 budgetAmountは同じ年度の当初予算(合計)を指す (budget_summaryの「予算年度」列がこの値と一致する集計行)。RSは 1シートに直近5年度分の予算履歴を束ねて持つが、Task 7はレビューシート 自体の年度分のみを1つのBudgetProjectとしてモデル化する(過去4年度分の 履歴は対象外。Task 7報告書の逸脱台帳を参照)"@ja ;
             sh:maxCount 1 ;
             sh:minCount 1 ;
-            sh:name "予算年度" ;
+            sh:name "レビューシート年度" ;
             sh:nodeKind sh:Literal ;
             sh:order 1 ;
             sh:path <https://jgkg.norr-tech.com/def/budget#fiscalYear> ],

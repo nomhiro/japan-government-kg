@@ -314,3 +314,34 @@ def test_type_axes_from_real_data_has_exactly_the_eighteen_expected_entries():
     assert "UnresolvedReasonEnum" not in labels["typeAxes"]
     # Entity(全軸の親。ブリーフの表の誤り)が紛れ込んでいないこと
     assert "Entity" not in labels["typeAxes"]
+
+
+def test_no_two_predicates_share_a_display_name():
+    """**画面に同じ名前で出る別物を作らない。**
+
+    2026-09-13に実際に起きた: `budget:fiscalYear`(レビューシート自体の年度)と
+    `budget:budgetFiscalYear`(その予算が対象とする会計年度)の `title` が
+    **どちらも「予算年度」**だった。スキーマの description は
+    「別物である」と強く言っているのに、**利用者に見える名前だけが同じ**
+    だったので、「2025年のシートが2021年度について言っている」という区別が
+    画面から消えていた。表示名を持たない型を述語つきの属性で見分けさせる
+    変更(裁定B108)を入れたときに、カードの「予算年度 2021」と属性表の
+    「予算年度」が別の述語を指していることに気づいた。
+
+    `labels.json` は述語のローカル名 → 表示名の**平らな対応表**であり、
+    画面はクラスの文脈なしにこの名前を出す。だから同じ表示名を持つ述語が
+    2つあると、利用者には区別できない。
+    """
+    from collections import Counter
+
+    repo_root = Path(__file__).resolve().parent.parent
+    labels = extract_labels(repo_root / "schema" / "generated" / "all.owl.ttl")
+    for section in ("predicates", "types"):
+        counts = Counter(labels[section].values())
+        duplicated = {
+            name: sorted(k for k, v in labels[section].items() if v == name)
+            for name, n in counts.items()
+            if n > 1
+        }
+        assert duplicated == {}, f"{section} に同じ表示名の別物がある: {duplicated}"
+        assert len(labels[section]) > 10, "前提: 表示名が十分な数ある(空虚な検査にしない)"

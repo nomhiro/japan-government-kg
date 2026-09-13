@@ -1168,7 +1168,7 @@ skos:prefLabel a owl:DatatypeProperty ;
 
 <https://jgkg.norr-tech.com/def/budget#fiscalYear> a owl:DatatypeProperty ;
     rdfs:label "fiscalYear" ;
-    dcterms:title "予算年度"@ja ;
+    dcterms:title "レビューシート年度"@ja ;
     rdfs:range xsd:integer ;
     skos:definition "この記述が対応する事業年度(RSのレビューシート自体の年度)。 budgetAmountは同じ年度の当初予算(合計)を指す (budget_summaryの「予算年度」列がこの値と一致する集計行)。RSは 1シートに直近5年度分の予算履歴を束ねて持つが、Task 7はレビューシート 自体の年度分のみを1つのBudgetProjectとしてモデル化する(過去4年度分の 履歴は対象外。Task 7報告書の逸脱台帳を参照)"@ja ;
     skos:inScheme <https://jgkg.norr-tech.com/def/budget> .

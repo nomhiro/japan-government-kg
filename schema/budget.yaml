@@ -45,7 +45,17 @@ slots:
     range: LangString
     description: 予算事業名(RSのレビューシートに記載された事業名)
   fiscalYear:
-    title: 予算年度
+    # **`budgetFiscalYear` と同じ「予算年度」にしてはいけない。**
+    # 2026-09-13、表示名を持たない `AnnualBudget` を述語つきの属性で
+    # 見分けさせる変更(裁定B108)を入れたとき、カードに出た「予算年度 2021」の
+    # 「予算年度」が `budgetFiscalYear` の題である一方、属性表に並ぶ
+    # `fiscalYear` の題も同じ「予算年度」だった —— **画面上で2つの別物が
+    # 同じ名前で出ていた**(2025年度のシートが2021年度について言っている、
+    # という区別が消える)。下の description が「別物である」と強く言っている
+    # のに、利用者に見える名前だけが同じだった。
+    # 「レビューシート年度」はこのプロジェクトが既に使っている呼び方
+    # (`api/models.py` の `sheet_year`・`pipeline.py` のコメント)。
+    title: レビューシート年度
     required: true
     range: integer
     description: >-
