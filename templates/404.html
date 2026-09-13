@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ページが見つかりません — 日本政府ナレッジグラフ</title>
+<meta name="robots" content="noindex">
+<style>
+  :root {
+    --paper: #f7f6f3; --ink: #16191d; --muted: #5c636d; --rule: #dcd8d1;
+    --signal: #8a2b1c; --signal-bg: #f6ece9; --code-bg: #eceae5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #14161a; --ink: #e7e4de; --muted: #a1a8b2; --rule: #2f343b;
+      --signal: #dd8570; --signal-bg: #2c1d19; --code-bg: #22262c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+    line-height: 1.85; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 46rem; margin: 0 auto; padding: 3.5rem 1.5rem 5rem; }
+  h1 { font-size: clamp(1.6rem, 4.5vw, 2.2rem); line-height: 1.35; margin: 0 0 .6rem; }
+  .sub { color: var(--muted); margin: 0 0 2.5rem; }
+  h2 { font-size: 1.15rem; margin: 2.75rem 0 .5rem; padding-bottom: .4rem; border-bottom: 1px solid var(--rule); }
+  p { margin: 0 0 1rem; }
+  ul { margin: 0 0 1rem; padding-left: 1.4rem; }
+  li { margin: 0 0 .35rem; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88em; }
+  code { background: var(--code-bg); padding: .12em .35em; border-radius: 3px; }
+  .notice {
+    border: 1px solid var(--signal); background: var(--signal-bg);
+    padding: 1.1rem 1.25rem; margin: 0 0 2.5rem; border-radius: 2px;
+  }
+  .notice strong { color: var(--signal); }
+  a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  footer { margin-top: 3.5rem; padding-top: 1.25rem; border-top: 1px solid var(--rule); color: var(--muted); font-size: .88rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>ページが見つかりません</h1>
+  <p class="sub">404 — このURLに対応するページはありません</p>
+
+  <div class="notice">
+    <p><strong>このプロジェクトは日本国政府とは無関係です。</strong> 日本国政府が公開するデータを第三者が構造化したものであり、<strong>政府による公式なデータセットではありません。</strong></p>
+    <p style="margin:0">判断の根拠には必ず一次資料をご確認ください。</p>
+  </div>
+
+  <h2>お探しのものはこちらかもしれません</h2>
+  <ul>
+    <li><a href="/">全体を見る</a> — 府省ごとの予算、資金の流れ、法令とのつながり</li>
+    <li><a href="/def/">語彙(オントロジー)の一覧</a> — クラスとプロパティの定義</li>
+    <li><a href="/#/search">探す</a> — 府省・国の機関・法令・予算事業・法人の名前で検索</li>
+    <li><a href="/#/data">データとAPI</a> — ダウンロード、API、データの時点</li>
+  </ul>
+
+  <h2>アプリのURLは <code>#</code> を含みます</h2>
+  <p>
+    画面のリンクはハッシュ形式です(例: <code>https://jgkg.norr-tech.com/#/entity/org/6000012070001</code>)。
+    <code>#</code> より後ろを省いたり、<code>#</code> を外した形に書き換えたりすると、このページに来ます。
+  </p>
+
+  <h2>語彙のIRIは変えません</h2>
+  <p>
+    <code>/def/</code> 配下のIRI(例: <code>/def/core#Entity</code>)は恒久的な識別子として扱っており、
+    移動も改名もしません。<code>/def/</code> 配下で404になった場合は、そのIRIがこのオントロジーに
+    存在しないということです。
+  </p>
+
+  <footer>
+    <p style="margin:0">
+      日本政府ナレッジグラフ(非公式・第三者による構造化データ)。
+      元データのライセンスは公共データ利用規約(第1.0版)(PDL1.0)に従います。
+    </p>
+  </footer>
+
+</div>
+</body>
+</html>

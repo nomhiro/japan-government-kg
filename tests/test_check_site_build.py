@@ -51,6 +51,12 @@ def _full_build(out_dir: Path) -> None:
     made = site.build(GENERATED, out_dir)
     site.write_headers(made, out_dir)
     (out_dir / "def" / "index.html").write_text("<html><body>def</body></html>", encoding="utf-8")
+    # 404ページ(裁定B113)。`build-site.sh` が `templates/404.html` から
+    # コピーする。非公式であることの明示を含む必要がある。
+    (out_dir / "404.html").write_text(
+        "<html><body><p>政府による公式なデータセットではありません</p></body></html>",
+        encoding="utf-8",
+    )
 
     dist_dir = out_dir.parent / (out_dir.name + "-fake-dist")
     (dist_dir / "assets").mkdir(parents=True, exist_ok=True)

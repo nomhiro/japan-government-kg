@@ -60,6 +60,14 @@ NAMESPACE = "https://jgkg.norr-tech.com"
 # 除く(誤って`/_headers`というパスをコンテンツとして取得しにいかない)。
 _RESERVED_ROOT_FILES = frozenset({"_headers", "_redirects", "_routes.json"})
 
+#: 未知パス用の404ページ(裁定B113)。Cloudflare Pages はこの名前のファイルが
+#: あれば、ファイルに一致しない要求に**404で**これを返す。
+NOT_FOUND_PAGE = "/404.html"
+
+#: 未知パスの挙動を確かめるための固定パス。**内容ハッシュと衝突しない名前**に
+#: する(実在の資産名と重なると、本物の資産を404だと主張してしまう)。
+NOT_FOUND_PROBE = "/assets/jgkg-404-probe-do-not-create.js"
+
 
 # =============================================================================
 # 取得: 失敗も値として返す(接続失敗で例外死させると、残りの項目が
@@ -527,6 +535,13 @@ def run_all_checks(
     for url_path in sorted(served):
         if not is_html_path(url_path):
             continue
+        if url_path == NOT_FOUND_PAGE:
+            # **404ページ自身は「200で返る」を要求しない**(裁定B113)。
+            # Cloudflare Pages がこのファイルを直接要求に対して200で返すか
+            # 404で返すかは実装依存で、どちらでも配信としては正しい。
+            # 確かめたいのは「未知パスに対して404で**これが**返る」ことなので、
+            # 下の専用の検査でそれを見る。
+            continue
         fr = cache.get(url_path)
         check(f"{url_path} が 200 + text/html", fr.status == 200 and "text/html" in fr.headers.get("content-type", ""))
         try:
@@ -559,6 +574,36 @@ def run_all_checks(
     for path in ("/robots.txt", "/sitemap.txt"):
         fr = cache.get(path)
         check(f"{path} が 200", fr.status == 200, str(fr.status))
+
+    # --- 裁定B113: 未知パスは404で返す(200でアプリのHTMLを返さない) ---
+    #
+    # **これが「欠落した資産のURLに成功応答としてHTMLがキャッシュされる」
+    # 事故の根を止める検査である。** Cloudflare Pages は `404.html` が
+    # 無いと未知パスに「200 + アプリのindex.html」を返し、CDNはそれを
+    # 成功応答として保存する。2026-09-02(裁定B85)・2026-09-12(裁定B107)・
+    # 2026-09-13 の3回、`/assets/index-*.js` がHTMLを返す状態が実際に起きた。
+    #
+    # 検査用のパスは**内容ハッシュと衝突しない固定の名前**にする
+    # (実在の資産名と重なると、本物の資産を404だと主張してしまう)。
+    fr = cache.get(NOT_FOUND_PROBE)
+    detail = f"status={fr.status}"
+    if is_html_fallback(fr.body):
+        detail += " / 本文はHTML"
+    check(f"{NOT_FOUND_PROBE} が404を返す(200でHTMLを返さない)", fr.status == 404, detail)
+
+    # **404の本文がアプリのindex.htmlでないこと。** 状態コードだけを見ると、
+    # 「404だが本文はアプリのHTML」という中途半端な配信を見逃す。
+    # アプリのindex.htmlは必ず`/assets/`配下を参照する(上の空虚化防止の
+    # 検査がそれを固定している)ので、その参照の有無で見分けられる。
+    try:
+        probe_text = fr.body.decode("utf-8")
+    except UnicodeDecodeError:
+        probe_text = ""
+    check(
+        f"{NOT_FOUND_PROBE} の本文がアプリのindex.htmlでない",
+        not referenced_app_asset_urls(probe_text),
+        f"/assets/への参照 {len(referenced_app_asset_urls(probe_text))} 件",
+    )
 
     return Report(results)
 

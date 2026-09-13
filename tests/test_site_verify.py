@@ -703,7 +703,7 @@ def test_byte_match_detail_stays_quiet(tmp_path):
 _FALLBACK_HTML = b'<!doctype html><html><head><title>JGKG</title></head><body>fallback</body></html>'
 
 
-def _self_poisoning_transport(live_dir: Path, state: dict):
+def _self_poisoning_transport(live_dir: Path, state: dict, missing_status: int = 404):
     """本番で起きたことを模擬する配信元。
 
     Cloudflare Pages は存在しないパスに `index.html` を **200 text/html** で
@@ -722,24 +722,31 @@ def _self_poisoning_transport(live_dir: Path, state: dict):
         bare = not request.url.query
         if bare and path in state["cache"]:
             body = state["cache"][path]
+        status = 200
+        if bare and path in state["cache"]:
+            body, status = state["cache"][path]
         else:
             local = _local_path_for(live_dir, path)
             if state["live"] and local.is_file():
                 body = local.read_bytes()
             else:
+                # **未知パス(または伝播前)の挙動は引数で切り替える。**
+                # 裁定B113で `404.html` を置くまでは「200 + アプリのHTML」
+                # だった(それがキャッシュ汚染の前提)。置いた後は404になる。
                 body = _FALLBACK_HTML
+                status = missing_status
             if bare:
-                state["cache"][path] = body
+                state["cache"][path] = (body, status)
         state["asked"].append(str(request.url))
         headers = {"content-type": _content_type_for(path)}
         if path.startswith("/def/"):
             headers["access-control-allow-origin"] = "*"
-        return httpx.Response(200, content=body, headers=headers)
+        return httpx.Response(status, content=body, headers=headers)
 
     return httpx.MockTransport(handler)
 
 
-def _poisoning_setup(tmp_path: Path):
+def _poisoning_setup(tmp_path: Path, missing_status: int = 404):
     """配信元(`live_dir`)・可変状態・そこに繋がるクライアントを用意する。
 
     戻すのは state と client だけ——`live_dir`はクライアント越しにしか
@@ -749,7 +756,9 @@ def _poisoning_setup(tmp_path: Path):
     live_dir = tmp_path.parent / (tmp_path.name + "-live")
     shutil.copytree(tmp_path, live_dir)
     state: dict = {"live": False, "cache": {}, "asked": []}
-    return state, httpx.Client(transport=_self_poisoning_transport(live_dir, state))
+    return state, httpx.Client(
+        transport=_self_poisoning_transport(live_dir, state, missing_status)
+    )
 
 
 def test_the_wait_never_requests_a_bare_url(tmp_path):
@@ -830,7 +839,10 @@ def test_fetching_before_propagation_poisons_the_cache_permanently(tmp_path):
     1回目が「200 + HTML」を受け取り、以後10回・5分間同じsha256を返し続けた。
     **窓を広げる対処が効かない**ことを、この検査が固定する。
     """
-    state, client = _poisoning_setup(tmp_path)
+    # **旧挙動(未知パスに200 + HTML)を明示して模す。** これが汚染の前提で
+    # あり、裁定B113で `404.html` を置いて構造的に消した ——
+    # このテストは「なぜその対処が要ったか」を記録として残す。
+    state, client = _poisoning_setup(tmp_path, missing_status=200)
 
     # 伝播前に素の取得をしてしまう(裁定B84までのCIの振る舞い)。
     first = site_verify.run_all_checks("https://jgkg.norr-tech.com", tmp_path, GENERATED, client)
@@ -889,3 +901,68 @@ def test_the_wait_reports_how_many_paths_it_compared(tmp_path):
     assert wait.live
     assert wait.probed == len(site_verify.comparable_paths(tmp_path))
     assert wait.probed > 0
+
+
+# =============================================================================
+# 未知パスは404で返す(裁定B113)
+# =============================================================================
+
+
+def test_an_unknown_asset_path_must_return_404_not_html(tmp_path):
+    """**欠落した資産のURLに「200 + HTML」を返す配信を赤にする。**
+
+    Cloudflare Pages は `404.html` が無いと未知パスに「200 + アプリの
+    index.html」を返し、CDNはそれを**成功応答として**保存する。
+    2026-09-02(裁定B85)・2026-09-12(裁定B107)・2026-09-13 の3回、
+    `/assets/index-*.js` がHTMLを返す状態が実際に起きた。状態コードを
+    404にすれば、CDNの既定TTLも短くなり、ブラウザも素直に失敗する。
+    """
+    _full_build(tmp_path)
+    live = tmp_path.parent / (tmp_path.name + "-live")
+    shutil.copytree(tmp_path, live)
+
+    # 旧挙動(未知パスに200 + アプリのHTML)を模す配信元。
+    state = {"live": True, "cache": {}, "asked": []}
+    client = httpx.Client(transport=_self_poisoning_transport(live, state, missing_status=200))
+    report = site_verify.run_all_checks("https://jgkg.norr-tech.com", tmp_path, GENERATED, client)
+
+    failures = [r for r in report.failures if site_verify.NOT_FOUND_PROBE in r.label]
+    assert failures, "未知パスが200でHTMLを返しても赤にならない"
+    assert any("404を返す" in r.label for r in failures)
+
+
+def test_an_unknown_asset_path_returning_404_passes(tmp_path):
+    """404で返る配信は通ること(上の検査が常時赤にならないことの正の対照)。"""
+    _full_build(tmp_path)
+    live = tmp_path.parent / (tmp_path.name + "-live")
+    shutil.copytree(tmp_path, live)
+
+    client = _client(live)  # 未知パスは404 + "not found"
+    report = site_verify.run_all_checks("https://jgkg.norr-tech.com", tmp_path, GENERATED, client)
+    probe_results = [r for r in report.results if site_verify.NOT_FOUND_PROBE in r.label]
+    assert len(probe_results) == 2, [r.label for r in probe_results]
+    assert all(r.ok for r in probe_results), [f"{r.label}: {r.detail}" for r in probe_results]
+
+
+def test_the_404_page_itself_is_not_required_to_return_200(tmp_path):
+    """`/404.html` 自身に「200で返る」を要求しないこと。
+
+    このファイルを直接要求したときに Cloudflare Pages が200を返すか404を
+    返すかは実装依存で、どちらでも配信としては正しい。確かめたいのは
+    「未知パスに対して404でこれが返る」ことだけである。
+    """
+    _full_build(tmp_path)
+    (tmp_path / "404.html").write_text(
+        "<!DOCTYPE html><html><body><p>政府による公式なデータセットではありません</p></body></html>",
+        encoding="utf-8",
+    )
+    live = tmp_path.parent / (tmp_path.name + "-live404")
+    shutil.copytree(tmp_path, live)
+
+    client = _client(live)
+    report = site_verify.run_all_checks("https://jgkg.norr-tech.com", tmp_path, GENERATED, client)
+    # 404ページについて「200 + text/html」を要求する検査が作られていないこと。
+    assert not [r for r in report.results if r.label.startswith("/404.html が 200")], [
+        r.label for r in report.results if "/404.html" in r.label
+    ]
+    assert report.ok, [f"{r.label}: {r.detail}" for r in report.failures]

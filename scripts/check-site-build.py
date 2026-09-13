@@ -102,6 +102,18 @@ def main(argv: list[str] | None = None) -> int:
     def_index = args.out_dir / "def" / "index.html"
     check("site/def/index.html(語彙の一覧ページ)が存在する", def_index.is_file())
 
+    # **404ページ(裁定B113)。** 無いとCloudflare Pagesが未知パスに
+    # 「200 + アプリのindex.html」を返し、欠落した資産のURLに成功応答として
+    # HTMLがキャッシュされる。`built`の対象外なので別に見る。
+    not_found = args.out_dir / "404.html"
+    check("site/404.html(未知パス用の404ページ)が存在する", not_found.is_file())
+    if not_found.is_file():
+        text404 = not_found.read_text(encoding="utf-8")
+        check(
+            "site/404.html に非公式であることの明示がある",
+            "政府による公式なデータセットではありません" in text404,
+        )
+
     base = get_settings().base_uri.rstrip("/")
     sitemap_lines = (
         (args.out_dir / "sitemap.txt").read_text(encoding="utf-8").splitlines()

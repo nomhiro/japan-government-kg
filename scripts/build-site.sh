@@ -67,6 +67,15 @@ print(f'  {headers_path} ({len(made) - 1} パス分のブロック + 共通ブ�
 echo "== 語彙の一覧ページ(/def/)を配置する =="
 cp templates/def-index.html site/def/index.html
 
+# **404ページ(裁定B113)。** Cloudflare Pages は `404.html` があれば、
+# ファイルに一致しない要求に**404で**それを返す。無いと「200 + アプリの
+# index.html」を返し、欠落した資産のURLに**成功応答としてHTMLがキャッシュ
+# される**——実際に3回起きた(裁定B85・B107、2026-09-13の再発)。
+# ハッシュルーティングなのでSPAフォールバックはそもそも要らない
+# (サーバに届くのは `/`・`/assets/*`・`/def/*`・`robots.txt`・`sitemap.txt` だけ)。
+echo "== 404ページを配置する =="
+cp templates/404.html site/404.html
+
 # **アプリ(裁定B81)。** フロントエンドは表示だけを作る段(D-5)であり、
 # データに影響しないツールなのでLinkML/Jenaのような厳密固定はしない
 # (controllerの設計1)。`npm ci`は事前に(手元またはCIの別ステップで)

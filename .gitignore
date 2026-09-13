@@ -73,6 +73,8 @@ site/_headers
 # site.sync_app() が frontend/dist/ から書く——index.html はもう手書きの
 # 静的ページではない(そちらは templates/def-index.html に移した)
 site/index.html
+# 404ページ(裁定B113)。ソースは templates/404.html で、build-site.sh がコピーする。
+site/404.html
 site/assets/
 
 # wrangler のローカル実行が作る一時ファイル
