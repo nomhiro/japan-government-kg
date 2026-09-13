@@ -622,13 +622,13 @@ Phase 0 の全体レビューで出た指摘のうち、マージ前に直さず
   元の記述が出る。**クエリは本番と同じ Jena/ARQ で実行まで確認した**
   (`qparse` で構文、`arq --data` で結果。`VALUES (?var) {(curie)}` 形が
   ARQで動く)。**残っているのは本番の索引に対する確認だけ**(統制9)。
-  **APIイメージは作ってACRに置いた**
+  **2026-09-13に本番のAPIも配備した**
   (`acrjgkg.azurecr.io/jgkg-api:2026-09-13-describing-values`。
-  git commit は `dea4c46`)が、**本番コンテナの差し替えは未実施** ——
-  実行が許可で止まったため利用者の判断を待つ。差し替えの1行:
-  `az containerapp update -n jgkg -g rg-jgkg --container-name api --image acrjgkg.azurecr.io/jgkg-api:2026-09-13-describing-values`。
-  **フロントは先に出しても壊れない**(`described_by` は任意フィールドで、
-  無ければ今までどおり「(表示名なし)」になる)
+  リビジョン `jgkg--0000006`・`provisioningState: Succeeded`・`Healthy`)。
+  **実データで確認**: 事業グラフの48ノードのうち表示名が無い7件すべてに
+  見分け属性が入り、「表示名も見分け属性も無いノード」は0件。
+  画面の「年度予算」は「予算年度 2021」〜「2025」の5行、
+  「未解決の根拠」は元の記述がそのまま出る。ページ内の「(表示名なし)」は0個
 - **`labels.json` で `fiscalYear` と `budgetFiscalYear` が同じ「予算年度」
   になっている**(裁定B108の途中で発見)。`AnnualBudget` では前者がレビュー
   年度、後者がその予算の年度で意味が違う。オントロジー側の表示名の問題なので、

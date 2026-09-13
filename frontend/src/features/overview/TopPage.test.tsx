@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OverviewResponse } from "../../api/client";
@@ -206,7 +206,10 @@ describe("TopPage(トップページ再設計)", () => {
 
     await screen.findByText("全体の数字をいま出せません。");
     expect(screen.queryByText(/503/)).toBeNull();
-    expect(consoleError).toHaveBeenCalled();
+    // **待つ。** 画面の告知が出た時点で `console.error` が必ず済んでいるとは
+    // 限らない(全ファイル並列実行のとき1回だけ落ちた。2026-09-13)。
+    // 「たまに赤くなる検査」は検査が無いより悪い(裁定B65の理由づけと同じ)。
+    await waitFor(() => expect(consoleError).toHaveBeenCalled());
     consoleError.mockRestore();
   });
 });

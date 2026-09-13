@@ -250,11 +250,18 @@ describe("EntityPage(予算事業。実データ)", () => {
     expect(screen.getByText("根拠法令は記録されていません。")).toBeTruthy();
   });
 
-  it("未解決の根拠(表示名なし)が節として現れる", async () => {
+  it("未解決の根拠が節として現れ、**元の記述がそのまま読める**(裁定B108)", async () => {
+    // **この主張は2026-09-13に変わった。** それまでは「(表示名なし)」が
+    // 出ることを固定していた——`UnresolvedReference` は `skos:prefLabel` を
+    // 持たないため。APIが `described_by`(`core:unresolved_text`)を返すように
+    // なって、元の文字列が読めるようになった。実サンプルを本番から取り直した
+    // ことでこのテストが落ち、現実が変わったことを教えた。
     render(<EntityPage idPath="budget/2025/2841" />);
     await screen.findByRole("heading", { level: 1 });
     expect(screen.getByRole("heading", { name: /未解決の根拠/ })).toBeTruthy();
-    expect(screen.getAllByText("(表示名なし)").length).toBeGreaterThan(0);
+    const section = screen.getByRole("heading", { name: /未解決の根拠/ }).closest("section")!;
+    expect(within(section).queryByText("(表示名なし)")).toBeNull();
+    expect(within(section).getAllByText(/^元の記述 /).length).toBeGreaterThan(0);
   });
 
 });
