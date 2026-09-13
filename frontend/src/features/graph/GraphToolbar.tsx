@@ -12,6 +12,8 @@ export interface GraphToolbarProps {
   readonly depthMin: number;
   readonly depthMax: number;
   readonly onDepthChange: (depth: number) => void;
+  /** 深さの切り替えを出すか(既定true)。合算グラフでは深さに意味が無い。 */
+  readonly showDepth?: boolean;
 
   readonly layout: GraphLayout;
   readonly onLayoutChange: (layout: GraphLayout) => void;
@@ -34,6 +36,7 @@ export function GraphToolbar(props: GraphToolbarProps): JSX.Element {
     depth,
     depthMin,
     depthMax,
+    showDepth = true,
     onDepthChange,
     layout,
     onLayoutChange,
@@ -60,6 +63,7 @@ export function GraphToolbar(props: GraphToolbarProps): JSX.Element {
   return (
     <div className="jg-graph-toolbar">
       <div className="jg-graph-toolbar__row">
+        {showDepth ? (
         <fieldset className="jg-graph-toolbar__group" aria-label="深さ">
           <legend>深さ</legend>
           {depthOptions.map((d) => (
@@ -74,6 +78,7 @@ export function GraphToolbar(props: GraphToolbarProps): JSX.Element {
             </button>
           ))}
         </fieldset>
+        ) : null}
 
         <fieldset className="jg-graph-toolbar__group" aria-label="並べ方">
           <legend>並べ方</legend>

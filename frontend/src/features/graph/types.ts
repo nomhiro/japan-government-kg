@@ -2,10 +2,44 @@
 // グラフの内部(レイアウトの計算・描画)は外から見えない。
 import type { DescribingValue, EntityRef } from "../../api/client";
 import type { GraphParams } from "../../router";
+import type { RawGraph } from "./graph-model";
+
+/**
+ * **外から与えるグラフ**(裁定B109)。
+ *
+ * これを渡すと `GraphView` は `/neighborhood` を取りに行かず、この内容を
+ * そのまま描く。検索結果のように**中心が1つに決まらないグラフ**を、
+ * エンティティ画面と同じ描画・同じ操作で見せるための口である。
+ *
+ * **打ち切りのフラグを呼び出し側が持って渡す。** 合算して作ったグラフでは
+ * 「どれかの取得が打ち切られた」ことを呼び出し側しか知らない——
+ * 既定でfalseにすると、打ち切りを黙って隠すことになる(裁定B82)。
+ */
+export interface SuppliedGraph {
+  readonly raw: RawGraph;
+  /**
+   * ホップ数の起点。力学配置の初期位置にしか効かない(見た目の中心は
+   * `emphasizedIds` が決める)。合算グラフでは先頭のヒットを渡す。
+   */
+  readonly centerId: string;
+  readonly fanoutTruncatedIds: ReadonlySet<string>;
+  /** 中心と同じ強調で描くノード(検索のヒットそのもの)。 */
+  readonly emphasizedIds?: ReadonlySet<string>;
+  readonly nodesTruncated: boolean;
+  readonly edgesTruncated: boolean;
+}
 
 export interface GraphViewProps {
   /** 中心のエンティティ。`/entity` の応答から作って渡す。 */
   readonly center: EntityRef;
+  /**
+   * 与えると `/neighborhood` を取りに行かず、この内容を描く
+   * (`SuppliedGraph` 参照)。`center` は「経路の始点にする」等の操作の
+   * ためにそのまま要る。
+   */
+  readonly supplied?: SuppliedGraph;
+  /** 深さの切り替えを出すか(既定true)。合算グラフでは深さに意味が無い。 */
+  readonly showDepth?: boolean;
   /** URLから読んだ表示状態(深さ・並べ方・軸の絞り込み・選択)。 */
   readonly params: GraphParams;
   /**

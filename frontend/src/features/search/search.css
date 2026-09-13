@@ -116,3 +116,21 @@
 .jg-picker__label {
   font-weight: 700;
 }
+
+/* 検索結果の一覧(グラフの下に折り畳んで置く。裁定B109)。
+   グラフが主で一覧は従だが、**消さない** —— 名前で拾いたいとき、
+   キーボードで確実に辿りたいときに要る。 */
+.jg-search-list > summary {
+  cursor: pointer;
+  padding: var(--sp-2) 0;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+.jg-search-list > summary:hover {
+  color: var(--ink);
+}
+
+.jg-search-list[open] > summary {
+  margin-bottom: var(--sp-2);
+}

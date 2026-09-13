@@ -116,3 +116,30 @@ describe("layoutLanes: 脇のストリップ(aside)", () => {
     }
   });
 });
+
+describe("折り畳みの優先(裁定B109)", () => {
+  it("**priorityIdsのノードは「+N件」の裏に隠さない**", () => {
+    // 次数0のノードを maxPerLane+1 件作る。優先指定した1件が必ず表に出る。
+    const many = Array.from({ length: 4 }, (_, i) => ({
+      id: `n${i}`,
+      idPath: `n${i}`,
+      type: "Law",
+      label: `法令${i}`,
+      describedBy: null,
+      axis: undefined,
+      laneKey: "basis",
+      hop: 1,
+      degree: 0,
+      hasMore: false,
+    }));
+    const model = { centerId: "n0", nodes: many, edges: [] };
+
+    const withoutPriority = layoutLanes(model, { maxPerLane: 3 });
+    expect(withoutPriority.nodes.map((n) => n.id)).not.toContain("n3");
+
+    const withPriority = layoutLanes(model, { maxPerLane: 3, priorityIds: new Set(["n3"]) });
+    expect(withPriority.nodes.map((n) => n.id)).toContain("n3");
+    // 優先した1件が先頭に来る(折り畳みの対象から外れる)。
+    expect(withPriority.nodes[0]!.id).toBe("n3");
+  });
+});

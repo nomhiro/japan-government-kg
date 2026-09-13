@@ -46,6 +46,7 @@ import type { GraphLayoutResult, GraphViewProps, PlacedNode } from "./types";
 
 const LABEL_MAX_CHARS = 12;
 const EMPTY_LAYOUT: GraphLayoutResult = { nodes: [], edges: [], lanes: [], width: 0, height: 0 };
+const EMPTY_IDS: ReadonlySet<string> = new Set<string>();
 const VIEWBOX_PAD = 24;
 const MIN_VIEWBOX = 80;
 
@@ -57,7 +58,7 @@ interface ViewBox {
 }
 
 export function GraphView(props: GraphViewProps): JSX.Element {
-  const { center, params, onParamsChange, onRecenter, onUseAsPathStart } = props;
+  const { center, params, onParamsChange, onRecenter, onUseAsPathStart, supplied, showDepth = true } = props;
 
   // --- 展開・折り畳みの状態(このコンポーネントだけが持つ。URLには載せない) ---
   const [expandedLanes, setExpandedLanes] = useState<ReadonlySet<string>>(new Set());
@@ -76,10 +77,14 @@ export function GraphView(props: GraphViewProps): JSX.Element {
     setManualViewBox(null);
     setHoveredId(null);
     setHoveredEdgeKey(null);
-  }, [center.id_path]);
+  }, [center.id_path, supplied?.raw]);
 
   // --- データ取得 -----------------------------------------------------------
-  const nbhdKey = `${center.id_path}|${params.depth}`;
+  // **外からグラフを与えられたら取りに行かない**(裁定B109)。
+  // `key` が null のとき `useApiQuery` は `{status:"ready", data: undefined}`
+  // を返す——読み込み中・エラー・「近傍が見つからない」のどの分岐にも
+  // 入らないので、下の描画はそのまま供給されたモデルを使う。
+  const nbhdKey = supplied ? null : `${center.id_path}|${params.depth}`;
   const nbhdQuery = useApiQuery(nbhdKey, () => neighborhood(center.id_path, { depth: params.depth }));
 
   const selectedIdPath = params.selected ?? null;
@@ -117,6 +122,14 @@ export function GraphView(props: GraphViewProps): JSX.Element {
   }, [expandedTypes, detailsCache]);
 
   const model: GraphModel | null = useMemo(() => {
+    if (supplied) {
+      return buildGraphModel({
+        raw: mergeRawGraphs([supplied.raw, ...additions]),
+        centerId: supplied.centerId,
+        fanoutTruncatedIds: supplied.fanoutTruncatedIds,
+        hasMoreOverrides,
+      });
+    }
     const nbhd = nbhdQuery.data;
     if (!nbhd) return null;
     const merged = mergeRawGraphs([rawGraphFromNeighborhood(nbhd), ...additions]);
@@ -126,7 +139,7 @@ export function GraphView(props: GraphViewProps): JSX.Element {
       fanoutTruncatedIds: new Set(nbhd.fanout_truncated_nodes),
       hasMoreOverrides,
     });
-  }, [nbhdQuery.data, additions, hasMoreOverrides]);
+  }, [supplied, nbhdQuery.data, additions, hasMoreOverrides]);
 
   const adjacency = useMemo(() => {
     const m = new Map<string, Set<string>>();
@@ -141,23 +154,35 @@ export function GraphView(props: GraphViewProps): JSX.Element {
   }, [model]);
 
   // --- レイアウト -------------------------------------------------------------
+  // 強調するノード。与えられていなければ空(中心だけが強調される)。
+  const emphasizedIds: ReadonlySet<string> = supplied?.emphasizedIds ?? EMPTY_IDS;
+  // **強調の意味は呼び出し方で違う。** 単一中心の近傍では「中心」だが、
+  // 合算グラフ(検索結果)では19件が全部「中心」になってしまい嘘になる。
+  const emphasisTag = supplied?.emphasizedIds ? "一致" : "中心";
+
   const layoutResult: GraphLayoutResult = useMemo(() => {
     if (!model) return EMPTY_LAYOUT;
-    return params.layout === "force" ? layoutForce(model) : layoutLanes(model, { expandedLanes });
-  }, [model, params.layout, expandedLanes]);
+    return params.layout === "force"
+      ? layoutForce(model)
+      // 強調するノード(検索のヒット)を折り畳みで隠さない(裁定B109)。
+      : layoutLanes(model, { expandedLanes, priorityIds: emphasizedIds });
+  }, [model, params.layout, expandedLanes, emphasizedIds]);
 
   const nodeById = useMemo(() => new Map(layoutResult.nodes.map((n) => [n.id, n])), [layoutResult.nodes]);
+
 
   // --- 状態行(グラフ自身から数える。裁定B93) ---------------------------------
   const status: NeighborhoodStatus = useMemo(
     () => ({
       nodeCount: model?.nodes.length ?? 0,
       edgeCount: model?.edges.length ?? 0,
-      nodesTruncated: nbhdQuery.data?.nodes_truncated ?? false,
-      edgesTruncated: nbhdQuery.data?.edges_truncated ?? false,
+      // 打ち切りは**取得元が言ったことをそのまま運ぶ**。合算グラフでは
+      // 呼び出し側が集約して渡す(`SuppliedGraph` のdocstring参照)。
+      nodesTruncated: supplied ? supplied.nodesTruncated : nbhdQuery.data?.nodes_truncated ?? false,
+      edgesTruncated: supplied ? supplied.edgesTruncated : nbhdQuery.data?.edges_truncated ?? false,
       fanoutTruncatedCount: model?.nodes.filter((n) => n.hasMore).length ?? 0,
     }),
-    [model, nbhdQuery.data],
+    [model, nbhdQuery.data, supplied],
   );
 
   // --- 選択 --------------------------------------------------------------------
@@ -352,6 +377,7 @@ export function GraphView(props: GraphViewProps): JSX.Element {
         depthMin={NEIGHBORHOOD_DEPTH.min}
         depthMax={NEIGHBORHOOD_DEPTH.max}
         onDepthChange={handleDepthChange}
+        showDepth={showDepth}
         layout={params.layout}
         onLayoutChange={handleLayoutChange}
         axes={params.axes}
@@ -491,7 +517,7 @@ export function GraphView(props: GraphViewProps): JSX.Element {
 
             <g className="jg-graph-nodes">
               {layoutResult.nodes.map((n) => {
-                const isCenterNode = n.id === model.centerId;
+                const isCenterNode = n.id === model.centerId || emphasizedIds.has(n.id);
                 const isSelected = n.idPath === params.selected;
                 const isHovered = n.id === hoveredId;
                 const isNeighborOfHover = hoveredId ? adjacency.get(hoveredId)?.has(n.id) ?? false : false;
@@ -535,7 +561,7 @@ export function GraphView(props: GraphViewProps): JSX.Element {
                     ) : null}
                     {isCenterNode ? (
                       <text className="jg-graph-node__center-tag" x={n.w} y={-6} textAnchor="end">
-                        中心
+                        {emphasisTag}
                       </text>
                     ) : null}
                   </g>

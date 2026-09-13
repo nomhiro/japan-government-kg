@@ -168,6 +168,33 @@ export function entityHash(idPath: string, params: GraphParams): string {
 }
 
 /**
+ * 検索画面のハッシュを、グラフの状態つきで組み立てる(裁定B109)。
+ *
+ * **`d`(深さ)は載せない。** 検索結果のグラフは各ヒットの深さ1を合算した
+ * もので、深さという概念が無い(`search-graph.ts` 参照)。
+ *
+ * **`q` を必ず保つ。** ここで落とすと、グラフを操作した瞬間に検索語が
+ * 消えて結果が空になる。
+ */
+export function searchGraphHash(q: string, params: GraphParams): string {
+  const query = buildQuery({
+    q: q || undefined,
+    lay: params.layout === DEFAULT_GRAPH_PARAMS.layout ? undefined : params.layout,
+    ax: params.axes.length > 0 ? params.axes.join(",") : undefined,
+    sel: params.selected,
+  });
+  return query ? `#/search?${query}` : "#/search";
+}
+
+/** 検索画面のグラフの状態だけを差し替える(履歴を積まない)。 */
+export function replaceSearchGraphParams(q: string, params: GraphParams): void {
+  const next = searchGraphHash(q, params);
+  if (next === location.hash) return;
+  history.replaceState(null, "", next);
+  window.dispatchEvent(new HashChangeEvent("hashchange"));
+}
+
+/**
  * グラフの状態だけを差し替える(履歴を積まない)。
  * 深さや絞り込みの操作で「戻る」が使い物にならなくなるのを避ける。
  */

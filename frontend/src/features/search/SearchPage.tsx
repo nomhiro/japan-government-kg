@@ -1,18 +1,34 @@
-// 検索結果画面(#/search?q=…)。旧画面(views/search.ts)の置き換え。
+// 検索結果画面(#/search?q=…)。
 //
-// **旧画面の欠陥(裁定なし。利用者評価「今の状態は全然ダメ」からの直接の
-// やり直し)**: 結果が`<li>`+clickで、キーボードで選べなかった。型で絞れず、
-// 「もっと見る」も無かった(APIは`limit`最大100を受け付けるのに既定20しか
-// 使っていなかった)。この3つをここで直す。
+// **一覧ではなくグラフを主にする(裁定B109)。** 利用者の評価:
+//   検索した後に一覧がでるのではなくて、検索で引っかかった情報をGraph表示した
+//   ほうがいい。ただの一覧表示が微妙。全体を俯瞰してみたいのに、一つの情報の
+//   関連性しか見れない。
+//
+// 一覧は「20件の名前」を返すだけで、ヒットどうしの関係を何も言わない。
+// ここでは各ヒットの深さ1の近傍を並列に取り、合算して1枚のレーン流れ図にする
+// (畳み方と実測値は `search-graph.ts`)。**一覧は消さずに折り畳んで残す**
+// ——名前で拾いたいとき、キーボードで確実に辿りたいときに要る。
 import { useEffect, useMemo, useState, type JSX } from "react";
-import { apiUnavailableReason, search, type SearchHit, type SearchResponse } from "../../api/client";
+import {
+  apiUnavailableReason,
+  neighborhood,
+  search,
+  type NeighborhoodResponse,
+  type SearchHit,
+  type SearchResponse,
+} from "../../api/client";
 import { SEARCH_LIMIT } from "../../api/limits";
 import { useApiQuery, useDebounced, type QueryState } from "../../api/useApiQuery";
-import { Band, ErrorBox, Loading, Section, Truncation, TypeBadge } from "../../components/ui";
+import { useRoute } from "../../app/useRoute";
+import { Band, Caveat, ErrorBox, Loading, Section, Truncation, TypeBadge } from "../../components/ui";
+import { GraphView } from "../graph/GraphView";
 import { typeLabel } from "../../labels";
-import { axisColorVarForType } from "../../lib/ontology-view";
-import "./search.css";
 import { displayName } from "../../lib/display-name";
+import { axisColorVarForType } from "../../lib/ontology-view";
+import { navigate, parseGraphParams, replaceSearchGraphParams } from "../../router";
+import { buildSearchGraph } from "./search-graph";
+import "./search.css";
 
 // 検索対象の型(`src/jgkg/api/queries.py`の`_SEARCHABLE_TYPES`と同じ6種)。
 // APIはこの一覧自体を応答に含まないため、ここに固定する——表示名は必ず
@@ -28,6 +44,9 @@ const SEARCHABLE_TYPE_NAMES = [
 
 const DEBOUNCE_MS = 300;
 
+/** 合算グラフを作るために取る近傍の深さ。 */
+const NEIGHBORHOOD_DEPTH = 1;
+
 /**
  * `state`から実データだけを取り出す(`ready`かつ`data`が本物のとき)。
  *
@@ -39,7 +58,7 @@ const DEBOUNCE_MS = 300;
  * 残っている。ここで実行時に`undefined`を弾くことで、その1レンダーで
  * `undefined.results`のような例外を起こさない。
  */
-function readyData(state: QueryState<SearchResponse>): SearchResponse | undefined {
+function readyData<T>(state: QueryState<T>): T | undefined {
   return state.status === "ready" && state.data !== undefined ? state.data : undefined;
 }
 
@@ -57,12 +76,16 @@ function typesPresentIn(hits: readonly SearchHit[]): string[] {
 }
 
 export function SearchPage({ q }: { q: string }): JSX.Element {
+  // ハッシュの変化(グラフの並べ方・軸の絞り込み・選択)を購読するために呼ぶ。
+  useRoute();
+
   const [query, setQuery] = useState(q);
   const debounced = useDebounced(query, DEBOUNCE_MS);
   const [limit, setLimit] = useState<number>(SEARCH_LIMIT.default);
   const [activeTypes, setActiveTypes] = useState<ReadonlySet<string>>(new Set());
 
   const trimmed = debounced.trim();
+  const graphParams = parseGraphParams(location.hash);
 
   // 検索語が変わったら、前の検索語に対する絞り込み・「もっと表示」状態を持ち越さない。
   useEffect(() => {
@@ -72,9 +95,35 @@ export function SearchPage({ q }: { q: string }): JSX.Element {
 
   const key = trimmed ? `${trimmed}::${limit}` : null;
   const state = useApiQuery(key, () => search(trimmed, limit));
-  const data = readyData(state);
+  const data: SearchResponse | undefined = readyData(state);
 
   const presentTypes = useMemo(() => (data ? typesPresentIn(data.results) : []), [data]);
+
+  const visibleHits: SearchHit[] = useMemo(() => {
+    if (!data) return [];
+    if (activeTypes.size === 0) return data.results;
+    return data.results.filter((h) => activeTypes.has(h.type));
+  }, [data, activeTypes]);
+
+  // --- ヒット全件の近傍を1回だけ取る -----------------------------------------
+  // **型で絞るたびに取り直さない**(絞り込みは取得済みのものから作り直すだけ)。
+  // 本番実測では1件あたり0.03〜0.04秒で、20件でも体感できる待ちにならない。
+  const allHits = data?.results ?? [];
+  const nbhdKey = allHits.length > 0 ? allHits.map((h) => h.id_path).join("|") : null;
+  const nbhdState = useApiQuery(nbhdKey, () =>
+    Promise.all(allHits.map((h) => neighborhood(h.id_path, { depth: NEIGHBORHOOD_DEPTH }))),
+  );
+  const neighborhoods: readonly (NeighborhoodResponse | null)[] | undefined = readyData(nbhdState);
+
+  const graph = useMemo(() => {
+    if (!neighborhoods || visibleHits.length === 0) return null;
+    const byIdPath = new Map(allHits.map((h, i) => [h.id_path, neighborhoods[i] ?? null]));
+    return buildSearchGraph({
+      hits: visibleHits,
+      neighborhoods: visibleHits.map((h) => byIdPath.get(h.id_path) ?? null),
+    });
+    // `allHits` は `neighborhoods` と同じ取得に対応する(同じ `nbhdKey`)。
+  }, [neighborhoods, visibleHits, allHits]);
 
   function toggleType(t: string): void {
     setActiveTypes((prev) => {
@@ -84,12 +133,6 @@ export function SearchPage({ q }: { q: string }): JSX.Element {
       return next;
     });
   }
-
-  const visibleHits: SearchHit[] = data
-    ? activeTypes.size === 0
-      ? data.results
-      : data.results.filter((h) => activeTypes.has(h.type))
-    : [];
 
   const unavailable = apiUnavailableReason();
   if (unavailable) {
@@ -108,6 +151,8 @@ export function SearchPage({ q }: { q: string }): JSX.Element {
     data && data.truncated ? (
       <span>検索結果が{data.limit}件を超えています。すべては表示していません。</span>
     ) : undefined;
+
+  const isolatedHits = graph ? visibleHits.filter((h) => graph.isolatedHitIds.has(h.id)) : [];
 
   return (
     <Band full>
@@ -165,17 +210,80 @@ export function SearchPage({ q }: { q: string }): JSX.Element {
               </div>
             ) : null}
 
-            <ul className="jg-search-results">
-              {visibleHits.map((hit) => (
-                <li key={hit.id_path} className="jg-search-hit">
-                  <a href={`#/entity/${hit.id_path}`} className="jg-search-hit__link">
-                    <TypeBadge type={hit.type} size="sm" />
-                    <span className="jg-search-hit__label">{displayName(hit)}</span>
-                    {hit.summary ? <span className="jg-search-hit__summary">{hit.summary}</span> : null}
-                  </a>
-                </li>
-              ))}
-            </ul>
+            {nbhdState.status === "error" ? (
+              <ErrorBox>つながりの取得に失敗しました: {nbhdState.error.message}</ErrorBox>
+            ) : !graph ? (
+              <Loading label={`${allHits.length}件のつながりを取得中`} />
+            ) : (
+              <>
+                <GraphView
+                  center={visibleHits[0]!}
+                  supplied={{
+                    raw: graph.raw,
+                    centerId: graph.centerId,
+                    fanoutTruncatedIds: graph.fanoutTruncatedIds,
+                    emphasizedIds: graph.hitIds,
+                    nodesTruncated: graph.nodesTruncated,
+                    edgesTruncated: graph.edgesTruncated,
+                  }}
+                  showDepth={false}
+                  params={graphParams}
+                  onParamsChange={(next) => replaceSearchGraphParams(trimmed, next)}
+                  onRecenter={(idPath) => navigate({ name: "entity", idPath })}
+                  onUseAsPathStart={(idPath) => navigate({ name: "path", from: idPath })}
+                />
+                <Caveat>
+                  太枠は検索でヒットした{visibleHits.length}件です。各件の深さ1のつながりを
+                  合わせて描いています。
+                  {graph.droppedNodeCount > 0 ? (
+                    <>
+                      {" "}
+                      ヒットどうしを繋ぎえない記録(年度ごとの予算・支出・支出先ブロック・間接経費。
+                      いずれも1つの事業にしか属さない){graph.droppedNodeCount}件は、この図から
+                      外しています。各件のページを開くと出ます。
+                    </>
+                  ) : null}
+                  {graph.missingNeighborhoodCount > 0 ? (
+                    <> つながりを取得できなかった結果が{graph.missingNeighborhoodCount}件あります。</>
+                  ) : null}
+                </Caveat>
+
+                {isolatedHits.length > 0 ? (
+                  <div className="jg-stack jg-stack--2">
+                    <span className="jg-eyebrow">つながりの記録がない結果({isolatedHits.length}件)</span>
+                    <p className="jg-xs jg-muted">
+                      この図の中で他とつながっていません。KGに関係の記録が無いということです
+                      (表示していないだけではありません)。
+                    </p>
+                    <ul className="jg-search-results">
+                      {isolatedHits.map((hit) => (
+                        <li key={hit.id_path} className="jg-search-hit">
+                          <a href={`#/entity/${hit.id_path}`} className="jg-search-hit__link">
+                            <TypeBadge type={hit.type} size="sm" />
+                            <span className="jg-search-hit__label">{displayName(hit)}</span>
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </>
+            )}
+
+            <details className="jg-search-list">
+              <summary>検索結果の一覧({visibleHits.length}件)</summary>
+              <ul className="jg-search-results">
+                {visibleHits.map((hit) => (
+                  <li key={hit.id_path} className="jg-search-hit">
+                    <a href={`#/entity/${hit.id_path}`} className="jg-search-hit__link">
+                      <TypeBadge type={hit.type} size="sm" />
+                      <span className="jg-search-hit__label">{displayName(hit)}</span>
+                      {hit.summary ? <span className="jg-search-hit__summary">{hit.summary}</span> : null}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </details>
 
             <Truncation truncated={data.truncated} limit={data.limit} what="検索結果">
               {limit < SEARCH_LIMIT.max ? (

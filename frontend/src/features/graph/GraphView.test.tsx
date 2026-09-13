@@ -344,3 +344,58 @@ describe("表示名を持たないノード(裁定B108)", () => {
     expect(screen.getAllByText("(表示名なし)").length).toBe(4);
   });
 });
+
+describe("外から与えたグラフ(裁定B109)", () => {
+  const A = { id: "https://x/id/a", id_path: "a", type: "BudgetProject", label: "事業A" };
+  const B = { id: "https://x/id/b", id_path: "b", type: "Ministry", label: "府省B" };
+  const SUPPLIED = {
+    raw: {
+      nodes: [A, B],
+      edges: [{ source: A.id, target: B.id, predicate: "ministry", graph: "g/1" }],
+    },
+    centerId: A.id,
+    fanoutTruncatedIds: new Set<string>(),
+    emphasizedIds: new Set([A.id, B.id]),
+    nodesTruncated: true,
+    edgesTruncated: false,
+  };
+
+  function SuppliedHarness() {
+    const [params, setParams] = useState<GraphParams>(DEFAULT_GRAPH_PARAMS);
+    return (
+      <GraphView
+        center={A}
+        supplied={SUPPLIED}
+        showDepth={false}
+        params={params}
+        onParamsChange={setParams}
+        onRecenter={() => {}}
+      />
+    );
+  }
+
+  it("**近傍を取りに行かず**、与えられたノードをそのまま描く", async () => {
+    const fetchSpy = vi.fn(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<SuppliedHarness />);
+    await screen.findAllByText("事業A");
+    expect(screen.getAllByText("府省B").length).toBeGreaterThan(0);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("強調するノードは中心と同じ扱いで描く", async () => {
+    stubFetch();
+    render(<SuppliedHarness />);
+    await screen.findAllByText("事業A");
+    expect(document.querySelectorAll(".jg-graph-node.is-center")).toHaveLength(2);
+  });
+
+  it("深さの切り替えを隠し、打ち切りは呼び出し側の申告をそのまま出す", async () => {
+    stubFetch();
+    render(<SuppliedHarness />);
+    await screen.findAllByText("事業A");
+    expect(screen.queryByRole("group", { name: "深さ" })).toBeNull();
+    // `nodesTruncated: true` を渡したので、状態行が上限に達したことを言う。
+    expect(screen.getByText(/上限/)).toBeTruthy();
+  });
+});

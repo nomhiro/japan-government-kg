@@ -25,15 +25,25 @@ export interface LaneLayoutOptions {
   readonly maxPerLane?: number;
   /** 「+N件」を押して全件展開したレーンのキー集合。 */
   readonly expandedLanes?: ReadonlySet<string>;
+  /**
+   * **折り畳みで隠してはいけないノード**(裁定B109)。
+   *
+   * 検索結果のグラフで実際に踏んだ: 「年金」の20件のうち法令が19件
+   * 根拠レーンに入り、既定18件の折り畳みで**ヒット1件が「+1件」の裏に
+   * 隠れた**。検索画面で検索結果が見えないのは本末転倒なので、
+   * ここに渡したノードを先に並べる。
+   */
+  readonly priorityIds?: ReadonlySet<string>;
 }
 
-function sortKey(n: ModelNode): [number, string, string] {
-  return [-n.degree, displayLabel(n), n.id];
+function sortKey(n: ModelNode, priorityIds: ReadonlySet<string>): [number, number, string, string] {
+  return [priorityIds.has(n.id) ? 0 : 1, -n.degree, displayLabel(n), n.id];
 }
 
-function compareNodes(a: ModelNode, b: ModelNode): number {
-  const [da, la, ia] = sortKey(a);
-  const [db, lb, ib] = sortKey(b);
+function compareNodes(a: ModelNode, b: ModelNode, priorityIds: ReadonlySet<string>): number {
+  const [pa, da, la, ia] = sortKey(a, priorityIds);
+  const [pb, db, lb, ib] = sortKey(b, priorityIds);
+  if (pa !== pb) return pa - pb;
   if (da !== db) return da - db;
   if (la !== lb) return la < lb ? -1 : 1;
   if (ia !== ib) return ia < ib ? -1 : 1;
@@ -117,9 +127,10 @@ function placeAside(
   nodes: readonly ModelNode[],
   top: number,
   totalWidth: number,
+  priorityIds: ReadonlySet<string>,
 ): AsidePlacement {
   if (nodes.length === 0) return { nodes: [], height: 0 };
-  const sorted = [...nodes].sort(compareNodes);
+  const sorted = [...nodes].sort((a, b) => compareNodes(a, b, priorityIds));
   const perRow = Math.max(1, Math.floor((totalWidth - MARGIN_X) / (CARD_W + GAP_X)));
   const placed: PlacedNode[] = sorted.map((n, i) => {
     const row = Math.floor(i / perRow);
@@ -157,6 +168,7 @@ function toPlacedNode(n: ModelNode, x: number, y: number): PlacedNode {
 export function layoutLanes(model: GraphModel, options: LaneLayoutOptions = {}): GraphLayoutResult {
   const maxPerLane = options.maxPerLane ?? DEFAULT_MAX_PER_LANE;
   const expandedLanes = options.expandedLanes ?? new Set<string>();
+  const priorityIds = options.priorityIds ?? new Set<string>();
 
   const groups = new Map<string, ModelNode[]>();
   for (const n of model.nodes) {
@@ -177,7 +189,7 @@ export function layoutLanes(model: GraphModel, options: LaneLayoutOptions = {}):
 
   occupied.forEach((lane, i) => {
     const all = groups.get(lane.key) ?? [];
-    const sorted = [...all].sort(compareNodes);
+    const sorted = [...all].sort((a, b) => compareNodes(a, b, priorityIds));
     const showAll = expandedLanes.has(lane.key);
     const shown = showAll ? sorted : sorted.slice(0, maxPerLane);
     const x = MARGIN_X + i * (CARD_W + GAP_X);
@@ -189,7 +201,12 @@ export function layoutLanes(model: GraphModel, options: LaneLayoutOptions = {}):
   });
 
   const mainHeight = MARGIN_TOP + HEADER_H + maxStack * (CARD_H + GAP_Y);
-  const asidePlacement = placeAside(asideNodes, mainHeight + (asideNodes.length > 0 ? ASIDE_GAP_Y : 0), totalWidth);
+  const asidePlacement = placeAside(
+    asideNodes,
+    mainHeight + (asideNodes.length > 0 ? ASIDE_GAP_Y : 0),
+    totalWidth,
+    priorityIds,
+  );
 
   const allPlaced = [...placedMain, ...asidePlacement.nodes];
   const edges = buildPlacedEdges(allPlaced, model.edges);
