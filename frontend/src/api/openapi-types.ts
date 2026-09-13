@@ -493,6 +493,8 @@ export interface components {
             naive_sum_vs_entry_only: components["schemas"]["NaiveSumVsEntryOnly"][];
             /** Recipient Identification */
             recipient_identification: components["schemas"]["RecipientIdentification"][];
+            /** Release Freshness */
+            release_freshness: components["schemas"]["ReleaseFreshness"][];
             /** Request And Initial */
             request_and_initial: components["schemas"]["RequestAndInitial"][];
             /** Request Exactly Granted */
@@ -603,6 +605,29 @@ export interface components {
             /** Predicate */
             predicate: string;
             related: components["schemas"]["EntityRef"];
+        };
+        /**
+         * ReleaseFreshness
+         * @description CQ10の1行。KGのこのリリースが、あるソースについていつ時点のデータを含むか。
+         *
+         *     **`computed_at`(このプロセスが集計した時刻)とは別物である。**
+         *     利用者が知りたいのは「画面の数字がいつのデータか」で、それはこちらが答える。
+         *     設計書がトップの「鮮度チップ」と「データとAPI」の鮮度表に要求していた
+         *     もので、**これまでAPIから取れなかった**(裁定B111)。
+         *
+         *     `date_kind` はCQ10が `core:recordedOn` の有無で分ける値
+         *     (「記録日」または「取得日」)。**どちらなのかを混ぜない** ——
+         *     全件レビューのように「記録した日」しか分からないソースと、
+         *     APIから「取得した日」が分かるソースを同じ列に並べると、
+         *     どちらの意味なのかが読めなくなる。
+         */
+        ReleaseFreshness: {
+            /** As Of */
+            as_of: string;
+            /** Date Kind */
+            date_kind: string;
+            /** Source Name */
+            source_name: string;
         };
         /**
          * RequestAndInitial

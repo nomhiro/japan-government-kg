@@ -747,6 +747,13 @@
             "title": "Recipient Identification",
             "type": "array"
           },
+          "release_freshness": {
+            "items": {
+              "$ref": "#/components/schemas/ReleaseFreshness"
+            },
+            "title": "Release Freshness",
+            "type": "array"
+          },
           "request_and_initial": {
             "items": {
               "$ref": "#/components/schemas/RequestAndInitial"
@@ -786,6 +793,7 @@
           "type_counts",
           "government_paid",
           "money_through_stages",
+          "release_freshness",
           "naive_sum_vs_entry_only",
           "request_exactly_granted"
         ],
@@ -976,6 +984,31 @@
           "graph"
         ],
         "title": "Relationship",
+        "type": "object"
+      },
+      "ReleaseFreshness": {
+        "additionalProperties": false,
+        "description": "CQ10の1行。KGのこのリリースが、あるソースについていつ時点のデータを含むか。\n\n**`computed_at`(このプロセスが集計した時刻)とは別物である。**\n利用者が知りたいのは「画面の数字がいつのデータか」で、それはこちらが答える。\n設計書がトップの「鮮度チップ」と「データとAPI」の鮮度表に要求していた\nもので、**これまでAPIから取れなかった**(裁定B111)。\n\n`date_kind` はCQ10が `core:recordedOn` の有無で分ける値\n(「記録日」または「取得日」)。**どちらなのかを混ぜない** ——\n全件レビューのように「記録した日」しか分からないソースと、\nAPIから「取得した日」が分かるソースを同じ列に並べると、\nどちらの意味なのかが読めなくなる。",
+        "properties": {
+          "as_of": {
+            "title": "As Of",
+            "type": "string"
+          },
+          "date_kind": {
+            "title": "Date Kind",
+            "type": "string"
+          },
+          "source_name": {
+            "title": "Source Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_name",
+          "as_of",
+          "date_kind"
+        ],
+        "title": "ReleaseFreshness",
         "type": "object"
       },
       "RequestAndInitial": {

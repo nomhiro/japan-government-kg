@@ -221,3 +221,26 @@
 }
 .jg-entrance-card:hover { background: var(--surface-2); }
 .jg-entrance-card__cta { color: var(--primary); font-weight: 700; }
+
+/* 鮮度のチップ(裁定B111)。押せる要素ではないので `--static` を付けて
+   `jg-chip` のホバー・カーソルを打ち消す —— 押せそうに見えるものが
+   押せないのは、押せるものが押せないのと同じくらい悪い。 */
+.jg-chip--static {
+  cursor: default;
+  gap: var(--sp-1);
+}
+
+.jg-chip--static:hover {
+  background: var(--surface-2);
+  border-color: var(--rule);
+}
+
+.jg-freshness__date {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.jg-freshness__kind {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}

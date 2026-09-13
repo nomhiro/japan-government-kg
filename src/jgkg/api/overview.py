@@ -62,6 +62,7 @@ from jgkg.api.models import (
     NaiveSumVsEntryOnly,
     OverviewResponse,
     RecipientIdentification,
+    ReleaseFreshness,
     RequestAndInitial,
     RequestExactlyGranted,
     TypeCount,
@@ -95,6 +96,10 @@ OVERVIEW_QUERIES: dict[str, str] = {
     "type_counts": "cq18-kg-scale.rq",
     "government_paid": "cq12-government-paid-total.rq",
     "money_through_stages": "cq13-money-passing-through-stages.rq",
+    # 鮮度(裁定B111)。**新しいルートは作らない** ——`/overview` に足せば
+    # 裁定B103の「画面の値はCQの答え」の機構にそのまま乗り、`sources` に
+    # 出所のCQ名も出る。行数はソース×リリースで決まり、構造的に小さい。
+    "release_freshness": "cq10-release-freshness.rq",
     # Task 2b: CQ19(第4節「予算に対し記録を全部足すと合わない」の中心の
     # 主張そのもの)。controllerが本番と同じ索引で実測済み(モジュール
     # docstring参照)——このクエリ自体は変更しない。
@@ -310,6 +315,24 @@ def _parse_money_through_stages(rows: list[Row], base_uri: str) -> list[MoneyThr
     ]
 
 
+def _parse_release_freshness(rows: list[Row]) -> list[ReleaseFreshness]:
+    """CQ10の各行を`ReleaseFreshness`にする。
+
+    3列すべてを`_str`(未束縛→例外)で読む。CQ10のWHERE節は
+    `?graph prov:generatedAtTime ?asOf ; dcterms:source ?sourceName` を
+    必須パターンとして持ち、`?dateKind` は `BIND` で必ず束縛される
+    ——「欠損は既定値ではなく例外にする」規律(`_parse_ministries`)に揃える。
+    """
+    return [
+        ReleaseFreshness(
+            source_name=_str(row, "sourceName"),
+            as_of=_str(row, "asOf"),
+            date_kind=_str(row, "dateKind"),
+        )
+        for row in rows
+    ]
+
+
 def _parse_naive_sum_vs_entry_only(rows: list[Row]) -> list[NaiveSumVsEntryOnly]:
     return [
         NaiveSumVsEntryOnly(
@@ -352,6 +375,7 @@ def build_overview(client: KGClient, base_uri: str, queries_dir: Path) -> Overvi
         type_counts=_parse_type_counts(raw["type_counts"]),
         government_paid=_parse_government_paid(raw["government_paid"]),
         money_through_stages=_parse_money_through_stages(raw["money_through_stages"], base_uri),
+        release_freshness=_parse_release_freshness(raw["release_freshness"]),
         naive_sum_vs_entry_only=_parse_naive_sum_vs_entry_only(raw["naive_sum_vs_entry_only"]),
         request_exactly_granted=_parse_request_exactly_granted(raw["request_exactly_granted"]),
     )

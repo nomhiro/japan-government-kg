@@ -139,6 +139,11 @@ _EXPECTED_OVERVIEW_QUERIES = {
     "naive_sum_vs_entry_only": "cq19-naive-sum-vs-entry-only.rq",
     # Task 2b(追加): CQ20(第3節「事業ごとの完全一致率」。CQ16の誤読防止)。
     "request_exactly_granted": "cq20-request-exactly-granted.rq",
+    # 裁定B111: 鮮度。**この対応表は独立に手で書く**(上のdocstringの理由)
+    # ので、`OVERVIEW_QUERIES` からの転記ではなく「CQ10がKGのリリースの
+    # 鮮度を答える」という事実から書いた ——
+    # `queries/cq/cq10-release-freshness.rq` のヘッダがそう宣言している。
+    "release_freshness": "cq10-release-freshness.rq",
 }
 
 
@@ -313,6 +318,20 @@ def test_build_overview_end_to_end_against_the_rdflib_fixture_succeeds(tmp_path,
     assert result.type_counts, "CQ18: 型別件数の行が1件も無い"
     assert result.government_paid, "CQ12: 国が自ら支払った額の行が1件も無い"
     assert result.money_through_stages, "CQ13: 通過金の段の行が1件も無い"
+    assert result.release_freshness, "CQ10: 鮮度の行が1件も無い"
+
+    # **鮮度の各行が「いつ時点か」と「それが記録日か取得日か」を両方言うこと**
+    # (裁定B111)。どちらの意味かを混ぜると、全件レビューのように「記録した日」
+    # しか分からないソースと、APIから「取得した日」が分かるソースが同じ列に
+    # 並んで読めなくなる。
+    for fresh in result.release_freshness:
+        assert fresh.source_name, fresh
+        assert fresh.as_of, fresh
+        assert fresh.date_kind in {"記録日", "取得日"}, fresh.date_kind
+    # ソース名は重複しない(同じソースが2行に現れるなら、どちらが今の版か
+    # 読み手に分からない)。
+    names = [f.source_name for f in result.release_freshness]
+    assert len(names) == len(set(names)), f"同じソースが複数行ある: {names}"
 
     # **CQ13の`project_id_path`が実際に開けること**(裁定B110)。
     # 「導出したパスがエンティティ詳細で引けない」はこのプロジェクトが

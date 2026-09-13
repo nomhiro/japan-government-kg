@@ -39,6 +39,13 @@ export function DataPage(): JSX.Element {
   const unavailable = apiUnavailableReason();
   const state = useApiQuery(unavailable ? null : "overview", fetchOverview);
 
+  // 鮮度(CQ10。裁定B111)。**任意として読む** ——この項目を返さない版の
+  // APIが相手のこともある(裁定B103追記7)。無ければ節を出さない。
+  const freshnessRows = useMemo(() => {
+    if (state.status !== "ready" || state.data === undefined) return [];
+    return state.data.release_freshness ?? [];
+  }, [state]);
+
   const typeRows = useMemo(() => {
     if (state.status !== "ready" || state.data === undefined) return [];
     return [...state.data.type_counts]
@@ -59,6 +66,41 @@ export function DataPage(): JSX.Element {
               提供するものではありません。
             </p>
           </div>
+
+          {freshnessRows.length > 0 ? (
+            <div className="jg-stack jg-stack--3">
+              <h3 className="jg-h3">データの時点</h3>
+              <p className="jg-sm jg-ink2">
+                このKGが各ソースについていつ時点のデータを含むかです。
+                <strong>「取得日」と「記録日」は意味が違います</strong>
+                ——APIから取得した日が分かるソースと、全件ファイルのように
+                「記録した日」しか分からないソースがあるためです。
+              </p>
+              <table className="jg-table">
+                <thead>
+                  <tr>
+                    <th scope="col">ソース</th>
+                    <th scope="col">いつ時点か</th>
+                    <th scope="col">日付の種類</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {freshnessRows.map((row) => (
+                    <tr key={row.source_name}>
+                      <td>{row.source_name}</td>
+                      <td className="jg-num">{row.as_of.slice(0, 10)}</td>
+                      <td>{row.date_kind}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="jg-xs jg-muted">
+                出所: {state.status === "ready" && state.data
+                  ? state.data.sources.release_freshness
+                  : ""}
+              </p>
+            </div>
+          ) : null}
 
           <div className="jg-stack jg-stack--3">
             <h3 className="jg-h3">ライセンス</h3>

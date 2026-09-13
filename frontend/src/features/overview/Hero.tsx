@@ -16,6 +16,7 @@ import type {
   GovernmentPaidTotal,
   MinistryBudget,
   NaiveSumVsEntryOnly,
+  ReleaseFreshness,
   TypeCount,
 } from "../../api/client";
 import { Amount, Caveat, LimitTag, Stat } from "../../components/ui";
@@ -35,6 +36,14 @@ export interface HeroProps {
   typeCounts: TypeCount[];
   sources: Record<string, string>;
   computedAt: string;
+  /**
+   * KGのこのリリースが各ソースについていつ時点のデータを含むか(CQ10。裁定B111)。
+   *
+   * **任意にする。** APIとフロントは別々に配備されるので、この項目を返さない
+   * 版のAPIが相手のこともある(裁定B103追記7)。無ければ鮮度の行を出さない
+   * ——古い版に対して「データの時点: (空)」と出すより、黙って省く方が正しい。
+   */
+  releaseFreshness?: ReleaseFreshness[];
 }
 
 /**
@@ -49,6 +58,17 @@ export function formatComputedAt(iso: string): string {
   const isUtc = iso.endsWith("Z") || iso.endsWith("+00:00");
   const base = iso.replace("T", " ").replace(/(\.\d+)?(Z|[+-]\d{2}:\d{2})$/, "");
   return isUtc ? `${base}(UTC)` : base;
+}
+
+/**
+ * CQ10の `as_of`(ISO8601。日付だけのこともある)を読める形にする。
+ *
+ * **タイムゾーン変換をしない**(`formatComputedAt` と同じ理由 ——
+ * ロケール依存の変換はテスト環境と本番で結果が変わる)。日付部分だけを
+ * 出す: 利用者が知りたいのは「いつ時点のデータか」で、時刻の精度は要らない。
+ */
+export function formatAsOf(iso: string): string {
+  return iso.slice(0, 10);
 }
 
 /** 執行率の範囲(裁定B99: 分母は歳出予算現額。当初予算だと100%を超えて見える)。 */
@@ -67,6 +87,7 @@ export function Hero({
   typeCounts,
   sources,
   computedAt,
+  releaseFreshness = [],
 }: HeroProps): JSX.Element {
   const totalBudget = sumMinistryBudgets(currentMinistries);
   const execPercents = executionRatePercents(budgetAndExecution);
@@ -90,13 +111,32 @@ export function Hero({
   const execSource = sourceCitation(sources, "budget_and_execution");
   const paidSource = sourceCitation(sources, "naive_sum_vs_entry_only", "government_paid");
   const scaleCountSource = sourceCitation(sources, "type_counts");
+  const freshnessSource = sourceCitation(sources, "release_freshness");
 
   return (
     <div className="jg-hero jg-stack jg-stack--5">
-      <p className="jg-xs jg-muted">
-        この画面の数字を集計した時刻: {formatComputedAt(computedAt)}
-        <span className="jg-sr">(ナレッジグラフ本体の鮮度ではなく、このAPIプロセスが起動時に集計した時刻です)</span>
-      </p>
+      <div className="jg-stack jg-stack--1">
+        {/* **KGの鮮度を先に出す。** 利用者が知りたいのは「この数字がいつの
+            データか」であって、集計した時刻ではない(裁定B111)。
+            集計時刻は下に小さく残す —— 消すと「いつ計算した値か」が分からなくなる。 */}
+        {releaseFreshness.length > 0 ? (
+          <p className="jg-xs jg-muted jg-row jg-row--tight jg-freshness">
+            <span>データの時点:</span>
+            {releaseFreshness.map((f) => (
+              <span className="jg-chip jg-chip--static" key={f.source_name}>
+                {f.source_name}
+                <span className="jg-freshness__date jg-num">{formatAsOf(f.as_of)}</span>
+                <span className="jg-freshness__kind">{f.date_kind}</span>
+              </span>
+            ))}
+            {freshnessSource ? <span>{freshnessSource}</span> : null}
+          </p>
+        ) : null}
+        <p className="jg-xs jg-muted">
+          この画面の数字を集計した時刻: {formatComputedAt(computedAt)}
+          <span className="jg-sr">(ナレッジグラフ本体の鮮度ではなく、このAPIプロセスが起動時に集計した時刻です)</span>
+        </p>
+      </div>
 
       <div className="jg-grid jg-grid--3 jg-hero__stats">
         <div className="jg-stack jg-stack--2">

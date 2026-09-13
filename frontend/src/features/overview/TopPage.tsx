@@ -72,6 +72,7 @@ export function TopPage(): JSX.Element {
           currentMinistries={currentMinistries}
           budgetAndExecution={data.budget_and_execution}
           governmentPaid={data.government_paid}
+          releaseFreshness={data.release_freshness}
           naiveSumVsEntryOnly={data.naive_sum_vs_entry_only}
           typeCounts={data.type_counts}
           sources={data.sources}
