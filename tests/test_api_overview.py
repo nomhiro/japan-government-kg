@@ -328,10 +328,14 @@ def test_build_overview_end_to_end_against_the_rdflib_fixture_succeeds(tmp_path,
         assert fresh.source_name, fresh
         assert fresh.as_of, fresh
         assert fresh.date_kind in {"記録日", "取得日"}, fresh.date_kind
-    # ソース名は重複しない(同じソースが2行に現れるなら、どちらが今の版か
-    # 読み手に分からない)。
-    names = [f.source_name for f in result.release_freshness]
-    assert len(names) == len(set(names)), f"同じソースが複数行ある: {names}"
+    # **ソース名の一意性は主張しない。** 一度そう書いてfixtureで緑になったが、
+    # **本番の実データでは重複していた**(2026-09-13実測: 6行のうち
+    # 「国税庁 法人番号公表サイト 全件データ」が同じ日付で2行)。CQ10は
+    # 名前付きグラフ1つにつき1行を返すので、1つのソースが複数のグラフに
+    # 分かれていれば同じ名前が並ぶ ——それがこのクエリの正しい答えである。
+    # 畳むのは表示側の判断(`provenance.ts` の `sourceLines` が同じことを
+    # している前例がある)。
+    # **fixtureだけで確かめた不変条件は、実データで崩れる**(統制9)。
 
     # **CQ13の`project_id_path`が実際に開けること**(裁定B110)。
     # 「導出したパスがエンティティ詳細で引けない」はこのプロジェクトが

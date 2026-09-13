@@ -6,6 +6,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OverviewResponse } from "../../api/client";
+import { foldFreshness } from "../../lib/freshness";
 import { TopPage } from "./TopPage";
 
 // **実APIの応答をテストのフィクスチャに使う(架空の政府データを作らない)。**
@@ -126,6 +127,35 @@ describe("TopPage(トップページ再設計)", () => {
 
     // 除いた府省名・金額・割合(74.6%)・残りの府省数(22)を手書きせず動的に出す。
     expect(screen.getByText(/厚生労働省.*91\.8兆円.*74\.6%.*22府省/s)).toBeTruthy();
+  });
+
+  it("**ヒーローにKGの「データの時点」を出す**(裁定B111)", async () => {
+    render(<TopPage />);
+    await screen.findByText(/データの時点/);
+
+    // **期待値はフィクスチャから畳んで導く**(件数や日付を手書きしない)。
+    const folded = foldFreshness(overviewFixture.release_freshness);
+    expect(folded.length).toBeGreaterThan(0);
+    for (const f of folded) {
+      const chip = screen.getByText(f.sourceName).closest(".jg-chip")!;
+      expect(within(chip as HTMLElement).getByText(f.asOfDate)).toBeTruthy();
+      expect(within(chip as HTMLElement).getByText(f.dateKind)).toBeTruthy();
+    }
+    // **同じソース・同じ日付の重複は1つに畳む**(実データに重複がある)。
+    expect(document.querySelectorAll(".jg-freshness .jg-chip")).toHaveLength(folded.length);
+    expect(folded.length).toBeLessThan(overviewFixture.release_freshness.length);
+
+    // 集計時刻も残す(消すと「いつ計算した値か」が分からなくなる)。
+    expect(screen.getByText(/この画面の数字を集計した時刻/)).toBeTruthy();
+  });
+
+  it("APIが鮮度を返さない版でも壊れず、鮮度の行を出さない", async () => {
+    const stripped = { ...overviewFixture };
+    delete (stripped as { release_freshness?: unknown }).release_freshness;
+    vi.stubGlobal("fetch", vi.fn(async () => fakeResponse(200, stripped)));
+    render(<TopPage />);
+    await screen.findByText(/この画面の数字を集計した時刻/);
+    expect(screen.queryByText(/データの時点/)).toBeNull();
   });
 
   it("資金の流れ: 児童手当の例(国→市町村→受給者)が同じ金額で繋がって出る。足し算はしていない", async () => {

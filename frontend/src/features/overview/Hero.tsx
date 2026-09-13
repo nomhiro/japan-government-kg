@@ -21,6 +21,7 @@ import type {
 } from "../../api/client";
 import { Amount, Caveat, LimitTag, Stat } from "../../components/ui";
 import { typeLabel } from "../../labels";
+import { foldFreshness } from "../../lib/freshness";
 import {
   sourceCitation,
   sumMinistryBudgets,
@@ -58,17 +59,6 @@ export function formatComputedAt(iso: string): string {
   const isUtc = iso.endsWith("Z") || iso.endsWith("+00:00");
   const base = iso.replace("T", " ").replace(/(\.\d+)?(Z|[+-]\d{2}:\d{2})$/, "");
   return isUtc ? `${base}(UTC)` : base;
-}
-
-/**
- * CQ10の `as_of`(ISO8601。日付だけのこともある)を読める形にする。
- *
- * **タイムゾーン変換をしない**(`formatComputedAt` と同じ理由 ——
- * ロケール依存の変換はテスト環境と本番で結果が変わる)。日付部分だけを
- * 出す: 利用者が知りたいのは「いつ時点のデータか」で、時刻の精度は要らない。
- */
-export function formatAsOf(iso: string): string {
-  return iso.slice(0, 10);
 }
 
 /** 執行率の範囲(裁定B99: 分母は歳出予算現額。当初予算だと100%を超えて見える)。 */
@@ -112,6 +102,9 @@ export function Hero({
   const paidSource = sourceCitation(sources, "naive_sum_vs_entry_only", "government_paid");
   const scaleCountSource = sourceCitation(sources, "type_counts");
   const freshnessSource = sourceCitation(sources, "release_freshness");
+  // **同じソースが複数の名前付きグラフに分かれていると同じ行が並ぶ**
+  // (本番実測。`lib/freshness.ts` 参照)。表示では畳む。
+  const folded = foldFreshness(releaseFreshness);
 
   return (
     <div className="jg-hero jg-stack jg-stack--5">
@@ -119,14 +112,17 @@ export function Hero({
         {/* **KGの鮮度を先に出す。** 利用者が知りたいのは「この数字がいつの
             データか」であって、集計した時刻ではない(裁定B111)。
             集計時刻は下に小さく残す —— 消すと「いつ計算した値か」が分からなくなる。 */}
-        {releaseFreshness.length > 0 ? (
+        {folded.length > 0 ? (
           <p className="jg-xs jg-muted jg-row jg-row--tight jg-freshness">
             <span>データの時点:</span>
-            {releaseFreshness.map((f) => (
-              <span className="jg-chip jg-chip--static" key={f.source_name}>
-                {f.source_name}
-                <span className="jg-freshness__date jg-num">{formatAsOf(f.as_of)}</span>
-                <span className="jg-freshness__kind">{f.date_kind}</span>
+            {folded.map((f) => (
+              <span
+                className="jg-chip jg-chip--static"
+                key={`${f.sourceName}|${f.asOfDate}|${f.dateKind}`}
+              >
+                {f.sourceName}
+                <span className="jg-freshness__date jg-num">{f.asOfDate}</span>
+                <span className="jg-freshness__kind">{f.dateKind}</span>
               </span>
             ))}
             {freshnessSource ? <span>{freshnessSource}</span> : null}

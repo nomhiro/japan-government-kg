@@ -5,6 +5,7 @@ import { API_BASE, apiUnavailableReason, fetchOverview } from "../../api/client"
 import { useApiQuery } from "../../api/useApiQuery";
 import { Band, ErrorBox, Loading, Section } from "../../components/ui";
 import { typeLabel } from "../../labels";
+import { foldFreshness } from "../../lib/freshness";
 import { localNameFromIri } from "../../lib/overview-format";
 import "./data.css";
 
@@ -43,7 +44,9 @@ export function DataPage(): JSX.Element {
   // APIが相手のこともある(裁定B103追記7)。無ければ節を出さない。
   const freshnessRows = useMemo(() => {
     if (state.status !== "ready" || state.data === undefined) return [];
-    return state.data.release_freshness ?? [];
+    // 同じソースが複数の名前付きグラフに分かれていると同じ行が並ぶ
+    // (本番実測。`lib/freshness.ts` 参照)。表示では畳む。
+    return foldFreshness(state.data.release_freshness ?? []);
   }, [state]);
 
   const typeRows = useMemo(() => {
@@ -86,10 +89,10 @@ export function DataPage(): JSX.Element {
                 </thead>
                 <tbody>
                   {freshnessRows.map((row) => (
-                    <tr key={row.source_name}>
-                      <td>{row.source_name}</td>
-                      <td className="jg-num">{row.as_of.slice(0, 10)}</td>
-                      <td>{row.date_kind}</td>
+                    <tr key={`${row.sourceName}|${row.asOfDate}|${row.dateKind}`}>
+                      <td>{row.sourceName}</td>
+                      <td className="jg-num">{row.asOfDate}</td>
+                      <td>{row.dateKind}</td>
                     </tr>
                   ))}
                 </tbody>
