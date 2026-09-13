@@ -8477,3 +8477,53 @@ OWLの変化は `dcterms:title` 1行だけで、KGの作り直しは要らない
 - 深さ2以上の合算は試していない。ノード数が桁で増える(合算前で200超)
 - **APIに複数中心の近傍を足せば1回の問い合わせで済む**(`/neighborhood?ids=…`)。
   今は20回に分けている。APIコンテナの差し替えが通るようになったら検討する
+
+---
+
+## 裁定 B110: トップの「資金の流れ」から事業ページへ直接行けるようにする(2026-09-13)
+
+申し送りに残っていた項目:
+
+> トップの資金の流れから事業ページへ直接リンクできない ——
+> `/overview` の `money_through_stages`(CQ13)に事業の `id_path` が無い。
+> 検索への遷移で代替した。正しい直し方はCQ13に `?project` のIRIを足すこと。
+
+**原因は書いてあったとおりで、しかも小さかった。** CQ13のWHERE節は
+`?block budget:project ?project` を必須パターンとして持っていて、
+**IRIは既に束縛されていた** —— SELECTに並べていなかっただけである。
+
+### 直した内容
+
+- `cq13-money-passing-through-stages.rq` の SELECT に `?project` を足す
+- `MoneyThroughStage` に `project_id`(IRI)と `project_id_path`(遷移用の
+  導出値)を**加算**。`MinistryBudget` と同じ「IRIは同一性そのもの・
+  `id_path` は画面のための導出値」(裁定B59)
+- `_parse_money_through_stages` は `?project` を `_str`(未束縛→例外)で
+  読む。CQ13では必須パターンなので常に束縛される ——
+  `_parse_ministries` が `?ministry` について書いた判断と同じ
+- `FlowStages.tsx` は事業名を `<a href="#/entity/{id_path}">` にする。
+  **グループ化の鍵も名前から `project_id_path` に変えた** ——
+  名前で束ねると同名の別事業が1つに混ざる
+
+### 「導出したパスで実際に引く」テストを書いた
+
+`id_path` を足したら**そのパスで引いてみる**。「導出したid_pathが
+エンティティ詳細で引けない」はこのプロジェクトが2度踏んだ型
+(裁定B59・B69)で、文字列の形を確かめるだけでは捕まらない。
+
+- fixture: `money_through_stages` の全行について `get_entity_detail` が
+  `None` でなく、`id` と `label` が CQ13 の値と一致すること
+- 本番: 16件の異なる事業すべてで `/entity/{project_id_path}` が200を返し、
+  `label` が `project_name` と一致した(私が実測)
+
+### 配備の順序
+
+**APIを先に配備した**(裁定B103追記7)。`jgkg-api:2026-09-13-cq13-project-iri`
+→ リビジョン `jgkg--0000007`・`provisioningState: Succeeded`・`Healthy`。
+配備後に `/overview` を取って `project_id_path` が返ることを確かめ、
+それから `.superpowers/apisamples/overview.json` を取り直してフロントを直した。
+
+**フロントは古いAPIにも耐える形にした。** `project_id_path` が無ければ
+名前で束ね、**リンクを出さない**(存在しないIDを組み立てるより、
+遷移できない方が正しい)。この退行の挙動もテストで固定した ——
+APIとフロントが別々に配備される以上、片方が古い状態は必ず起きる。

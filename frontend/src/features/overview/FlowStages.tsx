@@ -10,16 +10,16 @@
 // ——各段の金額は`amount`(その行が持つ値)をそのまま見せるだけで、
 // このファイルには`reduce((s,r)=>s+r.amount, ...)`のような集計を書かない。
 //
-// **事業ページへのリンクについての注記。** `MoneyThroughStage`は事業の
-// `id_path`を持たない(`project_name`は文字列のラベルのみ)——存在しない
-// IDを推測して組み立てることはできない(裁定B59/B69: id_pathは常に
-// APIが返した値をそのまま使う)。そのため「事業ページへ」のリンクは、
-// 既存の検索(`#/search?q=…`)へのリンクにする——事業名で検索した結果へ
-// 遷移する、という誠実な導線。
+// **事業ページへ直接行く(裁定B110)。** 以前の `MoneyThroughStage` は
+// 事業の `id_path` を持たず(`project_name` は文字列のラベルだけ)、
+// 存在しないIDを推測して組み立てるわけにはいかないので、事業名での検索
+// (`#/search?q=…`)へ逃がしていた。**CQ13が `?project` を返していなかった
+// だけ**で、IRIはWHERE節で既に束縛されていた——返すようにして直した。
+// `id_path` は常にAPIが返した値をそのまま使う(裁定B59/B69)。
 import type { JSX } from "react";
 import type { MoneyThroughStage } from "../../api/client";
 import { Amount } from "../../components/ui";
-import { navigate } from "../../router";
+import { navigate, routeToHash } from "../../router";
 
 export interface FlowNode {
   readonly id: string;
@@ -40,6 +40,8 @@ export interface FlowLink {
 }
 
 export interface ProjectFlow {
+  /** 事業ページへ遷移するための経路形。APIが返した値をそのまま運ぶ。 */
+  readonly projectIdPath: string;
   readonly projectName: string;
   readonly nodes: readonly FlowNode[];
   readonly links: readonly FlowLink[];
@@ -57,21 +59,35 @@ export function buildProjectFlows(
   rows: readonly MoneyThroughStage[],
   maxProjects = 4,
 ): ProjectFlow[] {
+  // **グループ化の鍵は `project_id_path`(IRI由来)にする。** 名前で束ねると
+  // 同名の別事業が1つに混ざる(実データに同名の法令が複数あることは確認済み
+  // なので、事業でも起こりうる)。
+  //
+  // **古いAPIにも耐える。** APIとフロントは別々に配備されるので、
+  // `project_id_path` を返さない版が相手のこともある(裁定B103追記7:
+  // 変更は加算のみ・APIを先に配備)。そのときは名前で束ねて**リンクを出さない**
+  // ——存在しないIDを組み立てるより、遷移できない方が正しい(裁定B59/B69)。
   const order: string[] = [];
   const byProject = new Map<string, MoneyThroughStage[]>();
   for (const row of rows) {
-    let bucket = byProject.get(row.project_name);
+    const key = row.project_id_path || row.project_name;
+    let bucket = byProject.get(key);
     if (!bucket) {
       bucket = [];
-      byProject.set(row.project_name, bucket);
-      order.push(row.project_name);
+      byProject.set(key, bucket);
+      order.push(key);
     }
     bucket.push(row);
   }
-  return order.slice(0, maxProjects).map((projectName) => buildFlow(projectName, byProject.get(projectName)!));
+  return order
+    .slice(0, maxProjects)
+    .map((key) => buildFlow(byProject.get(key)!));
 }
 
-function buildFlow(projectName: string, rows: MoneyThroughStage[]): ProjectFlow {
+function buildFlow(rows: MoneyThroughStage[]): ProjectFlow {
+  const projectName = rows[0]!.project_name;
+  // 古いAPIでは未定義。そのときは空文字にして「リンクを出さない」を意味させる。
+  const projectIdPath = rows[0]!.project_id_path ?? "";
   interface Draft {
     id: string;
     name: string;
@@ -123,7 +139,7 @@ function buildFlow(projectName: string, rows: MoneyThroughStage[]): ProjectFlow 
     .map((d) => ({ ...d, level: levels.get(d.id) ?? 0 }))
     .sort((a, b) => a.level - b.level || a.id.localeCompare(b.id));
 
-  return { projectName, nodes, links };
+  return { projectIdPath, projectName, nodes, links };
 }
 
 export interface FlowStagesProps {
@@ -142,7 +158,7 @@ export function FlowStages({ rows, sources }: FlowStagesProps): JSX.Element {
   return (
     <div className="jg-stack jg-stack--6">
       {flows.map((flow) => (
-        <ProjectFlowDiagram key={flow.projectName} flow={flow} />
+        <ProjectFlowDiagram key={flow.projectIdPath || flow.projectName} flow={flow} />
       ))}
       {citation ? <p className="jg-xs jg-muted">この事業名は検索で辿れます(事業自体の固有IDは/overviewの応答に含まれていません)。</p> : null}
     </div>
@@ -156,13 +172,20 @@ function ProjectFlowDiagram({ flow }: { flow: ProjectFlow }): JSX.Element {
 
   return (
     <div className="jg-flow">
-      <button
-        type="button"
-        className="jg-flow__title"
-        onClick={() => navigate({ name: "search", q: flow.projectName })}
-      >
-        {flow.projectName}
-      </button>
+      {flow.projectIdPath ? (
+        <a
+          className="jg-flow__title"
+          href={routeToHash({ name: "entity", idPath: flow.projectIdPath })}
+          onClick={(e) => {
+            e.preventDefault();
+            navigate({ name: "entity", idPath: flow.projectIdPath });
+          }}
+        >
+          {flow.projectName}
+        </a>
+      ) : (
+        <span className="jg-flow__title">{flow.projectName}</span>
+      )}
       <div className="jg-flow__diagram">
         {columns.map((col, i) => (
           <div className="jg-flow__step" key={i}>

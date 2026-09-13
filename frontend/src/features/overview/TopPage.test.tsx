@@ -142,13 +142,51 @@ describe("TopPage(トップページ再設計)", () => {
     expect(screen.getAllByText(/合計は表示していません/).length).toBeGreaterThanOrEqual(1);
   });
 
-  it("資金の流れ: 事業名をクリックすると検索へ遷移する(事業のid_pathがCQ13の応答に無いため)", async () => {
+  it("資金の流れ: 事業名をクリックすると**その事業のページ**へ遷移する(裁定B110)", async () => {
+    // **この主張は2026-09-13に変わった。** それまでは事業名での検索へ
+    // 遷移することを固定していた —— CQ13が `?project` を返しておらず、
+    // 存在しないIDを組み立てるわけにはいかなかったため。CQ13にIRIを
+    // 返させて直した。
     const user = userEvent.setup();
     render(<TopPage />);
 
     await screen.findByText("資金の流れ");
-    await user.click(screen.getByText("児童手当等交付金に必要な経費"));
-    expect(window.location.hash).toBe(`#/search?q=${encodeURIComponent("児童手当等交付金に必要な経費")}`);
+    const title = screen.getByText("児童手当等交付金に必要な経費");
+    // 期待値は**フィクスチャから引く**(パスを手書きしない。転記した値は
+    // 実データが変われば嘘になる)。
+    const row = overviewFixture.money_through_stages.find(
+      (r) => r.project_name === "児童手当等交付金に必要な経費",
+    )!;
+    expect(row.project_id_path).toBeTruthy();
+    expect(title.getAttribute("href")).toBe(`#/entity/${row.project_id_path}`);
+    await user.click(title);
+    expect(window.location.hash).toBe(`#/entity/${row.project_id_path}`);
+  });
+
+  it("資金の流れ: APIが事業のIRIを返さない版でも壊れず、リンクを出さない", async () => {
+    // **APIとフロントは別々に配備される**(裁定B103追記7)。古いAPIが
+    // 相手のとき、存在しないIDを組み立てるより遷移できない方が正しい
+    // (裁定B59/B69)。
+    const stripped = {
+      ...overviewFixture,
+      money_through_stages: overviewFixture.money_through_stages.map((r) => {
+        const { project_id, project_id_path, ...rest } = r;
+        void project_id;
+        void project_id_path;
+        return rest as unknown as (typeof overviewFixture.money_through_stages)[number];
+      }),
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => fakeResponse(200, stripped)));
+    render(<TopPage />);
+
+    await screen.findByText("資金の流れ");
+    const title = screen.getByText("児童手当等交付金に必要な経費");
+    expect(title.tagName).toBe("SPAN");
+    expect(title.getAttribute("href")).toBeNull();
+    // **事業が1つに混ざらないこと**(鍵が無いときは名前で束ねる)。
+    const names = new Set(overviewFixture.money_through_stages.map((r) => r.project_name));
+    const titles = document.querySelectorAll(".jg-flow__title");
+    expect(titles.length).toBe(Math.min(4, names.size));
   });
 
   it("年度の推移: 5年分の帯と、要求と査定の母集団の注記(32.7〜44.0%)を出す", async () => {

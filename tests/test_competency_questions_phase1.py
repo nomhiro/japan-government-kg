@@ -611,12 +611,17 @@ def test_cq13_finds_the_pass_through_stage_and_not_the_entry(kg):
     """
     rows = _query(kg, "cq13-money-passing-through-stages.rq")
     assert rows, "CQ13に答えられない"
+    # **列は名前で読む(位置で分解しない)。** 2026-09-13にCQ13へ `?project`
+    # を足したら、位置で分解していたこのテストが「7個のはずが8個」で落ちた
+    # ——列の**追加**で落ちる検査は、追加が安全かを何も言っていない
+    # (裁定B103追記7の「変更は加算のみ」を検査側が支えられていなかった)。
     seen = {
-        str(block_id): (str(source_id), int(amount))
-        for _pn, block_id, _bn, _pbg, amount, source_id, _sn in rows
+        str(row["blockId"]): (str(row["sourceId"]), int(row["amount"])) for row in rows
     }
     assert set(seen) == {"B"}, f"出どころを持つブロックはBだけのはず: {seen}"
     assert seen["B"] == ("A", 1_000_000), seen
+    # 事業のIRIも返ること(裁定B110。トップから事業ページへ遷移するために要る)。
+    assert all(row["project"] is not None for row in rows), "CQ13が事業のIRIを返していない"
 
 
 def test_cq13_reports_whether_the_stage_was_paid_by_government(kg):
@@ -633,7 +638,8 @@ def test_cq13_reports_whether_the_stage_was_paid_by_government(kg):
     未束縛になって None になる。
     """
     rows = _query(kg, "cq13-money-passing-through-stages.rq")
-    flags = {str(block_id): pbg for _pn, block_id, _bn, pbg, *_rest in rows}
+    # 列は名前で読む(上のテストと同じ理由)。
+    flags = {str(row["blockId"]): row["paidByGovernment"] for row in rows}
     assert "B" in flags, flags
     assert flags["B"] is not None, "paidByGovernmentが未束縛(偽のとき出していない疑い)"
     assert bool(flags["B"].toPython()) is False, flags["B"]
