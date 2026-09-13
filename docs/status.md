@@ -618,7 +618,14 @@ Phase 0 の全体レビューで出た指摘のうち、マージ前に直さず
   代わりにAPIが `described_by: {predicate, value}` を返し、画面が
   「予算年度 2024」のように**述語のラベルを添えて**出す
   (`frontend/src/lib/display-name.ts`)。`UnresolvedReference` も同じ経路で
-  元の記述が出る。**配備後に本番で確かめるまでは実データ未検証**(統制9)
+  元の記述が出る。**配備後に本番で確かめるまでは実データ未検証**(統制9)。
+  **APIイメージは作ってACRに置いた**
+  (`acrjgkg.azurecr.io/jgkg-api:2026-09-13-describing-values`。
+  git commit は `dea4c46`)が、**本番コンテナの差し替えは未実施** ——
+  実行が許可で止まったため利用者の判断を待つ。差し替えの1行:
+  `az containerapp update -n jgkg -g rg-jgkg --container-name api --image acrjgkg.azurecr.io/jgkg-api:2026-09-13-describing-values`。
+  **フロントは先に出しても壊れない**(`described_by` は任意フィールドで、
+  無ければ今までどおり「(表示名なし)」になる)
 - **`labels.json` で `fiscalYear` と `budgetFiscalYear` が同じ「予算年度」
   になっている**(裁定B108の途中で発見)。`AnnualBudget` では前者がレビュー
   年度、後者がその予算の年度で意味が違う。オントロジー側の表示名の問題なので、
