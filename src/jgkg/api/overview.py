@@ -286,9 +286,18 @@ def _parse_government_paid(rows: list[Row]) -> list[GovernmentPaidTotal]:
     ]
 
 
-def _parse_money_through_stages(rows: list[Row]) -> list[MoneyThroughStage]:
+def _parse_money_through_stages(rows: list[Row], base_uri: str) -> list[MoneyThroughStage]:
+    """CQ13の各行を`MoneyThroughStage`にする。
+
+    **`?project`は`_str`(未束縛→例外)で読む。** CQ13のWHERE節で
+    `?block budget:project ?project` は必須パターンなので常に束縛される
+    ——`_parse_ministries`が`?ministry`について書いた判断と同じで、
+    「欠損は既定値ではなく例外にする」規律をこの列にも適用する。
+    """
     return [
         MoneyThroughStage(
+            project_id=_str(row, "project"),
+            project_id_path=_id_path(base_uri, _str(row, "project")),  # 引数の順に注意
             project_name=_str(row, "projectName"),
             block_id=_str(row, "blockId"),
             block_name=_text(row, "blockName"),
@@ -342,7 +351,7 @@ def build_overview(client: KGClient, base_uri: str, queries_dir: Path) -> Overvi
         ),
         type_counts=_parse_type_counts(raw["type_counts"]),
         government_paid=_parse_government_paid(raw["government_paid"]),
-        money_through_stages=_parse_money_through_stages(raw["money_through_stages"]),
+        money_through_stages=_parse_money_through_stages(raw["money_through_stages"], base_uri),
         naive_sum_vs_entry_only=_parse_naive_sum_vs_entry_only(raw["naive_sum_vs_entry_only"]),
         request_exactly_granted=_parse_request_exactly_granted(raw["request_exactly_granted"]),
     )

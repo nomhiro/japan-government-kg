@@ -30,7 +30,10 @@ PREFIX budget: <https://jgkg.norr-tech.com/def/budget#>
 PREFIX core: <https://jgkg.norr-tech.com/def/core#>
 PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
 
-SELECT ?projectName ?blockId ?blockName ?paidByGovernment ?amount ?sourceId ?sourceName
+# **`?project`(IRI)も返す。** 名前だけを返していたので、トップページの
+# 「資金の流れ」から事業ページへ直接行けず、事業名での検索に逃がしていた
+# (裁定B110)。IRIはWHERE節で既に束縛されている——返していなかっただけ。
+SELECT ?project ?projectName ?blockId ?blockName ?paidByGovernment ?amount ?sourceId ?sourceName
 WHERE {
   ?block a budget:ExpenditureBlock ;
          budget:project ?project ;

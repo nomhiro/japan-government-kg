@@ -542,6 +542,14 @@
             "title": "Paid By Government",
             "type": "boolean"
           },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "project_id_path": {
+            "title": "Project Id Path",
+            "type": "string"
+          },
           "project_name": {
             "title": "Project Name",
             "type": "string"
@@ -570,6 +578,8 @@
           }
         },
         "required": [
+          "project_id",
+          "project_id_path",
           "project_name",
           "block_id",
           "block_name",

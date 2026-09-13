@@ -486,6 +486,12 @@ class GovernmentPaidTotal(_Envelope):
 class MoneyThroughStage(_Envelope):
     """CQ13の1行。同じ金額が複数の段に現れる事業。足すと二重計上になる。"""
 
+    #: 事業のIRI。**`MinistryBudget` と同じ理由で `id` と `id_path` を両方持つ**
+    #: ——`id` はLODの同一性そのもの、`id_path` は画面が遷移に使う導出値
+    #: (裁定B59)。以前は `project_name`(文字列)だけだったので、トップの
+    #: 「資金の流れ」から事業ページへ行けず検索に逃がしていた(裁定B110)。
+    project_id: str
+    project_id_path: str
     project_name: str
     block_id: str
     block_name: str | None

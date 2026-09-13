@@ -402,6 +402,10 @@ export interface components {
             block_name: string | null;
             /** Paid By Government */
             paid_by_government: boolean;
+            /** Project Id */
+            project_id: string;
+            /** Project Id Path */
+            project_id_path: string;
             /** Project Name */
             project_name: string;
             /** Source Id */

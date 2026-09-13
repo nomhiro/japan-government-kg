@@ -313,6 +313,18 @@ def test_build_overview_end_to_end_against_the_rdflib_fixture_succeeds(tmp_path,
     assert result.type_counts, "CQ18: 型別件数の行が1件も無い"
     assert result.government_paid, "CQ12: 国が自ら支払った額の行が1件も無い"
     assert result.money_through_stages, "CQ13: 通過金の段の行が1件も無い"
+
+    # **CQ13の`project_id_path`が実際に開けること**(裁定B110)。
+    # 「導出したパスがエンティティ詳細で引けない」はこのプロジェクトが
+    # 2度踏んだ型(裁定B59・B69)なので、`id_path`を足したら必ず
+    # **そのパスで引いてみる**。文字列の形を確かめるだけでは足りない。
+    from jgkg.api.queries import get_entity_detail
+
+    for stage in result.money_through_stages:
+        detail = get_entity_detail(client, BASE, stage.project_id_path, limit=1)
+        assert detail is not None, f"CQ13のproject_id_pathが引けない: {stage.project_id_path}"
+        assert detail.id == stage.project_id
+        assert detail.label == stage.project_name, "CQ13の事業名と詳細の表示名が食い違う"
     assert result.naive_sum_vs_entry_only, "CQ19: 素朴な合計/入口だけの合計の行が1件も無い"
     assert result.request_exactly_granted, "CQ20: 要求額の完全一致の行が1件も無い"
 
