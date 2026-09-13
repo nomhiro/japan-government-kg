@@ -966,3 +966,37 @@ def test_the_404_page_itself_is_not_required_to_return_200(tmp_path):
         r.label for r in report.results if "/404.html" in r.label
     ]
     assert report.ok, [f"{r.label}: {r.detail}" for r in report.failures]
+
+
+def test_the_unknown_path_check_bypasses_the_cdn_cache(tmp_path):
+    """**未知パスの検査はキャッシュを迂回して取る**(裁定B113の訂正)。
+
+    確かめたいのは「配信元が未知パスに何を返すか」であり、そこにCDNの
+    状態を混ぜると別の話になる。実際に混ざった: この検査を入れた最初の
+    配備はフロントのバンドルが変わっていなかったため、伝播待ちが新旧の
+    配備を区別できず、素の探索が旧配備(404.htmlを持たない)に当たって
+    200+HTMLがエッジに焼き付いた。
+
+    ここでは「素のURLで要求されたものは古い応答を返す」配信元を使い、
+    **迂回した取得で正しく404を見られること**を固定する。
+    """
+    _full_build(tmp_path)
+    live = tmp_path.parent / (tmp_path.name + "-live")
+    shutil.copytree(tmp_path, live)
+
+    # 素のURLには「200 + アプリのHTML」を焼き付けておく(旧配備の残り)。
+    state = {
+        "live": True,
+        "cache": {site_verify.NOT_FOUND_PROBE: (_FAKE_APP_INDEX_HTML.encode("utf-8"), 200)},
+        "asked": [],
+    }
+    client = httpx.Client(transport=_self_poisoning_transport(live, state))
+    report = site_verify.run_all_checks("https://jgkg.norr-tech.com", tmp_path, GENERATED, client)
+
+    probe_results = [r for r in report.results if site_verify.NOT_FOUND_PROBE in r.label]
+    assert len(probe_results) == 2, [r.label for r in probe_results]
+    assert all(r.ok for r in probe_results), [f"{r.label}: {r.detail}" for r in probe_results]
+    # 迂回した取得(クエリ文字列付き)を使ったことを、要求のURLで確かめる。
+    probe_requests = [u for u in state["asked"] if site_verify.NOT_FOUND_PROBE in u]
+    assert probe_requests, "探索そのものが行われていない"
+    assert all("?" in u for u in probe_requests), probe_requests
