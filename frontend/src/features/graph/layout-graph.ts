@@ -135,6 +135,7 @@ export function layoutGraph(model: GraphModel, options: GraphLayoutOptions = {})
       hop: n.hop,
       degree: n.degree,
       hasMore: n.hasMore,
+      shape: "card",
       x,
       y,
       w: CARD_W,

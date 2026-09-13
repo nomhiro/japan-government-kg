@@ -318,3 +318,37 @@
     height: min(62vh, 620px);
   }
 }
+
+/* 「点と線」配置(裁定B114)。円は塗りを軸の色にし、枠で選択・強調を示す。
+   カードと違って文字を内側に置けないので、**枠と大きさだけで状態を伝える**。 */
+.jg-graph-node__dot {
+  stroke: var(--paper);
+  stroke-width: 2;
+  transition: stroke 80ms linear, stroke-width 80ms linear;
+}
+
+.jg-graph-node.is-center .jg-graph-node__dot {
+  stroke: var(--ink);
+  stroke-width: 3;
+}
+
+.jg-graph-node.is-selected .jg-graph-node__dot {
+  stroke: var(--focus);
+  stroke-width: 4;
+}
+
+.jg-graph-node__dot-label {
+  font-size: 11px;
+  fill: var(--ink-2);
+  paint-order: stroke;
+  /* 線の上に重なっても読めるように、地の色で縁取る。 */
+  stroke: var(--paper);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.jg-graph-node.is-center .jg-graph-node__dot-label,
+.jg-graph-node.is-selected .jg-graph-node__dot-label {
+  fill: var(--ink);
+  font-weight: 600;
+}

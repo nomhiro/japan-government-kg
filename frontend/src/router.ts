@@ -128,13 +128,15 @@ export function navigate(route: Route): void {
  * - `lanes`: 型で列を決めるレーン流れ図(根拠→所管→事業→…)。
  *   1つの事業の資金の流れを見るときはこれが意味そのもの
  * - `graph`: **層も並び順も辺から決める**構造配置(裁定B112)。
- *   集合を俯瞰するときはこちら ——型で列を決めると辺が最大限に交差する
+ *   辺の向きが意味を持つ集合を追うときはこちら
+ * - `organic`: **円と線の力学配置**(裁定B114)。密度を取る ——
+ *   カードは1件ずつ読めるが44件で縦1,470pxになり、全体が一度に見えない
  *
  * 旧 `force`(ForceAtlas2)は削除した。切断された成分のホップ数が
  * `Infinity` になって**全ノードの座標がNaNになる欠陥**があり(本番で実測)、
  * 三部グラフでは毛玉になって読めなかった。
  */
-export type GraphLayout = "lanes" | "graph";
+export type GraphLayout = "lanes" | "graph" | "organic";
 
 export interface GraphParams {
   /** 近傍の深さ。APIの上限(1〜2)は呼び出し側が `api/limits.ts` から与える。 */
@@ -161,7 +163,9 @@ export function parseGraphParams(
   // 明示された値だけを読み、無ければ呼び出し側の既定(なければ`lanes`)。
   // **検索結果の画面は`graph`を既定にする** ——型の列は集合の俯瞰に向かない。
   const layout: GraphLayout =
-    q.lay === "graph" || q.lay === "lanes" ? q.lay : (options.defaultLayout ?? "lanes");
+    q.lay === "graph" || q.lay === "lanes" || q.lay === "organic"
+      ? q.lay
+      : (options.defaultLayout ?? "lanes");
   const axes = (q.ax ?? "")
     .split(",")
     .map((s) => s.trim())
@@ -185,8 +189,15 @@ export function entityHash(idPath: string, params: GraphParams): string {
   return q ? `#/entity/${idPath}?${q}` : `#/entity/${idPath}`;
 }
 
-/** 検索画面の並べ方の既定(裁定B112)。型の列は集合の俯瞰に向かない。 */
-export const SEARCH_DEFAULT_LAYOUT: GraphLayout = "graph";
+/**
+ * 検索画面の並べ方の既定。
+ *
+ * **`organic`(点と線)にする(裁定B114)。** 検索結果は「俯瞰」が目的で、
+ * カードは1件ずつ読める代わりに44件で縦1,470pxになり全体が一度に見えない。
+ * 円なら同じ44件が1画面に入り、ハブ(複数の事業から参照される府省)が
+ * 一目で分かる。名前を読みたいときは「構造」か「すべての関係を表で」に切り替える。
+ */
+export const SEARCH_DEFAULT_LAYOUT: GraphLayout = "organic";
 
 /**
  * 検索画面のハッシュを、グラフの状態つきで組み立てる(裁定B109)。

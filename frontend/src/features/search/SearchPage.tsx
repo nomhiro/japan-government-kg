@@ -254,6 +254,14 @@ export function SearchPage({ q }: { q: string }): JSX.Element {
                   {graph.missingNeighborhoodCount > 0 ? (
                     <> つながりを取得できなかった結果が{graph.missingNeighborhoodCount}件あります。</>
                   ) : null}
+                  {graphParams.layout === "organic" ? (
+                    <>
+                      {" "}
+                      円の大きさはつながりの本数です。ラベルはつながりの多いものと
+                      ヒットしたものだけに出しています。全件は「すべての関係を表で」か、
+                      並べ方を「構造」にすると読めます。
+                    </>
+                  ) : null}
                 </Caveat>
 
                 {isolatedHits.length > 0 ? (

@@ -41,10 +41,15 @@ import "./graph.css";
 import { Inspector } from "./Inspector";
 import { CARD_H, CARD_W, GAP_Y, HEADER_H, MARGIN_TOP } from "./layout-lanes";
 import { layoutGraph } from "./layout-graph";
+import { labelOffsets, layoutOrganic } from "./layout-organic";
 import { layoutLanes } from "./layout-lanes";
 import type { GraphLayoutResult, GraphViewProps, PlacedNode } from "./types";
 
 const LABEL_MAX_CHARS = 12;
+/** 円のラベルの最大文字数。カードより短い(枠が無いので隣と衝突しやすい)。 */
+const DOT_LABEL_MAX_CHARS = 14;
+/** この次数以上の円にはラベルを出す(ハブに名前を付ける)。 */
+const DOT_LABEL_MIN_DEGREE = 2;
 const EMPTY_LAYOUT: GraphLayoutResult = { nodes: [], edges: [], lanes: [], width: 0, height: 0 };
 const EMPTY_IDS: ReadonlySet<string> = new Set<string>();
 const VIEWBOX_PAD = 24;
@@ -162,6 +167,7 @@ export function GraphView(props: GraphViewProps): JSX.Element {
 
   const layoutResult: GraphLayoutResult = useMemo(() => {
     if (!model) return EMPTY_LAYOUT;
+    if (params.layout === "organic") return layoutOrganic(model);
     return params.layout === "graph"
       ? layoutGraph(model)
       // 強調するノード(検索のヒット)を折り畳みで隠さない(裁定B109)。
@@ -169,6 +175,18 @@ export function GraphView(props: GraphViewProps): JSX.Element {
   }, [model, params.layout, expandedLanes, emphasizedIds]);
 
   const nodeById = useMemo(() => new Map(layoutResult.nodes.map((n) => [n.id, n])), [layoutResult.nodes]);
+
+  // 円のラベルの縦逃がし(裁定B114)。**ホバーや選択で増える分は入れない**
+  // ——毎回全部のずれが動くと、読んでいる最中に文字が跳ねる。
+  const dotLabelOffsets = useMemo(() => {
+    if (layoutResult.nodes.every((n) => n.shape !== "dot")) return new Map<string, number>();
+    const labelled = new Set(
+      layoutResult.nodes
+        .filter((n) => n.degree >= DOT_LABEL_MIN_DEGREE || emphasizedIds.has(n.id) || n.id === model?.centerId)
+        .map((n) => n.id),
+    );
+    return labelOffsets(layoutResult.nodes, labelled);
+  }, [layoutResult.nodes, emphasizedIds, model?.centerId]);
 
 
   // --- 状態行(グラフ自身から数える。裁定B93) ---------------------------------
@@ -523,7 +541,19 @@ export function GraphView(props: GraphViewProps): JSX.Element {
                 const isNeighborOfHover = hoveredId ? adjacency.get(hoveredId)?.has(n.id) ?? false : false;
                 const passesAxisFilter = !axisFilterActive || (n.axis !== undefined && params.axes.includes(n.axis));
                 const dim = hoveredId ? !(isHovered || isNeighborOfHover) : !passesAxisFilter;
-                const { text, full } = truncateForWidth(displayLabel(n), LABEL_MAX_CHARS);
+                const isDot = n.shape === "dot";
+                // **円のラベルはハブと注目中のものだけに出す**(裁定B114)。
+                // 44件すべてに出すと重なって読めない。型は色が伝え、全件は
+                // 「すべての関係を表で」とインスペクタが持つ。**隠している
+                // ことは画面の注記で言う**(黙って落とさない)。
+                const showDotLabel = isDot
+                  ? n.degree >= DOT_LABEL_MIN_DEGREE || isHovered || isSelected || isCenterNode
+                  : true;
+                const { text, full } = truncateForWidth(
+                  displayLabel(n),
+                  isDot ? DOT_LABEL_MAX_CHARS : LABEL_MAX_CHARS,
+                );
+                const r = n.w / 2;
                 return (
                   <g
                     key={n.id}
@@ -546,20 +576,48 @@ export function GraphView(props: GraphViewProps): JSX.Element {
                     onMouseLeave={() => setHoveredId((h) => (h === n.id ? null : h))}
                   >
                     <title>{full}</title>
-                    <rect className="jg-graph-node__card" width={n.w} height={n.h} rx={6} />
-                    <rect className="jg-graph-node__stripe" width={4} height={n.h} style={{ fill: axisColorVar(n.axis) }} />
-                    <text className="jg-graph-node__label" x={12} y={15}>
-                      {text}
-                    </text>
-                    <text className="jg-graph-node__type" x={12} y={28}>
-                      {typeLabel(n.type)}
-                    </text>
-                    {n.hasMore ? (
-                      <text className="jg-graph-node__more" x={n.w - 10} y={15} textAnchor="end">
-                        ⋯
-                      </text>
-                    ) : null}
-                    {isCenterNode ? (
+                    {isDot ? (
+                      <>
+                        <circle
+                          className="jg-graph-node__dot"
+                          cx={r}
+                          cy={r}
+                          r={r}
+                          style={{ fill: axisColorVar(n.axis) }}
+                        />
+                        {showDotLabel ? (
+                          <text
+                            className="jg-graph-node__dot-label"
+                            x={n.w + 5}
+                            y={r + 4 + (dotLabelOffsets.get(n.id) ?? 0)}
+                          >
+                            {text}
+                          </text>
+                        ) : null}
+                        {n.hasMore ? (
+                          <text className="jg-graph-node__more" x={r} y={r + 4} textAnchor="middle">
+                            ⋯
+                          </text>
+                        ) : null}
+                      </>
+                    ) : (
+                      <>
+                        <rect className="jg-graph-node__card" width={n.w} height={n.h} rx={6} />
+                        <rect className="jg-graph-node__stripe" width={4} height={n.h} style={{ fill: axisColorVar(n.axis) }} />
+                        <text className="jg-graph-node__label" x={12} y={15}>
+                          {text}
+                        </text>
+                        <text className="jg-graph-node__type" x={12} y={28}>
+                          {typeLabel(n.type)}
+                        </text>
+                        {n.hasMore ? (
+                          <text className="jg-graph-node__more" x={n.w - 10} y={15} textAnchor="end">
+                            ⋯
+                          </text>
+                        ) : null}
+                      </>
+                    )}
+                    {isCenterNode && !isDot ? (
                       <text className="jg-graph-node__center-tag" x={n.w} y={-6} textAnchor="end">
                         {emphasisTag}
                       </text>

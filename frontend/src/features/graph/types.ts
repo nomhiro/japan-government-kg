@@ -69,6 +69,12 @@ export interface PlacedNode {
   readonly degree: number;
   /** この先にまだ辺があるノード(APIの `fanout_truncated_nodes`)。 */
   readonly hasMore: boolean;
+  /**
+   * 描き方(裁定B114)。`card` は208×36の角丸(ラベルを常に読める)、
+   * `dot` は円(密度を取る。ラベルはハブと選択中のものだけ)。
+   * **配置が決める** ——同じレイアウトの中で混ざることはない。
+   */
+  readonly shape: "card" | "dot";
   readonly x: number;
   readonly y: number;
   readonly w: number;

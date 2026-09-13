@@ -272,9 +272,31 @@ describe("SearchPage(グラフ主体。裁定B109)", () => {
 });
 
 describe("SearchPage の強調の言い回し", () => {
-  it("ヒットの印は「中心」ではなく「一致」(19件が全部「中心」では嘘になる)", async () => {
+  it("既定の「点と線」では、ヒットを**文字ではなく枠**で示す(裁定B114)", async () => {
+    // 円にはラベルを内側に置けないので、文字を足すと重なって読めない。
+    // 枠の太さと色で示し、注記が「太枠は検索でヒットした20件です」と言う。
     searchMock.mockResolvedValue(FIXTURE);
     mockNeighborhoods();
+    render(<SearchPage q="年金" />);
+    // **まず描かれるのを待つ**(0件同士の一致で通る待ち方にしない)。
+    await waitFor(() =>
+      expect(document.querySelectorAll(".jg-graph-node__dot").length).toBeGreaterThan(0),
+    );
+    expect(document.querySelectorAll(".jg-graph-node__dot").length).toBe(
+      document.querySelectorAll(".jg-graph-node").length,
+    );
+    expect(document.querySelectorAll(".jg-graph-node.is-center").length).toBe(
+      FIXTURE.results.length,
+    );
+    expect(screen.queryByText("一致")).toBeNull();
+    expect(screen.queryByText("中心")).toBeNull();
+  });
+
+  it("カードの並べ方では、ヒットの印は「中心」ではなく「一致」", async () => {
+    // 20件が全部「中心」では嘘になる(中心は1つという語である)。
+    searchMock.mockResolvedValue(FIXTURE);
+    mockNeighborhoods();
+    window.location.hash = "#/search?q=%E5%B9%B4%E9%87%91&lay=graph";
     render(<SearchPage q="年金" />);
     await screen.findAllByRole("button", { name: MINISTRY_CARD });
     expect(screen.getAllByText("一致").length).toBe(FIXTURE.results.length);

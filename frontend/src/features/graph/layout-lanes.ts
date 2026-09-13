@@ -153,6 +153,7 @@ function toPlacedNode(n: ModelNode, x: number, y: number): PlacedNode {
     hop: n.hop,
     degree: n.degree,
     hasMore: n.hasMore,
+    shape: "card",
     x,
     y,
     w: CARD_W,

@@ -98,6 +98,14 @@ export function GraphToolbar(props: GraphToolbarProps): JSX.Element {
           >
             構造
           </button>
+          <button
+            type="button"
+            className="jg-graph-toolbar__btn"
+            aria-pressed={layout === "organic"}
+            onClick={() => onLayoutChange("organic")}
+          >
+            点と線
+          </button>
         </fieldset>
 
         <div className="jg-graph-toolbar__group" role="group" aria-label="ズーム">
