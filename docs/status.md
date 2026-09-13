@@ -618,7 +618,9 @@ Phase 0 の全体レビューで出た指摘のうち、マージ前に直さず
   代わりにAPIが `described_by: {predicate, value}` を返し、画面が
   「予算年度 2024」のように**述語のラベルを添えて**出す
   (`frontend/src/lib/display-name.ts`)。`UnresolvedReference` も同じ経路で
-  元の記述が出る。**配備後に本番で確かめるまでは実データ未検証**(統制9)。
+  元の記述が出る。**クエリは本番と同じ Jena/ARQ で実行まで確認した**
+  (`qparse` で構文、`arq --data` で結果。`VALUES (?var) {(curie)}` 形が
+  ARQで動く)。**残っているのは本番の索引に対する確認だけ**(統制9)。
   **APIイメージは作ってACRに置いた**
   (`acrjgkg.azurecr.io/jgkg-api:2026-09-13-describing-values`。
   git commit は `dea4c46`)が、**本番コンテナの差し替えは未実施** ——
