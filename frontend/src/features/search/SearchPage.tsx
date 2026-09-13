@@ -26,7 +26,12 @@ import { GraphView } from "../graph/GraphView";
 import { typeLabel } from "../../labels";
 import { displayName } from "../../lib/display-name";
 import { axisColorVarForType } from "../../lib/ontology-view";
-import { navigate, parseGraphParams, replaceSearchGraphParams } from "../../router";
+import {
+  navigate,
+  parseGraphParams,
+  replaceSearchGraphParams,
+  SEARCH_DEFAULT_LAYOUT,
+} from "../../router";
 import { buildSearchGraph } from "./search-graph";
 import "./search.css";
 
@@ -85,7 +90,10 @@ export function SearchPage({ q }: { q: string }): JSX.Element {
   const [activeTypes, setActiveTypes] = useState<ReadonlySet<string>>(new Set());
 
   const trimmed = debounced.trim();
-  const graphParams = parseGraphParams(location.hash);
+  // **既定は「構造」配置**(裁定B112)。型で列を決めるレーン図は1つの事業の
+  // 資金の流れには正しいが、検索結果のような集合では列の中の並びが辺と
+  // 無関係なので辺が最大限に交差する。`lay=` が明示されていればそれに従う。
+  const graphParams = parseGraphParams(location.hash, { defaultLayout: SEARCH_DEFAULT_LAYOUT });
 
   // 検索語が変わったら、前の検索語に対する絞り込み・「もっと表示」状態を持ち越さない。
   useEffect(() => {

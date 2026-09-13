@@ -29,7 +29,7 @@ vi.mock("../../api/client", async () => {
 vi.mock("../graph/GraphView", () => ({
   GraphView: (props: {
     center: { id_path: string };
-    onParamsChange: (p: { depth: number; layout: "lanes" | "force"; axes: string[] }) => void;
+    onParamsChange: (p: { depth: number; layout: "lanes" | "graph"; axes: string[] }) => void;
     onRecenter: (idPath: string) => void;
     onUseAsPathStart?: (idPath: string) => void;
   }) => (
@@ -43,7 +43,7 @@ vi.mock("../graph/GraphView", () => ({
       </button>
       <button
         type="button"
-        onClick={() => props.onParamsChange({ depth: 2, layout: "force", axes: [] })}
+        onClick={() => props.onParamsChange({ depth: 2, layout: "graph", axes: [] })}
       >
         [モック]深さを変える
       </button>
@@ -213,7 +213,7 @@ describe("EntityPage(府省: 厚生労働省。実データ)", () => {
     await renderMinistry();
     const before = history.length;
     fireEvent.click(screen.getByRole("button", { name: /深さを変える/ }));
-    expect(window.location.hash).toBe("#/entity/org/6000012070001?d=2&lay=force");
+    expect(window.location.hash).toBe("#/entity/org/6000012070001?d=2&lay=graph");
     expect(history.length).toBe(before);
   });
 });
@@ -423,19 +423,30 @@ describe("EntityPage(組織・法令・支出・汎用: 型分岐の配線を確
   });
   it("タブの名前をこのエンティティの表示名にする(履歴やブックマークで区別できるように)", async () => {
     document.title = "前の画面 — 日本政府ナレッジグラフ";
-    mockedEntityDetail.mockResolvedValue(entityMinistry());
+    // **自分で解決を制御する。** `mockResolvedValue` だと応答がマイクロタスクで
+    // 届き、「読み込み中」の主張が全ファイル並列実行で競合して落ちた
+    // (2026-09-13。TopPageのconsole.errorと同じ「一瞬の状態を待たずに
+    // 検査する」癖)。解決前と解決後を決定的に分ける。
+    let resolveDetail!: (value: EntityDetailResponse) => void;
+    mockedEntityDetail.mockReturnValue(
+      new Promise<EntityDetailResponse>((resolve) => {
+        resolveDetail = resolve;
+      }),
+    );
     render(<EntityPage idPath="org/6000012070001" />);
     // 応答が来るまでは「読み込み中」と正直に言う。
-    expect(document.title).toBe("読み込み中 — 日本政府ナレッジグラフ");
+    await waitFor(() => expect(document.title).toBe("読み込み中 — 日本政府ナレッジグラフ"));
+
+    resolveDetail(entityMinistry());
     await screen.findByRole("heading", { level: 1, name: "厚生労働省" });
-    expect(document.title).toBe("厚生労働省 — 日本政府ナレッジグラフ");
+    await waitFor(() => expect(document.title).toBe("厚生労働省 — 日本政府ナレッジグラフ"));
   });
 
   it("labelがnullならタブの名前も「(表示名なし)」(id_pathから名前を作らない)", async () => {
     mockedEntityDetail.mockResolvedValue(minimalEntity({ type: "Organization", label: null }));
     render(<EntityPage idPath="org/test" />);
     await screen.findByRole("heading", { level: 1, name: "(表示名なし)" });
-    expect(document.title).toBe("(表示名なし) — 日本政府ナレッジグラフ");
+    await waitFor(() => expect(document.title).toBe("(表示名なし) — 日本政府ナレッジグラフ"));
   });
   it("AnnualBudgetはlabelを持たないが、見分けのための属性で年度が出る(裁定B108)", async () => {
     // **実サンプル(`entity-project.json`)は `described_by` を持たない**
@@ -525,6 +536,6 @@ describe("EntityPage(組織・法令・支出・汎用: 型分岐の配線を確
     );
     render(<EntityPage idPath="b/annual/2024" />);
     await screen.findByRole("heading", { level: 1, name: "予算年度 2024" });
-    expect(document.title).toBe("予算年度 2024 — 日本政府ナレッジグラフ");
+    await waitFor(() => expect(document.title).toBe("予算年度 2024 — 日本政府ナレッジグラフ"));
   });
 });

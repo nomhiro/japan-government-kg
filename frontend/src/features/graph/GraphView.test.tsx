@@ -157,13 +157,13 @@ describe("GraphView(厚労省の実サンプル: 26ノード・25辺)", () => {
     expect(ministry.getAttribute("class")).not.toContain("is-dim");
   });
 
-  it("並べ方を「力学」に切り替えるとレーンの見出しが消える。「流れ(レーン)」に戻すと出る", async () => {
+  it("並べ方を「構造」に切り替えるとレーンの見出しが消える。「流れ(レーン)」に戻すと出る", async () => {
     const user = userEvent.setup();
     const { container } = render(<Harness />);
     await screen.findByRole("button", { name: /厚生労働省/ });
     expect(container.querySelectorAll(".jg-graph-lane-title").length).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole("button", { name: "力学" }));
+    await user.click(screen.getByRole("button", { name: "構造" }));
     expect(container.querySelectorAll(".jg-graph-lane-title").length).toBe(0);
 
     await user.click(screen.getByRole("button", { name: "流れ(レーン)" }));

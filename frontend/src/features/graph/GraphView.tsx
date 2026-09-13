@@ -1,5 +1,5 @@
 // レーン流れ図(裁定B106)。公開部品——`GraphViewProps`だけが外との境界で、
-// レイアウトの計算(`layout-lanes.ts`/`layout-force.ts`)・モデルの合成
+// レイアウトの計算(`layout-lanes.ts`/`layout-graph.ts`)・モデルの合成
 // (`graph-model.ts`)は内部に隠す。
 //
 // **SVGで描く(Sigma.jsを使わない)。** ノード数はAPIの上限で最大500と
@@ -40,7 +40,7 @@ import {
 import "./graph.css";
 import { Inspector } from "./Inspector";
 import { CARD_H, CARD_W, GAP_Y, HEADER_H, MARGIN_TOP } from "./layout-lanes";
-import { layoutForce } from "./layout-force";
+import { layoutGraph } from "./layout-graph";
 import { layoutLanes } from "./layout-lanes";
 import type { GraphLayoutResult, GraphViewProps, PlacedNode } from "./types";
 
@@ -162,8 +162,8 @@ export function GraphView(props: GraphViewProps): JSX.Element {
 
   const layoutResult: GraphLayoutResult = useMemo(() => {
     if (!model) return EMPTY_LAYOUT;
-    return params.layout === "force"
-      ? layoutForce(model)
+    return params.layout === "graph"
+      ? layoutGraph(model)
       // 強調するノード(検索のヒット)を折り畳みで隠さない(裁定B109)。
       : layoutLanes(model, { expandedLanes, priorityIds: emphasizedIds });
   }, [model, params.layout, expandedLanes, emphasizedIds]);
@@ -401,7 +401,7 @@ export function GraphView(props: GraphViewProps): JSX.Element {
             viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
             className="jg-graph-svg"
             role="img"
-            aria-label="関係図(レーン流れ図または力学配置)"
+            aria-label="関係図(レーン流れ図または構造配置)"
             onWheel={handleWheel}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}

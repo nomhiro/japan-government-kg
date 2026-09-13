@@ -122,7 +122,19 @@ export function navigate(route: Route): void {
 // フィールドを足すと `router.test.ts` が縛っている往復の不変条件に
 // 余計な自由度が入るため、グラフの状態は別の関数で読む。
 
-export type GraphLayout = "lanes" | "force";
+/**
+ * グラフの並べ方。
+ *
+ * - `lanes`: 型で列を決めるレーン流れ図(根拠→所管→事業→…)。
+ *   1つの事業の資金の流れを見るときはこれが意味そのもの
+ * - `graph`: **層も並び順も辺から決める**構造配置(裁定B112)。
+ *   集合を俯瞰するときはこちら ——型で列を決めると辺が最大限に交差する
+ *
+ * 旧 `force`(ForceAtlas2)は削除した。切断された成分のホップ数が
+ * `Infinity` になって**全ノードの座標がNaNになる欠陥**があり(本番で実測)、
+ * 三部グラフでは毛玉になって読めなかった。
+ */
+export type GraphLayout = "lanes" | "graph";
 
 export interface GraphParams {
   /** 近傍の深さ。APIの上限(1〜2)は呼び出し側が `api/limits.ts` から与える。 */
@@ -140,10 +152,16 @@ export const DEFAULT_GRAPH_PARAMS: GraphParams = {
   axes: [],
 };
 
-export function parseGraphParams(hash: string): GraphParams {
+export function parseGraphParams(
+  hash: string,
+  options: { readonly defaultLayout?: GraphLayout } = {},
+): GraphParams {
   const q = parseQuery(splitHash(hash).query);
   const depth = Number.parseInt(q.d ?? "", 10);
-  const layout: GraphLayout = q.lay === "force" ? "force" : "lanes";
+  // 明示された値だけを読み、無ければ呼び出し側の既定(なければ`lanes`)。
+  // **検索結果の画面は`graph`を既定にする** ——型の列は集合の俯瞰に向かない。
+  const layout: GraphLayout =
+    q.lay === "graph" || q.lay === "lanes" ? q.lay : (options.defaultLayout ?? "lanes");
   const axes = (q.ax ?? "")
     .split(",")
     .map((s) => s.trim())
@@ -167,6 +185,9 @@ export function entityHash(idPath: string, params: GraphParams): string {
   return q ? `#/entity/${idPath}?${q}` : `#/entity/${idPath}`;
 }
 
+/** 検索画面の並べ方の既定(裁定B112)。型の列は集合の俯瞰に向かない。 */
+export const SEARCH_DEFAULT_LAYOUT: GraphLayout = "graph";
+
 /**
  * 検索画面のハッシュを、グラフの状態つきで組み立てる(裁定B109)。
  *
@@ -179,7 +200,9 @@ export function entityHash(idPath: string, params: GraphParams): string {
 export function searchGraphHash(q: string, params: GraphParams): string {
   const query = buildQuery({
     q: q || undefined,
-    lay: params.layout === DEFAULT_GRAPH_PARAMS.layout ? undefined : params.layout,
+    // **この画面の既定は `graph`** なので、省いてよいのは `graph` のときだけ
+    // (`lanes` を省くと、読み直したときに既定の `graph` に戻ってしまう)。
+    lay: params.layout === SEARCH_DEFAULT_LAYOUT ? undefined : params.layout,
     ax: params.axes.length > 0 ? params.axes.join(",") : undefined,
     sel: params.selected,
   });

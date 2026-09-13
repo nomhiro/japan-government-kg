@@ -93,10 +93,10 @@ export function GraphToolbar(props: GraphToolbarProps): JSX.Element {
           <button
             type="button"
             className="jg-graph-toolbar__btn"
-            aria-pressed={layout === "force"}
-            onClick={() => onLayoutChange("force")}
+            aria-pressed={layout === "graph"}
+            onClick={() => onLayoutChange("graph")}
           >
-            力学
+            構造
           </button>
         </fieldset>
 

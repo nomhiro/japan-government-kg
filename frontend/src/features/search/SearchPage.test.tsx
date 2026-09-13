@@ -215,8 +215,9 @@ describe("SearchPage(グラフ主体。裁定B109)", () => {
     await screen.findAllByRole("button", { name: MINISTRY_CARD });
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "力学" }));
-    expect(window.location.hash).toContain("lay=force");
+    // 検索の既定は「構造」なので、URLに載るのは「流れ(レーン)」に変えたとき。
+    await user.click(screen.getByRole("button", { name: "流れ(レーン)" }));
+    expect(window.location.hash).toContain("lay=lanes");
     expect(window.location.hash).toContain("q=");
   });
 
