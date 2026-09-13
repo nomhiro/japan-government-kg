@@ -228,6 +228,16 @@
 .jg-chip--static {
   cursor: default;
   gap: var(--sp-1);
+  /* **折り返す。** `.jg-chip` は `white-space: nowrap` なので、長いソース名
+     (「府省名簿(RS実データの所管府省庁名+府省庁名の和集合 + 法令経路3機関
+     より作成)」)が1行に伸び、**幅400pxで横スクロールが出ていた**
+     (本番で実測: チップ558px・scrollWidth 582px。裁定B111で私が入れた欠陥)。
+     名前は情報なので truncate しない ——折り返して全部見せる。 */
+  white-space: normal;
+  flex-wrap: wrap;
+  max-width: 100%;
+  border-radius: var(--radius);
+  padding: var(--sp-1) var(--sp-2);
 }
 
 .jg-chip--static:hover {
