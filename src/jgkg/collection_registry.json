@@ -6,7 +6,7 @@
       "title": "RS年度別事業一覧・詳細",
       "priority": 1,
       "publisher": "内閣官房行政改革推進本部",
-      "source_id": "rs-system-api",
+      "source_id": "rs-system-api-details",
       "entrypoints": [
         "https://rssystem.go.jp/api/projects/"
       ],
@@ -35,10 +35,10 @@
         "同一年度でも訂正される。未来の決算は未公表"
       ],
       "terms_status": "registered_source",
-      "implementation": "local_snapshot",
-      "next_action": "一覧と詳細を別収集単位としてコネクタ化。支出関連の追加APIを調査",
+      "implementation": "existing_connector",
+      "next_action": "詳細全6423件の取得、支出関連別APIの調査、詳細KG変換と定期実行への接続",
       "kg_mapping": "事業→組織・法的根拠・計画・担当者・活動・点検評価。元のUUIDと事業番号を保持し既存URIへ照合",
-      "implementation_scope": "2026年度の一覧7ページと一覧KGのみ手動取得・生成済み。詳細は1件のHTTP標本確認だけで、詳細全件取得器は未実装"
+      "implementation_scope": "年度別一覧・詳細の取得器と実行履歴・再開を実装。2026年度一覧6423件と詳細3件の実API取得・同一実行IDでの再利用を確認。詳細全件・支出先別API・詳細KG変換は未完了"
     },
     {
       "id": "diet-meetings",

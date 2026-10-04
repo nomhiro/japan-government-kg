@@ -259,7 +259,9 @@ SOURCES: dict[str, Source] = {
         note="fiscal_yearで年度を指定し、page/page_sizeでページングするJSON API。"
              "一覧応答には公開事業の基本情報・予算履歴(当初予算額)・集計値がある。"
              "支出先の全行や支出ブロック接続など15グループの詳細CSVとは別データ",
-        expected_cadence_days=366,
+        # 手動スナップショットはlakeのメタデータ形式に未接続。
+        # ファイル単位の既存鮮度監視で完全性を判定せず、収集実行へ接続する。
+        expected_cadence_days=None,
         citation="出典：行政事業レビュー見える化サイト（https://rssystem.go.jp）",
     ),
 }

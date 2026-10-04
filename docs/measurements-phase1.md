@@ -3246,3 +3246,22 @@ CSVとは別に、公開JSON API `https://rssystem.go.jp/api/projects/?fiscal_ye
 
 自己レビューのみ。テスト追加・pytest実行、新規経路の全件HTTP取得、
 新規KG生成、定期実行、公開配信は実施していない。
+
+## 2026-10-04 — RS詳細収集器の実測
+
+`uv run python -m jgkg.connectors.rs_api --year 2026 --run-id rs-2026-smoke --limit 3`
+を2回実行。両回ともexpected_count=6423、fetched_count=3、inventory_stable=true、
+status=partial。2回目の開始時刻より前のfetched_atを持つ詳細原本3件を再利用した。
+原本・URL・ハッシュ・取得日時・2回の実行履歴は
+`data/collection-runs/rs-project-details/rs-2026-smoke/run.json` に保存した。
+
+新規回帰検査4件は成功。破損原本の再取得、HTML誤応答からの回復、
+走査中の更新による完全性否定、排他と対象年度不一致を確認した。
+初回pytestはキャッシュ権限警告があったため、修正後の実行はcacheproviderを無効化し4件成功。
+詳細全件・支出関連別API・詳細KG生成・本番配信は未検証。
+
+関連検査 `tests/test_rs_api_collection.py tests/test_lake.py tests/test_freshness.py tests/test_fetch.py`
+は修正後59件成功。初回は旧RS一覧ソースのcadence登録により既存鮮度検査が1件失敗した。
+手動一覧スナップショットはlakeのメタデータへ未接続なので、一覧・詳細とも
+expected_cadence_days=Noneとし、ファイル単位の既存鮮度判定から除外した。
+収集台帳の確認間隔案は保持し、実行単位の鮮度集計は親Issueの残件とする。

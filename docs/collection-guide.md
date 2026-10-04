@@ -35,7 +35,28 @@ uv run python -m jgkg.collection validate
 既存の出典規約を収集台帳に転記しない。新分野は規約を確認してからsources.pyへ
 登録し、台帳のsource_idを接続する。現時点のplanned経路には実行コマンドを捏造しない。
 
-## 追加・変更
+## RS詳細の実行と再開
+
+```powershell
+uv run python -m jgkg.connectors.rs_api --year 2026 --run-id rs-2026-full
+```
+
+失敗後も同じコマンドで再開する。原本のハッシュと一覧の更新日時が一致する詳細を
+再利用する。取得器は2秒間隔で直列にアクセスする。`--limit 3` は標本確認用で、
+全件未取得なら状態partial・終了コード2を返す。失敗は例外とfailedの履歴を残す。
+全件取得時は一覧を再走査してID集合と更新日時の一致を確認する。
+
+原本と履歴は `data/collection-runs/rs-project-details/<run_id>/` に保存する。
+run.jsonのstatus、expected_count、fetched_count、inventory_stableを確認する。
+completeは指定年度の公開一覧と詳細についての取得完了であり、支出先の別APIや
+KG変換の完了を意味しない。更新確認は新しいrun_idで実行する。
+台帳変更後は契約ハッシュが変わるため新しいrun_idを使う。
+強制終了で.lockが残った場合は記録されたPIDの稼働を確認してから回復する。
+
+課題管理は[親Issue #3](https://github.com/nomhiro/japan-government-kg/issues/3)から
+14の分野別Issueへ辿れる。RS詳細は[Issue #4](https://github.com/nomhiro/japan-government-kg/issues/4)。
+
+## 追加・変更手順
 
 JSONのcollectionsに契約を追加し、validateで構造を確認する。入口、実測、利用条件の
 根拠を残す。分野全体の探索入口しか分かっていない場合はその限界をlimitationsに
