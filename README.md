@@ -60,6 +60,7 @@
 - [実測記録](docs/measurements-phase1.md) — サイズ・所要時間・解決率・CQの答えの一次記録
 
 ### 調査レポート
+- [継続収集の台帳と操作方法](docs/collection-guide.md) — 17の収集単位の公式入口・取得手順・更新方針・完全性条件。実装済み範囲と未実装を区別
 - [政府公開データソースカタログ](docs/research/2026-08-22-government-data-sources.md) — 35エントリ(データソース34件 + 語彙・設計基盤1件)、URL検証済み
 - [政府API/MCP提供状況](docs/research/2026-08-22-government-api-mcp-landscape.md) — デジタル庁公式MCP・ベース・レジストリ・ガバメントAI「源内」の現状と差別化分析
 - [オントロジー/KG技術動向 2024-2026](docs/research/2026-08-22-kg-technology-trends.md) — LLM支援KG構築、GraphRAG、RDF vs プロパティグラフ、可視化
