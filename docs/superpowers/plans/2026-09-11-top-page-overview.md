@@ -1,6 +1,6 @@
 # トップページ第1層「全体を見る」実装計画
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For Codex workers:** Use $jgkg-development to implement this plan task-by-task, $jgkg-review for review, and $jgkg-verification for checks. Follow AGENTS.md and docs/codex-development.md. Historical execution records remain unchanged.
 
 **Goal:** 一般利用者がトップページを開いた時点で「日本政府の予算と支出の全体像」が数字で見え、そこから既存のエンティティ/グラフビューへ辿れるようにする。
 

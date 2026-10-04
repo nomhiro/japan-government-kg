@@ -1,6 +1,6 @@
 # Phase 0: データレイヤー基盤 実装計画
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For Codex workers:** Use $jgkg-development to implement this plan task-by-task, $jgkg-review for review, and $jgkg-verification for checks. Follow AGENTS.md and docs/codex-development.md. Historical execution records remain unchanged.
 
 **Goal:** 政府データKGの基盤を作り、「**国の機関と府省**が出典付きでSPARQL検索できる、再現可能に再構築できるKG成果物」を完成させる。
 

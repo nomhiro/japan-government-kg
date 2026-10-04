@@ -129,3 +129,9 @@ The core premise: the Japanese government publishes authoritative *join keys* (l
 Design highlights: a six-axis event-centric upper ontology, competency-question-driven validation, LinkML as the single source of truth for schemas, named-graph replacement semantics for updates, and provenance on every edge.
 
 Code is MIT licensed; documentation and data are CC BY 4.0.
+
+## Codexで開発する
+
+専用worktreeでCodexを開始し、計画 → 実装 → レビュー → 検証 → PR → mainへの統合の順に進めます。mainへのマージは本番配信を起動します。
+
+作業規約は [AGENTS.md](AGENTS.md)、環境・コマンド・PR手順は [Codex開発手順](docs/codex-development.md) を参照してください。プロジェクト専用スキルは `.agents/skills/` に含まれ、Claude専用プラグインは不要です。

@@ -1,6 +1,6 @@
 # Phase 0: React 土台とアプリシェル 実装計画
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For Codex workers:** Use $jgkg-development to implement this plan task-by-task, $jgkg-review for review, and $jgkg-verification for checks. Follow AGENTS.md and docs/codex-development.md. Historical execution records remain unchanged.
 
 **Goal:** 既存4画面(検索/エンティティ/経路/チャット)を旧ビューのまま動かしながら、React 19 の土台・共通シェル(ヘッダ・ナビ・オムニボックス・テーマ切替)・デザイントークン・DOMテスト環境を入れ、React入りのビルドがバイト単位で再現することを実証する。
 
