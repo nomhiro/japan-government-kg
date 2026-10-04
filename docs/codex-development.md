@@ -67,8 +67,6 @@ git status --short -- schema/generated/
 git status --short -- frontend/openapi.json frontend/src/api/openapi-types.ts frontend/src/generated/labels.json
 uv run python -m jgkg.base_uri --check
 uv run python scripts/check-frontend-build.py
-& $gitBash scripts/build-site.sh
-uv run python scripts/check-site-build.py
 ```
 
 各コマンドの終了コードを確認し、失敗したら後続に進まず原因を直す。
@@ -81,6 +79,14 @@ docker run --rm -v "${PWD}:/w" -w /w -e PYTHONUTF8=1 -e UV_PROJECT_ENVIRONMENT=/
 ```
 
 Git BashからWindows Pythonを使う場合はUTF-8で実行する（PYTHONUTF8=1）。CIの全検査の正本は .github/workflows/ci.yml。
+build-site.shは内部でスキーマを再生成してコミット済み生成物との一致を検査するため、Windows上ではB100の順序差により失敗する。サイト構築全体はLinux環境または既存CIで実行する。
+
+```bash
+# Linux。uv sync --locked --extra dev と npm --prefix frontend ci を実施済みの環境
+bash scripts/build-site.sh
+uv run python scripts/check-site-build.py
+```
+
 pytestは既定で実ネットワークを遮断する。実データ取得・大型ビルドは通常のテストと区別し、必要性と操作範囲を確認して行う。
 
 ## PRと配信
