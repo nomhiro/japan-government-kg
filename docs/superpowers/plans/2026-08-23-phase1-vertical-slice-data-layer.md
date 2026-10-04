@@ -1,6 +1,6 @@
 # Phase 1 縦スライス データレイヤー(計画B)実装計画
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For Codex workers:** Use $jgkg-development to implement this plan task-by-task, $jgkg-review for review, and $jgkg-verification for checks. Follow AGENTS.md and docs/codex-development.md. Historical execution records remain unchanged.
 
 **Goal:** 法令(府省令・規則)→ 所管府省 → 予算事業 → 支出先法人 の縦スライスを実データで構築し、CQ1〜CQ10にSPARQLで答えられるKGと、更新の一巡(2つ目のリリース)を作る。
 
