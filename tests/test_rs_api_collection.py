@@ -41,7 +41,7 @@ def test_html_failure_is_recorded_and_can_resume(tmp_path):
     with (httpx.Client(transport=httpx.MockTransport(api_handler([], invalid=True))) as client,
           pytest.raises(ValueError, match="JSON")):
         collect(2026, tmp_path, "retry", client=client, interval=0)
-    state = json.loads((tmp_path / "rs-project-details/retry/run.json").read_text())
+    state = json.loads((tmp_path / "rs-project-details/retry/run.json").read_text(encoding="utf-8"))
     assert state["status"] == "failed"
     assert f"detail-{UID}" not in state["snapshots"]
     with httpx.Client(transport=httpx.MockTransport(api_handler([]))) as client:
