@@ -38,9 +38,9 @@ def test_resume_checks_hash_and_refetches_corrupt_raw(tmp_path):
 
 
 def test_html_failure_is_recorded_and_can_resume(tmp_path):
-    with httpx.Client(transport=httpx.MockTransport(api_handler([], invalid=True))) as client:
-        with pytest.raises(ValueError, match="JSON"):
-            collect(2026, tmp_path, "retry", client=client, interval=0)
+    with (httpx.Client(transport=httpx.MockTransport(api_handler([], invalid=True))) as client,
+          pytest.raises(ValueError, match="JSON")):
+        collect(2026, tmp_path, "retry", client=client, interval=0)
     state = json.loads((tmp_path / "rs-project-details/retry/run.json").read_text())
     assert state["status"] == "failed"
     assert f"detail-{UID}" not in state["snapshots"]
@@ -65,10 +65,8 @@ def test_changed_inventory_never_marks_complete(tmp_path):
 
 def test_scope_and_lock_prevent_concurrent_or_wrong_year_resume(tmp_path):
     run = CollectionRun(tmp_path, "rs-project-details", "locked", {"fiscal_year": 2026})
-    with run.locked():
-        with pytest.raises(FileExistsError):
-            with run.locked():
-                pass
-    with pytest.raises(ValueError, match="対象範囲"):
-        with CollectionRun(tmp_path, "rs-project-details", "locked", {"fiscal_year": 2025}).locked():
-            pass
+    with run.locked(), pytest.raises(FileExistsError), run.locked():
+        pass
+    wrong = CollectionRun(tmp_path, "rs-project-details", "locked", {"fiscal_year": 2025})
+    with pytest.raises(ValueError, match="対象範囲"), wrong.locked():
+        pass

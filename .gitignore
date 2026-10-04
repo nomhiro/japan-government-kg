@@ -10,6 +10,8 @@ data/artifact/
 data/quarantine/
 data/snapshots/
 data/generated/
+data/collection-runs/
+data/issue-drafts/
 *.zip
 
 # D-6b-1: docker/serve.Dockerfile の INDEX_SOURCE=local が読む一時的な

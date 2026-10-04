@@ -3,7 +3,7 @@ import argparse
 import hashlib
 import json
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -42,7 +42,7 @@ class Reader:
                 except ValueError:
                     try:
                         delay = (parsedate_to_datetime(value)
-                                 - datetime.now(timezone.utc)).total_seconds()
+                                 - datetime.now(UTC)).total_seconds()
                     except (ValueError, TypeError):
                         delay = 2 ** (attempt + 1)
                 # 長い停止要求は呼び出しを失敗させ、後で明示的に再開する。

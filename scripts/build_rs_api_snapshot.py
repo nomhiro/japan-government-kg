@@ -70,7 +70,9 @@ def load_rows(snapshot_dir: Path) -> tuple[list[dict], dict]:
     return rows, manifest
 
 
-def records_from_rows(rows: list[dict]) -> tuple[list[BudgetProjectRecord], list[AnnualBudgetRecord], dict]:
+def records_from_rows(
+    rows: list[dict],
+) -> tuple[list[BudgetProjectRecord], list[AnnualBudgetRecord], dict]:
     projects: list[BudgetProjectRecord] = []
     annual: list[AnnualBudgetRecord] = []
     projects_by_year: Counter[str] = Counter()
@@ -216,13 +218,13 @@ def build(snapshot_dir: Path, output_dir: Path) -> dict:
     nq_path = output_dir / "kg.nq"
     nq_path.write_bytes(nquads)
     compressed_path = output_dir / "kg.nq.gz"
-    with compressed_path.open("wb") as raw_file:
-        with gzip.GzipFile(fileobj=raw_file, mode="wb", mtime=0) as compressed:
-            compressed.write(nquads)
+    with (compressed_path.open("wb") as raw_file,
+          gzip.GzipFile(fileobj=raw_file, mode="wb", mtime=0) as compressed):
+        compressed.write(nquads)
 
     manifest = {
         "release": output_dir.name,
-        "created_on": datetime.date.today().isoformat(),
+        "created_on": datetime.datetime.now(datetime.UTC).date().isoformat(),
         "source": SOURCE_ID,
         "source_url": "https://rssystem.go.jp/api/projects/",
         "query": snapshot_manifest["query"],
