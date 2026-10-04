@@ -23,8 +23,8 @@ const NAV: readonly NavItem[] = [
   { label: "全体を見る", route: { name: "top" }, isActive: (r) => r.name === "top" },
   {
     label: "つながりを辿る",
-    route: { name: "search", q: "" },
-    isActive: (r) => r.name === "search" || r.name === "entity",
+    route: { name: "explore" },
+    isActive: (r) => r.name === "search" || r.name === "entity" || r.name === "explore",
   },
   { label: "経路", route: { name: "path" }, isActive: (r) => r.name === "path" },
   { label: "聞く", route: { name: "chat" }, isActive: (r) => r.name === "chat" },

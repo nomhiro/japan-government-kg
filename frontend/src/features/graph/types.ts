@@ -1,6 +1,6 @@
 // グラフ部品の契約(裁定B106)。この形だけがエンティティ画面との境界であり、
 // グラフの内部(レイアウトの計算・描画)は外から見えない。
-import type { DescribingValue, EntityRef } from "../../api/client";
+import type { DescribingValue, EntityRef, Provenance } from "../../api/client";
 import type { GraphParams } from "../../router";
 import type { RawGraph } from "./graph-model";
 
@@ -16,6 +16,7 @@ import type { RawGraph } from "./graph-model";
  * 既定でfalseにすると、打ち切りを黙って隠すことになる(裁定B82)。
  */
 export interface SuppliedGraph {
+  readonly graphs?: Readonly<Record<string, Provenance>>;
   readonly raw: RawGraph;
   /**
    * ホップ数の起点。力学配置の初期位置にしか効かない(見た目の中心は

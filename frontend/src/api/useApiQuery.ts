@@ -27,10 +27,12 @@ export function useApiQuery<T>(key: string | null, fetcher: () => Promise<T>): Q
   const [state, setState] = useState<QueryState<T>>(
     key === null ? { status: "ready", data: undefined as T } : { status: "loading" },
   );
+  const [stateKey, setStateKey] = useState(key);
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
 
   useEffect(() => {
+    setStateKey(key);
     if (key === null) {
       // **`key === null` は「問い合わせない」であって「前の結果を持ち続ける」ではない。**
       // 何もせず抜けると、検索語を消した・選択を外したときに直前の応答が画面に
@@ -58,6 +60,8 @@ export function useApiQuery<T>(key: string | null, fetcher: () => Promise<T>): Q
     };
   }, [key]);
 
+  // effectより前の描画でも前の対象を表示しない（別府省の詳細・近傍の混在を防ぐ）。
+  if (stateKey !== key) return key === null ? { status: "ready", data: undefined as T } : { status: "loading" };
   return state;
 }
 

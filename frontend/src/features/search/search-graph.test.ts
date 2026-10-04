@@ -145,6 +145,7 @@ describe("buildSearchGraph", () => {
     const g = buildSearchGraph({ hits: [a, b], neighborhoods: [nbhd(a, [], []), null] })!;
     expect(g.raw.nodes).toHaveLength(2);
     expect(g.missingNeighborhoodCount).toBe(1);
+    expect(g.isolatedHitIds.has(b.id)).toBe(false);
   });
 
   it("**打ち切りは1つでも立っていれば立てる**(黙って隠さない)", () => {

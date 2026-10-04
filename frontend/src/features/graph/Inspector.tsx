@@ -45,15 +45,11 @@ export interface InspectorProps {
   readonly onUseAsPathStart?: (idPath: string) => void;
 }
 
-export function Inspector(props: InspectorProps): JSX.Element {
+export function Inspector(props: InspectorProps): JSX.Element | null {
   const { node, isCenter, detail, expandedTypes, onExpandType, onRecenter, onOpenDetail, onUseAsPathStart } = props;
 
   if (!node) {
-    return (
-      <aside className="jg-graph-inspector" aria-label="ノードの詳細">
-        <p className="jg-sm jg-muted">ノードをクリックすると詳細が出ます。</p>
-      </aside>
-    );
+    return null;
   }
 
   return (

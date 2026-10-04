@@ -81,6 +81,7 @@ export function EntityHeader({
         </h1>
         <p className="jg-lead">{kindOneLiner(kind)}</p>
         <div className="jg-row jg-row--tight">
+          <a className="jg-btn jg-btn--primary" href={routeToHash({ name: "explore", center: idPath })}>この対象から探索を続ける →</a>
           <button type="button" className="jg-btn" onClick={scrollToGraph}>
             つながりをグラフで見る
           </button>

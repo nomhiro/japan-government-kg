@@ -1,0 +1,24 @@
+.jg-discovery-questions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-3); }
+.jg-discovery-questions a { display: flex; flex-direction: column; gap: var(--sp-2); text-decoration: none; color: var(--ink); }
+.jg-discovery-questions a span { color: var(--ink-2); font-size: var(--fs-sm); }
+.jg-discovery-catalog summary { cursor: pointer; padding: var(--sp-3) 0; font-weight: 700; }
+.jg-discovery-ministries { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); padding: 0; list-style: none; }
+.jg-discovery-ministries a { display: flex; flex-direction: column; padding: var(--sp-3); border: 1px solid var(--rule); border-radius: var(--radius); text-decoration: none; }
+.jg-discovery-ministries a span { font-size: var(--fs-xs); color: var(--ink-2); }
+.jg-discovery-projects { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.jg-discovery-projects a { padding: var(--sp-2) var(--sp-3); border: 1px solid var(--rule); border-radius: var(--radius-sm); }
+.jg-explore-scope { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-3); padding: var(--sp-3); background: var(--surface-2); border-radius: var(--radius); }
+.jg-explore-scope label { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); font-weight: 700; }
+.jg-explore-scope select { max-width: 100%; min-height: 44px; padding: var(--sp-2); color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-sm); }
+.jg-discovery a:hover { border-color: var(--focus); }
+@media (max-width: 700px) { .jg-discovery-questions, .jg-discovery-ministries { grid-template-columns: 1fr; } }
+
+.jg-theme-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-3); }
+.jg-theme-groups section { min-width: 0; }
+.jg-theme-groups ul { list-style: none; margin: 0; padding: 0; }
+.jg-theme-groups li { border-top: 1px solid var(--rule); padding: var(--sp-2) 0; overflow-wrap: anywhere; }
+.jg-theme-groups a { display: block; padding: var(--sp-2) 0; min-height: 44px; }
+.jg-theme-groups small { display: block; color: var(--ink-2); }
+.jg-discovery [aria-pressed="true"] { color: var(--paper); background: var(--ink); }
+.jg-budget-disclosure > summary { margin: 0 auto; max-width: var(--content-wide); padding: var(--sp-4); font-weight: 700; cursor: pointer; min-height: 44px; border-block: 1px solid var(--rule); }
+@media (max-width: 700px) { .jg-theme-groups { grid-template-columns: 1fr; } }

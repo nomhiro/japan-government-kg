@@ -147,10 +147,10 @@ describe("SearchPage(グラフ主体。裁定B109)", () => {
     const isolated = FIXTURE.results.filter((r) => r.type !== "BudgetProject").length;
     const heading = await screen.findByText(new RegExp(`つながりの記録がない結果\\(${isolated}件\\)`));
     expect(heading).toBeTruthy();
-    expect(screen.getByText(/KGに関係の記録が無い/)).toBeTruthy();
+    expect(screen.getByText(/現実に関係がないことを意味しません/)).toBeTruthy();
   });
 
-  it("一覧は消さずに折り畳んで残す(キーボードで開いて辿れる)", async () => {
+  it("一覧を最初から読み、キーボードで詳細へ辿れる", async () => {
     searchMock.mockResolvedValue(FIXTURE);
     mockNeighborhoods();
     render(<SearchPage q="年金" />);
@@ -158,9 +158,11 @@ describe("SearchPage(グラフ主体。裁定B109)", () => {
 
     const summary = screen.getByText(/検索結果の一覧/);
     const details = summary.closest("details") as HTMLDetailsElement;
-    expect(details.open).toBe(false);
+    expect(details.open).toBe(true);
 
     const user = userEvent.setup();
+    await user.click(summary);
+    expect(details.open).toBe(false);
     await user.click(summary);
     expect(details.open).toBe(true);
 

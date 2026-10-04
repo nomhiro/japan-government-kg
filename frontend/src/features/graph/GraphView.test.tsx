@@ -64,7 +64,7 @@ function Harness({
 async function renderReady() {
   render(<Harness />);
   // 近傍応答が来て「厚生労働省」の中心カードが出るまで待つ。
-  await screen.findByRole("button", { name: /Ministry.*厚生労働省|厚生労働省/ });
+  await screen.findByRole("button", { name: "府省: 厚生労働省" });
 }
 
 function parseViewBox(svg: SVGSVGElement): { x: number; y: number; w: number; h: number } {
@@ -75,10 +75,41 @@ function parseViewBox(svg: SVGSVGElement): { x: number; y: number; w: number; h:
 }
 
 describe("GraphView(厚労省の実サンプル: 26ノード・25辺)", () => {
+  it("型フィルタが図の点と辺を減らし、全関係の表には出典と詳細リンクが残る", async () => {
+    await renderReady();
+    const user = userEvent.setup();
+    await user.click(screen.getByText("型・関係で表示を絞る"));
+    await user.click(screen.getByRole("checkbox", { name: "府省（1）" }));
+    expect(document.querySelectorAll(".jg-graph-node")).toHaveLength(1);
+    expect(document.querySelectorAll(".jg-graph-edge")).toHaveLength(0);
+    expect(screen.getByText(/絞り込み後: 1点・0関係/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "すべての関係を表で" }));
+    const table = screen.getByRole("table");
+    expect(within(table).getAllByRole("row")).toHaveLength(NBHD.edges.length + 1);
+    expect(within(table).getAllByRole("link").some((a) => a.getAttribute("href")?.startsWith("#/entity/"))).toBe(true);
+    expect(within(table).getAllByRole("link").some((a) => a.getAttribute("href") === Object.values(NBHD.graphs)[0]!.source)).toBe(true);
+  });
+  it("線をキーボードで選ぶとその辺のグラフだけの出典を表示する", async () => {
+    await renderReady();
+    const edge = document.querySelector<SVGGElement>(".jg-graph-edge")!;
+    fireEvent.keyDown(edge, { key: "Enter" });
+    const source = screen.getByRole("complementary", { name: "関係の出典" });
+    expect(within(source).getByRole("link").getAttribute("href")).toBe(Object.values(NBHD.graphs)[0]!.source);
+    expect(source.textContent).toContain(NBHD.edges[0]!.graph);
+  });
+  it("図の名前検索で折り畳みの外にいる点も選択して表示できる", async () => {
+    await renderReady();
+    const user = userEvent.setup();
+    await user.type(screen.getByRole("searchbox", { name: "図の中から探す" }), "院内感染");
+    const results = document.querySelector(".jg-graph-find__results") as HTMLElement;
+    await user.click(within(results).getByRole("button", { name: /院内感染/ }));
+    const node = screen.getByRole("button", { name: /^予算事業: 院内感染/ });
+    expect(node.getAttribute("aria-pressed")).toBe("true");
+  });
   it("中心と事業のカードが実テキストとして描かれ、状態行が件数を報告する(打ち切りの告知も含む)", async () => {
     await renderReady();
-    expect(screen.getByRole("button", { name: /厚生労働省/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /出産費用情報提供推進等経費/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "府省: 厚生労働省" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^予算事業: 出産費用情報提供推進等経費/ })).toBeTruthy();
     const status = screen.getByRole("status");
     expect(status.textContent).toContain("ノード26件・辺25件");
     expect(status.textContent).toContain("分岐数の上限に達しています");
@@ -90,16 +121,16 @@ describe("GraphView(厚労省の実サンプル: 26ノード・25辺)", () => {
     const more = screen.getByRole("button", { name: /残り7件を表示する/ });
     expect(more.textContent).toContain("+7件");
     await user.click(more);
-    expect(screen.getByRole("button", { name: /院内感染地域支援ネットワーク相談事業/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^予算事業: 院内感染地域支援ネットワーク相談事業/ })).toBeTruthy();
   });
 
   it("ノードをクリックするとonParamsChangeにselectedが載り、インスペクタに表示名が出る", async () => {
     const onParamsChange = vi.fn();
     const user = userEvent.setup();
     render(<Harness onParamsChange={onParamsChange} />);
-    await screen.findByRole("button", { name: /厚生労働省/ });
+    await screen.findByRole("button", { name: "府省: 厚生労働省" });
 
-    await user.click(screen.getByRole("button", { name: /出産費用情報提供推進等経費/ }));
+    await user.click(screen.getByRole("button", { name: /^予算事業: 出産費用情報提供推進等経費/ }));
 
     expect(onParamsChange).toHaveBeenCalledWith(
       expect.objectContaining({ selected: "budget/2025/18695" }),
@@ -112,8 +143,8 @@ describe("GraphView(厚労省の実サンプル: 26ノード・25辺)", () => {
     const onParamsChange = vi.fn();
     const user = userEvent.setup();
     render(<Harness onParamsChange={onParamsChange} />);
-    await screen.findByRole("button", { name: /厚生労働省/ });
-    const card = screen.getByRole("button", { name: /出産費用情報提供推進等経費/ });
+    await screen.findByRole("button", { name: "府省: 厚生労働省" });
+    const card = screen.getByRole("button", { name: /^予算事業: 出産費用情報提供推進等経費/ });
     await user.click(card);
     await user.click(card);
     const last = onParamsChange.mock.calls.at(-1)?.[0] as GraphParams;
@@ -123,7 +154,7 @@ describe("GraphView(厚労省の実サンプル: 26ノード・25辺)", () => {
   it("中心ノードを選び、Inspectorで型を展開すると、グラフのノード・辺が増え、状態行が更新される", async () => {
     const user = userEvent.setup();
     render(<Harness />);
-    await screen.findByRole("button", { name: /厚生労働省/ });
+    await screen.findByRole("button", { name: "府省: 厚生労働省" });
 
     await user.click(screen.getByRole("button", { name: "府省: 厚生労働省" }));
 
@@ -140,8 +171,8 @@ describe("GraphView(厚労省の実サンプル: 26ノード・25辺)", () => {
 
   it("hoverすると、隔てたノード(隣接しないノード)がis-dimになる", async () => {
     await renderReady();
-    const projectA = screen.getByRole("button", { name: /中毒情報センター情報基盤整備費/ });
-    const projectB = screen.getByRole("button", { name: /出産費用情報提供推進等経費/ });
+    const projectA = screen.getByRole("button", { name: /^予算事業: 中毒情報センター情報基盤整備費/ });
+    const projectB = screen.getByRole("button", { name: /^予算事業: 出産費用情報提供推進等経費/ });
     fireEvent.mouseEnter(projectA);
     expect(projectB.getAttribute("class")).toContain("is-dim");
     expect(projectA.getAttribute("class")).not.toContain("is-dim");
@@ -151,7 +182,7 @@ describe("GraphView(厚労省の実サンプル: 26ノード・25辺)", () => {
     const user = userEvent.setup();
     await renderReady();
     await user.click(screen.getByRole("button", { name: "誰が(主体)" }));
-    const project = screen.getByRole("button", { name: /出産費用情報提供推進等経費/ });
+    const project = screen.getByRole("button", { name: /^予算事業: 出産費用情報提供推進等経費/ });
     const ministry = screen.getByRole("button", { name: "府省: 厚生労働省" });
     expect(project.getAttribute("class")).toContain("is-dim");
     expect(ministry.getAttribute("class")).not.toContain("is-dim");
@@ -160,7 +191,7 @@ describe("GraphView(厚労省の実サンプル: 26ノード・25辺)", () => {
   it("並べ方を「構造」に切り替えるとレーンの見出しが消える。「流れ(レーン)」に戻すと出る", async () => {
     const user = userEvent.setup();
     const { container } = render(<Harness />);
-    await screen.findByRole("button", { name: /厚生労働省/ });
+    await screen.findByRole("button", { name: "府省: 厚生労働省" });
     expect(container.querySelectorAll(".jg-graph-lane-title").length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole("button", { name: "構造" }));
@@ -172,7 +203,7 @@ describe("GraphView(厚労省の実サンプル: 26ノード・25辺)", () => {
 
   it("既定の表示は器の幅に合わせ、拡大率は1.0を超えない(カードが読める大きさで描かれる)", async () => {
     const { container } = render(<Harness />);
-    await screen.findByRole("button", { name: /厚生労働省/ });
+    await screen.findByRole("button", { name: "府省: 厚生労働省" });
     const svg = container.querySelector("svg.jg-graph-svg") as SVGSVGElement;
     const { w, h } = parseViewBox(svg);
 
@@ -186,7 +217,7 @@ describe("GraphView(厚労省の実サンプル: 26ノード・25辺)", () => {
   it("ズーム: 「＋」でviewBoxが縮小(拡大表示)。「全体をフィット」は全体を収める(=縦に広がる)", async () => {
     const user = userEvent.setup();
     const { container } = render(<Harness />);
-    await screen.findByRole("button", { name: /厚生労働省/ });
+    await screen.findByRole("button", { name: "府省: 厚生労働省" });
     const svg = container.querySelector("svg.jg-graph-svg") as SVGSVGElement;
     const initial = parseViewBox(svg);
 
@@ -207,7 +238,7 @@ describe("GraphView(厚労省の実サンプル: 26ノード・25辺)", () => {
   it("「すべての関係を表で」を押すと、辺と同じ本数の行を持つ表が現れる", async () => {
     const user = userEvent.setup();
     render(<Harness />);
-    await screen.findByRole("button", { name: /厚生労働省/ });
+    await screen.findByRole("button", { name: "府省: 厚生労働省" });
     expect(screen.queryByRole("table")).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "すべての関係を表で" }));
@@ -220,7 +251,7 @@ describe("GraphView(厚労省の実サンプル: 26ノード・25辺)", () => {
     const onParamsChange = vi.fn();
     const user = userEvent.setup();
     render(<Harness onParamsChange={onParamsChange} />);
-    await screen.findByRole("button", { name: /厚生労働省/ });
+    await screen.findByRole("button", { name: "府省: 厚生労働省" });
     await user.click(screen.getByRole("button", { name: "深さ2" }));
     expect(onParamsChange).toHaveBeenCalledWith(expect.objectContaining({ depth: 2 }));
   });
@@ -229,8 +260,8 @@ describe("GraphView(厚労省の実サンプル: 26ノード・25辺)", () => {
     const onRecenter = vi.fn();
     const user = userEvent.setup();
     render(<Harness onRecenter={onRecenter} />);
-    await screen.findByRole("button", { name: /厚生労働省/ });
-    await user.click(screen.getByRole("button", { name: /出産費用情報提供推進等経費/ }));
+    await screen.findByRole("button", { name: "府省: 厚生労働省" });
+    await user.click(screen.getByRole("button", { name: /^予算事業: 出産費用情報提供推進等経費/ }));
     const inspector = screen.getByRole("complementary", { name: "ノードの詳細" });
     await user.click(within(inspector).getByRole("button", { name: "このノードを中心にする" }));
     expect(onRecenter).toHaveBeenCalledWith("budget/2025/18695");
@@ -338,7 +369,7 @@ describe("表示名を持たないノード(裁定B108)", () => {
     };
     stubFetchWith(stripped);
     render(<Harness />);
-    const cards = await screen.findAllByRole("button", { name: /年度ごとの予算と執行/ });
+    const cards = await screen.findAllByRole("button", { name: /^年度ごとの予算と執行:/ });
     expect(cards.length).toBe(2);
     // 可視テキストと `<title>` の2箇所 × 2ノード。
     expect(screen.getAllByText("(表示名なし)").length).toBe(4);

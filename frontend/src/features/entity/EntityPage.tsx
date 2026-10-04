@@ -92,7 +92,7 @@ export function EntityPage({ idPath }: { idPath: string }): JSX.Element {
 
   const kind = kindOf(entity.type);
   const ministryRef = breadcrumbMinistryRef(entity);
-  const centerRef: EntityRef = { id: entity.id, id_path: entity.id_path, label: entity.label, type: entity.type };
+  const centerRef: EntityRef = { id: entity.id, id_path: entity.id_path, label: entity.label, type: entity.type, described_by: entity.described_by };
   const graphParams: GraphParams = parseGraphParams(location.hash);
   const canLoadMore = entity.relationships_truncated && (limit === undefined || limit < ENTITY_RELATIONSHIPS_LIMIT.max);
 

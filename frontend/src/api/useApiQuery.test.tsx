@@ -7,6 +7,17 @@ import { useApiQuery } from "./useApiQuery";
 afterEach(cleanup);
 
 describe("useApiQuery", () => {
+  it("キー変更後の最初の描画にも前の対象の応答を混ぜない", async () => {
+    const frames: { key: string; data?: string }[] = [];
+    const { rerender } = renderHook(({ k }: { k: string }) => {
+      const state = useApiQuery(k, () => k === "old" ? Promise.resolve("前の対象") : new Promise<string>(() => {}));
+      frames.push({ key: k, data: state.data });
+      return state;
+    }, { initialProps: { k: "old" } });
+    await waitFor(() => expect(frames.some((f) => f.data === "前の対象")).toBe(true));
+    rerender({ k: "new" });
+    expect(frames.filter((f) => f.key === "new").every((f) => f.data === undefined)).toBe(true);
+  });
   it("key が非nullなら fetcher を呼び、結果を ready で返す", async () => {
     const fetcher = vi.fn(async () => "結果A");
     const { result } = renderHook(() => useApiQuery("k1", fetcher));
