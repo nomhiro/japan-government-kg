@@ -24,7 +24,7 @@
 - 依存は目的ごとに1つ。`package.json` の隣か `vite.config.ts` のコメントに目的と却下案を書く
 - 禁止する見た目: グラデーション背景、絵文字、左ボーダー付きカード、ガラス風、Inter/Roboto(裁定B105)
 - **Phase 0 では旧ビュー(`frontend/src/views/*.ts`)のロジックを変えない。** 変えるのは入口・シェル・トークンだけ
-- 作業は worktree `C:\Users\nom40\Documents\Product\Japan-Goverment-KG\.claude\worktrees\requirements-draft`(ブランチ `worktree-requirements-draft`)。push は指示があるまでしない(`main` への push は本番配信を起動する)
+- 作業は最新mainを基点にした専用worktree・codex/ブランチで行う。push・マージは依頼で許可された範囲に従う（mainへの統合は本番配信を起動する）。当時の作業履歴はdocs/decision-log.mdに保存されている。
 
 ---
 
