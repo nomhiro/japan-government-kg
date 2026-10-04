@@ -38,8 +38,8 @@ class CollectionRun:
                 if self.state["scope"] != self.scope:
                     raise ValueError("同じrun_idを異なる対象範囲には再利用できない")
             else:
-                self.state = dict(collection_id=self.collection_id, run_id=self.run_id,
-                                  scope=self.scope, started_at=now(), snapshots={}, attempts=[])
+                self.state = {"collection_id": self.collection_id, "run_id": self.run_id,
+                                  "scope": self.scope, "started_at": now(), "snapshots": {}, "attempts": []}
             self.state["attempts"].append({"started_at": now()})
             self.state.update(status="running", errors=[], finished_at=None)
             self.save()
@@ -76,9 +76,9 @@ class CollectionRun:
         previous = self.state["snapshots"].get(key)
         if previous is not None:
             self.state.setdefault("snapshot_history", []).append({"key": key, **previous})
-        self.state["snapshots"][key] = dict(filename=name, url=url, fetched_at=now(),
-                                           sha256=digest, bytes=len(data),
-                                           content_type=content_type, status_code=200)
+        self.state["snapshots"][key] = {"filename": name, "url": url, "fetched_at": now(),
+                                           "sha256": digest, "bytes": len(data),
+                                           "content_type": content_type, "status_code": 200}
         self.save()
 
     def finish(self, complete: bool, **counts):

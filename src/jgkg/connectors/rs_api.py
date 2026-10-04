@@ -57,7 +57,7 @@ class Reader:
                 raise ValueError(f"JSON以外の応答。SPAフォールバック等を保存しない: {url}")
             data = response.json()
             if not isinstance(data, dict):
-                raise ValueError("JSONオブジェクトではない")
+                raise TypeError("JSONオブジェクトではない")
             return response, data
         raise RuntimeError("再試行上限")
 
