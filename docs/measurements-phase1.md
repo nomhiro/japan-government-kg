@@ -3186,3 +3186,63 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W):/w" -w /w -e PYTHONUTF8=1 -e UV
 | 恒等式(本番の応答そのもので) | 当初+補正+繰越+予備費 = 歳出予算現額、**差0** |
 | 公開サイト→APIの経路 | 200・`access-control-allow-origin: *` |
 | `/chat`(有効化直後) | `get_ontology`が失敗 → **裁定B102。直して再配備し、同じ質問が正答するまで確認** |
+
+---
+
+## 2026-10-04: RSシステム2026年度API取得とKG生成
+
+### 一括CSVの公開状態
+
+現行の[CSVダウンロードページ](https://rssystem.go.jp/download-csv/)は2024・2025年度を列挙し、2026年度CSVは「2026年9月下旬から順次公開予定」と表示している。`src/jgkg/connectors/rs_system.py`が定義する15グループを1本ずつHTTPSで確認した。
+
+| 確認対象 | 実測 |
+|---|---|
+| 2026年度ZIP候補 | `organization_information`〜`remark`の15グループ |
+| HTTP応答 | 15/15がHTTP 200だが`text/html`、本文1,939 bytes、先頭は`<!doctype html>`(SPAフォールバック) |
+| ZIPとして取得・レイク保存できたファイル | **0/15**。ZIP署名検査で失敗応答を拒否し、保存していない |
+
+### JSON APIで取得できた範囲
+
+CSVとは別に、公開JSON API `https://rssystem.go.jp/api/projects/?fiscal_year=2026` が利用できることを確認した。`page_size=1000`で7ページをHTTPS取得し、各応答を`data/lake/rs-system-api/2026-10-04/`に原本保存した。
+
+| 確認 | 実測 |
+|---|---:|
+| APIのcount / 保存行数 | **6,423 / 6,423** |
+| 2026年度・公開済み行 | 6,423件、非公開0件 |
+| 重複 | API UUID 0件、正規化した事業番号0件 |
+| 当初予算履歴 | **29,833件**(2021〜2026年度) |
+| 2026年度当初予算合計 | **128,778,087,324,895円**。APIの`projects/summary/?fiscal_year=2026`の集計値と一致 |
+| 前年度(2025年度)執行額 | 5,042件、合計**133,910,755,482,512円**。同summary APIの集計値と一致 |
+
+### 作成したローカルKG
+
+`uv run python scripts/build_rs_api_snapshot.py`で構築し、2グラフ(SHACL検査対象2)とも適合した。
+
+| 内容 | 件数 |
+|---|---:|
+| `budget:BudgetProject` | **6,423** |
+| `budget:AnnualBudget` | **29,837**(うち4件は過年度の当初予算行がなく、執行額だけをAPIが返す記録) |
+| N-Quads | **185,422トリプル** |
+| `kg.nq.gz` | 1,109,607 bytes / SHA-256 `da1f0f5e496dc1c9c3e0dddbfa0c2e0561c2cd6cd242823f2cd2821395cac18a` |
+| 成果物 | `data/artifact/2026-10-04-rs-api-project-budget/` |
+
+このKGは一覧APIで公開されていた6,423事業を全件含むが、RSの全項目を含むものではない。支出先の全行・支出ブロック接続・法令/施策/点検評価の各詳細データはCSV15グループに依存し、未収録。府省名は法人番号付き組織に突合していない。過年度予算もAPI一覧が返す当初予算額のみで、補正・繰越・予算現額等を含まない。API取得の判断と由来は[裁定B117](decision-log.md)を参照。
+
+## 2026-10-04 — 継続収集台帳の構造・CLI・配布確認
+
+対象は収集契約17件の台帳と閲覧CLI。新分野の原本取得・KG生成の測定ではない。
+専用worktree f235のHEADとfetch後のorigin/mainはいずれも508c395で、
+既存未コミット変更を保存してcodex/collection-registryブランチを作成した。
+
+- `uv run python -m jgkg.collection validate`: 17件の構造、出典ID参照、重複ID検査に適合。
+- `uv run python -m jgkg.collection list`: 実装順17件、実装状態と確認間隔案を表示。
+- `uv run python -m jgkg.collection show rs-project-details`: 取得方法と、詳細全件未取得を含む実装範囲を表示。
+- `uv run ruff check src/jgkg/collection.py`: 成功。
+- `git diff --check`: 成功。Windows改行の警告はあるが空白エラーなし。
+- `uv build --wheel --out-dir data/artifact/collection-package-check`: 成功。
+  wheel内にjgkg/collection.py（4,379 bytes）とcollection_registry.json（33,611 bytes）が含まれることを確認。
+- 自己レビューで、local_snapshotという状態だけでは詳細取得済みと誤読できるため、
+  implementation_scopeを必須化して全17件に実装済み範囲を記録した。
+
+自己レビューのみ。テスト追加・pytest実行、新規経路の全件HTTP取得、
+新規KG生成、定期実行、公開配信は実施していない。

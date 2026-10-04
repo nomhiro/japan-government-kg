@@ -5,7 +5,7 @@
 """
 import datetime
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 # **B-1修正(2026-08-26。一次資料調査で発見)**: 以前はここに
 # `GOV_STANDARD_TERMS = "政府標準利用規約(第2.0版)"`
@@ -237,16 +237,41 @@ SOURCES: dict[str, Source] = {
              "RS_GROUP_FILENAMES参照)に分かれる。単一テーブルではない。"
              "当サイトは「更新型のデータベース」であり(利用規約ページの記載)、"
              "補正予算成立等に伴い同じ事業年度のCSVの内容が年内に更新されることが"
-             "ある(取得日の記録が重要になる理由)。ダウンロードページはSPAで専用APIは"
-             "無く、実体は https://rssystem.go.jp/files/<year>/rs/<ファイル名>.zip "
-             "への直接GET(認証不要、2026-08-23実測)",
+             "ある(取得日の記録が重要になる理由)。CSVダウンロードページはSPAで、"
+             "ファイル実体は https://rssystem.go.jp/files/<year>/rs/<ファイル名>.zip "
+             "への直接GET(認証不要、2026-08-23実測)。公開JSON APIは別ソース"
+             "rs-system-apiとして記録する",
         # 年1回(事業年度ごと)。365ではなく366にするのは、閏年を跨ぐ実運用で
         # 「年1回の更新」を1日差で陳腐化と誤検知させないため
         expected_cadence_days=366,
         # 規約ページの出典記載例(逐語)そのもの
         citation="出典：行政事業レビュー見える化サイト（https://rssystem.go.jp）",
     ),
+    "rs-system-api": Source(
+        id="rs-system-api",
+        name="行政事業レビュー見える化サイト RSシステム 公開API（予算事業一覧）",
+        url="https://rssystem.go.jp/api/projects/",
+        license=PUBLIC_DATA_LICENSE_1_0,
+        license_url=PUBLIC_DATA_LICENSE_1_0_URL,
+        frequency="annual",
+        access="api",
+        encoding="utf-8",
+        note="fiscal_yearで年度を指定し、page/page_sizeでページングするJSON API。"
+             "一覧応答には公開事業の基本情報・予算履歴(当初予算額)・集計値がある。"
+             "支出先の全行や支出ブロック接続など15グループの詳細CSVとは別データ",
+        expected_cadence_days=366,
+        citation="出典：行政事業レビュー見える化サイト（https://rssystem.go.jp）",
+    ),
 }
+
+
+SOURCES["rs-system-api-details"] = replace(
+    SOURCES["rs-system-api"], id="rs-system-api-details",
+    name="行政事業レビュー見える化サイト RSシステム 公開API（事業詳細）",
+    note="UUID指定の事業詳細JSON。収集実行の完全性はcollection-runsの履歴で確認する。"
+         "一覧や支出先別APIの全項目取得を意味しない。",
+    expected_cadence_days=None,
+)
 
 
 def get_source(source_id: str) -> Source:

@@ -1,0 +1,665 @@
+{
+  "version": 1,
+  "collections": [
+    {
+      "id": "rs-project-details",
+      "title": "RS年度別事業一覧・詳細",
+      "priority": 1,
+      "publisher": "内閣官房行政改革推進本部",
+      "source_id": "rs-system-api",
+      "entrypoints": [
+        "https://rssystem.go.jp/api/projects/"
+      ],
+      "evidence_urls": [
+        "https://rssystem.go.jp/api/projects/"
+      ],
+      "researched_on": "2026-10-04",
+      "evidence_level": "http_sample",
+      "access": "api",
+      "auth": "標本APIでは認証不要。公開OpenAPI仕様・上限は未確認",
+      "scope": "指定年度の公開事業。初期対象2026年度",
+      "identity": [
+        "年度",
+        "API UUID",
+        "事業番号"
+      ],
+      "discover": "fiscal-years/で年度候補を確認。projects/?fiscal_year=2026&page_size=1000をページ走査",
+      "retrieve": "一覧を保存し、各UUIDのprojects/{UUID}/を取得。HTTP200でもJSON型・年度・ID・公開状態を検査。nextはHTTPSかつ同一ホスト・同一年度に限定",
+      "refresh": "一覧を再走査しupdated_atと内容ハッシュを比較。更新時に詳細を再取得。定期的な全件照合で欠落を検知。途中失敗はUUID単位で再開",
+      "check_interval_days": 7,
+      "interval_basis": "本プロジェクトの確認間隔案。上流の更新周期・アクセス許容量の保証ではない",
+      "completeness": "開始・終了時のcountとID集合が一致し、全UUIDの詳細成功を確認。支出先等の別APIは別の完全性検査が必要",
+      "limitations": [
+        "詳細HTTP応答は1件の標本確認。全詳細未取得",
+        "支出先全行・指標・支出ブロックの追加経路は未確認",
+        "同一年度でも訂正される。未来の決算は未公表"
+      ],
+      "terms_status": "registered_source",
+      "implementation": "local_snapshot",
+      "next_action": "一覧と詳細を別収集単位としてコネクタ化。支出関連の追加APIを調査",
+      "kg_mapping": "事業→組織・法的根拠・計画・担当者・活動・点検評価。元のUUIDと事業番号を保持し既存URIへ照合",
+      "implementation_scope": "2026年度の一覧7ページと一覧KGのみ手動取得・生成済み。詳細は1件のHTTP標本確認だけで、詳細全件取得器は未実装"
+    },
+    {
+      "id": "diet-meetings",
+      "title": "国会会議・発言",
+      "priority": 2,
+      "publisher": "国立国会図書館",
+      "source_id": null,
+      "entrypoints": [
+        "https://kokkai.ndl.go.jp/api.html"
+      ],
+      "evidence_urls": [
+        "https://kokkai.ndl.go.jp/api.html"
+      ],
+      "researched_on": "2026-10-04",
+      "evidence_level": "official_document",
+      "access": "api",
+      "auth": "検索APIは登録不要。公式の利用条件とアクセス間隔を実装前に確認",
+      "scope": "公開済み国会会議録",
+      "identity": [
+        "issueID",
+        "speechID"
+      ],
+      "discover": "meeting_listで開催日範囲を分割しstartRecordをページ走査",
+      "retrieve": "meeting又はspeechをJSON/XML取得。maximumRecordsはmeeting最大10、簡易会議・発言最大100",
+      "refresh": "直近日付範囲を重複取得して公開遅延と訂正を拾い、過去範囲も定期照合",
+      "check_interval_days": 1,
+      "interval_basis": "本プロジェクトの確認間隔案。上流の更新周期・アクセス許容量の保証ではない",
+      "completeness": "検索件数と取得した一意ID数を照合。PDFのみの末尾資料は別対象",
+      "limitations": [
+        "会議の開催日と公開日は異なる",
+        "APIテキストに含まれない末尾資料がある"
+      ],
+      "terms_status": "needs_review",
+      "implementation": "planned",
+      "next_action": "日付分割・ページ再開・空期間の扱いを実装",
+      "kg_mapping": "会議→発言→発言者。法案や法令への言及は原文と根拠位置を残す",
+      "implementation_scope": "収集契約の登録のみ。取得器・実行履歴・KG変換は未実装"
+    },
+    {
+      "id": "diet-questions",
+      "title": "質問主意書・答弁書",
+      "priority": 3,
+      "publisher": "衆議院・参議院",
+      "source_id": null,
+      "entrypoints": [
+        "https://www.sangiin.go.jp/japanese/aramashi/keyword/situmon.html"
+      ],
+      "evidence_urls": [
+        "https://www.sangiin.go.jp/japanese/aramashi/keyword/situmon.html",
+        "https://www.shugiin.go.jp/internet/itdb_shitsumona.nsf/html/shitsumon/kaiji001_l.htm"
+      ],
+      "researched_on": "2026-10-04",
+      "evidence_level": "official_document",
+      "access": "html",
+      "auth": "公開ページの参照は不要。添付資料の条件は個別確認",
+      "scope": "衆参の公開された質問・答弁と提出経過",
+      "identity": [
+        "院",
+        "国会回次",
+        "提出番号"
+      ],
+      "discover": "両院の国会回次一覧から質問一覧へ移動。参議院だけで両院完了としない",
+      "retrieve": "一覧・質問本文・答弁本文・経過を保存。HTMLがなければPDF。未答弁と取得失敗を区別",
+      "refresh": "開会中回次を日次照合。閉会回次も答弁追加・訂正を確認",
+      "check_interval_days": 1,
+      "interval_basis": "本プロジェクトの確認間隔案。上流の更新周期・アクセス許容量の保証ではない",
+      "completeness": "両院・回次別に一覧件数と本文取得を照合。答弁未受領は正当な未掲載として記録",
+      "limitations": [
+        "院ごとにHTML構造が異なる",
+        "古い資料の形式と全本文の取得可否は実取得で確認が必要"
+      ],
+      "terms_status": "needs_review",
+      "implementation": "planned",
+      "next_action": "両院別アダプターと回次インデックスを用意",
+      "kg_mapping": "質問→提出者→答弁→内閣、提出日・答弁日を保持",
+      "implementation_scope": "収集契約の登録のみ。取得器・実行履歴・KG変換は未実装"
+    },
+    {
+      "id": "cabinet-decisions",
+      "title": "閣議案件・議事録・決定",
+      "priority": 4,
+      "publisher": "首相官邸",
+      "source_id": null,
+      "entrypoints": [
+        "https://www.kantei.go.jp/jp/kakugi/index.html"
+      ],
+      "evidence_urls": [
+        "https://www.kantei.go.jp/jp/kakugi/index.html"
+      ],
+      "researched_on": "2026-10-04",
+      "evidence_level": "official_document",
+      "access": "mixed",
+      "auth": "公開ページの参照は不要。添付資料の条件は個別確認",
+      "scope": "公開された閣議案件・議事録・決定資料",
+      "identity": [
+        "閣議日",
+        "閣議種別",
+        "案件URL"
+      ],
+      "discover": "年別一覧を走査し定例・臨時・持ち回り閣議を列挙",
+      "retrieve": "案件HTMLと議事録PDF、決定本文のリンク先を保存",
+      "refresh": "直近一覧を再取得し遅れて公開される議事録を追跡。案件単位で内容ハッシュ比較",
+      "check_interval_days": 1,
+      "interval_basis": "本プロジェクトの確認間隔案。上流の更新周期・アクセス許容量の保証ではない",
+      "completeness": "年別一覧のリンク数と取得件数を照合。議事録なしと取得失敗を分離",
+      "limitations": [
+        "内部調整・非公開文書は含まれない",
+        "案件名だけで決定本文を取得済みとしない"
+      ],
+      "terms_status": "needs_review",
+      "implementation": "planned",
+      "next_action": "年別HTML探索とPDF追跡を実装",
+      "kg_mapping": "閣議→案件→決定→法案・政策。議事録の公開日と開催日を別保持",
+      "implementation_scope": "収集契約の登録のみ。取得器・実行履歴・KG変換は未実装"
+    },
+    {
+      "id": "public-comments",
+      "title": "意見募集・結果公示",
+      "priority": 5,
+      "publisher": "e-Gov／各府省",
+      "source_id": null,
+      "entrypoints": [
+        "https://public-comment.e-gov.go.jp/pcm/list"
+      ],
+      "evidence_urls": [
+        "https://public-comment.e-gov.go.jp/contents/help/guide/rss.html",
+        "https://public-comment.e-gov.go.jp/contents/help/guide/result.html"
+      ],
+      "researched_on": "2026-10-04",
+      "evidence_level": "official_document",
+      "access": "mixed",
+      "auth": "公開ページの参照は不要。添付資料の条件は個別確認",
+      "scope": "募集中・結果公示・過去案件と公示添付資料",
+      "identity": [
+        "案件番号"
+      ],
+      "discover": "RSSで新着検知。全状態の一覧を定期ページ走査してRSS漏れを照合",
+      "retrieve": "案件詳細、案文、募集要領、結果PDF、公開意見と行政機関回答を保存",
+      "refresh": "募集→締切→結果公示の状態変化を追跡。訂正・添付差替えをハッシュ比較",
+      "check_interval_days": 1,
+      "interval_basis": "本プロジェクトの確認間隔案。上流の更新周期・アクセス許容量の保証ではない",
+      "completeness": "状態別一覧件数と一意案件数を照合。RSSだけで過去案件網羅としない",
+      "limitations": [
+        "提出された意見の原文全件が公開されるとは限らない",
+        "公式APIは今回未確認。HTML取得方式は実測が必要"
+      ],
+      "terms_status": "needs_review",
+      "implementation": "planned",
+      "next_action": "HTML一覧・詳細・添付を調査しRSSとの差分を検証",
+      "kg_mapping": "意見募集→命令等案→結果→行政機関回答。個人の同一性は推測しない",
+      "implementation_scope": "収集契約の登録のみ。取得器・実行履歴・KG変換は未実装"
+    },
+    {
+      "id": "officials",
+      "title": "人物・役職・人事異動",
+      "priority": 6,
+      "publisher": "首相官邸／各府省",
+      "source_id": null,
+      "entrypoints": [
+        "https://www.kantei.go.jp/jp/rekidainaikaku/"
+      ],
+      "evidence_urls": [
+        "https://www.kantei.go.jp/jp/rekidainaikaku/",
+        "https://www.mof.go.jp/about_mof/introduction/personnel/index.html",
+        "https://www.mofa.go.jp/mofaj/annai/honsho/meibo/list.html"
+      ],
+      "researched_on": "2026-10-04",
+      "evidence_level": "official_document",
+      "access": "mixed",
+      "auth": "公開ページの参照は不要。添付資料の条件は個別確認",
+      "scope": "公開名簿に載る閣僚・幹部・議員・委員",
+      "identity": [
+        "公開元",
+        "名簿基準日",
+        "氏名",
+        "役職"
+      ],
+      "discover": "府省別名簿・人事異動一覧、歴代内閣、両院議員一覧を収集先単位で登録",
+      "retrieve": "HTML/PDFを原本保存。氏名・役職・所属・基準日・明示された発令日を抽出",
+      "refresh": "名簿と異動発表を照合。更新前の原本を保存",
+      "check_interval_days": 7,
+      "interval_basis": "本プロジェクトの確認間隔案。上流の更新周期・アクセス許容量の保証ではない",
+      "completeness": "登録した機関別名簿の取得率を報告。政府全職員の網羅率とは呼ばない",
+      "limitations": [
+        "全職員の名簿ではない",
+        "名簿基準日を就任日・退任日として使わない",
+        "同姓同名を氏名だけで統合しない"
+      ],
+      "terms_status": "needs_review",
+      "implementation": "planned",
+      "next_action": "機関別エントリーと人物照合・在任期間の仕様を用意",
+      "kg_mapping": "人物→任命・役職在任→組織。観測日と効力発生日を分離",
+      "implementation_scope": "収集契約の登録のみ。取得器・実行履歴・KG変換は未実装"
+    },
+    {
+      "id": "advisory-meetings",
+      "title": "審議会・検討会",
+      "priority": 7,
+      "publisher": "各府省",
+      "source_id": null,
+      "entrypoints": [
+        "https://www.mhlw.go.jp/stf/new-info/shingi.html"
+      ],
+      "evidence_urls": [
+        "https://www.mhlw.go.jp/stf/new-info/shingi.html",
+        "https://www.mhlw.go.jp/stf/newpage_36085.html"
+      ],
+      "researched_on": "2026-10-04",
+      "evidence_level": "official_document",
+      "access": "mixed",
+      "auth": "公開ページの参照は不要。添付資料の条件は個別確認",
+      "scope": "登録済み会議体の公開開催情報・委員名簿・資料・議事録",
+      "identity": [
+        "機関",
+        "会議体",
+        "回次",
+        "開催日"
+      ],
+      "discover": "府省の会議体一覧から個別会議一覧へ。対象会議体集合を明示",
+      "retrieve": "開催案内、資料、議事要旨、議事録を別文書として保存",
+      "refresh": "開催後も議事録公開まで追跡し添付の訂正を確認",
+      "check_interval_days": 1,
+      "interval_basis": "本プロジェクトの確認間隔案。上流の更新周期・アクセス許容量の保証ではない",
+      "completeness": "会議体別開催一覧と取得文書を照合。非公開・未掲載・取得失敗を分離",
+      "limitations": [
+        "厚労省の例だけで全府省の取得方法を確認済みとしない",
+        "非公開審査や資料がある"
+      ],
+      "terms_status": "needs_review",
+      "implementation": "planned",
+      "next_action": "府省別探索入口と非公開状態を登録",
+      "kg_mapping": "会議体→開催→参加者・発言・資料・答申",
+      "implementation_scope": "収集契約の登録のみ。取得器・実行履歴・KG変換は未実装"
+    },
+    {
+      "id": "procurement",
+      "title": "調達・入札・契約",
+      "priority": 8,
+      "publisher": "デジタル庁／中小企業庁／各機関",
+      "source_id": null,
+      "entrypoints": [
+        "https://api-catalog.e-gov.go.jp/info/ja/apicatalog/view/67"
+      ],
+      "evidence_urls": [
+        "https://api-catalog.e-gov.go.jp/info/ja/apicatalog/view/67",
+        "https://www.p-portal.go.jp/pps-web-biz/UAA01/OAA0117?kouji=10"
+      ],
+      "researched_on": "2026-10-04",
+      "evidence_level": "official_document",
+      "access": "mixed",
+      "auth": "公開ページの参照は不要。添付資料の条件は個別確認",
+      "scope": "各サイトに公開された公告・落札・契約情報",
+      "identity": [
+        "公開元",
+        "調達案件番号",
+        "公告種別"
+      ],
+      "discover": "官公需APIと調達ポータル、機関別契約公表一覧を併用",
+      "retrieve": "APIガイドに従って公告を取得。ポータルの最大500件を日付・機関で分割。契約結果は別文書として保存",
+      "refresh": "公告掲載中に原本取得。落札・変更・取消を追跡し期間別全件照合",
+      "check_interval_days": 1,
+      "interval_basis": "本プロジェクトの確認間隔案。上流の更新周期・アクセス許容量の保証ではない",
+      "completeness": "検索条件ごとの件数・分割区間・重複を記録。全政府契約の網羅とは主張しない",
+      "limitations": [
+        "ポータルへの登録範囲は全契約と同一ではない",
+        "添付資料に認証・連絡先入力が必要な場合がある",
+        "APIの現行仕様・稼働は未実測"
+      ],
+      "terms_status": "needs_review",
+      "implementation": "planned",
+      "next_action": "官公需API実測、登録範囲・添付条件の確認",
+      "kg_mapping": "調達→公告→落札→契約→発注機関・法人番号",
+      "implementation_scope": "収集契約の登録のみ。取得器・実行履歴・KG変換は未実装"
+    },
+    {
+      "id": "gazette",
+      "title": "官報・告示",
+      "priority": 9,
+      "publisher": "内閣府／国立印刷局",
+      "source_id": null,
+      "entrypoints": [
+        "https://www.kanpo.go.jp/"
+      ],
+      "evidence_urls": [
+        "https://www.kanpo.go.jp/",
+        "https://kanpou.npb.go.jp/pdf/公開対象の記事について.pdf"
+      ],
+      "researched_on": "2026-10-04",
+      "evidence_level": "official_document",
+      "access": "pdf",
+      "auth": "公開ページの参照は不要。添付資料の条件は個別確認",
+      "scope": "公開官報の本紙・号外・政府調達・特別号外",
+      "identity": [
+        "発行日",
+        "種別",
+        "号数",
+        "頁"
+      ],
+      "discover": "発行日一覧から各種PDFを列挙。休日は未発行と区別",
+      "retrieve": "電子署名付き原本を保持しPDF本文と記事位置を抽出",
+      "refresh": "毎日確認。訂正記事を元記事と接続。公開期限前に取得",
+      "check_interval_days": 1,
+      "interval_basis": "本プロジェクトの確認間隔案。上流の更新周期・アクセス許容量の保証ではない",
+      "completeness": "発行一覧の各PDF・頁を照合。90日超の限定公開記事は欠落として記録",
+      "limitations": [
+        "90日後の公開範囲は記事種別で異なる",
+        "閲覧可能と永続保存・再配布可能を同一視しない",
+        "公開期限が切れた過去全記事は無料取得できるとは限らない"
+      ],
+      "terms_status": "needs_review",
+      "implementation": "planned",
+      "next_action": "記事別利用条件・保全・再配布方針を確認して日次取得を実装",
+      "kg_mapping": "発行→記事→公布・告示・任命等のイベント。条文IDや法人番号へ照合",
+      "implementation_scope": "収集契約の登録のみ。取得器・実行履歴・KG変換は未実装"
+    },
+    {
+      "id": "court-decisions",
+      "title": "裁判例",
+      "priority": 10,
+      "publisher": "裁判所",
+      "source_id": null,
+      "entrypoints": [
+        "https://www.courts.go.jp/hanrei/search2/index.html"
+      ],
+      "evidence_urls": [
+        "https://www.courts.go.jp/hanrei/search2/index.html"
+      ],
+      "researched_on": "2026-10-04",
+      "evidence_level": "official_document",
+      "access": "mixed",
+      "auth": "公開ページの参照は不要。添付資料の条件は個別確認",
+      "scope": "裁判例検索に掲載された判決等",
+      "identity": [
+        "裁判所",
+        "事件番号",
+        "裁判日",
+        "掲載URL"
+      ],
+      "discover": "検索分類・裁判日範囲を分割して掲載裁判例を列挙",
+      "retrieve": "裁判例メタデータと判決PDFを保存。匿名表記を保持",
+      "refresh": "新着と既存掲載結果の訂正を確認",
+      "check_interval_days": 7,
+      "interval_basis": "本プロジェクトの確認間隔案。上流の更新周期・アクセス許容量の保証ではない",
+      "completeness": "検索掲載集合に対する取得率のみ計算。全判決の取得率は算出しない",
+      "limitations": [
+        "公式サイトは全判決を掲載していないと明記",
+        "公式取得APIは今回未確認",
+        "匿名化された当事者を推測で復元しない"
+      ],
+      "terms_status": "needs_review",
+      "implementation": "planned",
+      "next_action": "現行検索の取得条件とサイト利用条件を確認",
+      "kg_mapping": "裁判→判決→裁判所・適用法条。政府活動本体とは対象を区別",
+      "implementation_scope": "収集契約の登録のみ。取得器・実行履歴・KG変換は未実装"
+    },
+    {
+      "id": "statistics",
+      "title": "統計表・指標",
+      "priority": 11,
+      "publisher": "総務省統計局／統計センター／各府省",
+      "source_id": null,
+      "entrypoints": [
+        "https://www.e-stat.go.jp/api/"
+      ],
+      "evidence_urls": [
+        "https://www.e-stat.go.jp/api/"
+      ],
+      "researched_on": "2026-10-04",
+      "evidence_level": "official_document",
+      "access": "api",
+      "auth": "e-Stat APIは利用登録・アプリケーションIDが必要。台帳に秘密値を書かない",
+      "scope": "API提供対象統計と公開統計表",
+      "identity": [
+        "統計表ID",
+        "分類コード",
+        "地域コード",
+        "時間コード",
+        "単位"
+      ],
+      "discover": "統計表一覧APIでAPI対象を列挙。ファイルのみの統計は別対象として登録",
+      "retrieve": "メタデータと数値をJSON/XML/CSV取得。改定・欠測・秘匿記号・単位を保持",
+      "refresh": "統計表更新情報で再取得。基準改定でIDや分類が変わるため履歴照合",
+      "check_interval_days": 7,
+      "interval_basis": "本プロジェクトの確認間隔案。上流の更新周期・アクセス許容量の保証ではない",
+      "completeness": "API対象一覧と取得表数・セル数を照合。API対象外を黙って除外しない",
+      "limitations": [
+        "統計の変化だけで政策の因果的効果としない",
+        "APIで取得可能な表と全公表資料は異なる"
+      ],
+      "terms_status": "needs_review",
+      "implementation": "planned",
+      "next_action": "アプリケーションIDを環境変数で管理して取得経路を実装",
+      "kg_mapping": "統計観測→指標・時点・地域・単位。事業との関係は根拠資料があるときだけ付与",
+      "implementation_scope": "収集契約の登録のみ。取得器・実行履歴・KG変換は未実装"
+    },
+    {
+      "id": "policy-evaluations",
+      "title": "政策評価・成果資料",
+      "priority": 12,
+      "publisher": "各府省／財務省",
+      "source_id": null,
+      "entrypoints": [
+        "https://www.mof.go.jp/policy/budget/budger_workflow/budget/fy2025/2025seisakuhyoka_link.html"
+      ],
+      "evidence_urls": [
+        "https://www.mof.go.jp/policy/budget/budger_workflow/budget/fy2025/2025seisakuhyoka_link.html"
+      ],
+      "researched_on": "2026-10-04",
+      "evidence_level": "needs_confirmation",
+      "access": "mixed",
+      "auth": "公開ページの参照は不要。添付資料の条件は個別確認",
+      "scope": "公開政策評価書・KPI・予算に関連する評価資料",
+      "identity": [
+        "機関",
+        "評価年度",
+        "評価対象ID",
+        "文書URL"
+      ],
+      "discover": "各府省の評価一覧と年度別予算関連資料から列挙",
+      "retrieve": "HTML/PDF/Excelを保存し指標、目標、実績、対象年度を抽出",
+      "refresh": "年度別公開と改訂を確認。最新年度の入口は毎回発見し直す",
+      "check_interval_days": 30,
+      "interval_basis": "本プロジェクトの確認間隔案。上流の更新周期・アクセス許容量の保証ではない",
+      "completeness": "機関・年度別一覧に対する取得数を記録。政策全体の効果が測定済みとはしない",
+      "limitations": [
+        "確認した入口は2025年度の例。2026年度各府省の入口は要確認",
+        "RS事業番号との対応がない場合は未照合"
+      ],
+      "terms_status": "needs_review",
+      "implementation": "planned",
+      "next_action": "各府省2026年度の公式入口を個別登録",
+      "kg_mapping": "評価→政策・事業→指標・目標・実績・評価期間",
+      "implementation_scope": "収集契約の登録のみ。取得器・実行履歴・KG変換は未実装"
+    },
+    {
+      "id": "documents",
+      "title": "白書・公開PDF等",
+      "priority": 13,
+      "publisher": "各府省",
+      "source_id": null,
+      "entrypoints": [
+        "https://data.e-gov.go.jp/"
+      ],
+      "evidence_urls": [
+        "https://data.e-gov.go.jp/"
+      ],
+      "researched_on": "2026-10-04",
+      "evidence_level": "needs_confirmation",
+      "access": "mixed",
+      "auth": "公開ページの参照は不要。添付資料の条件は個別確認",
+      "scope": "登録した白書・報告書・公表資料",
+      "identity": [
+        "公開元",
+        "文書URL",
+        "内容ハッシュ",
+        "公表日"
+      ],
+      "discover": "府省別一覧とデータカタログを併用。添付リンク・変更を追跡",
+      "retrieve": "原本保存後にテキスト抽出、画像PDFはOCR。頁と原文位置を保持",
+      "refresh": "一覧差分と同一URL差替えを検知。抽出器の変更時は原本から再処理",
+      "check_interval_days": 7,
+      "interval_basis": "本プロジェクトの確認間隔案。上流の更新周期・アクセス許容量の保証ではない",
+      "completeness": "対象一覧の文書・添付数を照合し、取得と抽出成功率を別報告",
+      "limitations": [
+        "政府全PDFの所在を網羅する単一一覧は未確認",
+        "表・脚注の抽出誤りがありうる",
+        "第三者著作物の利用条件は個別確認"
+      ],
+      "terms_status": "needs_review",
+      "implementation": "planned",
+      "next_action": "文書種類別入口、OCR品質と人手確認基準を定義",
+      "kg_mapping": "文書→根拠位置→抽出事実。自動抽出候補と検証済み事実を区別",
+      "implementation_scope": "収集契約の登録のみ。取得器・実行履歴・KG変換は未実装"
+    },
+    {
+      "id": "archives",
+      "title": "歴史公文書・過去サイト",
+      "priority": 14,
+      "publisher": "国立公文書館／国立国会図書館",
+      "source_id": null,
+      "entrypoints": [
+        "https://www.digital.archives.go.jp/support/"
+      ],
+      "evidence_urls": [
+        "https://www.digital.archives.go.jp/support/"
+      ],
+      "researched_on": "2026-10-04",
+      "evidence_level": "official_document",
+      "access": "mixed",
+      "auth": "公開ページの参照は不要。添付資料の条件は個別確認",
+      "scope": "公開目録とデジタル化済み公文書",
+      "identity": [
+        "所蔵機関",
+        "資料識別子",
+        "請求番号"
+      ],
+      "discover": "公開目録を探索。メタデータ取得と画像本文取得を分離",
+      "retrieve": "公開デジタル画像・本文と目録を保存。未デジタル化資料は目録のみ",
+      "refresh": "新規公開・デジタル化・目録訂正を確認",
+      "check_interval_days": 30,
+      "interval_basis": "本プロジェクトの確認間隔案。上流の更新周期・アクセス許容量の保証ではない",
+      "completeness": "所蔵目録、デジタル化資料、取得成功の分母を別管理",
+      "limitations": [
+        "目録があることは本文をオンライン取得できることと同義ではない",
+        "移管前の行政文書や利用制限資料は対象外",
+        "現行OAI-PMH入口は未確認"
+      ],
+      "terms_status": "needs_review",
+      "implementation": "planned",
+      "next_action": "現行インターフェースと公開本文範囲を実測",
+      "kg_mapping": "公文書→作成機関・期間・文書系列・デジタル資料",
+      "implementation_scope": "収集契約の登録のみ。取得器・実行履歴・KG変換は未実装"
+    },
+    {
+      "id": "laws",
+      "title": "既存法令メタデータ・本文",
+      "priority": 15,
+      "publisher": "デジタル庁",
+      "source_id": "egov-law",
+      "entrypoints": [
+        "https://laws.e-gov.go.jp/api/2/swagger-ui"
+      ],
+      "evidence_urls": [
+        "https://laws.e-gov.go.jp/api/2/swagger-ui"
+      ],
+      "researched_on": "2026-10-04",
+      "evidence_level": "official_document",
+      "access": "api",
+      "auth": "公開ページの参照は不要。添付資料の条件は個別確認",
+      "scope": "既存法令一覧とID指定本文取得",
+      "identity": [
+        "法令ID",
+        "改正履歴ID"
+      ],
+      "discover": "既存egov-lawコネクタのlimit/offsetで一覧取得",
+      "retrieve": "jgkg.fetch --source egov-law。本文は--law-id指定。全本文取得とはしない",
+      "refresh": "一覧更新と本文改正を照合。最新本文だけで過去時点を上書きしない",
+      "check_interval_days": 7,
+      "interval_basis": "本プロジェクトの確認間隔案。上流の更新周期・アクセス許容量の保証ではない",
+      "completeness": "一覧件数とID数を照合。本文取得対象は別分母で管理",
+      "limitations": [
+        "現行コネクタのメタデータ取得と本文オンデマンド取得は粒度が違う"
+      ],
+      "terms_status": "registered_source",
+      "implementation": "existing_connector",
+      "next_action": "実行履歴に一覧・本文別の対象件数を接続",
+      "kg_mapping": "既存Law・条文URIと出典を維持",
+      "implementation_scope": "一覧コネクタとID指定本文取得のみ。全本文の継続取得は未実装"
+    },
+    {
+      "id": "rs-csv",
+      "title": "既存RS一括CSV",
+      "priority": 16,
+      "publisher": "内閣官房行政改革推進本部",
+      "source_id": "rs-system",
+      "entrypoints": [
+        "https://rssystem.go.jp/download-csv"
+      ],
+      "evidence_urls": [
+        "https://rssystem.go.jp/download-csv"
+      ],
+      "researched_on": "2026-10-04",
+      "evidence_level": "http_sample",
+      "access": "bulk",
+      "auth": "公開ページの参照は不要。添付資料の条件は個別確認",
+      "scope": "年度ごとの公開CSVグループ",
+      "identity": [
+        "年度",
+        "グループ名",
+        "内容ハッシュ"
+      ],
+      "discover": "年度別ダウンロード一覧と既知15グループを照合",
+      "retrieve": "jgkg.fetch --source rs-system --year YEAR。ZIPシグネチャを検査。現行取得群は全15群と同一ではない",
+      "refresh": "年度内訂正をハッシュ照合。未公開HTML応答を成功扱いしない",
+      "check_interval_days": 7,
+      "interval_basis": "本プロジェクトの確認間隔案。上流の更新周期・アクセス許容量の保証ではない",
+      "completeness": "期待15群・公開確認群・現行実装取得群を別計数",
+      "limitations": [
+        "2026年度候補ZIPは2026-10-04時点で0/15取得",
+        "現行コネクタは選択した5群が中心"
+      ],
+      "terms_status": "registered_source",
+      "implementation": "existing_connector",
+      "next_action": "全グループ対応とAPI詳細との重複・優先順位を定義",
+      "kg_mapping": "既存BudgetProject・AnnualBudget・支出先接続",
+      "implementation_scope": "既存コネクタは選択5群。全15群の取得完了を示すものではない"
+    },
+    {
+      "id": "corporations",
+      "title": "既存法人番号マスター",
+      "priority": 17,
+      "publisher": "国税庁",
+      "source_id": "houjin-bangou",
+      "entrypoints": [
+        "https://www.houjin-bangou.nta.go.jp/download/zenken/"
+      ],
+      "evidence_urls": [
+        "https://www.houjin-bangou.nta.go.jp/download/zenken/"
+      ],
+      "researched_on": "2026-10-04",
+      "evidence_level": "official_document",
+      "access": "bulk",
+      "auth": "公開ページの参照は不要。添付資料の条件は個別確認",
+      "scope": "法人番号全件Unicode版",
+      "identity": [
+        "法人番号"
+      ],
+      "discover": "月次全件版の公開一覧を確認",
+      "retrieve": "jgkg.fetch --source houjin-bangou。Unicode版と内容ハッシュを確認",
+      "refresh": "月次全件置換。日次差分は実装・照合後に導入",
+      "check_interval_days": 31,
+      "interval_basis": "本プロジェクトの確認間隔案。上流の更新周期・アクセス許容量の保証ではない",
+      "completeness": "入力行数・一意法人番号・正規化棄却数を照合",
+      "limitations": [
+        "法人番号は人物や全行政組織の識別子ではない"
+      ],
+      "terms_status": "registered_source",
+      "implementation": "existing_connector",
+      "next_action": "新規分野の法人照合を既存マスターへ接続",
+      "kg_mapping": "既存Organization URIを維持し調達・支出先の結合キーに使う",
+      "implementation_scope": "月次全件Unicode版の既存コネクタ。日次差分の統合は未実装"
+    }
+  ]
+}
