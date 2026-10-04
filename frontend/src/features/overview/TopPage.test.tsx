@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OverviewResponse } from "../../api/client";
@@ -41,9 +41,16 @@ function stubFetchWithFixture(): void {
     vi.fn(async (input: string | URL) => {
       const url = String(input);
       if (url.endsWith("/overview")) return fakeResponse(200, overviewFixture);
+      if (url.includes("/search?")) return fakeResponse(200, { results: [], truncated: false, limit: 100 });
       throw new Error(`このテストで想定していないURL: ${url}`);
     }),
   );
+}
+
+async function renderBudgetTop() {
+  const view = render(<TopPage />);
+  fireEvent.click(await screen.findByText("予算・資金の流れから調べる"));
+  return view;
 }
 
 describe("TopPage(トップページ再設計)", () => {
@@ -51,8 +58,34 @@ describe("TopPage(トップページ再設計)", () => {
     stubFetchWithFixture();
   });
 
-  it("ヒーロー: 当初予算・執行率・国が自ら支払った額(下限)を実データの値で出す", async () => {
+  it("活動・制度・組織を入口にし、予算は利用者が開くまで畳む", async () => {
     render(<TopPage />);
+    expect(screen.getByRole("heading", { name: "政府の活動と、関わる組織・制度を辿る", level: 1 })).toBeTruthy();
+    const summary = await screen.findByText("予算・資金の流れから調べる");
+    const panel = summary.closest("details")!;
+    expect(panel.open).toBe(false);
+    expect(screen.getByText("123.1兆円").closest("details")).toBe(panel);
+    fireEvent.click(summary);
+    expect(panel.open).toBe(true);
+    expect(screen.getByRole("region", { name: "活動・事業" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "制度・法令" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "組織・行政機関" })).toBeTruthy();
+  });
+
+  it("府省集計の取得が後から終わっても、選んだテーマを防災に戻さない", async () => {
+    let finishOverview!: (value: Response) => void;
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL) => String(input).endsWith("/overview")
+      ? new Promise<Response>((resolve) => { finishOverview = resolve; })
+      : fakeResponse(200, { results: [], truncated: false, limit: 100 })));
+    render(<TopPage />);
+    fireEvent.click(screen.getByRole("button", { name: "教育" }));
+    finishOverview(fakeResponse(200, overviewFixture));
+    await screen.findByText("予算・資金の流れから調べる");
+    expect(screen.getByRole("button", { name: "教育" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("ヒーロー: 当初予算・執行率・国が自ら支払った額(下限)を実データの値で出す", async () => {
+    await renderBudgetTop();
 
     // 当初予算 123.1兆円(23府省の予算額の合計。CQ15)。
     await screen.findByText("2025年度 当初予算");
@@ -86,7 +119,7 @@ describe("TopPage(トップページ再設計)", () => {
 
   it("府省ツリーマップ: 23タイルが実データの金額で描かれ、クリックでエンティティ画面へ遷移する", async () => {
     const user = userEvent.setup();
-    const { container } = render(<TopPage />);
+    const { container } = await renderBudgetTop();
 
     await screen.findByText("府省ごとの予算額");
     const svg = container.querySelector(".jg-treemap__svg");
@@ -104,7 +137,7 @@ describe("TopPage(トップページ再設計)", () => {
 
   it("府省ツリーマップ: 400px相当のモバイル用フォールバック行(縦積み表)からもクリックで遷移できる", async () => {
     const user = userEvent.setup();
-    const { container } = render(<TopPage />);
+    const { container } = await renderBudgetTop();
 
     await screen.findByText("府省ごとの予算額");
     const list = container.querySelector(".jg-treemap__mobile-list");
@@ -116,7 +149,7 @@ describe("TopPage(トップページ再設計)", () => {
 
   it("府省ツリーマップ:「厚生労働省を除いて見る」を押すと注記が動的な値で出る", async () => {
     const user = userEvent.setup();
-    render(<TopPage />);
+    await renderBudgetTop();
 
     await screen.findByText("府省ごとの予算額");
     const toggle = screen.getByRole("button", { name: "厚生労働省を除いて見る" });
@@ -130,7 +163,7 @@ describe("TopPage(トップページ再設計)", () => {
   });
 
   it("**ヒーローにKGの「データの時点」を出す**(裁定B111)", async () => {
-    render(<TopPage />);
+    await renderBudgetTop();
     await screen.findByText(/データの時点/);
 
     // **期待値はフィクスチャから畳んで導く**(件数や日付を手書きしない)。
@@ -152,14 +185,14 @@ describe("TopPage(トップページ再設計)", () => {
   it("APIが鮮度を返さない版でも壊れず、鮮度の行を出さない", async () => {
     const stripped = { ...overviewFixture };
     delete (stripped as { release_freshness?: unknown }).release_freshness;
-    vi.stubGlobal("fetch", vi.fn(async () => fakeResponse(200, stripped)));
-    render(<TopPage />);
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => fakeResponse(200, url.includes("/search?") ? { results: [], truncated: false, limit: 100 } : stripped)));
+    await renderBudgetTop();
     await screen.findByText(/この画面の数字を集計した時刻/);
     expect(screen.queryByText(/データの時点/)).toBeNull();
   });
 
   it("資金の流れ: 児童手当の例(国→市町村→受給者)が同じ金額で繋がって出る。足し算はしていない", async () => {
-    render(<TopPage />);
+    await renderBudgetTop();
 
     await screen.findByText("資金の流れ");
     expect(screen.getByText("児童手当等交付金に必要な経費")).toBeTruthy();
@@ -178,7 +211,7 @@ describe("TopPage(トップページ再設計)", () => {
     // 存在しないIDを組み立てるわけにはいかなかったため。CQ13にIRIを
     // 返させて直した。
     const user = userEvent.setup();
-    render(<TopPage />);
+    await renderBudgetTop();
 
     await screen.findByText("資金の流れ");
     const title = screen.getByText("児童手当等交付金に必要な経費");
@@ -206,8 +239,8 @@ describe("TopPage(トップページ再設計)", () => {
         return rest as unknown as (typeof overviewFixture.money_through_stages)[number];
       }),
     };
-    vi.stubGlobal("fetch", vi.fn(async () => fakeResponse(200, stripped)));
-    render(<TopPage />);
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => fakeResponse(200, url.includes("/search?") ? { results: [], truncated: false, limit: 100 } : stripped)));
+    await renderBudgetTop();
 
     await screen.findByText("資金の流れ");
     const title = screen.getByText("児童手当等交付金に必要な経費");
@@ -220,7 +253,7 @@ describe("TopPage(トップページ再設計)", () => {
   });
 
   it("年度の推移: 5年分の帯と、要求と査定の母集団の注記(32.7〜44.0%)を出す", async () => {
-    const { container } = render(<TopPage />);
+    const { container } = await renderBudgetTop();
 
     await screen.findByText("年度の推移");
     const historyRows = container.querySelector(".jg-history");
@@ -235,7 +268,7 @@ describe("TopPage(トップページ再設計)", () => {
   });
 
   it("支払先はどこまで特定できているか: enumValueLabelの表示名で4区分を出す(手書きしない)", async () => {
-    render(<TopPage />);
+    await renderBudgetTop();
 
     await screen.findByText("支払先はどこまで特定できているか");
     expect(screen.getByText("法人番号で特定できた")).toBeTruthy();
@@ -248,7 +281,7 @@ describe("TopPage(トップページ再設計)", () => {
 
   it("入口: 代表的なエンティティのカードを押すとエンティティ画面へ、データ/チャットへも遷移する", async () => {
     const user = userEvent.setup();
-    render(<TopPage />);
+    await renderBudgetTop();
 
     const heading = await screen.findByText("つながりを辿る");
     const section = heading.closest("section");

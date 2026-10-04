@@ -4,14 +4,17 @@
 // モデル(`GraphModel`)全体をそのまま表にする——レーンへの割当や省略表示に
 // 引きずられない、正確な一覧であることを優先する。
 import type { JSX } from "react";
+import type { Provenance } from "../../api/client";
+import { SourceNote } from "../../components/ui";
 import { predicateLabel, typeLabel } from "../../labels";
 import { displayLabel, type GraphModel } from "./graph-model";
 
 export interface GraphTableProps {
   readonly model: GraphModel;
+  readonly graphs?: Readonly<Record<string, Provenance>>;
 }
 
-export function GraphTable({ model }: GraphTableProps): JSX.Element {
+export function GraphTable({ model, graphs }: GraphTableProps): JSX.Element {
   const nodeById = new Map(model.nodes.map((n) => [n.id, n]));
 
   return (
@@ -25,6 +28,7 @@ export function GraphTable({ model }: GraphTableProps): JSX.Element {
             <th scope="col">関係</th>
             <th scope="col">終点</th>
             <th scope="col">型</th>
+            <th scope="col">出典</th>
           </tr>
         </thead>
         <tbody>
@@ -33,11 +37,12 @@ export function GraphTable({ model }: GraphTableProps): JSX.Element {
             const target = nodeById.get(e.target);
             return (
               <tr key={e.key}>
-                <td>{source ? displayLabel(source) : e.source}</td>
+                <td>{source ? <a href={`#/entity/${source.idPath}`}>{displayLabel(source)}</a> : e.source}</td>
                 <td>{source ? typeLabel(source.type) : ""}</td>
                 <td>{predicateLabel(e.predicate)}</td>
-                <td>{target ? displayLabel(target) : e.target}</td>
+                <td>{target ? <a href={`#/entity/${target.idPath}`}>{displayLabel(target)}</a> : e.target}</td>
                 <td>{target ? typeLabel(target.type) : ""}</td>
+                <td>{graphs?.[e.graph] ? <SourceNote graphs={graphs} onlyGraphs={[e.graph]} /> : <span>出典が取れていない</span>}</td>
               </tr>
             );
           })}

@@ -134,3 +134,4 @@
 .jg-search-list[open] > summary {
   margin-bottom: var(--sp-2);
 }
+.jg-search-list[open] .jg-search-results { max-height: 16rem; overflow-y: auto; }

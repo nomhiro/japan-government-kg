@@ -37,6 +37,7 @@
 }
 
 .jg-graph-toolbar__btn {
+  min-height: 44px;
   padding: 4px var(--sp-3);
   border: 1px solid var(--rule);
   border-radius: var(--radius-sm);
@@ -56,6 +57,7 @@
 }
 
 .jg-graph-chip {
+  min-height: 44px;
   padding: 2px var(--sp-3);
   border: 1px solid var(--rule);
   border-radius: 999px;
@@ -135,6 +137,7 @@
   gap: var(--sp-2);
 }
 .jg-graph-inspector__actions button {
+  min-height: 44px;
   padding: 4px var(--sp-3);
   border: 1px solid var(--rule);
   border-radius: var(--radius-sm);
@@ -177,6 +180,7 @@
   gap: var(--sp-1);
 }
 .jg-graph-inspector__rel-list button {
+  min-height: 44px;
   width: 100%;
   text-align: left;
   padding: 4px var(--sp-2);
@@ -352,3 +356,25 @@
   fill: var(--ink);
   font-weight: 600;
 }
+.jg-graph-toolbar__group { flex-wrap: wrap; }
+.jg-graph-filters { display: flex; flex-wrap: wrap; align-items: start; gap: var(--sp-4); padding: var(--sp-3); background: var(--surface-2); border-radius: var(--radius); }
+.jg-graph-filters > details { flex: 1 1 24rem; min-width: 0; }
+.jg-graph-filters summary { cursor: pointer; min-height: 44px; padding: var(--sp-2) 0; font-weight: 700; }
+.jg-graph-filters__groups { display: flex; flex-wrap: wrap; gap: var(--sp-4); margin: var(--sp-2) 0; }
+.jg-graph-filters fieldset { min-width: 0; border: none; padding: 0; margin: 0; flex: 1 1 12rem; }
+.jg-graph-filters legend { font-size: var(--fs-sm); font-weight: 700; }
+.jg-graph-filters label { display: flex; align-items: center; gap: var(--sp-2); min-height: 44px; font-size: var(--fs-sm); }
+.jg-graph-find { flex: 1 1 16rem; min-width: 0; }
+.jg-graph-find > label { flex-wrap: wrap; }
+.jg-graph-find input { width: 100%; min-width: 0; min-height: 44px; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: var(--sp-2); }
+.jg-graph-find__results { max-height: 18rem; overflow-y: auto; }
+.jg-graph-find__results button { display: flex; flex-direction: column; width: 100%; min-height: 44px; text-align: left; padding: var(--sp-2); color: var(--ink); background: var(--surface); border: 1px solid var(--rule); cursor: pointer; }
+.jg-graph-find__results small { color: var(--ink-2); }
+.jg-graph-uri { overflow-wrap: anywhere; }
+.jg-graph-node:focus-visible .jg-graph-node__card, .jg-graph-node:focus-visible .jg-graph-node__dot { stroke: var(--focus); stroke-width: 4; }
+.jg-graph-edge { cursor: pointer; }
+.jg-graph-edge__path { stroke-width: 3; }
+.jg-graph-edge:focus-visible .jg-graph-edge__path, .jg-graph-edge[aria-pressed="true"] .jg-graph-edge__path { stroke: var(--focus); stroke-width: 5; }
+@media (max-width: 600px) { .jg-graph-toolbar__group { max-width: 100%; } }
+.jg-graph-edge__hit { fill: none; stroke: transparent; stroke-width: 16; }
+@media (max-width: 900px) { .jg-graph-svg { touch-action: pan-y pinch-zoom; } }

@@ -134,9 +134,10 @@ export function buildSearchGraph(params: {
   }
   const connectedHitIds = new Set<string>();
   const isolatedHitIds = new Set<string>();
+  const availableHitIds = new Set(hits.filter((_, i) => neighborhoods[i] !== null && neighborhoods[i] !== undefined).map((h) => h.id));
   for (const id of hitIds) {
     if (withEdges.has(id)) connectedHitIds.add(id);
-    else isolatedHitIds.add(id);
+    else if (availableHitIds.has(id)) isolatedHitIds.add(id);
   }
 
   return {

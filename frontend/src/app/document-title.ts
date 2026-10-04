@@ -40,6 +40,8 @@ export function titleForRoute(route: Route): string | null {
         : pageTitle(`「${route.q}」の検索結果`);
     case "entity":
       return null;
+    case "explore":
+      return pageTitle("つながりを探索する");
     case "path":
       return pageTitle("経路をたどる");
     case "chat":

@@ -1,10 +1,10 @@
-// トップページ再設計(裁定B103・第1層)。「国のお金と施策の全体像」を
-// 5秒で把握し、そこから掘れる画面。
+// 政府の活動・制度・組織からの探索入口(裁定B116)。
+// B103の予算集計は、利用者が開く一つの調べ方として保持する。
 //
-// **数字の規律。** 画面に出す数字はすべて`/overview`(=CQの答え)である。
-// このファイル・配下のコンポーネントは別の集計をしない——`overview-format.ts`
+// **数字の規律。** 予算の数字は`/overview`(=CQの答え)を使う。
+// 予算コンポーネントは別の集計をしない——`overview-format.ts`
 // の関数だけを通す(裁定B103)。旧画面(`views/overview.ts`)と同じ数字の
-// 出典を使い、見せ方だけを作り替える。
+// 出典を使う。テーマ候補の取得範囲・件数は検索APIの応答を使う(B116)。
 //
 // **全幅を使う。** 読み物の幅(`--content`)ではなく可視化の幅
 // (`--content-wide`/`full`)を使う——旧画面は1440px幅で中央960pxしか
@@ -22,6 +22,7 @@ import { History } from "./History";
 import { MinistryTreemap } from "./MinistryTreemap";
 import "./overview.css";
 import { RecipientMix } from "./RecipientMix";
+import { Discovery } from "../explore/Discovery";
 
 export function TopPage(): JSX.Element {
   const unavailable = apiUnavailableReason();
@@ -36,36 +37,18 @@ export function TopPage(): JSX.Element {
     }
   }, [query.status, query.error]);
 
-  if (unavailable) {
-    return (
-      <Band wide>
-        <ErrorBox>{unavailable}</ErrorBox>
-      </Band>
-    );
-  }
-
-  if (query.status === "loading") {
-    return (
-      <Band wide>
-        <Loading label="全体の数字を読み込み中" />
-      </Band>
-    );
-  }
-
-  if (query.status === "error") {
-    return (
-      <Band wide>
-        <ErrorBox>{OVERVIEW_UNAVAILABLE_TEXT}</ErrorBox>
-      </Band>
-    );
-  }
-
-  const data = query.data;
-  const fiscalYear = latestFiscalYear(data.ministries);
-  const currentMinistries = ministriesForFiscalYear(data.ministries, fiscalYear);
+  const data = query.status === "ready" ? query.data : undefined;
+  const fiscalYear = latestFiscalYear(data?.ministries ?? []);
+  const currentMinistries = ministriesForFiscalYear(data?.ministries ?? [], fiscalYear);
 
   return (
-    <div className="jg-top jg-stack jg-stack--8" aria-label="日本政府の予算と施策の全体像">
+    <div className="jg-top jg-stack jg-stack--8" aria-label="政府の活動と組織・制度のつながり">
+      <Band wide><Discovery data={data} primary /></Band>
+      {unavailable ? <Band wide><ErrorBox>{unavailable}</ErrorBox></Band> : null}
+      {query.status === "loading" ? <Band wide><Loading label="収録府省の一覧を読み込み中" /></Band> : null}
+      {query.status === "error" ? <Band wide><ErrorBox>{OVERVIEW_UNAVAILABLE_TEXT}</ErrorBox></Band> : null}
+      {data ? <details className="jg-budget-disclosure">
+        <summary>予算・資金の流れから調べる</summary>
       <Band wide>
         <Hero
           fiscalYear={fiscalYear}
@@ -123,6 +106,7 @@ export function TopPage(): JSX.Element {
           <Entrances />
         </Section>
       </Band>
+      </details> : null}
     </div>
   );
 }

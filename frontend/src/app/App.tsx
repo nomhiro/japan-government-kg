@@ -5,6 +5,7 @@ import { EntityPage } from "../features/entity/EntityPage";
 import { TopPage } from "../features/overview/TopPage";
 import { PathPage } from "../features/path/PathPage";
 import { SearchPage } from "../features/search/SearchPage";
+import { ExplorePage } from "../features/explore/ExplorePage";
 import { navigate } from "../router";
 import { AppShell } from "./shell/AppShell";
 import { useRoute } from "./useRoute";
@@ -49,6 +50,8 @@ function Body({ route }: { route: ReturnType<typeof useRoute> }): JSX.Element {
       return <TopPage />;
     case "search":
       return <SearchPage q={route.q} />;
+    case "explore":
+      return <ExplorePage center={route.center} />;
     case "entity":
       // key を付けて、別のエンティティへ移ったら状態(選択・展開)を持ち越さない。
       return <EntityPage key={route.idPath} idPath={route.idPath} />;

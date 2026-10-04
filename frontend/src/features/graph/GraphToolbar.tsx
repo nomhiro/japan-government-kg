@@ -19,6 +19,7 @@ export interface GraphToolbarProps {
   readonly onLayoutChange: (layout: GraphLayout) => void;
 
   readonly axes: readonly string[];
+  readonly presentAxes?: readonly string[];
   readonly onAxesChange: (axes: readonly string[]) => void;
 
   readonly onZoomIn: () => void;
@@ -130,8 +131,8 @@ export function GraphToolbar(props: GraphToolbarProps): JSX.Element {
         </button>
       </div>
 
-      <div className="jg-graph-toolbar__row jg-graph-toolbar__axes" role="group" aria-label="軸で絞り込み">
-        {AXIS_ORDER.map((axis) => {
+      <div className="jg-graph-toolbar__row jg-graph-toolbar__axes" role="group" aria-label="軸で強調">
+        {AXIS_ORDER.filter((axis) => !props.presentAxes || props.presentAxes.includes(axis) || axes.includes(axis)).map((axis) => {
           const active = axes.includes(axis);
           return (
             <button

@@ -15,18 +15,19 @@ import {
   type JSX,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
-  type WheelEvent as ReactWheelEvent,
 } from "react";
 import { entityDetail, neighborhood, type EntityDetailResponse } from "../../api/client";
 import { ENTITY_RELATIONSHIPS_LIMIT, NEIGHBORHOOD_DEPTH } from "../../api/limits";
 import { useApiQuery } from "../../api/useApiQuery";
-import { Empty, ErrorBox, Loading } from "../../components/ui";
+import { Empty, ErrorBox, Loading, SourceNote } from "../../components/ui";
 import type { NeighborhoodStatus } from "../../format";
 import { predicateLabel, typeLabel } from "../../labels";
 import { ASIDE_LANE, axisColorVar } from "../../lib/ontology-view";
 import { navigate, type GraphLayout } from "../../router";
 import { GraphTable } from "./GraphTable";
 import { GraphToolbar } from "./GraphToolbar";
+import { GraphFilters } from "./GraphFilters";
+import { filterGraph } from "./graph-filter";
 import {
   buildGraphModel,
   displayLabel,
@@ -73,6 +74,7 @@ export function GraphView(props: GraphViewProps): JSX.Element {
   const [manualViewBox, setManualViewBox] = useState<ViewBox | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [hoveredEdgeKey, setHoveredEdgeKey] = useState<string | null>(null);
+  const [selectedEdgeKey, setSelectedEdgeKey] = useState<string | null>(null);
 
   useEffect(() => {
     setExpandedLanes(new Set());
@@ -82,6 +84,7 @@ export function GraphView(props: GraphViewProps): JSX.Element {
     setManualViewBox(null);
     setHoveredId(null);
     setHoveredEdgeKey(null);
+    setSelectedEdgeKey(null);
   }, [center.id_path, supplied?.raw]);
 
   // --- データ取得 -----------------------------------------------------------
@@ -93,6 +96,7 @@ export function GraphView(props: GraphViewProps): JSX.Element {
   const nbhdQuery = useApiQuery(nbhdKey, () => neighborhood(center.id_path, { depth: params.depth }));
 
   const selectedIdPath = params.selected ?? null;
+  useEffect(() => { setSelectedEdgeKey(null); }, [selectedIdPath]);
   const detailQuery = useApiQuery(selectedIdPath, () => {
     const idPath = selectedIdPath;
     if (idPath === null) throw new Error("unreachable: key===nullのときfetcherは呼ばれない");
@@ -146,6 +150,12 @@ export function GraphView(props: GraphViewProps): JSX.Element {
     });
   }, [supplied, nbhdQuery.data, additions, hasMoreOverrides]);
 
+  const visibleModel = useMemo(() => model ? filterGraph(model, params) : null, [model, params.types, params.predicates]);
+  const graphs = useMemo(() => Object.assign({}, nbhdQuery.data?.graphs, supplied?.graphs,
+    ...Object.values(detailsCache).map((d) => d.graphs)), [nbhdQuery.data, supplied?.graphs, detailsCache]);
+  const selectedEdge = visibleModel?.edges.find((e) => e.key === selectedEdgeKey);
+  const modelNodeById = useMemo(() => new Map(model?.nodes.map((n) => [n.id, n])), [model]);
+
   const adjacency = useMemo(() => {
     const m = new Map<string, Set<string>>();
     if (!model) return m;
@@ -166,15 +176,25 @@ export function GraphView(props: GraphViewProps): JSX.Element {
   const emphasisTag = supplied?.emphasizedIds ? "一致" : "中心";
 
   const layoutResult: GraphLayoutResult = useMemo(() => {
-    if (!model) return EMPTY_LAYOUT;
-    if (params.layout === "organic") return layoutOrganic(model);
+    if (!visibleModel) return EMPTY_LAYOUT;
+    if (params.layout === "organic") return layoutOrganic(visibleModel);
     return params.layout === "graph"
-      ? layoutGraph(model)
+      ? layoutGraph(visibleModel)
       // 強調するノード(検索のヒット)を折り畳みで隠さない(裁定B109)。
-      : layoutLanes(model, { expandedLanes, priorityIds: emphasizedIds });
-  }, [model, params.layout, expandedLanes, emphasizedIds]);
+      : layoutLanes(visibleModel, { expandedLanes, priorityIds: new Set([...emphasizedIds, ...visibleModel.nodes.filter((n) => n.idPath === params.selected).map((n) => n.id)]) });
+  }, [visibleModel, params.layout, expandedLanes, emphasizedIds, params.selected]);
 
   const nodeById = useMemo(() => new Map(layoutResult.nodes.map((n) => [n.id, n])), [layoutResult.nodes]);
+  useEffect(() => { setManualViewBox(null); }, [params.layout, params.types, params.predicates]);
+  // 名前検索・選択で見つけた点を可視範囲へ移す。選択中の点を画面外に置かない。
+  useEffect(() => {
+    const n = layoutResult.nodes.find((n) => n.idPath === params.selected);
+    if (!n) return;
+    setManualViewBox((prev) => {
+      const base = prev ?? defaultViewBox;
+      return { ...base, x: n.x + n.w / 2 - base.w / 2, y: n.y + n.h / 2 - base.h / 2 };
+    });
+  }, [params.selected, params.layout, layoutResult.nodes]);
 
   // 円のラベルの縦逃がし(裁定B114)。**ホバーや選択で増える分は入れない**
   // ——毎回全部のずれが動くと、読んでいる最中に文字が跳ねる。
@@ -214,6 +234,7 @@ export function GraphView(props: GraphViewProps): JSX.Element {
   const setSelected = useCallback(
     (idPath: string | undefined) => {
       onParamsChange({ ...params, selected: idPath });
+      setSelectedEdgeKey(null);
     },
     [onParamsChange, params],
   );
@@ -341,10 +362,13 @@ export function GraphView(props: GraphViewProps): JSX.Element {
 
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<{ startX: number; startY: number; base: ViewBox } | null>(null);
+  const suppressClickRef = useRef(false);
 
   const handlePointerDown = useCallback(
     (e: ReactPointerEvent<SVGSVGElement>) => {
       if (e.target !== e.currentTarget && !(e.target as Element).classList?.contains("jg-graph-svg-bg")) return;
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      suppressClickRef.current = false;
       dragRef.current = { startX: e.clientX, startY: e.clientY, base: manualViewBox ?? fitViewBox };
     },
     [manualViewBox, fitViewBox],
@@ -354,6 +378,7 @@ export function GraphView(props: GraphViewProps): JSX.Element {
     if (!d || !svgRef.current) return;
     const rect = svgRef.current.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
+    if (Math.abs(e.clientX - d.startX) + Math.abs(e.clientY - d.startY) > 4) suppressClickRef.current = true;
     const dx = ((e.clientX - d.startX) * d.base.w) / rect.width;
     const dy = ((e.clientY - d.startY) * d.base.h) / rect.height;
     setManualViewBox({ x: d.base.x - dx, y: d.base.y - dy, w: d.base.w, h: d.base.h });
@@ -361,17 +386,11 @@ export function GraphView(props: GraphViewProps): JSX.Element {
   const handlePointerUp = useCallback(() => {
     dragRef.current = null;
   }, []);
-  const handleWheel = useCallback(
-    (e: ReactWheelEvent<SVGSVGElement>) => {
-      e.preventDefault();
-      zoomBy(e.deltaY > 0 ? 1.1 : 0.9);
-    },
-    [zoomBy],
-  );
 
   const handleSvgClick = useCallback(
     (e: { target: EventTarget | null; currentTarget: EventTarget | null }) => {
-      if (e.target === e.currentTarget) setSelected(undefined);
+      if (suppressClickRef.current) { suppressClickRef.current = false; return; }
+      if (e.target === e.currentTarget || (e.target as Element).classList?.contains("jg-graph-svg-bg")) setSelected(undefined);
     },
     [setSelected],
   );
@@ -399,6 +418,7 @@ export function GraphView(props: GraphViewProps): JSX.Element {
         layout={params.layout}
         onLayoutChange={handleLayoutChange}
         axes={params.axes}
+        presentAxes={model ? [...new Set(model.nodes.map((n) => n.axis).filter((a): a is string => !!a))] : []}
         onAxesChange={handleAxesChange}
         onZoomIn={() => zoomBy(0.8)}
         onZoomOut={() => zoomBy(1.25)}
@@ -407,6 +427,10 @@ export function GraphView(props: GraphViewProps): JSX.Element {
         onToggleTable={() => setShowTable((s) => !s)}
         status={status}
       />
+
+      {model ? <GraphFilters model={model} params={params} onChange={onParamsChange} /> : null}
+      {model && visibleModel && visibleModel !== model ? <p className="jg-sm jg-muted">絞り込み後: {visibleModel.nodes.length}点・{visibleModel.edges.length}関係（起点を含む）。取得済み: {model.nodes.length}点・{model.edges.length}関係。</p> : null}
+      <p className="jg-xs jg-muted">点を選ぶと詳細、線を選ぶと出典を表示します。余白をドラッグして移動、拡大・縮小はボタンで操作できます。</p>
 
       {nbhdQuery.status === "loading" ? <Loading label="近傍を取得中" /> : null}
       {nbhdQuery.status === "error" ? <ErrorBox>{nbhdQuery.error.message}</ErrorBox> : null}
@@ -418,13 +442,13 @@ export function GraphView(props: GraphViewProps): JSX.Element {
             ref={svgRef}
             viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
             className="jg-graph-svg"
-            role="img"
+            role="group"
             aria-label="関係図(レーン流れ図または構造配置)"
-            onWheel={handleWheel}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerLeave={handlePointerUp}
+            onPointerCancel={handlePointerUp}
             onClick={handleSvgClick}
           >
             <defs>
@@ -508,18 +532,22 @@ export function GraphView(props: GraphViewProps): JSX.Element {
                 const dim = hoveredId ? !touchesHoveredNode : false;
                 const s = nodeById.get(e.source);
                 const t = nodeById.get(e.target);
-                const showLabel = isHovered || touchesHoveredNode;
+                const showLabel = isHovered || touchesHoveredNode || selectedEdgeKey === e.key || e.source === selectedNode?.id || e.target === selectedNode?.id;
                 const midX = s && t ? (s.x + s.w / 2 + t.x + t.w / 2) / 2 : 0;
                 const midY = s && t ? (s.y + s.h / 2 + t.y + t.h / 2) / 2 : 0;
                 return (
-                  <g key={e.key} className={`jg-graph-edge${dim ? " is-dim" : ""}`}>
+                  <g key={e.key} className={`jg-graph-edge${dim ? " is-dim" : ""}`} role="button" tabIndex={0}
+                    aria-label={`${displayLabel(nodeById.get(e.source)!)} → ${predicateLabel(e.predicate)} → ${displayLabel(nodeById.get(e.target)!)}`}
+                    aria-pressed={selectedEdgeKey === e.key}
+                    onClick={() => setSelectedEdgeKey((k) => k === e.key ? null : e.key)}
+                    onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedEdgeKey(e.key); } }}
+                    onFocus={() => setHoveredEdgeKey(e.key)} onBlur={() => setHoveredEdgeKey(null)}
+                    onMouseEnter={() => setHoveredEdgeKey(e.key)} onMouseLeave={() => setHoveredEdgeKey(null)}>
+                    <path d={e.d} className="jg-graph-edge__hit" />
                     <path
                       d={e.d}
                       className="jg-graph-edge__path"
                       markerEnd="url(#jg-arrow)"
-                      onMouseEnter={() => setHoveredEdgeKey(e.key)}
-                      onMouseLeave={() => setHoveredEdgeKey((k) => (k === e.key ? null : k))}
-                      onClick={() => setHoveredEdgeKey((k) => (k === e.key ? null : e.key))}
                     >
                       <title>{predicateLabel(e.predicate)}</title>
                     </path>
@@ -573,6 +601,8 @@ export function GraphView(props: GraphViewProps): JSX.Element {
                     onClick={() => handleNodeClick(n)}
                     onKeyDown={(e) => handleNodeKeyDown(e, n)}
                     onMouseEnter={() => setHoveredId(n.id)}
+                    onFocus={() => setHoveredId(n.id)}
+                    onBlur={() => setHoveredId(null)}
                     onMouseLeave={() => setHoveredId((h) => (h === n.id ? null : h))}
                   >
                     <title>{full}</title>
@@ -628,7 +658,13 @@ export function GraphView(props: GraphViewProps): JSX.Element {
             </g>
           </svg>
 
-          <Inspector
+          {selectedEdge ? <aside className="jg-graph-inspector" aria-label="関係の出典">
+            <h3 className="jg-h3">{predicateLabel(selectedEdge.predicate)}</h3>
+            <p>{displayLabel(modelNodeById.get(selectedEdge.source)!)} → {displayLabel(modelNodeById.get(selectedEdge.target)!)}</p>
+            <SourceNote graphs={graphs[selectedEdge.graph] ? graphs : { [selectedEdge.graph]: { graph: selectedEdge.graph, available: false, source: "", fetched_on: "", license: "" } }} onlyGraphs={[selectedEdge.graph]} />
+            <p className="jg-xs jg-muted jg-graph-uri">記録グラフ: {selectedEdge.graph}</p>
+            <button className="jg-btn" type="button" onClick={() => setSelectedEdgeKey(null)}>ノードの詳細に戻る</button>
+          </aside> : <Inspector
             node={selectedNode}
             isCenter={isCenterSelected}
             detail={detailQuery}
@@ -637,11 +673,11 @@ export function GraphView(props: GraphViewProps): JSX.Element {
             onRecenter={onRecenter}
             onOpenDetail={handleOpenDetail}
             onUseAsPathStart={onUseAsPathStart}
-          />
+          />}
         </div>
       ) : null}
 
-      {showTable && model ? <GraphTable model={model} /> : null}
+      {showTable && model ? <GraphTable model={model} graphs={graphs} /> : null}
     </div>
   );
 }

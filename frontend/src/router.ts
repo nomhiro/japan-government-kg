@@ -24,6 +24,7 @@
 export type Route =
   | { name: "top" }
   | { name: "search"; q: string }
+  | { name: "explore"; center?: string }
   | { name: "entity"; idPath: string }
   | { name: "path"; from?: string; to?: string }
   | { name: "chat" }
@@ -74,6 +75,9 @@ export function parseHash(hash: string): Route {
   if (segments[0] === "search") {
     return { name: "search", q: parseQuery(query).q ?? "" };
   }
+  if (segments[0] === "explore") {
+    return { name: "explore", center: parseQuery(query).center || undefined };
+  }
   if (segments[0] === "path") {
     const q = parseQuery(query);
     return { name: "path", from: q.from, to: q.to };
@@ -95,6 +99,8 @@ export function routeToHash(route: Route): string {
       return "#/";
     case "search":
       return route.q ? `#/search?${buildQuery({ q: route.q })}` : "#/search";
+    case "explore":
+      return exploreHash(route.center, { ...DEFAULT_GRAPH_PARAMS, layout: EXPLORE_DEFAULT_LAYOUT });
     case "entity":
       return `#/entity/${route.idPath}`;
     case "path":
@@ -146,6 +152,8 @@ export interface GraphParams {
   readonly axes: readonly string[];
   /** 選択中のノードの id_path。 */
   readonly selected?: string;
+  readonly types?: readonly string[];
+  readonly predicates?: readonly string[];
 }
 
 export const DEFAULT_GRAPH_PARAMS: GraphParams = {
@@ -175,6 +183,8 @@ export function parseGraphParams(
     layout,
     axes,
     selected: q.sel && q.sel.length > 0 ? q.sel : undefined,
+    ...(q.types ? { types: q.types.split(",").filter(Boolean) } : {}),
+    ...(q.rels ? { predicates: q.rels.split(",").filter(Boolean) } : {}),
   };
 }
 
@@ -185,6 +195,8 @@ export function entityHash(idPath: string, params: GraphParams): string {
     lay: params.layout === DEFAULT_GRAPH_PARAMS.layout ? undefined : params.layout,
     ax: params.axes.length > 0 ? params.axes.join(",") : undefined,
     sel: params.selected,
+    types: params.types?.length ? params.types.join(",") : undefined,
+    rels: params.predicates?.length ? params.predicates.join(",") : undefined,
   });
   return q ? `#/entity/${idPath}?${q}` : `#/entity/${idPath}`;
 }
@@ -216,6 +228,8 @@ export function searchGraphHash(q: string, params: GraphParams): string {
     lay: params.layout === SEARCH_DEFAULT_LAYOUT ? undefined : params.layout,
     ax: params.axes.length > 0 ? params.axes.join(",") : undefined,
     sel: params.selected,
+    types: params.types?.length ? params.types.join(",") : undefined,
+    rels: params.predicates?.length ? params.predicates.join(",") : undefined,
   });
   return query ? `#/search?${query}` : "#/search";
 }
@@ -238,5 +252,28 @@ export function replaceGraphParams(idPath: string, params: GraphParams): void {
   history.replaceState(null, "", next);
   // replaceState は hashchange を発火しない。購読側(useRoute/useGraphParams)に
   // 知らせるため、同じ形のイベントを自分で投げる。
+  window.dispatchEvent(new HashChangeEvent("hashchange"));
+}
+
+/** 中心はクエリ値として一度だけエンコードする。 */
+export const EXPLORE_DEFAULT_LAYOUT: GraphLayout = "graph";
+
+export function exploreHash(center: string | undefined, params: GraphParams): string {
+  const q = buildQuery({
+    center,
+    d: params.depth === 1 ? undefined : String(params.depth),
+    lay: params.layout === EXPLORE_DEFAULT_LAYOUT ? undefined : params.layout,
+    ax: params.axes.length ? params.axes.join(",") : undefined,
+    sel: params.selected,
+    types: params.types?.length ? params.types.join(",") : undefined,
+    rels: params.predicates?.length ? params.predicates.join(",") : undefined,
+  });
+  return q ? `#/explore?${q}` : "#/explore";
+}
+
+export function replaceExploreParams(center: string, params: GraphParams): void {
+  const next = exploreHash(center, params);
+  if (next === location.hash) return;
+  history.replaceState(null, "", next);
   window.dispatchEvent(new HashChangeEvent("hashchange"));
 }
